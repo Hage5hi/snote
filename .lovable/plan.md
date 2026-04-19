@@ -1,131 +1,152 @@
 
 
-# Phase 1: Core UX Upgrades (7 tính năng)
+# Phase 2: Encryption + Raw Endpoint + Admin + Split View + Pagination + AI Copy
 
-Triển khai #1, #2, #5, #6, #7, #8, #11 từ danh sách. Phase 2 (encryption, admin, raw endpoint, split view, AI copy, pagination) sẽ làm sau khi Phase 1 ổn định.
+## 1. E2E Encryption per-note (#3)
 
-## 1. PWA — Add to Home Screen
+**Cơ chế**: Web Crypto AES-GCM 256-bit. Key string từ URL hash → PBKDF2-SHA256 (100k iterations) → AES key. Mỗi note có salt riêng lưu trong DB (`enc_salt`) để cùng passphrase sinh key khác nhau cho mỗi note.
 
-**Lưu ý quan trọng**: Theo guideline Lovable, full PWA với service worker gây lỗi cache trong preview iframe. Vì bạn không cần offline-cache JS bundle (Yjs đã lo offline cho data), tôi sẽ làm **Installable Web App đơn giản** — chỉ cần `manifest.webmanifest` + meta tags, KHÔNG service worker:
+**Schema mới (DB)**:
+- `notes.is_encrypted boolean default false`
+- `notes.enc_salt text` (base64, 16 bytes random per note)
+- `notes.enc_check text` (ciphertext của chuỗi "OK" để verify key đúng)
 
-- `public/manifest.webmanifest` — name, short_name, `display: "standalone"`, theme/background colors theo design tokens, start_url `/`
-- `public/icon-192.png`, `icon-512.png`, `icon-maskable.png` (generate qua script)
-- `index.html`: thêm `<link rel="manifest">`, `apple-touch-icon`, `apple-mobile-web-app-capable`, `theme-color` (dark + light qua media query)
-- Trang home: card nhỏ "Cài đặt app" hiện trên iOS/Android khi chưa standalone, hướng dẫn "Share → Add to Home Screen"
+**Khi note encrypted**:
+- `ydoc_state` lưu là **ciphertext của Y.update** (encrypt toàn bộ binary update trước khi base64 + upload)
+- `content` để rỗng (server không thấy plaintext)
+- `char_count` = 0
+- Realtime broadcast: cũng encrypt `Y.update` trước khi broadcast (server relay nhưng không hiểu)
 
-→ Giữ được khả năng "mở app như native", không gây lỗi preview.
+**Flow**:
+1. User mở `/abc#mykey` → app derive key từ `mykey` + salt
+2. Load `enc_check` → decrypt → nếu OK thì proceed, sai thì hiện form "Khoá sai"
+3. Toàn bộ update đi qua provider được encrypt/decrypt trong-flight
+4. Nút lock/unlock trong topbar:
+   - **Lock**: prompt key → encrypt toàn bộ doc hiện tại → upload + redirect tới `/abc#newkey`
+   - **Change key**: prompt key cũ + mới → re-encrypt → redirect
+   - **Unlock**: clear encryption flag → upload plaintext → strip hash
 
-## 2. Nút "Copy tất cả"
+**Files**: `src/lib/crypto.ts`, `src/lib/yjs/encrypted-provider.ts` (extends provider behavior), update `Topbar` thêm nút Lock, update `NotePage` chọn provider theo `window.location.hash`.
 
-- Topbar: thêm icon `Copy` riêng (cạnh export). Click = `navigator.clipboard.writeText(getContent())` + toast "Đã copy N ký tự"
-- Phím tắt: `Cmd/Ctrl + Shift + C`
+## 2. Raw endpoint #9
 
-## 3. Local Snapshots (Khôi phục thảm họa)
+**Edge function `raw`**: 
+- URL: `https://nqkjyrgrquzjvpicmcpf.supabase.co/functions/v1/raw/<slug>`
+- Trả `Content-Type: text/plain; charset=utf-8`
+- Note thường: trả `content` cột
+- Note encrypted: trả `ydoc_state` (ciphertext base64) + header `X-Encrypted: 1` + comment `# Encrypted note. Decrypt at https://...`
+- Public, no auth (verify_jwt = false)
+- CORS `*`
 
-Tạo `src/lib/snapshots.ts`:
-- Lưu snapshot vào IndexedDB key `snapshots:<slug>` mỗi **10 phút**, chỉ khi nội dung khác bản gần nhất ≥50 ký tự
-- Schema: `{ ts, charCount, preview (200 ký tự đầu), content }`. Giữ tối đa **10 bản** (FIFO)
-- Bonus: cũng snapshot ngay khi phát hiện **xoá đột ngột >500 ký tự trong <2 giây** (anti-disaster)
+**Browser nice-URL `/xxx.md`**: Không thể implement không-redirect mà không có server (đã giải thích ở trên). Giải pháp:
+- Route React: `/:slug.md` → component nhỏ, encrypted thì decrypt cục bộ và render `<pre>` plaintext, không-encrypted thì redirect tới edge function URL
+- Topbar: nút **"Copy raw URL"** (DropdownMenu Export) — copy URL edge function, có hint "dùng cho cURL/wget/Python"
 
-UI `src/components/note/HistoryDialog.tsx`:
-- Nút History trong topbar (icon `Clock`)
-- Dialog list các bản: thời gian + char count + preview
-- Mỗi bản có 2 nút: **Xem** (preview read-only) và **Khôi phục** (confirm → replace `ytext` toàn bộ bằng `ytext.delete(0, len) + ytext.insert(0, content)` trong 1 transaction → Yjs sẽ đồng bộ sang các thiết bị khác như edit bình thường)
+**Files**: `supabase/functions/raw/index.ts`, `src/pages/RawView.tsx`, route trong `App.tsx`, button trong Topbar.
 
-## 4. Zen Mode + E-ink optimization
+## 3. Admin panel #4 (env-secret-protected)
 
-**Zen Mode**:
-- Toggle bằng phím tắt `F11` hoặc nút icon eye-off
-- Khi bật: ẩn topbar (auto-show khi hover top 8px), ẩn preview pane, max-width 680px, opacity các UI element thừa = 0
-- State lưu localStorage
+**Secret**: `ADMIN_PASSPHRASE` (sẽ yêu cầu user nhập)
 
-**E-ink mode** (auto-detect + manual toggle trong Settings popover):
-- Auto-detect: media query `(update: slow) and (prefers-reduced-motion: reduce)` — match e-readers
-- CSS class `.eink`:
-  - `* { transition: none !important; animation: none !important; }`
-  - Tăng contrast: `--foreground: 0 0% 0%`, `--background: 0 0% 100%` (force light, không có grayscale)
-  - Tắt `caret-color` blink, tắt cursor animation trong CodeMirror
-  - Force `color-scheme: light`
+**Edge functions**:
+- `admin-list`: POST với `{ passphrase, search?, limit?, offset? }` → trả list notes (slug, char_count, is_encrypted, updated_at, content preview 200 ký tự)
+- `admin-delete`: POST với `{ passphrase, slugs[] }` → bulk delete
 
-## 5. Font fallback đa ngôn ngữ + CJK line-breaking
+Cả hai dùng service role để bypass RLS. Validate passphrase bằng constant-time compare.
 
-Update `src/index.css`:
-```css
-body {
-  font-family:
-    'Geist',
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
-    /* Vietnamese fallback đảm bảo dấu */
-    'Helvetica Neue',
-    /* CJK */
-    'Hiragino Sans', 'Hiragino Kaku Gothic ProN',  /* JP */
-    'Noto Sans CJK JP', 'Noto Sans CJK SC', 'Noto Sans CJK KR',
-    'PingFang SC', 'Microsoft YaHei',  /* SC */
-    'Apple SD Gothic Neo', 'Malgun Gothic',  /* KR */
-    sans-serif,
-    /* Emoji */
-    'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
-}
-.cm-content, .markdown-preview {
-  font-feature-settings: "kern", "liga";
-  word-break: normal;
-  overflow-wrap: anywhere;
-  line-break: strict;
-}
-.cm-content:lang(zh), .cm-content:lang(ja), .cm-content:lang(ko) {
-  word-break: keep-all;
-}
+**UI** `/note`:
+- Form nhập passphrase
+- Sau auth: bảng list notes có search, checkbox bulk select, nút delete, "Delete all"
+- Confirm dialog cho delete
+
+**Files**: `supabase/functions/admin-list/index.ts`, `supabase/functions/admin-delete/index.ts`, `src/pages/AdminPanel.tsx`, route trong `App.tsx`.
+
+## 4. Auto-cleanup TTL (bonus #4)
+
+DB function + cron pg_cron không khả dụng dễ dàng. Thay vào đó: **edge function `cleanup`** chạy theo lịch hoặc khi admin trigger:
+- Xoá note nếu `char_count = 0 AND created_at < now() - interval '1 hour'`
+- Có thể setup cron qua Supabase scheduled functions
+
+→ Để đơn giản và không cần pg_cron, tôi sẽ tạo function + nút "Run cleanup" trong admin panel. User có thể setup cron sau.
+
+## 5. Split view #12
+
+**Route**: `/:slugs` (slugs = `a+b`). React Router parse, nếu match regex `/^[\w-]+\+[\w-]+$/` → render `SplitView` component.
+
+**Layout**: 2 panels 50/50 (vertical split trên mobile <768px, horizontal trên desktop). Mỗi panel = NotePage thu gọn (không topbar riêng, có 1 topbar chung mỏng hiển thị cả 2 slug + sync scroll toggle).
+
+**Sync scroll**: ref scroll vào nhau, listen `onScroll` rồi tính ratio và set `scrollTop` panel kia. Toggle bật/tắt.
+
+**Files**: `src/pages/SplitView.tsx`, refactor `NotePage` để tách `<NoteWorkspace>` component dùng chung.
+
+## 6. Pagination mode #10
+
+**Trigger**: nút trong Settings dropdown ("Lật trang") hoặc phím `Cmd+Shift+P`. State trong localStorage.
+
+**Cơ chế**:
+- Wrap CodeMirror scroller: cố định height = viewport, overflow hidden
+- Tính `pageHeight = viewport - topbar - padding`
+- Phím `Cmd+→` / `Cmd+←` (hoặc PageDown/PageUp) → scroll theo `pageHeight`
+- Hiển thị "Trang X / Y" góc dưới phải
+
+Đơn giản hoá: dùng CSS `scroll-snap` với `scroll-snap-type: y mandatory` và `scroll-snap-align: start` mỗi `pageHeight` — cho cảm giác snap-pagination, không cần JS phức tạp.
+
+**Files**: `src/hooks/use-pagination.ts`, update `NotePage`.
+
+## 7. AI Context Copy #13
+
+Nút trong Topbar/Export dropdown "Copy as AI Context":
+- Lấy content
+- Strip: collapse `\n{3,}` → `\n\n`, trim trailing whitespace mỗi dòng, remove markdown comments `<!-- ... -->`, normalize spaces
+- Wrap optional với header `# Note: /<slug>\n\n` để AI có context
+- `navigator.clipboard.writeText` + toast "Đã copy N tokens (~X)" (ước tính bằng `Math.ceil(text.length / 4)`)
+
+**Files**: `src/lib/ai-format.ts`, update `Topbar`.
+
+## Database changes
+
+```sql
+ALTER TABLE public.notes
+  ADD COLUMN is_encrypted boolean NOT NULL DEFAULT false,
+  ADD COLUMN enc_salt text,
+  ADD COLUMN enc_check text;
+
+CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON public.notes(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notes_empty ON public.notes(created_at) WHERE char_count = 0;
 ```
 
-Editor `<div lang="zh-Hans-x-mixed">` (hoặc auto-detect đơn giản qua regex `/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/`).
+## Secrets cần
 
-## 6. Preload / Prefetch
+- `ADMIN_PASSPHRASE` — passphrase cho admin panel (sẽ request)
 
-Mục tiêu: mở `/xxx` mới trong <100ms.
+## Files mới/sửa tóm tắt
 
-Trong `src/pages/Home.tsx`:
-- `useEffect` sau khi mount: dynamic-import warm các module nặng — `import("@/pages/NotePage")`, `import("yjs")`, `import("y-codemirror.next")`, `import("marked")`, `import("dompurify")` → resolve và discard. Chạy trong `requestIdleCallback`.
-- Trên mỗi recent note item: `onMouseEnter` → prefetch snapshot từ Supabase (`select ydoc_state where slug=...`) và stash vào `sessionStorage` cache. NotePage check cache trước khi fetch lại.
-
-`index.html`:
-- `<link rel="preconnect" href="https://nqkjyrgrquzjvpicmcpf.supabase.co">`
-- `<link rel="dns-prefetch" href="https://nqkjyrgrquzjvpicmcpf.supabase.co">`
-
-## Trạng thái Phase 1 sau khi xong
-
-- App cài được như native (PWA-lite, không SW)
-- Copy 1 chạm + History recovery bảo vệ khỏi xoá nhầm
-- Zen + E-ink mượt mà cho mọi loại màn hình
-- Font hiển thị tiếng Việt + CJK chuẩn, không lỗi font
-- Mở note mới gần như tức thì
-
-## Files thay đổi
-
-**Tạo mới**:
-- `public/manifest.webmanifest`, `public/icon-192.png`, `public/icon-512.png`, `public/icon-maskable.png`
-- `src/lib/snapshots.ts` (IndexedDB, không phụ thuộc Supabase)
-- `src/components/note/HistoryDialog.tsx`
-- `src/components/note/InstallPrompt.tsx` (banner cài app trên home)
-- `src/hooks/use-eink.ts` (detect + toggle)
-- `src/hooks/use-zen-mode.ts`
+**Tạo**:
+- `src/lib/crypto.ts`, `src/lib/ai-format.ts`
+- `src/pages/RawView.tsx`, `src/pages/AdminPanel.tsx`, `src/pages/SplitView.tsx`
+- `src/components/note/NoteWorkspace.tsx` (refactor share giữa NotePage + SplitView)
+- `src/components/note/LockButton.tsx`, `src/components/note/UnlockForm.tsx`
+- `src/hooks/use-pagination.ts`
+- `supabase/functions/raw/index.ts`
+- `supabase/functions/admin-list/index.ts`
+- `supabase/functions/admin-delete/index.ts`
+- `supabase/functions/cleanup/index.ts`
 
 **Sửa**:
-- `index.html` — manifest, theme-color, preconnect, apple meta
-- `src/index.css` — font stack đa ngôn ngữ, `.eink`, `.zen-mode`, CJK rules
-- `src/components/note/Topbar.tsx` — nút Copy all, History, Zen toggle
-- `src/components/note/Editor.tsx` — auto-detect lang attr cho CJK
-- `src/pages/Home.tsx` — InstallPrompt + idle-prefetch modules
-- `src/pages/NotePage.tsx` — wire snapshot timer (mỗi 10') + anti-disaster detection
+- `src/lib/yjs/provider.ts` — hỗ trợ encrypt option
+- `src/components/note/Topbar.tsx` — Lock, Copy raw URL, Copy as AI, Pagination toggle
+- `src/pages/NotePage.tsx` — wire encryption + pagination
+- `src/App.tsx` — routes mới
+- DB migration
 
-## Phase 2 (sẽ làm sau)
+## Order triển khai
 
-Đã ghi nhớ kế hoạch chi tiết:
-- **#3 Encryption per-note** với Web Crypto AES-GCM, key từ URL hash, toggle trong topbar, đổi key (re-encrypt + redirect URL mới)
-- **#4 Admin panel** `/note` với passphrase qua edge function `admin-auth` (passphrase trong secret `ADMIN_PASSPHRASE`), edge function `admin-list/delete` dùng service role
-- **#9 Raw endpoint** edge function `raw` trả `text/plain`. Service Worker chặn `/xxx.md` proxy sang edge function (giữ URL đẹp cho browser); với CLI dùng URL trực tiếp `https://...supabase.co/functions/v1/raw/xxx` — sẽ thêm nút "Copy raw URL" cho user. Note encrypted: SW + inline script `<pre>` tự decrypt từ `#key`
-- **#10 Pagination** mode (chia trang theo viewport height), `Cmd+Right/Left`
-- **#12 Split view** `/a+b` với sync scroll
-- **#13 AI Context copy** (strip whitespace thừa, comment markdown)
-
-Sau khi bạn approve Phase 1 và test xong, tôi sẽ trình plan Phase 2 chi tiết.
+1. DB migration + request secret `ADMIN_PASSPHRASE`
+2. Edge functions (raw, admin-list, admin-delete, cleanup) — deploy auto
+3. crypto.ts + encrypted provider integration
+4. UnlockForm + LockButton
+5. RawView page + route + nút Copy raw URL
+6. AdminPanel page + route
+7. SplitView page + route
+8. Pagination + AI Copy
 
