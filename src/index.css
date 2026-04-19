@@ -130,7 +130,24 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Geist', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    /* Multilingual font stack: Geist for Latin, system fonts cover Vietnamese
+       diacritics + CJK + emoji without box-glyph fallbacks. */
+    font-family:
+      'Geist',
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui,
+      'Helvetica Neue', 'Arial',
+      /* Japanese */
+      'Hiragino Sans', 'Hiragino Kaku Gothic ProN', 'Yu Gothic UI', 'Meiryo',
+      'Noto Sans CJK JP',
+      /* Simplified Chinese */
+      'PingFang SC', 'Microsoft YaHei', 'Noto Sans CJK SC',
+      /* Traditional Chinese */
+      'PingFang TC', 'Microsoft JhengHei', 'Noto Sans CJK TC',
+      /* Korean */
+      'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans CJK KR',
+      sans-serif,
+      /* Emoji */
+      'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
     font-size: 14px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -138,5 +155,91 @@
 
   h1, h2, h3, h4, h5, h6 {
     @apply font-medium tracking-tight;
+  }
+}
+
+@layer utilities {
+  /* Editor + preview text rendering: smart wrapping for mixed scripts */
+  .cm-content,
+  .markdown-preview {
+    font-feature-settings: "kern", "liga";
+    word-break: normal;
+    overflow-wrap: anywhere;
+    line-break: strict;
+  }
+
+  /* Keep CJK characters from breaking mid-word */
+  .cm-content:lang(zh),
+  .cm-content:lang(ja),
+  .cm-content:lang(ko),
+  .markdown-preview:lang(zh),
+  .markdown-preview:lang(ja),
+  .markdown-preview:lang(ko) {
+    word-break: keep-all;
+    line-break: strict;
+  }
+}
+
+/* ================== Zen mode ==================
+   Hides every chrome element except the editor surface. Topbar is collapsed
+   into a 4px hover-strip at the top of the viewport. */
+@layer utilities {
+  html.zen-mode header.zen-topbar {
+    transform: translateY(-100%);
+    transition: transform 180ms ease;
+  }
+  html.zen-mode header.zen-topbar:hover,
+  html.zen-mode header.zen-topbar:focus-within {
+    transform: translateY(0);
+  }
+  html.zen-mode .zen-hover-zone {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 8px;
+    z-index: 40;
+  }
+  html.zen-mode .zen-hide {
+    display: none !important;
+  }
+  html.zen-mode .cm-scroller {
+    padding-left: max(24px, calc((100% - 680px) / 2)) !important;
+    padding-right: max(24px, calc((100% - 680px) / 2)) !important;
+  }
+}
+
+/* ================== E-ink mode ==================
+   Force light, high-contrast, zero motion. Designed for slow refresh
+   displays where animations cause ghosting. */
+@layer utilities {
+  html.eink {
+    color-scheme: light;
+  }
+  html.eink,
+  html.eink body {
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+  html.eink *,
+  html.eink *::before,
+  html.eink *::after {
+    transition: none !important;
+    animation: none !important;
+    text-shadow: none !important;
+    box-shadow: none !important;
+  }
+  html.eink .cm-cursor {
+    border-left-color: #000 !important;
+  }
+  html.eink .cm-content {
+    caret-color: #000 !important;
+  }
+  /* Higher contrast borders */
+  html.eink {
+    --border: 0 0% 60%;
+    --foreground: 0 0% 0%;
+    --background: 0 0% 100%;
+    --muted-foreground: 0 0% 25%;
   }
 }

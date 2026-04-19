@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { getRecents, removeRecent, type RecentNote } from "@/lib/recent-notes";
+import { InstallPrompt } from "@/components/note/InstallPrompt";
+import { supabase } from "@/integrations/supabase/client";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -26,6 +28,14 @@ function timeAgo(ts: number) {
   return `${d} ngày trước`;
 }
 
+// Idle prefetch helper.
+function onIdle(cb: () => void) {
+  if (typeof window === "undefined") return;
+  const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
+  if (ric) ric(cb);
+  else window.setTimeout(cb, 200);
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const [slug, setSlug] = useState("");
@@ -34,6 +44,19 @@ export default function Home() {
 
   useEffect(() => setRecents(getRecents()), []);
 
+  // Warm up heavy editor modules so opening a note feels instant.
+  useEffect(() => {
+    onIdle(() => {
+      void import("@/pages/NotePage");
+      void import("yjs");
+      void import("y-indexeddb");
+      void import("y-codemirror.next");
+      void import("@codemirror/lang-markdown");
+      void import("marked");
+      void import("dompurify");
+    });
+  }, []);
+
   const open = (s: string) => {
     const trimmed = s.trim();
     if (!SLUG_RE.test(trimmed)) {
@@ -41,6 +64,27 @@ export default function Home() {
       return;
     }
     navigate(`/${trimmed}`);
+  };
+
+  // Prefetch a note's snapshot on hover, stash in sessionStorage as a hint.
+  const prefetchSnapshot = (s: string) => {
+    const key = `note-prefetch:${s}`;
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, "1");
+    void supabase
+      .from("notes")
+      .select("ydoc_state")
+      .eq("slug", s)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.ydoc_state) {
+          try {
+            sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
+          } catch {
+            // QuotaExceeded — silently drop, network fetch is still fast.
+          }
+        }
+      });
   };
 
   return (
@@ -101,6 +145,8 @@ export default function Home() {
           </Button>
         </div>
 
+        <InstallPrompt />
+
         {recents.length > 0 && (
           <section className="mt-12">
             <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -108,7 +154,12 @@ export default function Home() {
             </h2>
             <ul className="divide-y divide-border rounded-md border border-border">
               {recents.slice(0, 12).map((r) => (
-                <li key={r.slug} className="group flex items-center gap-2 px-3 py-2 hover:bg-accent/50">
+                <li
+                  key={r.slug}
+                  className="group flex items-center gap-2 px-3 py-2 hover:bg-accent/50"
+                  onMouseEnter={() => prefetchSnapshot(r.slug)}
+                  onTouchStart={() => prefetchSnapshot(r.slug)}
+                >
                   <button
                     className="flex flex-1 items-center justify-between text-left"
                     onClick={() => navigate(`/${r.slug}`)}

@@ -2,33 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Notes — Realtime markdown notes by URL</title>
     <meta name="description" content="Tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.">
     <meta name="author" content="Notes" />
 
-    
-    
+    <!-- PWA / Installable web app -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0F0F12" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Notes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+
+    <!-- Speed up Supabase Realtime + REST connections -->
+    <link rel="preconnect" href="https://nqkjyrgrquzjvpicmcpf.supabase.co" crossorigin />
+    <link rel="dns-prefetch" href="https://nqkjyrgrquzjvpicmcpf.supabase.co" />
+
     <meta property="og:type" content="website" />
     <meta property="og:image" content="https://storage.googleapis.com/gpt-engineer-file-uploads/KoUaltGzqoVfSfQv3CIsHyhMxAp2/social-images/social-1774040197142-Triage-Lovable-03-20-2026_04_56_PM.webp">
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@Lovable" />
     <meta name="twitter:image" content="https://storage.googleapis.com/gpt-engineer-file-uploads/KoUaltGzqoVfSfQv3CIsHyhMxAp2/social-images/social-1774040197142-Triage-Lovable-03-20-2026_04_56_PM.webp">
-    
-  
-  
-  
-  
-  
-  
-  
-  <meta property="og:title" content="Notes — Realtime markdown notes">
-  <meta name="twitter:title" content="Notes — Realtime markdown notes">
-  <meta property="og:description" content="Tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime, offline-first.">
-  <meta name="twitter:description" content="Tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime, offline-first.">
-  <link rel="icon" type="image/x-icon" href="/favicon.ico">
-</head>
+
+    <meta property="og:title" content="Notes — Realtime markdown notes">
+    <meta name="twitter:title" content="Notes — Realtime markdown notes">
+    <meta property="og:description" content="Tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime, offline-first.">
+    <meta name="twitter:description" content="Tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime, offline-first.">
+    <link rel="icon" type="image/png" href="/icon-192.png">
+  </head>
 
   <body>
     <div id="root"></div>

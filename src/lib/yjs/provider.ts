@@ -56,6 +56,23 @@ export class SupabaseYjsProvider {
   }
 
   async connect(identity: { name: string; color: string }) {
+    // 0) Try the prefetched snapshot stashed by Home page hover/touch.
+    let prefetched: string | null = null;
+    try {
+      prefetched = sessionStorage.getItem(`note-snapshot:${this.slug}`);
+      if (prefetched) {
+        sessionStorage.removeItem(`note-snapshot:${this.slug}`);
+        try {
+          const update = base64ToBytes(prefetched);
+          if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
+        } catch (e) {
+          console.warn("Bad prefetched snapshot", e);
+        }
+      }
+    } catch {
+      // sessionStorage unavailable — ignore.
+    }
+
     // 1) Load snapshot from Postgres (if any)
     const { data, error } = await supabase
       .from("notes")
