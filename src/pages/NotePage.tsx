@@ -10,6 +10,8 @@ import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
 import type { PresenceUser } from "@/components/note/PresenceDots";
 
+type ProviderBundle = { provider: SupabaseYjsProvider; doc: Y.Doc };
+
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
 export default function NotePage() {
@@ -22,13 +24,19 @@ export default function NotePage() {
 
   const validSlug = SLUG_RE.test(slug);
 
-  // Stable doc per slug.
-  const doc = useMemo(() => (validSlug ? new Y.Doc() : null), [slug, validSlug]);
-  const providerRef = useRef<SupabaseYjsProvider | null>(null);
+  // Stable doc + provider per slug. Created together so the editor always has a
+  // valid awareness instance to bind to.
+  const bundle = useMemo<ProviderBundle | null>(() => {
+    if (!validSlug) return null;
+    const doc = new Y.Doc();
+    const provider = new SupabaseYjsProvider(slug, doc);
+    return { provider, doc };
+  }, [slug, validSlug]);
   const indexeddbRef = useRef<IndexeddbPersistence | null>(null);
 
   useEffect(() => {
-    if (!validSlug || !doc) return;
+    if (!bundle) return;
+    const { doc, provider } = bundle;
 
     const identity = getIdentity();
     touchRecent(slug);
@@ -36,9 +44,6 @@ export default function NotePage() {
     // Local-first persistence.
     const idb = new IndexeddbPersistence(`note:${slug}`, doc);
     indexeddbRef.current = idb;
-
-    const provider = new SupabaseYjsProvider(slug, doc);
-    providerRef.current = provider;
 
     const unsubStatus = provider.onStatus(setStatus);
     const unsubAwareness = provider.onAwareness((states) => {
@@ -82,14 +87,14 @@ export default function NotePage() {
       provider.destroy();
       idb.destroy();
       doc.destroy();
-      providerRef.current = null;
       indexeddbRef.current = null;
     };
-  }, [slug, doc, validSlug]);
+  }, [bundle, slug]);
 
   if (!validSlug) return <Navigate to="/" replace />;
-  if (!doc) return null;
+  if (!bundle) return null;
 
+  const { doc, provider } = bundle;
   const getContent = () => doc.getText("content").toString();
 
   return (
@@ -107,7 +112,7 @@ export default function NotePage() {
 
       <main className="flex flex-1 min-h-0 divide-x divide-border">
         <div className={showPreview ? "hidden md:block md:flex-1 min-w-0" : "flex-1 min-w-0"}>
-          <Editor doc={doc} awareness={providerRef.current?.awareness ?? new (require("y-protocols/awareness").Awareness)(doc)} className="h-full overflow-auto" />
+          <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
         </div>
         {showPreview && (
           <div className="flex-1 min-w-0 overflow-auto bg-muted/30">
