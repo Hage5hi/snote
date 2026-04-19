@@ -19,6 +19,9 @@ export type Database = {
           char_count: number
           content: string
           created_at: string
+          enc_check: string | null
+          enc_salt: string | null
+          is_encrypted: boolean
           slug: string
           updated_at: string
           ydoc_state: string
@@ -27,6 +30,9 @@ export type Database = {
           char_count?: number
           content?: string
           created_at?: string
+          enc_check?: string | null
+          enc_salt?: string | null
+          is_encrypted?: boolean
           slug: string
           updated_at?: string
           ydoc_state?: string
@@ -35,6 +41,9 @@ export type Database = {
           char_count?: number
           content?: string
           created_at?: string
+          enc_check?: string | null
+          enc_salt?: string | null
+          is_encrypted?: boolean
           slug?: string
           updated_at?: string
           ydoc_state?: string
