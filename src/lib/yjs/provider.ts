@@ -1,0 +1,237 @@
+import * as Y from "yjs";
+import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from "y-protocols/awareness";
+import { supabase } from "@/integrations/supabase/client";
+import { bytesToBase64, base64ToBytes } from "./base64";
+import type { RealtimeChannel } from "@supabase/supabase-js";
+
+export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
+
+type Listener<T> = (v: T) => void;
+
+/**
+ * SupabaseYjsProvider
+ * - Loads initial Y.Doc snapshot from public.notes
+ * - Sends/receives Y.update binary patches via Supabase Realtime broadcast
+ * - Syncs awareness (presence + cursor) over the same channel
+ * - Periodically snapshots the doc back to Postgres (debounced)
+ */
+export class SupabaseYjsProvider {
+  doc: Y.Doc;
+  awareness: Awareness;
+  slug: string;
+  channel: RealtimeChannel | null = null;
+  connected = false;
+
+  private snapshotTimer: number | null = null;
+  private lastSnapshotAt = 0;
+  private statusListeners = new Set<Listener<SaveStatus>>();
+  private awarenessListeners = new Set<Listener<Map<number, any>>>();
+  private status: SaveStatus = "idle";
+  private clientId = Math.floor(Math.random() * 0xffffffff);
+  private destroyed = false;
+
+  constructor(slug: string, doc: Y.Doc) {
+    this.slug = slug;
+    this.doc = doc;
+    this.awareness = new Awareness(doc);
+    this.awareness.clientID = this.clientId;
+  }
+
+  onStatus(cb: Listener<SaveStatus>) {
+    this.statusListeners.add(cb);
+    cb(this.status);
+    return () => this.statusListeners.delete(cb);
+  }
+
+  onAwareness(cb: Listener<Map<number, any>>) {
+    this.awarenessListeners.add(cb);
+    cb(this.awareness.getStates());
+    return () => this.awarenessListeners.delete(cb);
+  }
+
+  private setStatus(s: SaveStatus) {
+    if (this.status === s) return;
+    this.status = s;
+    this.statusListeners.forEach((cb) => cb(s));
+  }
+
+  async connect(identity: { name: string; color: string }) {
+    // 1) Load snapshot from Postgres (if any)
+    const { data, error } = await supabase
+      .from("notes")
+      .select("ydoc_state")
+      .eq("slug", this.slug)
+      .maybeSingle();
+
+    if (!error && data?.ydoc_state) {
+      try {
+        const update = base64ToBytes(data.ydoc_state);
+        if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
+      } catch (e) {
+        console.warn("Failed to apply snapshot", e);
+      }
+    } else if (!data) {
+      // Create empty row so multiple clients can find the slug immediately.
+      await supabase.from("notes").upsert({ slug: this.slug }, { onConflict: "slug" });
+    }
+
+    // 2) Set local awareness identity.
+    this.awareness.setLocalState({
+      user: { name: identity.name, color: identity.color },
+    });
+
+    // 3) Open broadcast channel.
+    this.channel = supabase.channel(`note:${this.slug}`, {
+      config: { broadcast: { self: false, ack: false } },
+    });
+
+    this.channel.on("broadcast", { event: "y-update" }, ({ payload }) => {
+      try {
+        const bytes = base64ToBytes(payload.update);
+        Y.applyUpdate(this.doc, bytes, "remote");
+      } catch (e) {
+        console.warn("Bad remote update", e);
+      }
+    });
+
+    this.channel.on("broadcast", { event: "awareness" }, ({ payload }) => {
+      try {
+        const bytes = base64ToBytes(payload.update);
+        applyAwarenessUpdate(this.awareness, bytes, "remote");
+      } catch (e) {
+        console.warn("Bad awareness", e);
+      }
+    });
+
+    // When a new client joins, request the full state from peers.
+    this.channel.on("broadcast", { event: "request-state" }, ({ payload }) => {
+      if (payload.from === this.clientId) return;
+      const update = Y.encodeStateAsUpdate(this.doc);
+      this.broadcastUpdate(update);
+    });
+
+    await this.channel.subscribe(async (status) => {
+      if (status === "SUBSCRIBED") {
+        this.connected = true;
+        this.setStatus("saved");
+        // Ask peers for any newer state.
+        await this.channel?.send({
+          type: "broadcast",
+          event: "request-state",
+          payload: { from: this.clientId },
+        });
+        this.broadcastAwareness();
+      } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        this.connected = false;
+        this.setStatus("offline");
+      }
+    });
+
+    // 4) Wire up local change handlers.
+    this.doc.on("update", this.handleDocUpdate);
+    this.awareness.on("update", this.handleAwarenessUpdate);
+
+    // Heartbeat awareness so peers know we are alive.
+    const pingId = window.setInterval(() => {
+      if (this.destroyed) return;
+      // Re-set local state with same data to bump clock.
+      const cur = this.awareness.getLocalState();
+      if (cur) this.awareness.setLocalState({ ...cur });
+    }, 15000);
+    this.cleanupFns.push(() => window.clearInterval(pingId));
+  }
+
+  private cleanupFns: Array<() => void> = [];
+
+  private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+    if (origin === "remote" || origin === "remote-snapshot") return;
+    this.broadcastUpdate(update);
+    this.scheduleSnapshot();
+  };
+
+  private handleAwarenessUpdate = (
+    { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
+    origin: unknown
+  ) => {
+    // Notify listeners.
+    this.awarenessListeners.forEach((cb) => cb(this.awareness.getStates()));
+    if (origin === "remote") return;
+    const changed = added.concat(updated).concat(removed);
+    if (changed.length === 0) return;
+    this.broadcastAwareness(changed);
+  };
+
+  private broadcastUpdate(update: Uint8Array) {
+    if (!this.channel || !this.connected) return;
+    this.channel.send({
+      type: "broadcast",
+      event: "y-update",
+      payload: { update: bytesToBase64(update) },
+    });
+  }
+
+  private broadcastAwareness(clients?: number[]) {
+    if (!this.channel || !this.connected) return;
+    const update = encodeAwarenessUpdate(
+      this.awareness,
+      clients ?? Array.from(this.awareness.getStates().keys())
+    );
+    this.channel.send({
+      type: "broadcast",
+      event: "awareness",
+      payload: { update: bytesToBase64(update) },
+    });
+  }
+
+  private scheduleSnapshot() {
+    this.setStatus("editing");
+    if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
+    this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), 800);
+  }
+
+  async saveSnapshot() {
+    if (this.destroyed) return;
+    this.setStatus("saving");
+    try {
+      const state = Y.encodeStateAsUpdate(this.doc);
+      const text = this.doc.getText("content").toString();
+      const { error } = await supabase.from("notes").upsert(
+        {
+          slug: this.slug,
+          ydoc_state: bytesToBase64(state),
+          content: text,
+          char_count: text.length,
+        },
+        { onConflict: "slug" }
+      );
+      if (error) {
+        console.warn("Snapshot save failed", error);
+        this.setStatus(this.connected ? "editing" : "offline");
+      } else {
+        this.lastSnapshotAt = Date.now();
+        this.setStatus(this.connected ? "saved" : "offline");
+      }
+    } catch (e) {
+      console.warn("Snapshot exception", e);
+      this.setStatus("offline");
+    }
+  }
+
+  async destroy() {
+    this.destroyed = true;
+    if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
+    // Final flush.
+    await this.saveSnapshot();
+    this.doc.off("update", this.handleDocUpdate);
+    this.awareness.off("update", this.handleAwarenessUpdate);
+    this.cleanupFns.forEach((fn) => fn());
+    this.cleanupFns = [];
+    if (this.channel) {
+      try {
+        await this.channel.unsubscribe();
+      } catch {}
+      supabase.removeChannel(this.channel);
+      this.channel = null;
+    }
+  }
+}
