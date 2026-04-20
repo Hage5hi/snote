@@ -1,3 +1,4 @@
+import { Lightbulb } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +23,7 @@ const SECTIONS: { title: string; items: { keys: string[]; label: string }[] }[] 
       { keys: [Mod, "K"], label: "Mở Command Palette" },
       { keys: ["?"], label: "Mở bảng phím tắt này" },
       { keys: [Mod, "\\"], label: "Toggle Outline sidebar" },
+      { keys: ["F11"], label: "Toggle Zen mode" },
     ],
   },
   {
@@ -29,6 +31,8 @@ const SECTIONS: { title: string; items: { keys: string[]; label: string }[] }[] 
     items: [
       { keys: [Mod, "F"], label: "Tìm trong note" },
       { keys: [Mod, "Shift", "V"], label: "Toggle Markdown preview" },
+      { keys: [Mod, "Shift", "C"], label: "Copy toàn bộ note" },
+      { keys: [Mod, "Shift", "P"], label: "Toggle Lật trang" },
       { keys: ["/"], label: "Mở slash commands (đầu dòng)" },
       { keys: ["#"], label: "Tag autocomplete" },
     ],
@@ -39,6 +43,29 @@ const SECTIONS: { title: string; items: { keys: string[]; label: string }[] }[] 
       { keys: [Mod, "Z"], label: "Hoàn tác" },
       { keys: [Mod, "Shift", "Z"], label: "Làm lại" },
     ],
+  },
+];
+
+const TIPS: { title: string; body: string }[] = [
+  {
+    title: "Mở note nhanh",
+    body: "Gõ slug bất kỳ vào URL (ví dụ /todo) — note tự tạo nếu chưa tồn tại.",
+  },
+  {
+    title: "Pin note quan trọng",
+    body: "Bấm Star trên Topbar (hoặc trong Cmd+K) để pin note lên đầu palette.",
+  },
+  {
+    title: "Tag để gom note",
+    body: "Gõ #tag bất kỳ trong nội dung — chip tag hiện trên Topbar, click để xem note cùng tag.",
+  },
+  {
+    title: "Split view",
+    body: "Mở /a+b để xem 2 note cạnh nhau, lý tưởng để so sánh hoặc copy giữa 2 note.",
+  },
+  {
+    title: "Chia sẻ qua QR",
+    body: "Bấm Share trên Topbar → quét QR từ điện thoại để mở cùng note.",
   },
 ];
 
@@ -53,14 +80,14 @@ function Kbd({ children }: { children: React.ReactNode }) {
 export function ShortcutHelp({ open, onOpenChange }: ShortcutHelpProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[85vh] max-w-md overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Phím tắt</DialogTitle>
+          <DialogTitle>Phím tắt & Mẹo</DialogTitle>
           <DialogDescription>
             Nhấn <Kbd>?</Kbd> bất kỳ lúc nào để mở lại bảng này.
           </DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="space-y-5">
           {SECTIONS.map((section) => (
             <div key={section.title}>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -83,6 +110,21 @@ export function ShortcutHelp({ open, onOpenChange }: ShortcutHelpProps) {
               </ul>
             </div>
           ))}
+
+          <div>
+            <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Lightbulb className="h-3 w-3" />
+              Mẹo dùng
+            </h3>
+            <ul className="space-y-2.5">
+              {TIPS.map((tip) => (
+                <li key={tip.title} className="text-sm">
+                  <div className="font-medium text-foreground">{tip.title}</div>
+                  <div className="text-xs text-muted-foreground">{tip.body}</div>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

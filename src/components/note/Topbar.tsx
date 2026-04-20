@@ -37,6 +37,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { PresenceDots, type PresenceUser } from "./PresenceDots";
 import { HistoryDialog } from "./HistoryDialog";
 import { LockButton } from "./LockButton";
+import { PinButton } from "./PinButton";
 import { ShareDialog } from "./ShareDialog";
 import { TagChips } from "./TagChips";
 import { StatusPill } from "./StatusPill";
@@ -179,6 +180,8 @@ export function Topbar({
           </div>
 
           <PresenceDots users={users} />
+
+          <PinButton slug={slug} />
 
           <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
 
