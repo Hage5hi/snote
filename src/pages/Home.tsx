@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Check, FileText, Loader2, Shuffle, Trash2 } from "lucide-react";
+import { ArrowRight, Check, FileText, Loader2, Shuffle, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -201,7 +201,7 @@ export default function Home() {
 
         <InstallPrompt />
 
-        {recents.length > 0 && (
+        {recents.length > 0 ? (
           <section className="mt-12">
             <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Note gần đây
@@ -234,6 +234,28 @@ export default function Home() {
             <p className="mt-2 text-[11px] text-muted-foreground">
               Danh sách này chỉ lưu trên thiết bị của bạn.
             </p>
+          </section>
+        ) : (
+          <section className="mt-12 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-8 text-center">
+            <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-background ring-1 ring-border">
+              <Sparkles className="h-4 w-4 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium">Chưa có note nào</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Thử mở một slug có sẵn để bắt đầu:
+            </p>
+            <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+              {["scratch", "todo", "ideas", "journal"].map((s) => (
+                <button
+                  key={s}
+                  onClick={() => navigate(`/${s}`)}
+                  onMouseEnter={() => prefetchSnapshot(s)}
+                  className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground hover:bg-accent"
+                >
+                  /{s}
+                </button>
+              ))}
+            </div>
           </section>
         )}
       </main>

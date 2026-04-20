@@ -12,6 +12,7 @@ import {
   EyeOff,
   FileCode,
   FileType,
+  Keyboard,
   Link2,
   Maximize2,
   Minimize2,
@@ -21,6 +22,7 @@ import {
   Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ShortcutHelp } from "@/components/ShortcutHelp";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -81,6 +83,7 @@ export function Topbar({
 }: TopbarProps) {
   const { pref: einkPref, setMode: setEinkMode } = useEink();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -215,6 +218,18 @@ export function Topbar({
           >
             {zen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => setShortcutsOpen(true)}
+            aria-label="Phím tắt"
+            title="Phím tắt (?)"
+          >
+            <Keyboard className="h-4 w-4" />
+          </Button>
+          <ShortcutHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
