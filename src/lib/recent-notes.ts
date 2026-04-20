@@ -1,5 +1,7 @@
-// Track recently opened notes in localStorage.
+// Track recently opened notes in localStorage, with optional pinning.
+// Pinned notes are kept on top in Cmd+K and never trimmed by MAX.
 const KEY = "note.recents";
+const PIN_KEY = "note.pinned";
 const MAX = 50;
 
 export type RecentNote = {
@@ -37,4 +39,30 @@ export function removeRecent(slug: string) {
 
 export function clearRecents() {
   localStorage.removeItem(KEY);
+}
+
+// ─── Pinned slugs ─────────────────────────────────────────────────────────
+
+export function getPinned(): string[] {
+  try {
+    const raw = localStorage.getItem(PIN_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw) as string[];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+export function isPinned(slug: string): boolean {
+  return getPinned().includes(slug);
+}
+
+export function togglePin(slug: string): string[] {
+  const list = getPinned();
+  const next = list.includes(slug) ? list.filter((s) => s !== slug) : [slug, ...list];
+  try {
+    localStorage.setItem(PIN_KEY, JSON.stringify(next));
+  } catch {}
+  return next;
 }
