@@ -27,6 +27,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const passphrase = String(body?.passphrase ?? "");
     const search = typeof body?.search === "string" ? body.search.trim() : "";
+    const tag = typeof body?.tag === "string" ? body.tag.trim().toLowerCase() : "";
     const limit = Math.min(Math.max(parseInt(body?.limit ?? "100", 10) || 100, 1), 500);
     const offset = Math.max(parseInt(body?.offset ?? "0", 10) || 0, 0);
 
@@ -45,7 +46,7 @@ Deno.serve(async (req) => {
 
     let query = supabase
       .from("notes")
-      .select("slug, char_count, is_encrypted, updated_at, created_at, content", {
+      .select("slug, char_count, is_encrypted, updated_at, created_at, content, tags", {
         count: "exact",
       })
       .order("updated_at", { ascending: false })
@@ -61,6 +62,12 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (tag) {
+      // Sanitize tag — only allow alphanumerics, dash, underscore.
+      const safeTag = tag.replace(/[^a-z0-9_-]/g, "").slice(0, 32);
+      if (safeTag) query = query.contains("tags", [safeTag]);
+    }
+
     const { data, error, count } = await query;
     if (error) throw error;
 
@@ -70,13 +77,30 @@ Deno.serve(async (req) => {
       is_encrypted: r.is_encrypted,
       updated_at: r.updated_at,
       created_at: r.created_at,
+      tags: r.tags ?? [],
       preview: r.is_encrypted ? "🔒 encrypted" : (r.content ?? "").slice(0, 200),
     }));
 
-    return new Response(JSON.stringify({ items, total: count ?? items.length }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Aggregate top tags from this page (lightweight — full aggregation would
+    // need a separate query; this is good enough for the picker UX).
+    const tagCount = new Map<string, number>();
+    for (const it of items) {
+      for (const t of it.tags as string[]) {
+        tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
+      }
+    }
+    const topTags = [...tagCount.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 30)
+      .map(([name, count]) => ({ name, count }));
+
+    return new Response(
+      JSON.stringify({ items, total: count ?? items.length, topTags }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      },
+    );
   } catch (e) {
     console.error("admin-list error", e);
     return new Response(JSON.stringify({ error: String(e) }), {

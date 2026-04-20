@@ -2,6 +2,7 @@ import * as Y from "yjs";
 import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from "y-protocols/awareness";
 import { supabase } from "@/integrations/supabase/client";
 import { bytesToBase64, base64ToBytes } from "./base64";
+import { extractTags } from "@/lib/tags";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
@@ -248,12 +249,16 @@ export class SupabaseYjsProvider {
       let stateBytes = state;
       let storedContent = text;
       let storedCount = text.length;
+      // Tags are derived from plaintext, so for encrypted notes we leave them
+      // empty (server stays zero-knowledge).
+      let storedTags: string[] = this.encryption ? [] : extractTags(text);
       if (this.encryption) {
         try {
           stateBytes = await this.encryption.encrypt(state);
           // Server is zero-knowledge — never expose plaintext or true length.
           storedContent = "";
           storedCount = 0;
+          storedTags = [];
         } catch (e) {
           console.warn("Encrypt snapshot failed", e);
           this.setStatus(this.connected ? "editing" : "offline");
@@ -266,6 +271,7 @@ export class SupabaseYjsProvider {
           ydoc_state: bytesToBase64(stateBytes),
           content: storedContent,
           char_count: storedCount,
+          tags: storedTags,
         },
         { onConflict: "slug" }
       );
