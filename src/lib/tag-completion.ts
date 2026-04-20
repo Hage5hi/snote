@@ -1,4 +1,4 @@
-import { autocompletion, type CompletionContext, type Completion } from "@codemirror/autocomplete";
+import type { CompletionContext, CompletionSource, Completion } from "@codemirror/autocomplete";
 import { extractTags } from "@/lib/tags";
 
 /**
@@ -9,23 +9,24 @@ import { extractTags } from "@/lib/tags";
  *  - The `#` must be at start-of-line OR preceded by whitespace/punctuation
  *    (mirrors the parser in `lib/tags.ts` so suggestions only appear where
  *    a tag would actually be recognized).
+ *
+ * Exported as a bare CompletionSource — `slashCommands` registers the single
+ * `autocompletion()` extension and combines this source with `/` snippets.
+ * Two separate `autocompletion()` calls would clash on the `override` facet
+ * with "Config merge conflict for field override".
  */
-function tagSource(context: CompletionContext) {
+export const tagCompletionSource: CompletionSource = (context: CompletionContext) => {
   const line = context.state.doc.lineAt(context.pos);
   const beforeCursor = line.text.slice(0, context.pos - line.from);
 
-  // Find the trailing `#word` token (if any).
   const match = beforeCursor.match(/(^|[\s(\[{])#([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]*)$/);
   if (!match) return null;
 
   const tagPart = match[2];
-  // Position where the `#` starts.
   const hashOffset = beforeCursor.length - tagPart.length - 1;
   const from = line.from + hashOffset;
   const to = context.pos;
 
-  // Pull existing tags from the whole document so users converge on a small
-  // shared vocabulary instead of typo'd duplicates.
   const allText = context.state.doc.toString();
   const existing = extractTags(allText);
   if (existing.length === 0 && !context.explicit) return null;
@@ -43,13 +44,4 @@ function tagSource(context: CompletionContext) {
     filter: true,
     validFor: /^#[a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]*$/,
   };
-}
-
-export function tagCompletion() {
-  return autocompletion({
-    override: [tagSource],
-    activateOnTyping: true,
-    closeOnBlur: true,
-    icons: false,
-  });
-}
+};

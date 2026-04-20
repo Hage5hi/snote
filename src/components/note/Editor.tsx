@@ -27,7 +27,6 @@ import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { slashCommands } from "@/lib/slash-commands";
-import { tagCompletion } from "@/lib/tag-completion";
 
 interface EditorProps {
   doc: Y.Doc;
