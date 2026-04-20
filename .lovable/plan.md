@@ -1,66 +1,47 @@
 
 
-# Plan: Verify toàn bộ Phase 3 → Phase 6 chưa được test
+# Plan: Sweep cuối — phát hiện gap & polish nhỏ
 
-## Mục tiêu
-Test end-to-end tất cả tính năng đã build qua các phase nhưng chưa verify trực tiếp trên preview, đồng thời điều tra warning React đang xuất hiện trong console.
+## Tóm tắt
+Đọc kỹ toàn bộ code Phase 3-6, tôi thấy **các tính năng chính đã đầy đủ**. Còn lại chỉ là vài bug nhỏ và polish. Đề xuất 3 nhóm việc:
 
-## Phát hiện từ console (cần fix trước)
+## A. Bug fixes (3 cái nhỏ)
 
+### A1. `TagChips` đang dùng `<a href>` → reload full page
+File `src/components/note/TagChips.tsx` dùng `<a href="/note#tag=...">` — click sẽ reload toàn bộ app. Nên dùng `Link` từ `react-router-dom` để giữ SPA navigation và pop history đúng cách.
+
+### A2. Warning `forwardRef` vẫn còn ở `Home`
+Console log mới nhất:
 ```
-Warning: Function components cannot be given refs.
-Check the render method of `App`.
-  at Home (...)
+Function components cannot be given refs.
+at Home (...)
 ```
+React Router v6 truyền ref vào element của Route khi unmount để focus. Fix gọn: bọc `<Home />` trong route element bằng arrow inline (đã có) — nguyên nhân thực ra là `<Sonner />` / `<Toaster />` sau khi đã chuyển vẫn còn TooltipProvider con khác (hoặc thực ra là `Home` không forward ref). Cần thử `forwardRef` cho `Home` để tắt warning, hoặc verify lại stack trace bằng browser test.
 
-Có warning về `forwardRef` trong `App` → có thể `<Home>` hoặc một component khác đang nhận ref nhưng không dùng `forwardRef`. Cần kiểm tra `App.tsx` & `Home.tsx` để xác định nguồn (có thể từ `CommandPalette` hoặc Route children mới thêm).
+### A3. `exportPdf` có thể trigger print với iframe trống
+`iframe.onload` được gắn TRƯỚC khi `iframe.srcdoc` set → onload đầu tiên khi append với `about:blank` có thể chạy với document trống. Đảo thứ tự: `srcdoc` trước, sau đó append vào DOM, hoặc check `iframe.contentDocument.body.children.length > 0`.
 
-## Các Phase cần verify
+## B. Verify thực tế bằng browser
 
-### Phase 3 — Editor utilities
-- [ ] **Cmd+F**: mở search panel trong editor
-- [ ] **Cmd+Shift+V**: toggle Markdown preview
-- [ ] **Cmd+K**: mở Command Palette, search recent notes, tạo note mới
-- [ ] **WordCountPill**: hiện ở góc dưới-trái với word count + reading time
+Sau khi fix A1-A3, dùng browser tool để chạy 1 lượt smoke test nhanh:
+1. `/` → custom slug check (gõ `verify-final` → "Available")
+2. Mở `/verify-final`, gõ markdown có `# H1`, `## H2`, `#tag1 #tag2`
+3. Xác nhận: Outline button mở, click heading nhảy đúng; TagChips hiện ở Topbar (sau A1: click không reload); Cmd+F search panel mở; Share dialog QR hiện
+4. `/note` → kiểm tra tag filter chip hoạt động
 
-### Phase 4 — Productivity
-- [ ] **Cmd+\\**: toggle Outline sidebar, click heading nhảy đúng dòng
-- [ ] **Slash commands**: gõ `/` đầu dòng mở popup, chèn `/h1`, `/code`, `/table`, `/date`
-- [ ] **Export .html**: download file HTML standalone
-- [ ] **Print to PDF**: mở print dialog
+## C. Tính năng còn thiếu (optional, để bạn chọn)
 
-### Phase 5 — Polish
-- [ ] **Share QR**: dialog hiện QR code, cảnh báo nếu URL có #key
-- [ ] **History Diff**: tab Diff so sánh 2 snapshot, highlight đỏ/xanh
-- [ ] **StatusPill**: hiển thị "Saved Xs ago", click mở History dialog
+Nếu muốn tiếp tục build, đây là list tôi thấy còn missing:
 
-### Phase 6 — Tags & UX
-- [ ] **Tags**: gõ `#tag1 #tag2` trong note → chip hiện ở Topbar
-- [ ] **Tag autocomplete**: gõ `#` → popup gợi ý tag đã dùng
-- [ ] **Admin filter by tag**: click chip → mở `/admin#tag=xxx` filter sẵn
-- [ ] **Custom slug Home**: gõ slug đã tồn tại → badge "Đã có note"; gõ slug mới → "Available"
+| Tính năng | Lý do |
+|---|---|
+| **Highlight `#tag` trong editor** | Tag hiện như text thường — nên có color/bold để dễ scan note dài |
+| **Pin recent notes** trong Cmd+K | Note quan trọng dễ bị trôi xuống dưới |
+| **Empty state cho `/`** khi chưa có recent | UI hơi trống khi dùng lần đầu |
+| **Keyboard shortcut help dialog** (`?`) | App đã có nhiều shortcut — cần cheatsheet |
+| **Auto-link URL trong preview** | Marked GFM đã handle, nhưng chưa verify |
 
-## Kế hoạch thực hiện
+## Đề xuất
 
-### Bước 1: Điều tra & fix warning forwardRef
-Đọc `App.tsx`, `Home.tsx`, `CommandPalette.tsx`, `NotePage.tsx` để tìm component nhận ref bị thiếu `forwardRef`. Fix nếu phát hiện.
-
-### Bước 2: Browser test theo flow
-1. Vào `/` → kiểm tra Home (custom slug check, recent notes)
-2. Cmd+K palette
-3. Tạo note mới `/verify-test`
-4. Gõ nội dung markdown có headings + `#tag1 #tag2`
-5. Test Cmd+F, Cmd+Shift+V, Cmd+\\, slash `/`
-6. Test Topbar: word count, status pill, share QR, export HTML, history diff, tag chips
-7. Vào `/admin` qua tag chip → verify filter
-
-### Bước 3: Báo cáo kết quả
-- Liệt kê pass/fail từng tính năng
-- Nếu phát hiện bug → fix ngay rồi báo lại
-- Screenshot các state quan trọng (Topbar có chips, Outline sidebar mở, History Diff)
-
-## Lưu ý
-- Một số phím tắt như `Cmd+\\` có thể bị browser/OS chặn — sẽ test cả qua nút bấm nếu có.
-- Tag extraction chỉ chạy với note **không mã hoá** — sẽ test với note plain.
-- `Print to PDF` mở native print dialog → chỉ verify dialog xuất hiện, không thực sự in.
+Tôi sẽ làm **A (3 fix nhỏ) + B (smoke test)** trong 1 lượt. C để bạn quyết tiếp.
 
