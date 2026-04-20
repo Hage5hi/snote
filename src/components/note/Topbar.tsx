@@ -1,13 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import * as Y from "yjs";
 import {
   ArrowLeft,
   BookOpen,
-  Check,
   ClipboardCopy,
   Cloud,
-  CloudOff,
   Copy,
   Download,
   Eye,
@@ -15,11 +13,9 @@ import {
   FileCode,
   FileType,
   Link2,
-  Loader2,
   Maximize2,
   Minimize2,
   MonitorSmartphone,
-  Pencil,
   Settings2,
   Sparkles,
   Terminal,
@@ -39,6 +35,8 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { PresenceDots, type PresenceUser } from "./PresenceDots";
 import { HistoryDialog } from "./HistoryDialog";
 import { LockButton } from "./LockButton";
+import { ShareDialog } from "./ShareDialog";
+import { StatusPill } from "./StatusPill";
 import type { SaveStatus } from "@/lib/yjs/provider";
 import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/export";
 import { formatForAI, approxTokens } from "@/lib/ai-format";
