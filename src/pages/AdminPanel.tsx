@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,7 +24,10 @@ type AdminNote = {
   updated_at: string;
   created_at: string;
   preview: string;
+  tags: string[];
 };
+
+type TopTag = { name: string; count: number };
 
 const SESSION_KEY = "admin.passphrase";
 
@@ -35,6 +38,8 @@ export default function AdminPanel() {
   const [items, setItems] = useState<AdminNote[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState<string>("");
+  const [topTags, setTopTags] = useState<TopTag[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState<null | "selected" | "all">(null);
 
@@ -47,16 +52,17 @@ export default function AdminPanel() {
     }
   }, []);
 
-  const fetchList = async (passToUse: string, q = "") => {
+  const fetchList = async (passToUse: string, q = "", tag = "") => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("admin-list", {
-        body: { passphrase: passToUse, search: q, limit: 200, offset: 0 },
+        body: { passphrase: passToUse, search: q, tag, limit: 200, offset: 0 },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setItems(data.items ?? []);
       setTotal(data.total ?? 0);
+      setTopTags(data.topTags ?? []);
       setSelected(new Set());
       return true;
     } catch (e: any) {
@@ -84,7 +90,13 @@ export default function AdminPanel() {
 
   const onSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    await fetchList(pass, search);
+    await fetchList(pass, search, tagFilter);
+  };
+
+  const applyTag = async (tag: string) => {
+    const next = tagFilter === tag ? "" : tag;
+    setTagFilter(next);
+    await fetchList(pass, search, next);
   };
 
   const toggleAll = () => {
@@ -110,7 +122,7 @@ export default function AdminPanel() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast({ title: `Đã xoá ${data.deleted} note` });
-      await fetchList(pass, search);
+      await fetchList(pass, search, tagFilter);
     } catch (e: any) {
       toast({
         title: "Xoá thất bại",
@@ -132,7 +144,7 @@ export default function AdminPanel() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast({ title: `Đã dọn ${data.deleted} note rỗng` });
-      await fetchList(pass, search);
+      await fetchList(pass, search, tagFilter);
     } catch (e: any) {
       toast({ title: "Cleanup lỗi", description: String(e?.message ?? e), variant: "destructive" });
     } finally {
@@ -190,7 +202,7 @@ export default function AdminPanel() {
             <Sparkles className="h-3.5 w-3.5" />
             Dọn note rỗng
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => fetchList(pass, search)} disabled={loading}>
+          <Button size="sm" variant="ghost" onClick={() => fetchList(pass, search, tagFilter)} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           <Button size="sm" variant="ghost" onClick={logout}>
@@ -214,6 +226,33 @@ export default function AdminPanel() {
             Tìm
           </Button>
         </form>
+
+        {(topTags.length > 0 || tagFilter) && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground">Tags:</span>
+            {tagFilter && (
+              <button
+                onClick={() => applyTag(tagFilter)}
+                className="inline-flex items-center gap-1 rounded-full bg-foreground px-2 py-0.5 text-[11px] font-medium text-background"
+              >
+                #{tagFilter}
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {topTags
+              .filter((t) => t.name !== tagFilter)
+              .map((t) => (
+                <button
+                  key={t.name}
+                  onClick={() => applyTag(t.name)}
+                  className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground"
+                >
+                  #{t.name}
+                  <span className="ml-1 opacity-60">{t.count}</span>
+                </button>
+              ))}
+          </div>
+        )}
 
         <div className="mb-2 flex items-center gap-2 text-xs">
           <Checkbox
@@ -271,6 +310,19 @@ export default function AdminPanel() {
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                   {n.preview || "(rỗng)"}
                 </p>
+                {n.tags && n.tags.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {n.tags.slice(0, 8).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => applyTag(t)}
+                        className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        #{t}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </li>
           ))}
