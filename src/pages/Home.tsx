@@ -165,7 +165,7 @@ export default function Home() {
               className="border-0 focus-visible:ring-0 font-mono"
               maxLength={64}
             />
-            <div className="pr-2 text-muted-foreground">
+            <div className="shrink-0 whitespace-nowrap pr-2 text-muted-foreground">
               {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {slugStatus === "available" && (
                 <Check className="h-3.5 w-3.5 text-success" aria-label="Slug trống" />

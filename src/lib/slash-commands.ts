@@ -1,5 +1,6 @@
-import { autocompletion, type CompletionContext, type Completion } from "@codemirror/autocomplete";
+import { autocompletion, type CompletionContext, type Completion, type CompletionSource } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
+import { tagCompletionSource } from "@/lib/tag-completion";
 
 /**
  * Insert a snippet at the current selection. Replaces the matched "/foo" prefix
@@ -53,11 +54,9 @@ const ITEMS: SlashItem[] = [
  * START of a line (the only spot where a Notion-style slash command makes
  * sense — avoids popping up inside URLs, code, etc.).
  */
-function slashSource(context: CompletionContext) {
+const slashSource: CompletionSource = (context: CompletionContext) => {
   const line = context.state.doc.lineAt(context.pos);
   const beforeCursor = line.text.slice(0, context.pos - line.from);
-  // Match "/word" only when it's the entire line so far (allows trailing chars
-  // to filter the menu but not random midline slashes).
   const match = beforeCursor.match(/^\/(\w*)$/);
   if (!match) return null;
 
@@ -72,7 +71,6 @@ function slashSource(context: CompletionContext) {
       const { text, cursor } = item.build();
       insertSnippet(view, from, toPos, text, cursor);
     },
-    // Fall back to plain string apply if needed.
   }));
 
   return {
@@ -81,11 +79,17 @@ function slashSource(context: CompletionContext) {
     options,
     filter: true,
   };
-}
+};
 
+/**
+ * Combined autocompletion extension that handles both `/slash-commands` and
+ * `#tag` suggestions. We MUST register a single `autocompletion()` because
+ * its `override` config is a one-shot facet — multiple instances clash with
+ * "Config merge conflict for field override".
+ */
 export function slashCommands() {
   return autocompletion({
-    override: [slashSource],
+    override: [slashSource, tagCompletionSource],
     activateOnTyping: true,
     closeOnBlur: true,
     icons: false,

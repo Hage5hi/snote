@@ -58,9 +58,13 @@ function SlugDispatcher() {
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
     <QueryClientProvider client={queryClient}>
+      {/* Toasters live OUTSIDE TooltipProvider — Tooltip's Provider passes a
+          ref to its first child and these toaster wrappers are plain function
+          components, which produces a noisy "Function components cannot be
+          given refs" warning. */}
+      <Toaster />
+      <Sonner />
       <TooltipProvider>
-        <Toaster />
-        <Sonner />
         <BrowserRouter>
           <CommandPalette />
           <Routes>

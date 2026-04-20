@@ -27,7 +27,6 @@ import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { slashCommands } from "@/lib/slash-commands";
-import { tagCompletion } from "@/lib/tag-completion";
 
 interface EditorProps {
   doc: Y.Doc;
@@ -92,7 +91,6 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         search({ top: true }),
         highlightSelectionMatches(),
         slashCommands(),
-        tagCompletion(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),
