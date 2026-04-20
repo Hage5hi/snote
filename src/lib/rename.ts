@@ -1,6 +1,6 @@
-// Rename a note's slug: copy row to the new slug, delete the old one,
-// and migrate localStorage (recents + pinned). Encrypted notes keep their
-// salt + check digest so the same password still unlocks the new URL.
+// Rename or duplicate a note's slug. Both operations copy the full row
+// (including encryption metadata so the same password unlocks the new URL).
+// Rename additionally deletes the source and migrates localStorage.
 import { supabase } from "@/integrations/supabase/client";
 import { renamePinned, renameRecent } from "@/lib/recent-notes";
 
@@ -21,24 +21,19 @@ export async function checkSlugAvailable(slug: string): Promise<boolean> {
   return (data.char_count ?? 0) === 0;
 }
 
-export async function renameNote(oldSlug: string, newSlug: string): Promise<void> {
-  if (oldSlug === newSlug) return;
-  if (!SLUG_RE.test(newSlug)) throw new Error("Slug không hợp lệ");
-
-  // 1. Fetch the source row in full.
+/** Copy source row contents into `targetSlug`. Used by both rename + duplicate. */
+async function copyNoteRow(sourceSlug: string, targetSlug: string) {
   const { data: src, error: fetchErr } = await supabase
     .from("notes")
     .select("*")
-    .eq("slug", oldSlug)
+    .eq("slug", sourceSlug)
     .maybeSingle();
   if (fetchErr) throw fetchErr;
   if (!src) throw new Error("Không tìm thấy note nguồn");
 
-  // 2. Upsert into new slug. Use upsert in case the destination is an
-  //    empty placeholder row created by a prefetch.
   const { error: insertErr } = await supabase.from("notes").upsert(
     {
-      slug: newSlug,
+      slug: targetSlug,
       ydoc_state: src.ydoc_state,
       content: src.content,
       tags: src.tags,
@@ -50,13 +45,28 @@ export async function renameNote(oldSlug: string, newSlug: string): Promise<void
     { onConflict: "slug" },
   );
   if (insertErr) throw insertErr;
+}
 
-  // 3. Remove the old row. If this fails the new row still exists — user
-  //    can manually clean up later.
+export async function renameNote(oldSlug: string, newSlug: string): Promise<void> {
+  if (oldSlug === newSlug) return;
+  if (!SLUG_RE.test(newSlug)) throw new Error("Slug không hợp lệ");
+
+  await copyNoteRow(oldSlug, newSlug);
+
+  // Remove the old row. If this fails the new row still exists.
   const { error: delErr } = await supabase.from("notes").delete().eq("slug", oldSlug);
   if (delErr) throw delErr;
 
-  // 4. Migrate local state.
   renameRecent(oldSlug, newSlug);
   renamePinned(oldSlug, newSlug);
+}
+
+/**
+ * Copy the source note into a new slug, leaving the source untouched.
+ * Caller is responsible for navigating to `/<newSlug>` afterwards.
+ */
+export async function duplicateNote(sourceSlug: string, newSlug: string): Promise<void> {
+  if (sourceSlug === newSlug) throw new Error("Slug mới phải khác slug nguồn");
+  if (!SLUG_RE.test(newSlug)) throw new Error("Slug không hợp lệ");
+  await copyNoteRow(sourceSlug, newSlug);
 }

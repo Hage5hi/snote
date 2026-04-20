@@ -7,6 +7,7 @@ import {
   ClipboardCopy,
   Cloud,
   Copy,
+  CopyPlus,
   Download,
   Eye,
   EyeOff,
@@ -40,6 +41,7 @@ import { HistoryDialog } from "./HistoryDialog";
 import { LockButton } from "./LockButton";
 import { PinButton } from "./PinButton";
 import { RenameDialog } from "./RenameDialog";
+import { DuplicateDialog } from "./DuplicateDialog";
 import { ShareDialog } from "./ShareDialog";
 import { TagChips } from "./TagChips";
 import { StatusPill } from "./StatusPill";
@@ -88,6 +90,7 @@ export function Topbar({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -304,6 +307,10 @@ export function Topbar({
                 <Pencil className="h-3.5 w-3.5" />
                 Đổi tên slug...
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setDuplicateOpen(true)}>
+                <CopyPlus className="h-3.5 w-3.5" />
+                Duplicate note...
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="flex items-center gap-2 text-xs">
                 <Link2 className="h-3.5 w-3.5" />
@@ -322,6 +329,7 @@ export function Topbar({
         </div>
       </header>
       <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
+      <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />
     </>
   );
 }
