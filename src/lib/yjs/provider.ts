@@ -32,6 +32,7 @@ export class SupabaseYjsProvider {
   slug: string;
   channel: RealtimeChannel | null = null;
   connected = false;
+  encryption: Encryption | null = null;
 
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
@@ -41,11 +42,16 @@ export class SupabaseYjsProvider {
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
 
-  constructor(slug: string, doc: Y.Doc) {
+  constructor(slug: string, doc: Y.Doc, encryption?: Encryption) {
     this.slug = slug;
     this.doc = doc;
     this.awareness = new Awareness(doc);
     this.awareness.clientID = this.clientId;
+    this.encryption = encryption ?? null;
+  }
+
+  setEncryption(enc: Encryption | null) {
+    this.encryption = enc;
   }
 
   onStatus(cb: Listener<SaveStatus>) {
