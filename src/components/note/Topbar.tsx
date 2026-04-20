@@ -12,6 +12,8 @@ import {
   Download,
   Eye,
   EyeOff,
+  FileCode,
+  FileType,
   Link2,
   Loader2,
   Maximize2,
@@ -38,7 +40,7 @@ import { PresenceDots, type PresenceUser } from "./PresenceDots";
 import { HistoryDialog } from "./HistoryDialog";
 import { LockButton } from "./LockButton";
 import type { SaveStatus } from "@/lib/yjs/provider";
-import { exportMarkdown, exportPlainText } from "@/lib/export";
+import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/export";
 import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
 import { useEink } from "@/hooks/use-eink";

@@ -255,7 +255,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
       <main className="flex flex-1 min-h-0 divide-x divide-border">
         <div className={showPreview ? "hidden md:block md:flex-1 min-w-0" : "flex-1 min-w-0"}>
-          <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
+          <Editor ref={editorRef} doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
         </div>
         {showPreview && (
           <div className={`flex-1 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}>
@@ -263,6 +263,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           </div>
         )}
       </main>
+
+      <OutlineSidebar doc={doc} onJump={(line) => editorRef.current?.jumpToLine(line)} />
 
       {paginated && (
         <PageIndicator
