@@ -27,6 +27,11 @@ export default defineConfig(({ mode }) => ({
       output: {
         // Split heavy vendors so first paint pulls only what's needed.
         manualChunks(id) {
+          // Obfuscate the admin chunk so its name doesn't hint at admin
+          // functionality in the network tab.
+          if (id.includes("/pages/AdminPanel")) {
+            return "chunk-a8f3";
+          }
           if (!id.includes("node_modules")) return;
           if (id.includes("/react-dom/") || id.includes("/react-router") || id.match(/\/react\//)) {
             return "react-vendor";
