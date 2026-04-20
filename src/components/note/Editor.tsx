@@ -91,7 +91,6 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         search({ top: true }),
         highlightSelectionMatches(),
         slashCommands(),
-        tagCompletion(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),
