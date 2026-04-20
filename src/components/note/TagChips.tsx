@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import * as Y from "yjs";
 import { extractTags } from "@/lib/tags";
 
@@ -42,14 +43,14 @@ export function TagChips({ doc, isEncrypted }: TagChipsProps) {
   return (
     <div className="hidden md:flex items-center gap-1 overflow-hidden">
       {tags.slice(0, 5).map((t) => (
-        <a
+        <Link
           key={t}
-          href={`/note#tag=${encodeURIComponent(t)}`}
+          to={`/note#tag=${encodeURIComponent(t)}`}
           title={`Mở admin filter theo #${t}`}
           className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
           #{t}
-        </a>
+        </Link>
       ))}
       {tags.length > 5 && (
         <span className="text-[10px] text-muted-foreground" title={tags.slice(5).join(", ")}>
