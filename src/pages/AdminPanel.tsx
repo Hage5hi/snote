@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import NotFound from "./NotFound";
 
 type AdminNote = {
   slug: string;
@@ -29,11 +30,14 @@ type AdminNote = {
 
 type TopTag = { name: string; count: number };
 
-const SESSION_KEY = "admin.passphrase";
+// Neutral key — avoid hinting at "admin" in DevTools storage panel.
+const SESSION_KEY = "__a";
+
+type GateStatus = "checking" | "denied" | "allowed";
 
 export default function AdminPanel() {
+  const [gate, setGate] = useState<GateStatus>("checking");
   const [pass, setPass] = useState("");
-  const [authed, setAuthed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<AdminNote[]>([]);
   const [total, setTotal] = useState(0);
@@ -43,24 +47,86 @@ export default function AdminPanel() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState<null | "selected" | "all">(null);
 
-  // Restore passphrase from session storage so a hard refresh doesn't kick out.
-  // Also pick up `#tag=foo` from the URL so deep-links from note Topbar chips
-  // open the panel pre-filtered.
+  const initialTagRef = useRef<string>("");
+
+  // Inject <meta name="robots" content="noindex,nofollow"> while this route is mounted.
   useEffect(() => {
-    const hash = window.location.hash.startsWith("#")
+    const meta = document.createElement("meta");
+    meta.name = "robots";
+    meta.content = "noindex,nofollow,noarchive";
+    document.head.appendChild(meta);
+    return () => {
+      document.head.removeChild(meta);
+    };
+  }, []);
+
+  // Gate: only render the panel when `/note#<correct-pass>` was used,
+  // OR when a sessionStorage key from a prior successful verify exists.
+  // Otherwise render NotFound (indistinguishable from a real 404).
+  useEffect(() => {
+    let cancelled = false;
+
+    const rawHash = window.location.hash.startsWith("#")
       ? window.location.hash.slice(1)
       : "";
-    const params = new URLSearchParams(hash);
-    const initialTag = params.get("tag")?.toLowerCase() ?? "";
-    if (initialTag) setTagFilter(initialTag);
 
-    const cached = sessionStorage.getItem(SESSION_KEY);
-    if (cached) {
-      setPass(cached);
-      setAuthed(true);
-      // Auto-fetch with the deep-link tag if present.
-      void fetchList(cached, "", initialTag);
+    // Allow `#tag=foo&...` to coexist if cached session is present.
+    let hashKey = "";
+    let hashTag = "";
+    if (rawHash) {
+      // If the hash *looks* like URL params (contains `=`), parse as params.
+      // Otherwise treat the entire hash as the passphrase.
+      if (rawHash.includes("=")) {
+        const params = new URLSearchParams(rawHash);
+        hashKey = params.get("k") ?? "";
+        hashTag = params.get("tag")?.toLowerCase() ?? "";
+      } else {
+        hashKey = rawHash;
+      }
     }
+
+    const cached = sessionStorage.getItem(SESSION_KEY) ?? "";
+    const candidate = hashKey || cached;
+    initialTagRef.current = hashTag;
+
+    (async () => {
+      // Always make a verify request — even with empty key — so timing
+      // looks the same to an outside observer.
+      try {
+        const { data, error } = await supabase.functions.invoke("admin-list", {
+          body: { passphrase: candidate, limit: 1, offset: 0 },
+        });
+        if (cancelled) return;
+        if (error || data?.error) {
+          // Wrong/empty key. Drop any stale session and pretend 404.
+          sessionStorage.removeItem(SESSION_KEY);
+          setGate("denied");
+          return;
+        }
+        // Verified. Persist + scrub hash from URL so it doesn't leak via
+        // browser history / screenshots / screen-share.
+        sessionStorage.setItem(SESSION_KEY, candidate);
+        if (window.location.hash) {
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+        setPass(candidate);
+        if (hashTag) setTagFilter(hashTag);
+        setItems(data.items ?? []);
+        setTotal(data.total ?? 0);
+        setTopTags(data.topTags ?? []);
+        setGate("allowed");
+        // Kick off a full fetch (limit 200) in background so the list is complete.
+        void fetchList(candidate, "", hashTag);
+      } catch {
+        if (cancelled) return;
+        sessionStorage.removeItem(SESSION_KEY);
+        setGate("denied");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -87,16 +153,6 @@ export default function AdminPanel() {
       return false;
     } finally {
       setLoading(false);
-    }
-  };
-
-  const onLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!pass.trim()) return;
-    const ok = await fetchList(pass, "", tagFilter);
-    if (ok) {
-      sessionStorage.setItem(SESSION_KEY, pass);
-      setAuthed(true);
     }
   };
 
@@ -166,40 +222,15 @@ export default function AdminPanel() {
 
   const logout = () => {
     sessionStorage.removeItem(SESSION_KEY);
+    setGate("denied");
     setPass("");
-    setAuthed(false);
     setItems([]);
   };
 
-  if (!authed) {
-    return (
-      <div className="flex min-h-svh items-center justify-center bg-background px-4">
-        <form
-          onSubmit={onLogin}
-          className="w-full max-w-sm space-y-4 rounded-md border border-border p-6"
-        >
-          <div className="flex items-center gap-2">
-            <Link to="/" className="text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-            <h1 className="text-lg font-semibold">Admin</h1>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Nhập khoá admin để xem và quản lý toàn bộ note.
-          </p>
-          <Input
-            type="password"
-            placeholder="Khoá admin"
-            value={pass}
-            onChange={(e) => setPass(e.target.value)}
-            autoFocus
-          />
-          <Button type="submit" className="w-full" disabled={loading || !pass.trim()}>
-            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Đăng nhập"}
-          </Button>
-        </form>
-      </div>
-    );
+  // While verifying OR if denied: render the NotFound page exactly.
+  // This makes /note indistinguishable from any random invalid path.
+  if (gate !== "allowed") {
+    return <NotFound />;
   }
 
   return (
