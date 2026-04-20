@@ -304,6 +304,60 @@ export class SupabaseYjsProvider {
     }
   }
 
+  /**
+   * Best-effort synchronous-ish flush for `beforeunload` / `pagehide`. Uses
+   * `navigator.sendBeacon` against the Supabase REST endpoint so the browser
+   * doesn't kill the request as it tears the page down. Falls back to the
+   * normal saveSnapshot path when sendBeacon isn't usable.
+   */
+  flushBeacon() {
+    if (this.destroyed) return;
+    try {
+      const state = Y.encodeStateAsUpdate(this.doc);
+      const text = this.doc.getText("content").toString();
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/notes?on_conflict=slug`;
+      const apikey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
+      // Encrypted notes: skip beacon (the encrypt call is async and we can't
+      // wait here). The server already has the most recent debounced save
+      // and IDB persists locally regardless.
+      if (this.encryption) return;
+      const body = JSON.stringify([
+        {
+          slug: this.slug,
+          ydoc_state: bytesToBase64(state),
+          content: text,
+          char_count: text.length,
+          tags: extractTags(text),
+        },
+      ]);
+      const headers = {
+        type: "application/json",
+      };
+      const blob = new Blob([body], headers);
+      // sendBeacon doesn't let us set custom headers; the Supabase REST API
+      // requires apikey + Prefer headers, so we fall through to fetch with
+      // keepalive when beacon isn't viable.
+      const ok = navigator.sendBeacon
+        ? navigator.sendBeacon(`${url}&apikey=${encodeURIComponent(apikey)}`, blob)
+        : false;
+      if (!ok) {
+        void fetch(`${url}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey,
+            Authorization: `Bearer ${apikey}`,
+            Prefer: "resolution=merge-duplicates",
+          },
+          body,
+          keepalive: true,
+        });
+      }
+    } catch (e) {
+      console.warn("flushBeacon failed", e);
+    }
+  }
+
   async destroy() {
     this.destroyed = true;
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
