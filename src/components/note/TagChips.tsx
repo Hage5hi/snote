@@ -44,7 +44,7 @@ export function TagChips({ doc, isEncrypted }: TagChipsProps) {
       {tags.slice(0, 5).map((t) => (
         <a
           key={t}
-          href={`/admin#tag=${encodeURIComponent(t)}`}
+          href={`/note#tag=${encodeURIComponent(t)}`}
           title={`Mở admin filter theo #${t}`}
           className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
