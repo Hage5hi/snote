@@ -1,47 +1,46 @@
 
+## Refactor Topbar thành nhiều file nhỏ
 
-# Plan: Sweep cuối — phát hiện gap & polish nhỏ
+`Topbar.tsx` đã >370 dòng, ôm quá nhiều trách nhiệm: status, presence, word count + goal, preview toggle, zen, pagination, settings dropdown, export dropdown, share dialog, history dialog, rename dialog, duplicate dialog, word goal dialog, lock button. Tách ra để dễ đọc và sửa.
 
-## Tóm tắt
-Đọc kỹ toàn bộ code Phase 3-6, tôi thấy **các tính năng chính đã đầy đủ**. Còn lại chỉ là vài bug nhỏ và polish. Đề xuất 3 nhóm việc:
+### Cấu trúc mới
 
-## A. Bug fixes (3 cái nhỏ)
-
-### A1. `TagChips` đang dùng `<a href>` → reload full page
-File `src/components/note/TagChips.tsx` dùng `<a href="/note#tag=...">` — click sẽ reload toàn bộ app. Nên dùng `Link` từ `react-router-dom` để giữ SPA navigation và pop history đúng cách.
-
-### A2. Warning `forwardRef` vẫn còn ở `Home`
-Console log mới nhất:
+```text
+src/components/note/topbar/
+├── Topbar.tsx              # Container chính, compose các phần
+├── TopbarBrand.tsx         # Logo + slug + tags
+├── WordCountTrigger.tsx    # Số chars/words + progress bar goal (click → mở WordGoalDialog)
+├── ViewControls.tsx        # Preview toggle, Zen, Pagination toggle
+├── ExportMenu.tsx          # Dropdown Export (MD/HTML/PDF/TXT)
+└── SettingsMenu.tsx        # Dropdown Settings (Rename, Duplicate, History, Share, Lock...)
 ```
-Function components cannot be given refs.
-at Home (...)
-```
-React Router v6 truyền ref vào element của Route khi unmount để focus. Fix gọn: bọc `<Home />` trong route element bằng arrow inline (đã có) — nguyên nhân thực ra là `<Sonner />` / `<Toaster />` sau khi đã chuyển vẫn còn TooltipProvider con khác (hoặc thực ra là `Home` không forward ref). Cần thử `forwardRef` cho `Home` để tắt warning, hoặc verify lại stack trace bằng browser test.
 
-### A3. `exportPdf` có thể trigger print với iframe trống
-`iframe.onload` được gắn TRƯỚC khi `iframe.srcdoc` set → onload đầu tiên khi append với `about:blank` có thể chạy với document trống. Đảo thứ tự: `srcdoc` trước, sau đó append vào DOM, hoặc check `iframe.contentDocument.body.children.length > 0`.
+`src/components/note/Topbar.tsx` giữ lại như một re-export mỏng (`export { Topbar } from "./topbar/Topbar"`) để các import hiện tại (NotePage, SplitView nếu có) không phải đổi.
 
-## B. Verify thực tế bằng browser
+### Phân chia trách nhiệm
 
-Sau khi fix A1-A3, dùng browser tool để chạy 1 lượt smoke test nhanh:
-1. `/` → custom slug check (gõ `verify-final` → "Available")
-2. Mở `/verify-final`, gõ markdown có `# H1`, `## H2`, `#tag1 #tag2`
-3. Xác nhận: Outline button mở, click heading nhảy đúng; TagChips hiện ở Topbar (sau A1: click không reload); Cmd+F search panel mở; Share dialog QR hiện
-4. `/note` → kiểm tra tag filter chip hoạt động
+- **Topbar.tsx (container, ~80 dòng)**: nhận props từ NotePage, sở hữu state cho các dialog (rename/duplicate/history/share/wordGoal), render layout 3 cột (brand | center | actions).
+- **TopbarBrand.tsx**: slug, status pill, presence dots, tag chips.
+- **WordCountTrigger.tsx**: hiển thị `{words} từ · {chars} ký tự`, nếu có goal thì thêm progress bar mỏng + `%`. Click mở WordGoalDialog. Nhận `slug`, `words`, `chars`, `onOpenGoal`.
+- **ViewControls.tsx**: 3 toggle button (Preview, Zen, Pagination) + tooltips.
+- **ExportMenu.tsx**: gói toàn bộ dropdown export hiện tại, nhận `getContent` + `slug`.
+- **SettingsMenu.tsx**: gói dropdown Settings hiện tại (Rename, Duplicate, History, Share, Lock/Unlock...), nhận callbacks để mở dialog tương ứng.
 
-## C. Tính năng còn thiếu (optional, để bạn chọn)
+### Nguyên tắc
 
-Nếu muốn tiếp tục build, đây là list tôi thấy còn missing:
+- Không thay đổi behavior, chỉ di chuyển code.
+- Giữ nguyên props của `Topbar` để `NotePage.tsx` không cần đổi.
+- Mỗi file mới <120 dòng, có 1-2 dòng comment đầu file mô tả vai trò.
+- Dialog state (open/close cho rename, duplicate, share, history, wordGoal) ở lại container Topbar để SettingsMenu chỉ là presentational.
 
-| Tính năng | Lý do |
-|---|---|
-| **Highlight `#tag` trong editor** | Tag hiện như text thường — nên có color/bold để dễ scan note dài |
-| **Pin recent notes** trong Cmd+K | Note quan trọng dễ bị trôi xuống dưới |
-| **Empty state cho `/`** khi chưa có recent | UI hơi trống khi dùng lần đầu |
-| **Keyboard shortcut help dialog** (`?`) | App đã có nhiều shortcut — cần cheatsheet |
-| **Auto-link URL trong preview** | Marked GFM đã handle, nhưng chưa verify |
+### Files thay đổi
 
-## Đề xuất
+- ✏️ `src/components/note/Topbar.tsx` → rút gọn thành re-export.
+- ➕ `src/components/note/topbar/Topbar.tsx`
+- ➕ `src/components/note/topbar/TopbarBrand.tsx`
+- ➕ `src/components/note/topbar/WordCountTrigger.tsx`
+- ➕ `src/components/note/topbar/ViewControls.tsx`
+- ➕ `src/components/note/topbar/ExportMenu.tsx`
+- ➕ `src/components/note/topbar/SettingsMenu.tsx`
 
-Tôi sẽ làm **A (3 fix nhỏ) + B (smoke test)** trong 1 lượt. C để bạn quyết tiếp.
-
+Không đụng database, không đụng logic Yjs, không đổi UI.
