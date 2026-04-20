@@ -27,6 +27,7 @@ import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { slashCommands } from "@/lib/slash-commands";
+import { tagHighlight } from "@/lib/tag-highlight";
 
 interface EditorProps {
   doc: Y.Doc;
@@ -91,6 +92,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         search({ top: true }),
         highlightSelectionMatches(),
         slashCommands(),
+        tagHighlight(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),
