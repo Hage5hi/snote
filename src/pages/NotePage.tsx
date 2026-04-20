@@ -227,10 +227,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     document.addEventListener("visibilitychange", onVisibility);
 
     const handleBeforeUnload = () => {
-      provider.saveSnapshot();
-      void maybeSaveSnapshot(slug, ytext.toString());
+      // sendBeacon survives the page teardown; sync supabase fetch may not.
+      provider.flushBeacon();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handleBeforeUnload);
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
