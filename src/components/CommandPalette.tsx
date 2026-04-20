@@ -12,6 +12,33 @@ import {
 import { FileText, Home as HomeIcon, Keyboard, Pin, PinOff, Plus, Shuffle } from "lucide-react";
 import { getRecents, getPinned, togglePin } from "@/lib/recent-notes";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { supabase } from "@/integrations/supabase/client";
+
+// Prefetch a slug's payload (snapshot + enc-meta) so the editor opens with
+// no network waterfall. Idempotent per session.
+function prefetchSlug(s: string) {
+  const key = `note-prefetch:${s}`;
+  if (sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key, "1");
+  void supabase
+    .from("notes")
+    .select("ydoc_state, is_encrypted")
+    .eq("slug", s)
+    .maybeSingle()
+    .then(({ data }) => {
+      if (data?.ydoc_state && !data?.is_encrypted) {
+        try {
+          sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
+        } catch { /* quota */ }
+      }
+    });
+}
+
+function softNavigate(navigate: (p: string) => void, path: string) {
+  const w = document as unknown as { startViewTransition?: (cb: () => void) => unknown };
+  if (w.startViewTransition) w.startViewTransition(() => navigate(path));
+  else navigate(path);
+}
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
