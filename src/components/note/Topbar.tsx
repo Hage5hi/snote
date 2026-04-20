@@ -79,6 +79,7 @@ export function Topbar({
   onTogglePagination,
 }: TopbarProps) {
   const { pref: einkPref, setMode: setEinkMode } = useEink();
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -163,7 +164,7 @@ export function Topbar({
           <Copy className="h-3.5 w-3.5" />
         </button>
 
-        <div className="ml-2"><StatusPill status={status} /></div>
+        <div className="ml-2"><StatusPill status={status} onClick={() => setHistoryOpen(true)} /></div>
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <div className="hidden sm:flex items-center gap-3 text-[11px] text-muted-foreground tabular-nums">
@@ -186,7 +187,9 @@ export function Topbar({
             <ClipboardCopy className="h-4 w-4" />
           </Button>
 
-          <HistoryDialog slug={slug} doc={doc} />
+          <HistoryDialog slug={slug} doc={doc} open={historyOpen} onOpenChange={setHistoryOpen} />
+
+          <ShareDialog isEncrypted={isEncrypted} />
 
           <Button
             variant="ghost"
