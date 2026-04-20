@@ -122,7 +122,7 @@ export default function AdminPanel() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast({ title: `Đã xoá ${data.deleted} note` });
-      await fetchList(pass, search);
+      await fetchList(pass, search, tagFilter);
     } catch (e: any) {
       toast({
         title: "Xoá thất bại",
@@ -144,7 +144,7 @@ export default function AdminPanel() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast({ title: `Đã dọn ${data.deleted} note rỗng` });
-      await fetchList(pass, search);
+      await fetchList(pass, search, tagFilter);
     } catch (e: any) {
       toast({ title: "Cleanup lỗi", description: String(e?.message ?? e), variant: "destructive" });
     } finally {
@@ -202,7 +202,7 @@ export default function AdminPanel() {
             <Sparkles className="h-3.5 w-3.5" />
             Dọn note rỗng
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => fetchList(pass, search)} disabled={loading}>
+          <Button size="sm" variant="ghost" onClick={() => fetchList(pass, search, tagFilter)} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
           <Button size="sm" variant="ghost" onClick={logout}>
