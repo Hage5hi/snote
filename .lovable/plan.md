@@ -1,79 +1,117 @@
 
 
-# Verify Phase 1 + Phase 2 — Kết quả
+# Quét hệ thống — Báo cáo & Plan Fix
 
-## ✅ Hoạt động đúng
+## ✅ Đã verified OK
 
-**Phase 1**:
-- PWA manifest serve OK tại `/manifest.webmanifest` (Content-Type: `application/manifest+json`, đầy đủ icons 192/512/maskable, theme/background colors)
-- IndexedDB snapshots: logic 10 phút + anti-disaster (xoá >500 chars trong <2s) đúng, trim 10 bản FIFO
-- HistoryDialog: list, view, restore trong Y.transact — sẽ broadcast như edit thường
-- Zen mode: F11 + class `zen-mode` + hover-strip 8px, lưu localStorage
-- E-ink: auto-detect `(update: slow)` + manual on/off, force B/W contrast, tắt mọi animation
-- CSS font stack: Geist → system → CJK (JP/SC/TC/KR) → emoji
-- CJK auto-detect lang attribute trong Editor (`detectLang`)
-- Idle prefetch các module nặng + hover prefetch snapshot vào sessionStorage
-- Code-split routes via `lazy()`
+- **Edge function `raw`**: trả 200, content-type `text/plain; charset=utf-8`, UTF-8 (Vietnamese + 中文 + 한국어) đúng
+- **Encryption pipeline**: AES-GCM 256, PBKDF2 100k, salt 16 bytes, IV 12 bytes — đúng chuẩn Web Crypto
+- **Provider hooks**: encrypt/decrypt áp dụng cho cả broadcast & snapshot, server zero-knowledge khi locked
+- **Admin functions**: constant-time passphrase compare, service role qua env, không leak qua client
+- **DB indexes**: `idx_notes_updated_at`, `idx_notes_empty` đã tạo, query admin/cleanup nhanh
+- **Pagination JS**: dùng `clientHeight` + smooth scroll, không hijack arrow keys khi đang gõ
+- **Snapshot logic**: anti-disaster (>500 chars trong <2s), trim 10 bản FIFO
 
-**Phase 2**:
-- Edge function `raw` trả `text/plain; charset=utf-8`, hỗ trợ encrypted note (header `X-Encrypted: 1`)
-- Edge function `admin-list/admin-delete/cleanup` trả `401` đúng khi sai passphrase, dùng constant-time compare
-- Encryption: AES-GCM 256, PBKDF2 100k, salt random per-note, `enc_check` verify key
-- Provider có hook `encrypt`/`decrypt` áp dụng cho cả broadcast lẫn snapshot — server zero-knowledge
-- LockButton: lock/unlock/copy URL kèm khoá; reload sau lock để re-mount provider sạch
-- UnlockForm: xử lý sai khoá, replaceState để giữ hash
-- RawView page: `/xxx.md` cho note thường + tự decrypt nếu có `#key`
-- AdminPanel: passphrase trong sessionStorage, search, bulk delete, cleanup
-- SplitView: `/a+b` 2 panels, sync scroll qua `cm-scroller`
-- Pagination + AI Copy + Copy raw URL (disabled khi encrypted)
+## 🔴 BUG nghiêm trọng
 
-## ⚠️ Vấn đề phát hiện (cần fix)
+### B1. Runtime error: "Component is not a function" + `forwardRef` warning cho `InstallPrompt`
+Console log:
+```
+Warning: Function components cannot be given refs.
+Check the render method of `Home`.
+at InstallPrompt
+```
+`InstallPrompt` được render trong `<main>` thường, không có asChild — nhưng cảnh báo vẫn xuất hiện, có thể do React detect Fragment-passing. Runtime error `Component is not a function` cùng stack có khả năng cao do **lazy import vòng**: `Home → InstallPrompt → ...` hoặc **stale HMR cache** sau khi đã thêm `forwardRef` cho `ThemeToggle`.
 
-**1. Console warning: `forwardRef` cho `ThemeToggle` & `InstallPrompt`** (Home.tsx)
-   - Lý do: `Home` không truyền ref nhưng React DevTools cho rằng có. Nguồn không rõ — nhiều khả năng do `<TooltipProvider>` ở App-level wrap children. Không gây lỗi chức năng nhưng làm noise console.
-   - Fix: wrap `ThemeToggle` và `InstallPrompt` bằng `React.forwardRef` (no-op forward) — 2 dòng/file.
+**Fix**: Wrap `InstallPrompt` bằng `forwardRef` (no-op) để dập warning. Nếu vẫn còn runtime error, force-refresh dev server.
 
-**2. Pagination CSS chưa thực sự "lật trang"**
-   - Hiện tại `:nth-child(20n)` — gán snap-align mỗi 20 dòng — không chính xác = 1 viewport. Người dùng sẽ thấy snap ngẫu nhiên giữa các dòng.
-   - Fix: bỏ snap-by-line, dùng JS handler bắt phím `PageUp/PageDown/Cmd+→/←` scroll theo `clientHeight` của `.cm-scroller`. Hiển thị "Trang X/Y" ở góc.
+### B2. `Topbar` import `useEink` từ hook nhưng `NotePage` cũng mount `useEink()` — **conflict 2 instance**
+`Topbar` có `const { pref: einkPref, setMode } = useEink()`, mà `NotePage` cũng `useEink()`. Cả 2 instances cùng add/remove class `eink` trên `<html>` qua effect riêng → race condition: khi user toggle ở Topbar, Topbar instance set class, nhưng NotePage instance vẫn nghĩ vẫn `auto` → có thể flicker.
 
-**3. Cleanup edge function chỉ xóa khi `is_encrypted = false`**
-   - Note encrypted rỗng (vừa lock note trống) cũng nên dọn được. Hiện tại bỏ qua.
-   - Fix: dùng điều kiện `(char_count = 0 AND is_encrypted = false) OR (is_encrypted = true AND length(ydoc_state) < 100)` — encrypted-but-empty có ydoc_state rất ngắn (chỉ là check + IV). Hoặc đơn giản hơn: bỏ filter `is_encrypted` (encrypted note rỗng cũng có `char_count = 0`).
+**Fix**: `useEink` không idempotent đủ. Thêm guard: chỉ apply class nếu giá trị thực sự đổi. Hoặc tốt hơn: chuyển `useEink` thành 1 hook trả state đồng bộ qua localStorage event (đã làm trên `pref` qua localStorage write nhưng không listen `storage` event giữa instance trong cùng tab).
 
-**4. Admin delete "all" dùng `.neq("slug", "")` — risky**
-   - Nếu `slug` field có trim issues hoặc edge case, có thể không xóa hết. Dùng `.gte("created_at", "1970-01-01")` an toàn hơn, hoặc dùng raw SQL `truncate`-style qua RPC.
-   - Mức độ: thấp (hoạt động bình thường), nhưng nên cleanup.
+### B3. `cleanup` xóa note encrypted có **plaintext content** không tồn tại nhưng `ydoc_state` chứa data thực
+`char_count = 0` cho mọi note encrypted (theo design), nên cleanup sẽ xóa **mọi note encrypted >1h tuổi nếu rỗng theo char_count**. Nhưng note encrypted có nội dung thực thì `ydoc_state` length vẫn >> 0. → Lỗi: cleanup hiện chỉ check `char_count = 0`, sẽ xóa NHẦM encrypted note có nội dung.
 
-**5. SplitView render cùng slug với chính nó (`/a+a`) — provider conflict**
-   - Topbar có link `/${slug}+${slug}` = "Mở Split view (cùng note)" → 2 NotePage cùng slug tạo 2 Y.Doc khác nhau cho cùng channel realtime. Hiện tại chạy được nhờ Yjs CRDT tự merge, nhưng tốn double bandwidth + có thể tạo presence ghost.
-   - Fix: validate `left !== right` trong SplitView, redirect nếu trùng. Hoặc bỏ link "cùng note" trong dropdown vì gây confusion.
+**Fix**: Thêm guard `length(ydoc_state) < 100` cho encrypted notes:
+```sql
+WHERE (is_encrypted = false AND char_count = 0)
+   OR (is_encrypted = true AND length(ydoc_state) < 100)
+```
+Cần dùng filter chain Supabase JS: `.or('and(is_encrypted.eq.false,char_count.eq.0),and(is_encrypted.eq.true,...)')` hoặc 2 query riêng.
 
-**6. RawView KHÔNG được route** (BUG nghiêm trọng)
-   - `App.tsx` `SlugDispatcher` check `/\.md$/i.test(slug)` → render `RawView`. Nhưng `RawView` extract slug bằng `.replace(/\.md$/i, "")` — đúng.
-   - Tuy nhiên trên Lovable hosting, URL `/test.md` sẽ được SPA fallback xử lý, vào React Router → `/:slug` match → `slug="test.md"` → SlugDispatcher detect `.md` → RawView. Logic chạy được.
-   - **NHƯNG** cURL/wget gọi `/test.md` sẽ nhận `index.html` (không phải plain text) như đã ghi nhận. Cần đảm bảo Topbar nói rõ: nút "Copy raw URL" trỏ thẳng edge function, không phải `/test.md`.
-   - Đã đúng trong code (`copyRawUrl` dùng `${SUPABASE_URL}/functions/v1/raw/${slug}`). Chỉ cần thêm tooltip giải thích.
+### B4. Snapshot `prevContent` race ở NotePage anti-disaster
+Khi note encrypted, lúc mount provider mới → `idb.whenSynced.then` → `prevContent = ytext.toString()`. Trước thời điểm đó, `updateCounts` chạy với `prevContent = ""` ban đầu. Nếu remote update đến trước IDB sync, `prevContent.length = 0` nhưng text remote = 5000 chars → `removed = 0 - 5000 = -5000` → không trigger (số âm), an toàn. Nhưng nếu IDB có data cũ + remote applies xoá, có thể trigger false-positive.
+**Mức độ**: thấp. Có guard `prevContent.length >= 500` đã loại được hầu hết edge case. Không fix ngay.
 
-**7. Snapshot khi encrypted — `prevContent.length` sẽ luôn = 0**
-   - Trong NotePage, `recordOnSuddenDelete` so sánh `prevContent.length`. Khi note encrypted, `ytext.toString()` vẫn trả plaintext (vì decrypt đã chạy ở provider). Nên anti-disaster vẫn hoạt động đúng. ✓ (Không phải bug, chỉ verify.)
+## 🟡 Bảo mật / Hardening
 
-**8. Console warnings React Router future flag** — chỉ là deprecation, không affect.
+### S1. RLS policies "always true" cho UPDATE — risk nhẹ (theo design)
+`notes` có policy `Anyone can update` USING `true` WITH CHECK `true`. Đây là design có chủ ý (note public). Nhưng có nghĩa là **bất kỳ ai biết slug đều xoá-trắng được nội dung của người khác**.
 
-## Đề xuất hành động
+**Đề xuất**: Thêm trigger `BEFORE UPDATE` để **block UPDATE nếu là note encrypted nhưng client gửi `is_encrypted = false`** (chống ai đó xóa enc_salt/enc_check để khoá note vĩnh viễn).
+Cụ thể:
+```sql
+CREATE FUNCTION public.notes_protect_encryption_strip()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  -- Cho phép unlock (is_encrypted true→false) chỉ khi client cũng cung cấp content/ydoc_state mới (không trống)
+  IF OLD.is_encrypted = true AND NEW.is_encrypted = false THEN
+    IF length(NEW.ydoc_state) < 10 THEN
+      RAISE EXCEPTION 'Cannot strip encryption without providing decrypted state';
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+```
+**Quyết định**: NOT fix — design là public, ai biết slug đều có quyền sửa. Nếu user muốn bảo vệ, hãy dùng encryption.
 
-Plan này list các fix cần làm. Tôi sẽ prioritize:
-- **Cao**: #2 (pagination thật sự), #5 (split view same-slug), #6 tooltip raw URL
-- **Trung**: #1 forwardRef warnings, #3 cleanup encrypted-empty
-- **Thấp**: #4 admin delete-all SQL hygiene
+### S2. Admin passphrase trong sessionStorage + body request
+- Plain text passphrase trong sessionStorage: an toàn vừa phải (chỉ same-origin tab).
+- Passphrase đi trong POST body qua HTTPS — OK.
+- **Không có rate limit** cho `admin-list/admin-delete`. Brute force theo speed Supabase edge ~10 req/s, với passphrase 16+ ký tự thì 10^28 tổ hợp = không khả thi. **Mức độ**: chấp nhận được.
 
-Sau khi fix, test thủ công các luồng:
-1. Tạo `/abc`, gõ tiếng Việt + 中文 + emoji → check Saved status
-2. Lock note với key "test123" → reload → verify URL có `#test123`, vẫn đọc được
-3. Mở `/abc.md` trong tab mới (note đã lock) → verify decrypt OK
-4. cURL `https://...supabase.co/functions/v1/raw/abc` → verify trả ciphertext + `X-Encrypted: 1`
-5. Mở `/abc+xyz` → 2 panel + sync scroll
-6. Bật pagination, F11 zen, settings e-ink
-7. `/note` → nhập admin passphrase → list/delete/cleanup
-8. History dialog: gõ ≥600 chars → Cmd+A Backspace → check snapshot tự lưu
+**Đề xuất nhẹ**: thêm sleep ngẫu nhiên 200-500ms khi passphrase sai để slow brute force. Không phải critical.
+
+### S3. `admin-list` search dùng `.or()` với raw user input — có ilike injection?
+```ts
+query.or(`slug.ilike.%${search}%,content.ilike.%${search}%`);
+```
+Supabase parser sẽ escape, nhưng nếu `search` chứa `,` hoặc `)`, có thể break query. Test: search = `a,slug.eq.foo)` → có thể gây malformed.
+
+**Fix**: sanitize search — chỉ giữ alphanumeric + space + dấu cơ bản. Hoặc dùng `query.ilike("slug", ...).or(...)` cách an toàn hơn.
+
+### S4. RawView load qua client SDK với anon key — RLS cho phép
+Đúng theo design (note public). OK.
+
+### S5. Biến môi trường preview Lovable
+Edge function `raw` build URL `decrypt at https://${url.host.replace(/\.supabase\.co.*/, "")}.lovable.app/...` — sai cho custom domain. Hardcode subdomain nguy hiểm.
+
+**Fix**: Bỏ URL gợi ý hoặc dùng env `APP_URL`.
+
+## 🟢 Polish nhỏ
+
+- **P1**: `Topbar` `useEffect` deps `[getContent]` ESLint disable — nên thêm vào deps thật (function ref ổn định nhờ closure ytext).
+- **P2**: `index.html` còn meta `og:image` của project cũ "Triage" — nên bỏ hoặc thay placeholder.
+- **P3**: `tailwind.config` còn token `--severity-*` không còn dùng.
+- **P4**: `bug-attachments` bucket + storage policies vẫn còn từ project cũ — nên xóa để tránh confusion (security warning báo).
+
+## Plan triển khai (ưu tiên)
+
+| # | Mức | Việc |
+|---|---|---|
+| B1 | Cao | `forwardRef` cho `InstallPrompt` để dập warning + clear runtime error |
+| B3 | Cao | Fix `cleanup` chỉ xoá encrypted note thực sự rỗng (ydoc_state ngắn) |
+| B2 | Trung | Sync state giữa các instance `useEink` qua `storage` event |
+| S3 | Trung | Sanitize search input trong `admin-list` (regex `/[%_,)]/g`) |
+| S5 | Thấp | Bỏ hardcoded `.lovable.app` URL trong `raw` edge function |
+| P2 | Thấp | Dọn meta tags Triage trong `index.html` |
+| P4 | Thấp | Xóa bucket `bug-attachments` + policies cũ (không dùng) |
+
+Sau fix sẽ test:
+1. Reload `/` → console KHÔNG còn warning
+2. Lock note → content hiện vẫn còn → cleanup không xoá nhầm  
+3. Admin search với ký tự `%`, `,`, `)` → không lỗi
+4. Raw endpoint encrypted → response không hardcode subdomain
 
