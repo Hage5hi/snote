@@ -227,6 +227,33 @@ export default function AdminPanel() {
           </Button>
         </form>
 
+        {(topTags.length > 0 || tagFilter) && (
+          <div className="mb-3 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-muted-foreground">Tags:</span>
+            {tagFilter && (
+              <button
+                onClick={() => applyTag(tagFilter)}
+                className="inline-flex items-center gap-1 rounded-full bg-foreground px-2 py-0.5 text-[11px] font-medium text-background"
+              >
+                #{tagFilter}
+                <X className="h-3 w-3" />
+              </button>
+            )}
+            {topTags
+              .filter((t) => t.name !== tagFilter)
+              .map((t) => (
+                <button
+                  key={t.name}
+                  onClick={() => applyTag(t.name)}
+                  className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground"
+                >
+                  #{t.name}
+                  <span className="ml-1 opacity-60">{t.count}</span>
+                </button>
+              ))}
+          </div>
+        )}
+
         <div className="mb-2 flex items-center gap-2 text-xs">
           <Checkbox
             checked={items.length > 0 && selected.size === items.length}
@@ -283,6 +310,19 @@ export default function AdminPanel() {
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                   {n.preview || "(rỗng)"}
                 </p>
+                {n.tags && n.tags.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {n.tags.slice(0, 8).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => applyTag(t)}
+                        className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                      >
+                        #{t}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             </li>
           ))}
