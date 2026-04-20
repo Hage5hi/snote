@@ -74,20 +74,23 @@ export class SupabaseYjsProvider {
 
   async connect(identity: { name: string; color: string }) {
     // 0) Try the prefetched snapshot stashed by Home page hover/touch.
-    let prefetched: string | null = null;
-    try {
-      prefetched = sessionStorage.getItem(`note-snapshot:${this.slug}`);
-      if (prefetched) {
-        sessionStorage.removeItem(`note-snapshot:${this.slug}`);
-        try {
-          const update = base64ToBytes(prefetched);
-          if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
-        } catch (e) {
-          console.warn("Bad prefetched snapshot", e);
+    // Skip prefetched snapshot when encrypted, since the prefetch path doesn't
+    // know the key and the bytes would not be Y.update format yet.
+    if (!this.encryption) {
+      try {
+        const prefetched = sessionStorage.getItem(`note-snapshot:${this.slug}`);
+        if (prefetched) {
+          sessionStorage.removeItem(`note-snapshot:${this.slug}`);
+          try {
+            const update = base64ToBytes(prefetched);
+            if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
+          } catch (e) {
+            console.warn("Bad prefetched snapshot", e);
+          }
         }
+      } catch {
+        // sessionStorage unavailable — ignore.
       }
-    } catch {
-      // sessionStorage unavailable — ignore.
     }
 
     // 1) Load snapshot from Postgres (if any)
@@ -99,7 +102,10 @@ export class SupabaseYjsProvider {
 
     if (!error && data?.ydoc_state) {
       try {
-        const update = base64ToBytes(data.ydoc_state);
+        let update = base64ToBytes(data.ydoc_state);
+        if (this.encryption && update.byteLength > 0) {
+          update = await this.encryption.decrypt(update);
+        }
         if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
       } catch (e) {
         console.warn("Failed to apply snapshot", e);
