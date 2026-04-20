@@ -21,6 +21,7 @@ import {
   Pencil,
   Settings2,
   Sparkles,
+  Target,
   Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ import { LockButton } from "./LockButton";
 import { PinButton } from "./PinButton";
 import { RenameDialog } from "./RenameDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
+import { WordGoalDialog } from "./WordGoalDialog";
 import { ShareDialog } from "./ShareDialog";
 import { TagChips } from "./TagChips";
 import { StatusPill } from "./StatusPill";
@@ -50,6 +52,7 @@ import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/ex
 import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
 import { useEink } from "@/hooks/use-eink";
+import { useWordGoal } from "@/hooks/use-word-goal";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -87,10 +90,14 @@ export function Topbar({
   onTogglePagination,
 }: TopbarProps) {
   const { pref: einkPref, setMode: setEinkMode } = useEink();
+  const { goal } = useWordGoal(slug);
+  const goalPct = goal && goal > 0 ? Math.min(100, Math.round((wordCount / goal) * 100)) : 0;
+  const goalReached = goal != null && wordCount >= goal;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
