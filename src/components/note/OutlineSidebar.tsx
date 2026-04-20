@@ -20,13 +20,32 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
   const [open, setOpen] = useState(false);
   const [headings, setHeadings] = useState<Heading[]>([]);
 
-  // Re-parse outline whenever the doc changes.
+  // Re-parse outline whenever the doc changes, but defer to idle callbacks so
+  // long notes don't pay parse cost on every keystroke.
   useEffect(() => {
     const ytext = doc.getText("content");
-    const update = () => setHeadings(parseOutline(ytext.toString()));
-    update();
-    ytext.observe(update);
-    return () => ytext.unobserve(update);
+    let timer: number | null = null;
+    let ridle: number | null = null;
+    const w = window as unknown as {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const run = () => setHeadings(parseOutline(ytext.toString()));
+    const schedule = () => {
+      if (timer) window.clearTimeout(timer);
+      if (ridle) w.cancelIdleCallback?.(ridle);
+      timer = window.setTimeout(() => {
+        if (w.requestIdleCallback) ridle = w.requestIdleCallback(run, { timeout: 600 });
+        else run();
+      }, 200);
+    };
+    run();
+    ytext.observe(schedule);
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      if (ridle) w.cancelIdleCallback?.(ridle);
+      ytext.unobserve(schedule);
+    };
   }, [doc]);
 
   // Cmd/Ctrl+\ toggle.

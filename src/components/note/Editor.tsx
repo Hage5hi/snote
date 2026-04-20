@@ -68,12 +68,29 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
   );
 
   // Track dominant script of the document so CSS word-break rules apply.
+  // Recompute is throttled (debounce + only on length deltas > 500 chars) so
+  // typing into a long doc doesn't pay scanner cost on every keystroke.
   useEffect(() => {
     const ytext = doc.getText("content");
-    const update = () => setLang(detectLang(ytext.toString()));
+    let lastLen = -1;
+    let timer: number | null = null;
+    const update = () => {
+      const t = ytext.toString();
+      if (lastLen === -1 || Math.abs(t.length - lastLen) > 500) {
+        lastLen = t.length;
+        setLang(detectLang(t));
+      }
+    };
     update();
-    ytext.observe(update);
-    return () => ytext.unobserve(update);
+    const schedule = () => {
+      if (timer) window.clearTimeout(timer);
+      timer = window.setTimeout(update, 250);
+    };
+    ytext.observe(schedule);
+    return () => {
+      if (timer) window.clearTimeout(timer);
+      ytext.unobserve(schedule);
+    };
   }, [doc]);
 
   useEffect(() => {
