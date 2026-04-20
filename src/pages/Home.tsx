@@ -8,6 +8,18 @@ import { getRecents, removeRecent, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 
+// Cross-fade navigation when the browser supports the View Transitions API.
+function softNavigate(navigate: (path: string) => void, path: string) {
+  const w = document as unknown as {
+    startViewTransition?: (cb: () => void) => unknown;
+  };
+  if (w.startViewTransition) {
+    w.startViewTransition(() => navigate(path));
+  } else {
+    navigate(path);
+  }
+}
+
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 

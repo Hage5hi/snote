@@ -8,6 +8,7 @@ import { lazy, Suspense } from "react";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 import { CommandPalette } from "./components/CommandPalette";
+import { EditorSkeleton } from "./components/note/EditorSkeleton";
 
 // Lazy-load heavy routes so the editor / admin bundles only load when needed.
 const NotePage = lazy(() => import("./pages/NotePage"));
@@ -16,44 +17,43 @@ const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 
 const queryClient = new QueryClient();
-const SuspenseFallback = (
+// EditorSkeleton mimics the topbar + editor layout so there's no shift when
+// the lazy NotePage chunk lands.
+const EditorFallback = <EditorSkeleton />;
+const PlainFallback = (
   <div className="flex h-svh items-center justify-center bg-background">
     <div className="h-7 w-7 animate-spin rounded-full border-2 border-muted border-t-foreground/60" />
   </div>
 );
 
 /**
- * SlugDispatcher inspects the single-segment path and routes to the right view:
- *  - "/note"            → admin panel
- *  - ends with ".md"    → raw plaintext view
- *  - contains "+"       → split view
- *  - otherwise          → note editor
+ * SlugDispatcher inspects the single-segment path and routes to the right view.
  */
 function SlugDispatcher() {
   const { slug = "" } = useParams();
   if (slug === "note") {
     return (
-      <Suspense fallback={SuspenseFallback}>
+      <Suspense fallback={PlainFallback}>
         <AdminPanel />
       </Suspense>
     );
   }
   if (/\.md$/i.test(slug)) {
     return (
-      <Suspense fallback={SuspenseFallback}>
+      <Suspense fallback={PlainFallback}>
         <RawView />
       </Suspense>
     );
   }
   if (slug.includes("+")) {
     return (
-      <Suspense fallback={SuspenseFallback}>
+      <Suspense fallback={EditorFallback}>
         <SplitView />
       </Suspense>
     );
   }
   return (
-    <Suspense fallback={SuspenseFallback}>
+    <Suspense fallback={EditorFallback}>
       <NotePage />
     </Suspense>
   );
@@ -68,8 +68,13 @@ const App = () => (
           given refs" warning. */}
       <Toaster />
       <Sonner />
-      <TooltipProvider>
-        <BrowserRouter>
+      <TooltipProvider delayDuration={250}>
+        <BrowserRouter
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true,
+          }}
+        >
           <CommandPalette />
           <Routes>
             <Route path="/" element={<Home />} />
