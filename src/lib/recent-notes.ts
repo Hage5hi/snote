@@ -66,3 +66,29 @@ export function togglePin(slug: string): string[] {
   } catch {}
   return next;
 }
+
+// ─── Rename helpers ───────────────────────────────────────────────────────
+// Used when a note's slug changes. Keeps recents/pinned pointing at new URL
+// so Cmd+K and pin star don't break.
+
+export function renameRecent(oldSlug: string, newSlug: string) {
+  const list = getRecents();
+  const idx = list.findIndex((r) => r.slug === oldSlug);
+  if (idx === -1) return;
+  // Remove any pre-existing entry for newSlug to avoid duplicates.
+  const filtered = list.filter((r) => r.slug !== newSlug);
+  const i2 = filtered.findIndex((r) => r.slug === oldSlug);
+  if (i2 !== -1) filtered[i2] = { ...filtered[i2], slug: newSlug };
+  try {
+    localStorage.setItem(KEY, JSON.stringify(filtered));
+  } catch {}
+}
+
+export function renamePinned(oldSlug: string, newSlug: string) {
+  const list = getPinned();
+  if (!list.includes(oldSlug)) return;
+  const next = Array.from(new Set(list.map((s) => (s === oldSlug ? newSlug : s))));
+  try {
+    localStorage.setItem(PIN_KEY, JSON.stringify(next));
+  } catch {}
+}
