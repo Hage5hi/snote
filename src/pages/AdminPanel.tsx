@@ -44,12 +44,24 @@ export default function AdminPanel() {
   const [confirmOpen, setConfirmOpen] = useState<null | "selected" | "all">(null);
 
   // Restore passphrase from session storage so a hard refresh doesn't kick out.
+  // Also pick up `#tag=foo` from the URL so deep-links from note Topbar chips
+  // open the panel pre-filtered.
   useEffect(() => {
+    const hash = window.location.hash.startsWith("#")
+      ? window.location.hash.slice(1)
+      : "";
+    const params = new URLSearchParams(hash);
+    const initialTag = params.get("tag")?.toLowerCase() ?? "";
+    if (initialTag) setTagFilter(initialTag);
+
     const cached = sessionStorage.getItem(SESSION_KEY);
     if (cached) {
       setPass(cached);
       setAuthed(true);
+      // Auto-fetch with the deep-link tag if present.
+      void fetchList(cached, "", initialTag);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchList = async (passToUse: string, q = "", tag = "") => {
@@ -81,7 +93,7 @@ export default function AdminPanel() {
   const onLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pass.trim()) return;
-    const ok = await fetchList(pass);
+    const ok = await fetchList(pass, "", tagFilter);
     if (ok) {
       sessionStorage.setItem(SESSION_KEY, pass);
       setAuthed(true);

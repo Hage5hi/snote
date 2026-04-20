@@ -36,6 +36,7 @@ import { PresenceDots, type PresenceUser } from "./PresenceDots";
 import { HistoryDialog } from "./HistoryDialog";
 import { LockButton } from "./LockButton";
 import { ShareDialog } from "./ShareDialog";
+import { TagChips } from "./TagChips";
 import { StatusPill } from "./StatusPill";
 import type { SaveStatus } from "@/lib/yjs/provider";
 import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/export";
@@ -165,6 +166,8 @@ export function Topbar({
         </button>
 
         <div className="ml-2"><StatusPill status={status} onClick={() => setHistoryOpen(true)} /></div>
+
+        <TagChips doc={doc} isEncrypted={isEncrypted} />
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
           <div className="hidden sm:flex items-center gap-3 text-[11px] text-muted-foreground tabular-nums">
