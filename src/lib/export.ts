@@ -123,20 +123,21 @@ export function exportPdf(slug: string, content: string) {
   iframe.onload = () => {
     try {
       const win = iframe.contentWindow;
-      if (!win) return cleanup();
-      // Suggest the slug as the filename (Chromium uses document.title).
+      const doc = iframe.contentDocument;
+      // Guard against the initial `about:blank` load that fires before srcdoc
+      // has been parsed — body would be empty and we'd print a blank page.
+      if (!win || !doc || !doc.body || doc.body.children.length === 0) return;
       win.document.title = slug;
       win.focus();
       win.print();
+      win.onafterprint = cleanup;
+      setTimeout(cleanup, 60_000);
     } catch (e) {
       console.warn("PDF export failed", e);
-    } finally {
-      // Some browsers fire afterprint; fall back to timeout.
-      const w = iframe.contentWindow;
-      if (w) w.onafterprint = cleanup;
-      setTimeout(cleanup, 60_000);
+      cleanup();
     }
   };
 
+  // Set srcdoc AFTER attaching onload so we catch the real content load.
   iframe.srcdoc = html;
 }
