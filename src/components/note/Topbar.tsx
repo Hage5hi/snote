@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import * as Y from "yjs";
 import {
   ArrowLeft,
+  BookOpen,
   Check,
   ClipboardCopy,
   Cloud,
@@ -11,12 +12,15 @@ import {
   Download,
   Eye,
   EyeOff,
+  Link2,
   Loader2,
   Maximize2,
   Minimize2,
   MonitorSmartphone,
   Pencil,
   Settings2,
+  Sparkles,
+  Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,10 +36,14 @@ import {
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PresenceDots, type PresenceUser } from "./PresenceDots";
 import { HistoryDialog } from "./HistoryDialog";
+import { LockButton } from "./LockButton";
 import type { SaveStatus } from "@/lib/yjs/provider";
 import { exportMarkdown, exportPlainText } from "@/lib/export";
+import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
 import { useEink } from "@/hooks/use-eink";
+
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
 interface TopbarProps {
   slug: string;
@@ -49,6 +57,9 @@ interface TopbarProps {
   zen: boolean;
   onToggleZen: () => void;
   getContent: () => string;
+  isEncrypted: boolean;
+  paginated: boolean;
+  onTogglePagination: () => void;
 }
 
 function StatusPill({ status }: { status: SaveStatus }) {
@@ -80,6 +91,9 @@ export function Topbar({
   zen,
   onToggleZen,
   getContent,
+  isEncrypted,
+  paginated,
+  onTogglePagination,
 }: TopbarProps) {
   const { pref: einkPref, setMode: setEinkMode } = useEink();
 
@@ -98,11 +112,33 @@ export function Topbar({
     toast({ title: "Đã copy toàn bộ note", description: `${text.length} ký tự` });
   };
 
+  const copyAsAI = async () => {
+    const text = getContent();
+    if (!text) {
+      toast({ title: "Note đang trống" });
+      return;
+    }
+    const formatted = formatForAI(slug, text);
+    await navigator.clipboard.writeText(formatted);
+    toast({
+      title: "Đã copy cho AI",
+      description: `~${approxTokens(formatted)} tokens`,
+    });
+  };
+
+  const copyRawUrl = async () => {
+    const url = `${SUPABASE_URL}/functions/v1/raw/${slug}`;
+    await navigator.clipboard.writeText(url);
+    toast({
+      title: "Đã copy raw URL",
+      description: "Dùng cho cURL / wget / Python",
+    });
+  };
+
   // Cmd/Ctrl + Shift + C to copy all.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "c" || e.key === "C")) {
-        // Don't hijack if user has an active text selection (let native copy work).
         const sel = window.getSelection();
         if (sel && sel.toString().length > 0) return;
         e.preventDefault();
@@ -150,6 +186,8 @@ export function Topbar({
 
           <PresenceDots users={users} />
 
+          <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
+
           <Button
             variant="ghost"
             size="icon"
@@ -193,10 +231,17 @@ export function Topbar({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => exportMarkdown(slug, getContent())}>
-                Download .md
+                <Download className="h-3.5 w-3.5" /> Download .md
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportPlainText(slug, getContent())}>
-                Download .txt
+                <Download className="h-3.5 w-3.5" /> Download .txt
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={copyAsAI}>
+                <Sparkles className="h-3.5 w-3.5" /> Copy as AI context
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={copyRawUrl} disabled={isEncrypted}>
+                <Terminal className="h-3.5 w-3.5" /> Copy raw URL (cURL)
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -207,7 +252,7 @@ export function Topbar({
                 <Settings2 className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-60">
               <DropdownMenuLabel className="flex items-center gap-2 text-xs">
                 <MonitorSmartphone className="h-3.5 w-3.5" />
                 E-ink mode
@@ -222,8 +267,20 @@ export function Topbar({
               </DropdownMenuRadioGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={onToggleZen}>
-                {zen ? "Tắt Zen mode" : "Bật Zen mode"}{" "}
+                {zen ? "Tắt Zen mode" : "Bật Zen mode"}
                 <span className="ml-auto text-[10px] text-muted-foreground">F11</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onTogglePagination}>
+                <BookOpen className="h-3.5 w-3.5" />
+                {paginated ? "Tắt Lật trang" : "Bật Lật trang"}
+                <span className="ml-auto text-[10px] text-muted-foreground">⌘⇧P</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to={`/${slug}+${slug}`} className="flex items-center gap-2">
+                  <Link2 className="h-3.5 w-3.5" />
+                  Mở Split view (cùng note)
+                </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

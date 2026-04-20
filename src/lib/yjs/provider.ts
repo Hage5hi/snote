@@ -9,6 +9,17 @@ export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
 type Listener<T> = (v: T) => void;
 
 /**
+ * Optional encryption hooks. When provided, all bytes that hit the network
+ * (broadcast updates AND the Postgres snapshot in `ydoc_state`) are passed
+ * through `encrypt`, and incoming bytes through `decrypt`. The server stays
+ * zero-knowledge; only clients holding the key can read.
+ */
+export type Encryption = {
+  encrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
+  decrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
+};
+
+/**
  * SupabaseYjsProvider
  * - Loads initial Y.Doc snapshot from public.notes
  * - Sends/receives Y.update binary patches via Supabase Realtime broadcast
@@ -21,6 +32,7 @@ export class SupabaseYjsProvider {
   slug: string;
   channel: RealtimeChannel | null = null;
   connected = false;
+  encryption: Encryption | null = null;
 
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
@@ -30,11 +42,16 @@ export class SupabaseYjsProvider {
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
 
-  constructor(slug: string, doc: Y.Doc) {
+  constructor(slug: string, doc: Y.Doc, encryption?: Encryption) {
     this.slug = slug;
     this.doc = doc;
     this.awareness = new Awareness(doc);
     this.awareness.clientID = this.clientId;
+    this.encryption = encryption ?? null;
+  }
+
+  setEncryption(enc: Encryption | null) {
+    this.encryption = enc;
   }
 
   onStatus(cb: Listener<SaveStatus>) {
@@ -57,20 +74,23 @@ export class SupabaseYjsProvider {
 
   async connect(identity: { name: string; color: string }) {
     // 0) Try the prefetched snapshot stashed by Home page hover/touch.
-    let prefetched: string | null = null;
-    try {
-      prefetched = sessionStorage.getItem(`note-snapshot:${this.slug}`);
-      if (prefetched) {
-        sessionStorage.removeItem(`note-snapshot:${this.slug}`);
-        try {
-          const update = base64ToBytes(prefetched);
-          if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
-        } catch (e) {
-          console.warn("Bad prefetched snapshot", e);
+    // Skip prefetched snapshot when encrypted, since the prefetch path doesn't
+    // know the key and the bytes would not be Y.update format yet.
+    if (!this.encryption) {
+      try {
+        const prefetched = sessionStorage.getItem(`note-snapshot:${this.slug}`);
+        if (prefetched) {
+          sessionStorage.removeItem(`note-snapshot:${this.slug}`);
+          try {
+            const update = base64ToBytes(prefetched);
+            if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
+          } catch (e) {
+            console.warn("Bad prefetched snapshot", e);
+          }
         }
+      } catch {
+        // sessionStorage unavailable — ignore.
       }
-    } catch {
-      // sessionStorage unavailable — ignore.
     }
 
     // 1) Load snapshot from Postgres (if any)
@@ -82,7 +102,10 @@ export class SupabaseYjsProvider {
 
     if (!error && data?.ydoc_state) {
       try {
-        const update = base64ToBytes(data.ydoc_state);
+        let update = base64ToBytes(data.ydoc_state);
+        if (this.encryption && update.byteLength > 0) {
+          update = await this.encryption.decrypt(update);
+        }
         if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
       } catch (e) {
         console.warn("Failed to apply snapshot", e);
@@ -102,9 +125,10 @@ export class SupabaseYjsProvider {
       config: { broadcast: { self: false, ack: false } },
     });
 
-    this.channel.on("broadcast", { event: "y-update" }, ({ payload }) => {
+    this.channel.on("broadcast", { event: "y-update" }, async ({ payload }) => {
       try {
-        const bytes = base64ToBytes(payload.update);
+        let bytes = base64ToBytes(payload.update);
+        if (this.encryption) bytes = await this.encryption.decrypt(bytes);
         Y.applyUpdate(this.doc, bytes, "remote");
       } catch (e) {
         console.warn("Bad remote update", e);
@@ -178,12 +202,21 @@ export class SupabaseYjsProvider {
     this.broadcastAwareness(changed);
   };
 
-  private broadcastUpdate(update: Uint8Array) {
+  private async broadcastUpdate(update: Uint8Array) {
     if (!this.channel || !this.connected) return;
+    let bytes = update;
+    if (this.encryption) {
+      try {
+        bytes = await this.encryption.encrypt(update);
+      } catch (e) {
+        console.warn("Encrypt update failed", e);
+        return;
+      }
+    }
     this.channel.send({
       type: "broadcast",
       event: "y-update",
-      payload: { update: bytesToBase64(update) },
+      payload: { update: bytesToBase64(bytes) },
     });
   }
 
@@ -212,12 +245,27 @@ export class SupabaseYjsProvider {
     try {
       const state = Y.encodeStateAsUpdate(this.doc);
       const text = this.doc.getText("content").toString();
+      let stateBytes = state;
+      let storedContent = text;
+      let storedCount = text.length;
+      if (this.encryption) {
+        try {
+          stateBytes = await this.encryption.encrypt(state);
+          // Server is zero-knowledge — never expose plaintext or true length.
+          storedContent = "";
+          storedCount = 0;
+        } catch (e) {
+          console.warn("Encrypt snapshot failed", e);
+          this.setStatus(this.connected ? "editing" : "offline");
+          return;
+        }
+      }
       const { error } = await supabase.from("notes").upsert(
         {
           slug: this.slug,
-          ydoc_state: bytesToBase64(state),
-          content: text,
-          char_count: text.length,
+          ydoc_state: bytesToBase64(stateBytes),
+          content: storedContent,
+          char_count: storedCount,
         },
         { onConflict: "slug" }
       );
