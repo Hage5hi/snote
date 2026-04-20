@@ -125,9 +125,10 @@ export class SupabaseYjsProvider {
       config: { broadcast: { self: false, ack: false } },
     });
 
-    this.channel.on("broadcast", { event: "y-update" }, ({ payload }) => {
+    this.channel.on("broadcast", { event: "y-update" }, async ({ payload }) => {
       try {
-        const bytes = base64ToBytes(payload.update);
+        let bytes = base64ToBytes(payload.update);
+        if (this.encryption) bytes = await this.encryption.decrypt(bytes);
         Y.applyUpdate(this.doc, bytes, "remote");
       } catch (e) {
         console.warn("Bad remote update", e);
@@ -201,12 +202,21 @@ export class SupabaseYjsProvider {
     this.broadcastAwareness(changed);
   };
 
-  private broadcastUpdate(update: Uint8Array) {
+  private async broadcastUpdate(update: Uint8Array) {
     if (!this.channel || !this.connected) return;
+    let bytes = update;
+    if (this.encryption) {
+      try {
+        bytes = await this.encryption.encrypt(update);
+      } catch (e) {
+        console.warn("Encrypt update failed", e);
+        return;
+      }
+    }
     this.channel.send({
       type: "broadcast",
       event: "y-update",
-      payload: { update: bytesToBase64(update) },
+      payload: { update: bytesToBase64(bytes) },
     });
   }
 
@@ -235,12 +245,27 @@ export class SupabaseYjsProvider {
     try {
       const state = Y.encodeStateAsUpdate(this.doc);
       const text = this.doc.getText("content").toString();
+      let stateBytes = state;
+      let storedContent = text;
+      let storedCount = text.length;
+      if (this.encryption) {
+        try {
+          stateBytes = await this.encryption.encrypt(state);
+          // Server is zero-knowledge — never expose plaintext or true length.
+          storedContent = "";
+          storedCount = 0;
+        } catch (e) {
+          console.warn("Encrypt snapshot failed", e);
+          this.setStatus(this.connected ? "editing" : "offline");
+          return;
+        }
+      }
       const { error } = await supabase.from("notes").upsert(
         {
           slug: this.slug,
-          ydoc_state: bytesToBase64(state),
-          content: text,
-          char_count: text.length,
+          ydoc_state: bytesToBase64(stateBytes),
+          content: storedContent,
+          char_count: storedCount,
         },
         { onConflict: "slug" }
       );
