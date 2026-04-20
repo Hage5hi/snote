@@ -23,6 +23,7 @@ export type Database = {
           enc_salt: string | null
           is_encrypted: boolean
           slug: string
+          tags: string[]
           updated_at: string
           ydoc_state: string
         }
@@ -34,6 +35,7 @@ export type Database = {
           enc_salt?: string | null
           is_encrypted?: boolean
           slug: string
+          tags?: string[]
           updated_at?: string
           ydoc_state?: string
         }
@@ -45,6 +47,7 @@ export type Database = {
           enc_salt?: string | null
           is_encrypted?: boolean
           slug?: string
+          tags?: string[]
           updated_at?: string
           ydoc_state?: string
         }
