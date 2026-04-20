@@ -243,3 +243,41 @@
     --muted-foreground: 0 0% 25%;
   }
 }
+
+/* ================== Raw view ================== */
+@layer utilities {
+  html.raw-view,
+  html.raw-view body {
+    background: #fff;
+    color: #000;
+    margin: 0;
+    padding: 0;
+  }
+  .raw-pre {
+    margin: 0;
+    padding: 1rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 14px;
+    line-height: 1.6;
+    background: #fff;
+    color: #000;
+    min-height: 100vh;
+  }
+}
+
+/* ================== Pagination mode ==================
+   Snap-scroll the editor by viewport pages — simple flip-book feel. */
+@layer utilities {
+  html.paginated .cm-scroller {
+    scroll-snap-type: y mandatory;
+  }
+  html.paginated .cm-line {
+    scroll-snap-align: none;
+  }
+  html.paginated .cm-content > :first-child,
+  html.paginated .cm-content > :nth-child(20n) {
+    scroll-snap-align: start;
+  }
+}
