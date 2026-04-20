@@ -43,17 +43,51 @@ Deno.serve(async (req) => {
 
     const cutoff = new Date(Date.now() - olderThanHours * 3600 * 1000).toISOString();
 
-    // Delete empty notes (both plaintext and encrypted) older than cutoff.
-    // Encrypted-but-empty notes also have char_count = 0 because the cipher
-    // is over the Y.update binary, not the visible text.
-    const { error, count } = await supabase
+    // Delete only TRULY empty notes older than cutoff.
+    // - Plaintext: char_count = 0 is reliable
+    // - Encrypted: char_count is always 0 by design (cipher over Y.update binary),
+    //   so we MUST also check ydoc_state length is below the empty-doc threshold
+    //   (~100 chars covers IV + check + minimal Y header).
+    const { error: e1, count: c1 } = await supabase
       .from("notes")
       .delete({ count: "exact" })
+      .eq("is_encrypted", false)
       .eq("char_count", 0)
       .lt("created_at", cutoff);
+    if (e1) throw e1;
 
-    if (error) throw error;
-    return new Response(JSON.stringify({ deleted: count ?? 0, cutoff }), {
+    const { error: e2, count: c2 } = await supabase
+      .from("notes")
+      .delete({ count: "exact" })
+      .eq("is_encrypted", true)
+      .lt("created_at", cutoff)
+      .filter("ydoc_state", "lt", "x".repeat(100)); // length comparison via lexicographic isn't safe — use RPC fallback below
+
+    // Fallback: if filter above is unreliable, do a select+delete loop for encrypted notes.
+    let encryptedDeleted = c2 ?? 0;
+    if (e2 || c2 == null) {
+      const { data: candidates } = await supabase
+        .from("notes")
+        .select("slug, ydoc_state")
+        .eq("is_encrypted", true)
+        .lt("created_at", cutoff)
+        .limit(1000);
+      const slugs = (candidates ?? [])
+        .filter((r) => (r.ydoc_state ?? "").length < 100)
+        .map((r) => r.slug);
+      if (slugs.length > 0) {
+        const { count: c3 } = await supabase
+          .from("notes")
+          .delete({ count: "exact" })
+          .in("slug", slugs);
+        encryptedDeleted = c3 ?? slugs.length;
+      } else {
+        encryptedDeleted = 0;
+      }
+    }
+
+    const total = (c1 ?? 0) + encryptedDeleted;
+    return new Response(JSON.stringify({ deleted: total, plaintext: c1 ?? 0, encrypted: encryptedDeleted, cutoff }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

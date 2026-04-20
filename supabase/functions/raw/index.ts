@@ -54,8 +54,12 @@ Deno.serve(async (req) => {
     }
 
     if (data.is_encrypted) {
+      const appUrl = Deno.env.get("APP_URL");
+      const decryptHint = appUrl
+        ? `# Encrypted note. Open ${appUrl}/${slug}#<your-key> to decrypt.\n`
+        : `# Encrypted note. Open it in the app with #<your-key> in the URL hash to decrypt.\n`;
       const body =
-        `# Encrypted note. Decrypt at https://${url.host.replace(/\.supabase\.co.*/, "")}.lovable.app/${slug}#<your-key>\n` +
+        decryptHint +
         `# ydoc_state (base64 ciphertext) below:\n\n` +
         (data.ydoc_state ?? "");
       return new Response(body, {
