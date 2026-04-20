@@ -11,3 +11,6 @@ verify_jwt = false
 
 [functions.cleanup]
 verify_jwt = false
+
+[functions.admin-rotate]
+verify_jwt = false

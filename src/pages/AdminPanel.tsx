@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles, X } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles, X, KeyRound } from "lucide-react";
+import { RotatePassDialog } from "@/components/admin/RotatePassDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -46,6 +47,7 @@ export default function AdminPanel() {
   const [topTags, setTopTags] = useState<TopTag[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState<null | "selected" | "all">(null);
+  const [rotateOpen, setRotateOpen] = useState(false);
 
   const initialTagRef = useRef<string>("");
 
@@ -245,6 +247,10 @@ export default function AdminPanel() {
             <Sparkles className="h-3.5 w-3.5" />
             Dọn note rỗng
           </Button>
+          <Button size="sm" variant="ghost" onClick={() => setRotateOpen(true)} disabled={loading}>
+            <KeyRound className="h-3.5 w-3.5" />
+            Đổi khoá
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => fetchList(pass, search, tagFilter)} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
@@ -253,6 +259,16 @@ export default function AdminPanel() {
           </Button>
         </div>
       </header>
+
+      <RotatePassDialog
+        open={rotateOpen}
+        onOpenChange={setRotateOpen}
+        currentPass={pass}
+        onSuccess={(newPass) => {
+          sessionStorage.setItem(SESSION_KEY, newPass);
+          setPass(newPass);
+        }}
+      />
 
       <div className="mx-auto max-w-5xl p-4">
         <form onSubmit={onSearch} className="mb-3 flex gap-2">
