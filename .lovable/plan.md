@@ -1,152 +1,79 @@
 
 
-# Phase 2: Encryption + Raw Endpoint + Admin + Split View + Pagination + AI Copy
+# Verify Phase 1 + Phase 2 — Kết quả
 
-## 1. E2E Encryption per-note (#3)
+## ✅ Hoạt động đúng
 
-**Cơ chế**: Web Crypto AES-GCM 256-bit. Key string từ URL hash → PBKDF2-SHA256 (100k iterations) → AES key. Mỗi note có salt riêng lưu trong DB (`enc_salt`) để cùng passphrase sinh key khác nhau cho mỗi note.
+**Phase 1**:
+- PWA manifest serve OK tại `/manifest.webmanifest` (Content-Type: `application/manifest+json`, đầy đủ icons 192/512/maskable, theme/background colors)
+- IndexedDB snapshots: logic 10 phút + anti-disaster (xoá >500 chars trong <2s) đúng, trim 10 bản FIFO
+- HistoryDialog: list, view, restore trong Y.transact — sẽ broadcast như edit thường
+- Zen mode: F11 + class `zen-mode` + hover-strip 8px, lưu localStorage
+- E-ink: auto-detect `(update: slow)` + manual on/off, force B/W contrast, tắt mọi animation
+- CSS font stack: Geist → system → CJK (JP/SC/TC/KR) → emoji
+- CJK auto-detect lang attribute trong Editor (`detectLang`)
+- Idle prefetch các module nặng + hover prefetch snapshot vào sessionStorage
+- Code-split routes via `lazy()`
 
-**Schema mới (DB)**:
-- `notes.is_encrypted boolean default false`
-- `notes.enc_salt text` (base64, 16 bytes random per note)
-- `notes.enc_check text` (ciphertext của chuỗi "OK" để verify key đúng)
+**Phase 2**:
+- Edge function `raw` trả `text/plain; charset=utf-8`, hỗ trợ encrypted note (header `X-Encrypted: 1`)
+- Edge function `admin-list/admin-delete/cleanup` trả `401` đúng khi sai passphrase, dùng constant-time compare
+- Encryption: AES-GCM 256, PBKDF2 100k, salt random per-note, `enc_check` verify key
+- Provider có hook `encrypt`/`decrypt` áp dụng cho cả broadcast lẫn snapshot — server zero-knowledge
+- LockButton: lock/unlock/copy URL kèm khoá; reload sau lock để re-mount provider sạch
+- UnlockForm: xử lý sai khoá, replaceState để giữ hash
+- RawView page: `/xxx.md` cho note thường + tự decrypt nếu có `#key`
+- AdminPanel: passphrase trong sessionStorage, search, bulk delete, cleanup
+- SplitView: `/a+b` 2 panels, sync scroll qua `cm-scroller`
+- Pagination + AI Copy + Copy raw URL (disabled khi encrypted)
 
-**Khi note encrypted**:
-- `ydoc_state` lưu là **ciphertext của Y.update** (encrypt toàn bộ binary update trước khi base64 + upload)
-- `content` để rỗng (server không thấy plaintext)
-- `char_count` = 0
-- Realtime broadcast: cũng encrypt `Y.update` trước khi broadcast (server relay nhưng không hiểu)
+## ⚠️ Vấn đề phát hiện (cần fix)
 
-**Flow**:
-1. User mở `/abc#mykey` → app derive key từ `mykey` + salt
-2. Load `enc_check` → decrypt → nếu OK thì proceed, sai thì hiện form "Khoá sai"
-3. Toàn bộ update đi qua provider được encrypt/decrypt trong-flight
-4. Nút lock/unlock trong topbar:
-   - **Lock**: prompt key → encrypt toàn bộ doc hiện tại → upload + redirect tới `/abc#newkey`
-   - **Change key**: prompt key cũ + mới → re-encrypt → redirect
-   - **Unlock**: clear encryption flag → upload plaintext → strip hash
+**1. Console warning: `forwardRef` cho `ThemeToggle` & `InstallPrompt`** (Home.tsx)
+   - Lý do: `Home` không truyền ref nhưng React DevTools cho rằng có. Nguồn không rõ — nhiều khả năng do `<TooltipProvider>` ở App-level wrap children. Không gây lỗi chức năng nhưng làm noise console.
+   - Fix: wrap `ThemeToggle` và `InstallPrompt` bằng `React.forwardRef` (no-op forward) — 2 dòng/file.
 
-**Files**: `src/lib/crypto.ts`, `src/lib/yjs/encrypted-provider.ts` (extends provider behavior), update `Topbar` thêm nút Lock, update `NotePage` chọn provider theo `window.location.hash`.
+**2. Pagination CSS chưa thực sự "lật trang"**
+   - Hiện tại `:nth-child(20n)` — gán snap-align mỗi 20 dòng — không chính xác = 1 viewport. Người dùng sẽ thấy snap ngẫu nhiên giữa các dòng.
+   - Fix: bỏ snap-by-line, dùng JS handler bắt phím `PageUp/PageDown/Cmd+→/←` scroll theo `clientHeight` của `.cm-scroller`. Hiển thị "Trang X/Y" ở góc.
 
-## 2. Raw endpoint #9
+**3. Cleanup edge function chỉ xóa khi `is_encrypted = false`**
+   - Note encrypted rỗng (vừa lock note trống) cũng nên dọn được. Hiện tại bỏ qua.
+   - Fix: dùng điều kiện `(char_count = 0 AND is_encrypted = false) OR (is_encrypted = true AND length(ydoc_state) < 100)` — encrypted-but-empty có ydoc_state rất ngắn (chỉ là check + IV). Hoặc đơn giản hơn: bỏ filter `is_encrypted` (encrypted note rỗng cũng có `char_count = 0`).
 
-**Edge function `raw`**: 
-- URL: `https://nqkjyrgrquzjvpicmcpf.supabase.co/functions/v1/raw/<slug>`
-- Trả `Content-Type: text/plain; charset=utf-8`
-- Note thường: trả `content` cột
-- Note encrypted: trả `ydoc_state` (ciphertext base64) + header `X-Encrypted: 1` + comment `# Encrypted note. Decrypt at https://...`
-- Public, no auth (verify_jwt = false)
-- CORS `*`
+**4. Admin delete "all" dùng `.neq("slug", "")` — risky**
+   - Nếu `slug` field có trim issues hoặc edge case, có thể không xóa hết. Dùng `.gte("created_at", "1970-01-01")` an toàn hơn, hoặc dùng raw SQL `truncate`-style qua RPC.
+   - Mức độ: thấp (hoạt động bình thường), nhưng nên cleanup.
 
-**Browser nice-URL `/xxx.md`**: Không thể implement không-redirect mà không có server (đã giải thích ở trên). Giải pháp:
-- Route React: `/:slug.md` → component nhỏ, encrypted thì decrypt cục bộ và render `<pre>` plaintext, không-encrypted thì redirect tới edge function URL
-- Topbar: nút **"Copy raw URL"** (DropdownMenu Export) — copy URL edge function, có hint "dùng cho cURL/wget/Python"
+**5. SplitView render cùng slug với chính nó (`/a+a`) — provider conflict**
+   - Topbar có link `/${slug}+${slug}` = "Mở Split view (cùng note)" → 2 NotePage cùng slug tạo 2 Y.Doc khác nhau cho cùng channel realtime. Hiện tại chạy được nhờ Yjs CRDT tự merge, nhưng tốn double bandwidth + có thể tạo presence ghost.
+   - Fix: validate `left !== right` trong SplitView, redirect nếu trùng. Hoặc bỏ link "cùng note" trong dropdown vì gây confusion.
 
-**Files**: `supabase/functions/raw/index.ts`, `src/pages/RawView.tsx`, route trong `App.tsx`, button trong Topbar.
+**6. RawView KHÔNG được route** (BUG nghiêm trọng)
+   - `App.tsx` `SlugDispatcher` check `/\.md$/i.test(slug)` → render `RawView`. Nhưng `RawView` extract slug bằng `.replace(/\.md$/i, "")` — đúng.
+   - Tuy nhiên trên Lovable hosting, URL `/test.md` sẽ được SPA fallback xử lý, vào React Router → `/:slug` match → `slug="test.md"` → SlugDispatcher detect `.md` → RawView. Logic chạy được.
+   - **NHƯNG** cURL/wget gọi `/test.md` sẽ nhận `index.html` (không phải plain text) như đã ghi nhận. Cần đảm bảo Topbar nói rõ: nút "Copy raw URL" trỏ thẳng edge function, không phải `/test.md`.
+   - Đã đúng trong code (`copyRawUrl` dùng `${SUPABASE_URL}/functions/v1/raw/${slug}`). Chỉ cần thêm tooltip giải thích.
 
-## 3. Admin panel #4 (env-secret-protected)
+**7. Snapshot khi encrypted — `prevContent.length` sẽ luôn = 0**
+   - Trong NotePage, `recordOnSuddenDelete` so sánh `prevContent.length`. Khi note encrypted, `ytext.toString()` vẫn trả plaintext (vì decrypt đã chạy ở provider). Nên anti-disaster vẫn hoạt động đúng. ✓ (Không phải bug, chỉ verify.)
 
-**Secret**: `ADMIN_PASSPHRASE` (sẽ yêu cầu user nhập)
+**8. Console warnings React Router future flag** — chỉ là deprecation, không affect.
 
-**Edge functions**:
-- `admin-list`: POST với `{ passphrase, search?, limit?, offset? }` → trả list notes (slug, char_count, is_encrypted, updated_at, content preview 200 ký tự)
-- `admin-delete`: POST với `{ passphrase, slugs[] }` → bulk delete
+## Đề xuất hành động
 
-Cả hai dùng service role để bypass RLS. Validate passphrase bằng constant-time compare.
+Plan này list các fix cần làm. Tôi sẽ prioritize:
+- **Cao**: #2 (pagination thật sự), #5 (split view same-slug), #6 tooltip raw URL
+- **Trung**: #1 forwardRef warnings, #3 cleanup encrypted-empty
+- **Thấp**: #4 admin delete-all SQL hygiene
 
-**UI** `/note`:
-- Form nhập passphrase
-- Sau auth: bảng list notes có search, checkbox bulk select, nút delete, "Delete all"
-- Confirm dialog cho delete
-
-**Files**: `supabase/functions/admin-list/index.ts`, `supabase/functions/admin-delete/index.ts`, `src/pages/AdminPanel.tsx`, route trong `App.tsx`.
-
-## 4. Auto-cleanup TTL (bonus #4)
-
-DB function + cron pg_cron không khả dụng dễ dàng. Thay vào đó: **edge function `cleanup`** chạy theo lịch hoặc khi admin trigger:
-- Xoá note nếu `char_count = 0 AND created_at < now() - interval '1 hour'`
-- Có thể setup cron qua Supabase scheduled functions
-
-→ Để đơn giản và không cần pg_cron, tôi sẽ tạo function + nút "Run cleanup" trong admin panel. User có thể setup cron sau.
-
-## 5. Split view #12
-
-**Route**: `/:slugs` (slugs = `a+b`). React Router parse, nếu match regex `/^[\w-]+\+[\w-]+$/` → render `SplitView` component.
-
-**Layout**: 2 panels 50/50 (vertical split trên mobile <768px, horizontal trên desktop). Mỗi panel = NotePage thu gọn (không topbar riêng, có 1 topbar chung mỏng hiển thị cả 2 slug + sync scroll toggle).
-
-**Sync scroll**: ref scroll vào nhau, listen `onScroll` rồi tính ratio và set `scrollTop` panel kia. Toggle bật/tắt.
-
-**Files**: `src/pages/SplitView.tsx`, refactor `NotePage` để tách `<NoteWorkspace>` component dùng chung.
-
-## 6. Pagination mode #10
-
-**Trigger**: nút trong Settings dropdown ("Lật trang") hoặc phím `Cmd+Shift+P`. State trong localStorage.
-
-**Cơ chế**:
-- Wrap CodeMirror scroller: cố định height = viewport, overflow hidden
-- Tính `pageHeight = viewport - topbar - padding`
-- Phím `Cmd+→` / `Cmd+←` (hoặc PageDown/PageUp) → scroll theo `pageHeight`
-- Hiển thị "Trang X / Y" góc dưới phải
-
-Đơn giản hoá: dùng CSS `scroll-snap` với `scroll-snap-type: y mandatory` và `scroll-snap-align: start` mỗi `pageHeight` — cho cảm giác snap-pagination, không cần JS phức tạp.
-
-**Files**: `src/hooks/use-pagination.ts`, update `NotePage`.
-
-## 7. AI Context Copy #13
-
-Nút trong Topbar/Export dropdown "Copy as AI Context":
-- Lấy content
-- Strip: collapse `\n{3,}` → `\n\n`, trim trailing whitespace mỗi dòng, remove markdown comments `<!-- ... -->`, normalize spaces
-- Wrap optional với header `# Note: /<slug>\n\n` để AI có context
-- `navigator.clipboard.writeText` + toast "Đã copy N tokens (~X)" (ước tính bằng `Math.ceil(text.length / 4)`)
-
-**Files**: `src/lib/ai-format.ts`, update `Topbar`.
-
-## Database changes
-
-```sql
-ALTER TABLE public.notes
-  ADD COLUMN is_encrypted boolean NOT NULL DEFAULT false,
-  ADD COLUMN enc_salt text,
-  ADD COLUMN enc_check text;
-
-CREATE INDEX IF NOT EXISTS idx_notes_updated_at ON public.notes(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_notes_empty ON public.notes(created_at) WHERE char_count = 0;
-```
-
-## Secrets cần
-
-- `ADMIN_PASSPHRASE` — passphrase cho admin panel (sẽ request)
-
-## Files mới/sửa tóm tắt
-
-**Tạo**:
-- `src/lib/crypto.ts`, `src/lib/ai-format.ts`
-- `src/pages/RawView.tsx`, `src/pages/AdminPanel.tsx`, `src/pages/SplitView.tsx`
-- `src/components/note/NoteWorkspace.tsx` (refactor share giữa NotePage + SplitView)
-- `src/components/note/LockButton.tsx`, `src/components/note/UnlockForm.tsx`
-- `src/hooks/use-pagination.ts`
-- `supabase/functions/raw/index.ts`
-- `supabase/functions/admin-list/index.ts`
-- `supabase/functions/admin-delete/index.ts`
-- `supabase/functions/cleanup/index.ts`
-
-**Sửa**:
-- `src/lib/yjs/provider.ts` — hỗ trợ encrypt option
-- `src/components/note/Topbar.tsx` — Lock, Copy raw URL, Copy as AI, Pagination toggle
-- `src/pages/NotePage.tsx` — wire encryption + pagination
-- `src/App.tsx` — routes mới
-- DB migration
-
-## Order triển khai
-
-1. DB migration + request secret `ADMIN_PASSPHRASE`
-2. Edge functions (raw, admin-list, admin-delete, cleanup) — deploy auto
-3. crypto.ts + encrypted provider integration
-4. UnlockForm + LockButton
-5. RawView page + route + nút Copy raw URL
-6. AdminPanel page + route
-7. SplitView page + route
-8. Pagination + AI Copy
+Sau khi fix, test thủ công các luồng:
+1. Tạo `/abc`, gõ tiếng Việt + 中文 + emoji → check Saved status
+2. Lock note với key "test123" → reload → verify URL có `#test123`, vẫn đọc được
+3. Mở `/abc.md` trong tab mới (note đã lock) → verify decrypt OK
+4. cURL `https://...supabase.co/functions/v1/raw/abc` → verify trả ciphertext + `X-Encrypted: 1`
+5. Mở `/abc+xyz` → 2 panel + sync scroll
+6. Bật pagination, F11 zen, settings e-ink
+7. `/note` → nhập admin passphrase → list/delete/cleanup
+8. History dialog: gõ ≥600 chars → Cmd+A Backspace → check snapshot tự lưu
 
