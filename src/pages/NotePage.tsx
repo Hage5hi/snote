@@ -6,6 +6,7 @@ import { Editor } from "@/components/note/Editor";
 import { Preview } from "@/components/note/Preview";
 import { Topbar } from "@/components/note/Topbar";
 import { UnlockForm } from "@/components/note/UnlockForm";
+import { PageIndicator } from "@/components/note/PageIndicator";
 import { SupabaseYjsProvider, type SaveStatus, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
@@ -44,7 +45,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { zen, toggle: toggleZen } = useZenMode();
-  const { enabled: paginated, toggle: togglePagination } = usePagination();
+  const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
   // Mount the eink hook here so the document class stays in sync on this page.
   useEink();
 
@@ -259,6 +260,15 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           </div>
         )}
       </main>
+
+      {paginated && (
+        <PageIndicator
+          page={page}
+          totalPages={totalPages}
+          onPrev={() => flip(-1)}
+          onNext={() => flip(1)}
+        />
+      )}
     </div>
   );
 }
