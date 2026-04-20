@@ -52,8 +52,13 @@ Deno.serve(async (req) => {
       .range(offset, offset + limit - 1);
 
     if (search) {
-      // Match on slug or (plaintext) content.
-      query = query.or(`slug.ilike.%${search}%,content.ilike.%${search}%`);
+      // Sanitize: strip characters that could break PostgREST .or() syntax
+      // ( , ) parentheses/comma are filter separators; % _ are SQL wildcards;
+      // * and " can confuse the parser. Keep alphanumerics, spaces, dashes, dots.
+      const safe = search.replace(/[%_,()"*\\]/g, "").slice(0, 100);
+      if (safe) {
+        query = query.or(`slug.ilike.%${safe}%,content.ilike.%${safe}%`);
+      }
     }
 
     const { data, error, count } = await query;

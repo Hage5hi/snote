@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { forwardRef, useEffect, useState } from "react";
 import { Download, Share, Smartphone, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -26,7 +26,7 @@ function detectPlatform(): "ios" | "android" | "desktop" {
   return "desktop";
 }
 
-export function InstallPrompt() {
+export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
   const [dismissed, setDismissed] = useState(true);
   const [bipEvent, setBipEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [platform] = useState(() => detectPlatform());
@@ -105,4 +105,6 @@ export function InstallPrompt() {
       </button>
     </div>
   );
-}
+});
+
+InstallPrompt.displayName = "InstallPrompt";
