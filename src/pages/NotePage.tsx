@@ -48,6 +48,17 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
+  const { goal } = useWordGoal(slug);
+
+  // Celebrate when crossing the goal threshold (once per goal value).
+  useEffect(() => {
+    if (consumeGoalReached(slug, counts.words, goal)) {
+      toast({
+        title: "🎯 Đạt mục tiêu!",
+        description: `${counts.words.toLocaleString()} / ${goal!.toLocaleString()} từ`,
+      });
+    }
+  }, [slug, counts.words, goal]);
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
