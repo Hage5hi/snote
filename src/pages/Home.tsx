@@ -165,9 +165,22 @@ export default function Home() {
               className="border-0 focus-visible:ring-0 font-mono"
               maxLength={64}
             />
+            <div className="pr-2 text-muted-foreground">
+              {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {slugStatus === "available" && (
+                <Check className="h-3.5 w-3.5 text-success" aria-label="Slug trống" />
+              )}
+              {slugStatus === "taken" && (
+                <span className="text-[10px] font-medium text-warning">Đã có note</span>
+              )}
+              {slugStatus === "invalid" && (
+                <span className="text-[10px] font-medium text-destructive">Sai định dạng</span>
+              )}
+            </div>
           </div>
           <Button type="submit" disabled={!slug.trim()}>
-            Mở <ArrowRight className="h-4 w-4" />
+            {slugStatus === "taken" ? "Mở note có sẵn" : "Mở"}
+            <ArrowRight className="h-4 w-4" />
           </Button>
         </form>
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
