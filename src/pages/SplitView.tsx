@@ -45,6 +45,10 @@ export default function SplitView() {
   if (!SLUG_RE.test(left ?? "") || !SLUG_RE.test(right ?? "")) {
     return <Navigate to="/" replace />;
   }
+  // Same slug on both sides causes provider/presence conflicts — collapse to single note.
+  if (left === right) {
+    return <Navigate to={`/${left}`} replace />;
+  }
 
   return (
     <div className="flex h-svh flex-col bg-background">

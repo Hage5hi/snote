@@ -268,16 +268,22 @@
 }
 
 /* ================== Pagination mode ==================
-   Snap-scroll the editor by viewport pages — simple flip-book feel. */
+   JS-driven page flips via PageUp/PageDown or ⌘+Arrow.
+   Visual cue only: thin progress bar + faint divider every page. */
 @layer utilities {
   html.paginated .cm-scroller {
-    scroll-snap-type: y mandatory;
+    scroll-behavior: smooth;
   }
-  html.paginated .cm-line {
-    scroll-snap-align: none;
-  }
-  html.paginated .cm-content > :first-child,
-  html.paginated .cm-content > :nth-child(20n) {
-    scroll-snap-align: start;
+  html.paginated .cm-content {
+    /* Subtle striped page boundaries every 100vh — pure visual hint. */
+    background-image: linear-gradient(
+      to bottom,
+      transparent calc(100vh - 1px),
+      hsl(var(--border)) calc(100vh - 1px),
+      hsl(var(--border)) 100vh,
+      transparent 100vh
+    );
+    background-size: 100% 100vh;
+    background-repeat: repeat-y;
   }
 }

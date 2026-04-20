@@ -42,10 +42,12 @@ Deno.serve(async (req) => {
     );
 
     if (all) {
+      // Use a created_at sentinel rather than slug filter — bulletproof
+      // against any edge-case slug values.
       const { error, count } = await supabase
         .from("notes")
         .delete({ count: "exact" })
-        .neq("slug", "");
+        .gte("created_at", "1970-01-01");
       if (error) throw error;
       return new Response(JSON.stringify({ deleted: count ?? 0 }), {
         status: 200,
