@@ -21,6 +21,7 @@ import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } f
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
+import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
@@ -58,7 +59,9 @@ export function Editor({ doc, awareness, className }: EditorProps) {
         bracketMatching(),
         markdown(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
+        search({ top: true }),
+        highlightSelectionMatches(),
+        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),
         EditorView.theme({
@@ -87,7 +90,21 @@ export function Editor({ doc, awareness, className }: EditorProps) {
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
 
+    // Global Cmd/Ctrl+F → open the CodeMirror search panel even if focus is outside.
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F") && !e.shiftKey && !e.altKey) {
+        // Allow native find inside form inputs.
+        const target = e.target as HTMLElement | null;
+        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+        e.preventDefault();
+        view.focus();
+        openSearchPanel(view);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+
     return () => {
+      window.removeEventListener("keydown", onKey);
       view.destroy();
       viewRef.current = null;
     };

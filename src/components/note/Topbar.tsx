@@ -135,7 +135,7 @@ export function Topbar({
     });
   };
 
-  // Cmd/Ctrl + Shift + C to copy all.
+  // Cmd/Ctrl + Shift + C to copy all. Cmd/Ctrl + Shift + V to toggle preview.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "c" || e.key === "C")) {
@@ -144,11 +144,15 @@ export function Topbar({
         e.preventDefault();
         copyAll();
       }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "v" || e.key === "V")) {
+        e.preventDefault();
+        onTogglePreview();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [getContent]);
+  }, [getContent, onTogglePreview]);
 
   return (
     <>
@@ -207,7 +211,7 @@ export function Topbar({
             className="h-7 w-7"
             onClick={onTogglePreview}
             aria-label={showPreview ? "Ẩn preview" : "Hiện preview"}
-            title="Toggle preview"
+            title={showPreview ? "Ẩn preview (⌘⇧V)" : "Hiện preview (⌘⇧V)"}
           >
             {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
