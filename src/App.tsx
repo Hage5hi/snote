@@ -8,11 +8,15 @@ import { lazy, Suspense } from "react";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 
-// Lazy-load NotePage so the editor bundle is only fetched when needed.
-// Home prefetches it on idle for instant navigation.
+// Lazy-load heavy routes so the editor / admin bundles only load when needed.
 const NotePage = lazy(() => import("./pages/NotePage"));
+const RawView = lazy(() => import("./pages/RawView"));
+const SplitView = lazy(() => import("./pages/SplitView"));
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 
 const queryClient = new QueryClient();
+
+const SuspenseFallback = <div className="h-svh bg-background" />;
 
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
@@ -24,9 +28,35 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Home />} />
             <Route
+              path="/note"
+              element={
+                <Suspense fallback={SuspenseFallback}>
+                  <AdminPanel />
+                </Suspense>
+              }
+            />
+            {/* Raw plaintext view: /xxx.md → React route, decrypts encrypted notes locally */}
+            <Route
+              path="/:slugMd"
+              element={
+                <Suspense fallback={SuspenseFallback}>
+                  <RawView />
+                </Suspense>
+              }
+            />
+            {/* Split view: /a+b */}
+            <Route
+              path="/:slugs"
+              element={
+                <Suspense fallback={SuspenseFallback}>
+                  <SplitView />
+                </Suspense>
+              }
+            />
+            <Route
               path="/:slug"
               element={
-                <Suspense fallback={<div className="h-svh bg-background" />}>
+                <Suspense fallback={SuspenseFallback}>
                   <NotePage />
                 </Suspense>
               }
