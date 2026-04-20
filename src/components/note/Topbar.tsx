@@ -62,23 +62,6 @@ interface TopbarProps {
   onTogglePagination: () => void;
 }
 
-function StatusPill({ status }: { status: SaveStatus }) {
-  const map: Record<SaveStatus, { icon: JSX.Element; label: string; cls: string }> = {
-    idle: { icon: <Loader2 className="h-3 w-3 animate-spin" />, label: "Connecting…", cls: "text-muted-foreground" },
-    editing: { icon: <Pencil className="h-3 w-3" />, label: "Editing…", cls: "text-muted-foreground" },
-    saving: { icon: <Loader2 className="h-3 w-3 animate-spin" />, label: "Saving…", cls: "text-muted-foreground" },
-    saved: { icon: <Check className="h-3 w-3" />, label: "Saved", cls: "text-success" },
-    offline: { icon: <CloudOff className="h-3 w-3" />, label: "Offline", cls: "text-warning" },
-  };
-  const v = map[status];
-  return (
-    <div className={`flex items-center gap-1.5 text-[11px] font-medium ${v.cls}`}>
-      {v.icon}
-      <span>{v.label}</span>
-    </div>
-  );
-}
-
 export function Topbar({
   slug,
   doc,
