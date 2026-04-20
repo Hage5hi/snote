@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { ArrowLeft, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const NotePage = lazy(() => import("./NotePage"));
 
@@ -53,21 +54,35 @@ export default function SplitView() {
   return (
     <div className="flex h-svh flex-col bg-background">
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 text-xs">
-        <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Trang chủ">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Trang chủ">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Về trang chủ</TooltipContent>
+        </Tooltip>
         <span className="font-mono">
           /{left} <span className="text-muted-foreground">+</span> /{right}
         </span>
-        <Button
-          size="sm"
-          variant={syncScroll ? "default" : "outline"}
-          className="ml-auto h-7"
-          onClick={() => setSyncScroll((v) => !v)}
-        >
-          <Link2 className="h-3.5 w-3.5" />
-          Sync scroll {syncScroll ? "ON" : "OFF"}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size="sm"
+              variant={syncScroll ? "default" : "outline"}
+              className="ml-auto h-7"
+              onClick={() => setSyncScroll((v) => !v)}
+            >
+              <Link2 className="h-3.5 w-3.5" />
+              Sync scroll {syncScroll ? "ON" : "OFF"}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {syncScroll
+              ? "Đang đồng bộ cuộn 2 panel. Click để tắt."
+              : "Click để bật đồng bộ cuộn giữa 2 note."}
+          </TooltipContent>
+        </Tooltip>
       </header>
       <main className="grid flex-1 min-h-0 grid-cols-1 md:grid-cols-2 divide-y md:divide-x md:divide-y-0 divide-border">
         <div ref={leftRef} className="min-h-0 overflow-hidden">

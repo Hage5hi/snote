@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import * as Y from "yjs";
 import { ClipboardCopy, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PresenceDots, type PresenceUser } from "../PresenceDots";
@@ -116,16 +117,20 @@ export function Topbar({
 
           <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={copyAll}
-            aria-label="Copy toàn bộ note"
-            title="Copy toàn bộ (Cmd/Ctrl+Shift+C)"
-          >
-            <ClipboardCopy className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={copyAll}
+                aria-label="Copy toàn bộ note"
+              >
+                <ClipboardCopy className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Copy toàn bộ nội dung note (⌘⇧C)</TooltipContent>
+          </Tooltip>
 
           <ShareDialog isEncrypted={isEncrypted} />
 
@@ -136,16 +141,20 @@ export function Topbar({
             onToggleZen={onToggleZen}
           />
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setShortcutsOpen(true)}
-            aria-label="Phím tắt"
-            title="Phím tắt (?)"
-          >
-            <Keyboard className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setShortcutsOpen(true)}
+                aria-label="Phím tắt"
+              >
+                <Keyboard className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Xem danh sách phím tắt (?)</TooltipContent>
+          </Tooltip>
 
           <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
 
