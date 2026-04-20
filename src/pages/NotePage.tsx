@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Navigate, useParams } from "react-router-dom";
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
-import { Editor } from "@/components/note/Editor";
+import { Editor, type EditorHandle } from "@/components/note/Editor";
 import { Preview } from "@/components/note/Preview";
 import { Topbar } from "@/components/note/Topbar";
 import { UnlockForm } from "@/components/note/UnlockForm";
 import { PageIndicator } from "@/components/note/PageIndicator";
 import { WordCountPill } from "@/components/note/WordCountPill";
+import { OutlineSidebar } from "@/components/note/OutlineSidebar";
 import { SupabaseYjsProvider, type SaveStatus, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
@@ -45,6 +46,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
+  const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
   // Mount the eink hook here so the document class stays in sync on this page.
