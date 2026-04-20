@@ -1,12 +1,19 @@
+import { forwardRef } from "react";
 import { Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 
-export function ThemeToggle() {
+/**
+ * forwardRef wrapper — some parents (Tooltip, DropdownMenu asChild) pass
+ * refs through. Without forwardRef React logs a noisy warning even when
+ * the ref is unused.
+ */
+export const ThemeToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
   const { theme, setTheme } = useTheme();
 
   return (
     <Button
+      ref={ref}
       variant="ghost"
       size="sm"
       onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -17,4 +24,6 @@ export function ThemeToggle() {
       <span className="dark:ml-5">Theme</span>
     </Button>
   );
-}
+});
+
+ThemeToggle.displayName = "ThemeToggle";

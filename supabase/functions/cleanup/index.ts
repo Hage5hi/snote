@@ -43,11 +43,13 @@ Deno.serve(async (req) => {
 
     const cutoff = new Date(Date.now() - olderThanHours * 3600 * 1000).toISOString();
 
+    // Delete empty notes (both plaintext and encrypted) older than cutoff.
+    // Encrypted-but-empty notes also have char_count = 0 because the cipher
+    // is over the Y.update binary, not the visible text.
     const { error, count } = await supabase
       .from("notes")
       .delete({ count: "exact" })
       .eq("char_count", 0)
-      .eq("is_encrypted", false)
       .lt("created_at", cutoff);
 
     if (error) throw error;
