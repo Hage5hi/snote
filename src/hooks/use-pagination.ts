@@ -16,6 +16,8 @@ export function usePagination() {
     if (typeof window === "undefined") return false;
     return localStorage.getItem(STORAGE_KEY) === "1";
   });
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     try {
@@ -60,5 +62,69 @@ export function usePagination() {
     return () => window.removeEventListener("keydown", onKey);
   }, [enabled, flip]);
 
-  return { enabled, toggle: () => setEnabled((v) => !v), setEnabled, flip };
+  // Track current page / total pages while pagination is on.
+  useEffect(() => {
+    if (!enabled) {
+      setPage(1);
+      setTotalPages(1);
+      return;
+    }
+
+    let raf = 0;
+    let scroller: HTMLElement | null = null;
+    let resizeObs: ResizeObserver | null = null;
+    let mutObs: MutationObserver | null = null;
+
+    const recompute = () => {
+      const el = scroller ?? getScroller();
+      if (!el) return;
+      const step = pageStep(el);
+      const total = Math.max(1, Math.ceil((el.scrollHeight - 1) / step));
+      const current = Math.min(total, Math.max(1, Math.round(el.scrollTop / step) + 1));
+      setTotalPages(total);
+      setPage(current);
+    };
+
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(recompute);
+    };
+
+    // Wait for the CodeMirror scroller to mount.
+    let tries = 0;
+    const attach = () => {
+      scroller = getScroller();
+      if (!scroller) {
+        if (tries++ < 30) {
+          window.setTimeout(attach, 100);
+        }
+        return;
+      }
+      scroller.addEventListener("scroll", schedule, { passive: true });
+      resizeObs = new ResizeObserver(schedule);
+      resizeObs.observe(scroller);
+      mutObs = new MutationObserver(schedule);
+      mutObs.observe(scroller, { childList: true, subtree: true, characterData: true });
+      recompute();
+    };
+    attach();
+
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", schedule);
+      scroller?.removeEventListener("scroll", schedule);
+      resizeObs?.disconnect();
+      mutObs?.disconnect();
+    };
+  }, [enabled]);
+
+  return {
+    enabled,
+    toggle: () => setEnabled((v) => !v),
+    setEnabled,
+    flip,
+    page,
+    totalPages,
+  };
 }
