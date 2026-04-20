@@ -187,10 +187,39 @@ export function Topbar({
         <TagChips doc={doc} isEncrypted={isEncrypted} />
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-          <div className="hidden sm:flex items-center gap-3 text-[11px] text-muted-foreground tabular-nums">
-            <span>{wordCount} words</span>
-            <span>{charCount} chars</span>
-          </div>
+          <button
+            type="button"
+            onClick={() => setGoalOpen(true)}
+            className="hidden sm:flex items-center gap-3 rounded-md px-2 py-1 text-[11px] text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground"
+            title={goal ? `Mục tiêu: ${goal.toLocaleString()} từ — ${goalPct}%` : "Đặt mục tiêu số từ"}
+          >
+            {goal ? (
+              <>
+                <span className="flex items-center gap-1.5">
+                  <Target className={`h-3 w-3 ${goalReached ? "text-primary" : ""}`} />
+                  <span className={goalReached ? "text-primary font-medium" : ""}>
+                    {wordCount} / {goal}
+                  </span>
+                </span>
+                <span
+                  className="relative h-1 w-16 overflow-hidden rounded-full bg-muted"
+                  aria-hidden
+                >
+                  <span
+                    className={`absolute inset-y-0 left-0 transition-all ${
+                      goalReached ? "bg-primary" : "bg-foreground/60"
+                    }`}
+                    style={{ width: `${goalPct}%` }}
+                  />
+                </span>
+              </>
+            ) : (
+              <>
+                <span>{wordCount} words</span>
+                <span>{charCount} chars</span>
+              </>
+            )}
+          </button>
 
           <PresenceDots users={users} />
 
@@ -318,6 +347,10 @@ export function Topbar({
                 <CopyPlus className="h-3.5 w-3.5" />
                 Duplicate note...
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setGoalOpen(true)}>
+                <Target className="h-3.5 w-3.5" />
+                {goal ? `Mục tiêu: ${goal.toLocaleString()} từ` : "Đặt mục tiêu số từ..."}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="flex items-center gap-2 text-xs">
                 <Link2 className="h-3.5 w-3.5" />
@@ -337,6 +370,12 @@ export function Topbar({
       </header>
       <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
       <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />
+      <WordGoalDialog
+        open={goalOpen}
+        onOpenChange={setGoalOpen}
+        slug={slug}
+        currentWords={wordCount}
+      />
     </>
   );
 }
