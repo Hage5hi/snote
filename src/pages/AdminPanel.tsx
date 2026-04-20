@@ -35,6 +35,8 @@ export default function AdminPanel() {
   const [items, setItems] = useState<AdminNote[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
+  const [tagFilter, setTagFilter] = useState<string>("");
+  const [topTags, setTopTags] = useState<TopTag[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState<null | "selected" | "all">(null);
 
