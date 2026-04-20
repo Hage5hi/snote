@@ -9,6 +9,17 @@ export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
 type Listener<T> = (v: T) => void;
 
 /**
+ * Optional encryption hooks. When provided, all bytes that hit the network
+ * (broadcast updates AND the Postgres snapshot in `ydoc_state`) are passed
+ * through `encrypt`, and incoming bytes through `decrypt`. The server stays
+ * zero-knowledge; only clients holding the key can read.
+ */
+export type Encryption = {
+  encrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
+  decrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
+};
+
+/**
  * SupabaseYjsProvider
  * - Loads initial Y.Doc snapshot from public.notes
  * - Sends/receives Y.update binary patches via Supabase Realtime broadcast
