@@ -12,6 +12,8 @@ import {
   Download,
   Eye,
   EyeOff,
+  FileCode,
+  FileType,
   Link2,
   Loader2,
   Maximize2,
@@ -38,7 +40,7 @@ import { PresenceDots, type PresenceUser } from "./PresenceDots";
 import { HistoryDialog } from "./HistoryDialog";
 import { LockButton } from "./LockButton";
 import type { SaveStatus } from "@/lib/yjs/provider";
-import { exportMarkdown, exportPlainText } from "@/lib/export";
+import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/export";
 import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
 import { useEink } from "@/hooks/use-eink";
@@ -236,6 +238,12 @@ export function Topbar({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={() => exportMarkdown(slug, getContent())}>
                 <Download className="h-3.5 w-3.5" /> Download .md
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportHtml(slug, getContent())}>
+                <FileCode className="h-3.5 w-3.5" /> Download .html
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportPdf(slug, getContent())}>
+                <FileType className="h-3.5 w-3.5" /> Print to PDF
               </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportPlainText(slug, getContent())}>
                 <Download className="h-3.5 w-3.5" /> Download .txt
