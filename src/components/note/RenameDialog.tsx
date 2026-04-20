@@ -138,7 +138,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
             />
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
               {status === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
-              {status === "available" && <Check className="h-4 w-4 text-green-500" />}
+              {status === "available" && <Check className="h-4 w-4 text-primary" />}
               {(status === "taken" || status === "invalid" || status === "same") && (
                 <X className="h-4 w-4 text-destructive" />
               )}
@@ -153,11 +153,11 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
             )}
             {status === "taken" && <span className="text-destructive">Slug này đã được dùng.</span>}
             {status === "same" && <span className="text-muted-foreground">Trùng với slug hiện tại.</span>}
-            {status === "available" && <span className="text-green-600">Slug khả dụng.</span>}
+            {status === "available" && <span className="text-primary">Slug khả dụng.</span>}
           </div>
 
           <div className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
+            <AlertTriangle className="h-4 w-4 shrink-0 text-foreground/70" />
             <div className="space-y-1">
               <p>
                 URL cũ <code className="font-mono">/{currentSlug}</code> sẽ trống và có thể bị người

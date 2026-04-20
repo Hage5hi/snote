@@ -17,6 +17,7 @@ import {
   Maximize2,
   Minimize2,
   MonitorSmartphone,
+  Pencil,
   Settings2,
   Sparkles,
   Terminal,
@@ -38,6 +39,7 @@ import { PresenceDots, type PresenceUser } from "./PresenceDots";
 import { HistoryDialog } from "./HistoryDialog";
 import { LockButton } from "./LockButton";
 import { PinButton } from "./PinButton";
+import { RenameDialog } from "./RenameDialog";
 import { ShareDialog } from "./ShareDialog";
 import { TagChips } from "./TagChips";
 import { StatusPill } from "./StatusPill";
@@ -85,6 +87,7 @@ export function Topbar({
   const { pref: einkPref, setMode: setEinkMode } = useEink();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -295,6 +298,11 @@ export function Topbar({
                 <BookOpen className="h-3.5 w-3.5" />
                 {paginated ? "Tắt Lật trang" : "Bật Lật trang"}
                 <span className="ml-auto text-[10px] text-muted-foreground">⌘⇧P</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => setRenameOpen(true)}>
+                <Pencil className="h-3.5 w-3.5" />
+                Đổi tên slug...
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="flex items-center gap-2 text-xs">
