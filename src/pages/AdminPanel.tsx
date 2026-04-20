@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -24,7 +24,10 @@ type AdminNote = {
   updated_at: string;
   created_at: string;
   preview: string;
+  tags: string[];
 };
+
+type TopTag = { name: string; count: number };
 
 const SESSION_KEY = "admin.passphrase";
 
