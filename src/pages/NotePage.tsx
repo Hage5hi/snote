@@ -8,6 +8,8 @@ import { Topbar } from "@/components/note/Topbar";
 import { UnlockForm } from "@/components/note/UnlockForm";
 import { PageIndicator } from "@/components/note/PageIndicator";
 import { WordCountPill } from "@/components/note/WordCountPill";
+import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
+import { toast } from "@/hooks/use-toast";
 import { OutlineSidebar } from "@/components/note/OutlineSidebar";
 import { SupabaseYjsProvider, type SaveStatus, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
@@ -46,6 +48,17 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
+  const { goal } = useWordGoal(slug);
+
+  // Celebrate when crossing the goal threshold (once per goal value).
+  useEffect(() => {
+    if (consumeGoalReached(slug, counts.words, goal)) {
+      toast({
+        title: "🎯 Đạt mục tiêu!",
+        description: `${counts.words.toLocaleString()} / ${goal!.toLocaleString()} từ`,
+      });
+    }
+  }, [slug, counts.words, goal]);
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
@@ -275,7 +288,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         />
       )}
 
-      <WordCountPill words={counts.words} chars={counts.chars} />
+      <WordCountPill words={counts.words} chars={counts.chars} goal={goal} />
     </div>
   );
 }

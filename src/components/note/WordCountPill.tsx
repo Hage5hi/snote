@@ -1,16 +1,21 @@
 interface WordCountPillProps {
   words: number;
   chars: number;
+  goal?: number | null;
 }
 
 /**
  * Floating bottom-left pill: word count, char count, and reading-time estimate.
  * Hidden on small screens to save space (Topbar already shows the same on sm+).
+ * When `goal` is set, shows progress (e.g. "320 / 500 words · 64%").
  */
-export function WordCountPill({ words, chars }: WordCountPillProps) {
+export function WordCountPill({ words, chars, goal }: WordCountPillProps) {
   // 200 wpm reading speed — common average for prose. Round up to nearest minute.
   const minutes = Math.max(1, Math.ceil(words / 200));
   const readLabel = words === 0 ? "—" : `${minutes} phút đọc`;
+  const hasGoal = goal && goal > 0;
+  const pct = hasGoal ? Math.min(100, Math.round((words / goal) * 100)) : 0;
+  const reached = hasGoal && words >= goal;
 
   return (
     <div
@@ -18,9 +23,21 @@ export function WordCountPill({ words, chars }: WordCountPillProps) {
       role="status"
       aria-live="polite"
     >
-      <span>{words} words</span>
-      <span className="opacity-40">·</span>
-      <span>{chars} chars</span>
+      {hasGoal ? (
+        <>
+          <span className={reached ? "text-primary" : "text-foreground"}>
+            {words} / {goal} words
+          </span>
+          <span className="opacity-40">·</span>
+          <span>{pct}%</span>
+        </>
+      ) : (
+        <>
+          <span>{words} words</span>
+          <span className="opacity-40">·</span>
+          <span>{chars} chars</span>
+        </>
+      )}
       <span className="opacity-40">·</span>
       <span>{readLabel}</span>
     </div>

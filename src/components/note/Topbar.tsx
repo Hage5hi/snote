@@ -21,6 +21,7 @@ import {
   Pencil,
   Settings2,
   Sparkles,
+  Target,
   Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ import { LockButton } from "./LockButton";
 import { PinButton } from "./PinButton";
 import { RenameDialog } from "./RenameDialog";
 import { DuplicateDialog } from "./DuplicateDialog";
+import { WordGoalDialog } from "./WordGoalDialog";
 import { ShareDialog } from "./ShareDialog";
 import { TagChips } from "./TagChips";
 import { StatusPill } from "./StatusPill";
@@ -50,6 +52,7 @@ import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/ex
 import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
 import { useEink } from "@/hooks/use-eink";
+import { useWordGoal } from "@/hooks/use-word-goal";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -87,10 +90,14 @@ export function Topbar({
   onTogglePagination,
 }: TopbarProps) {
   const { pref: einkPref, setMode: setEinkMode } = useEink();
+  const { goal } = useWordGoal(slug);
+  const goalPct = goal && goal > 0 ? Math.min(100, Math.round((wordCount / goal) * 100)) : 0;
+  const goalReached = goal != null && wordCount >= goal;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
+  const [goalOpen, setGoalOpen] = useState(false);
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -180,10 +187,39 @@ export function Topbar({
         <TagChips doc={doc} isEncrypted={isEncrypted} />
 
         <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-          <div className="hidden sm:flex items-center gap-3 text-[11px] text-muted-foreground tabular-nums">
-            <span>{wordCount} words</span>
-            <span>{charCount} chars</span>
-          </div>
+          <button
+            type="button"
+            onClick={() => setGoalOpen(true)}
+            className="hidden sm:flex items-center gap-3 rounded-md px-2 py-1 text-[11px] text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground"
+            title={goal ? `Mục tiêu: ${goal.toLocaleString()} từ — ${goalPct}%` : "Đặt mục tiêu số từ"}
+          >
+            {goal ? (
+              <>
+                <span className="flex items-center gap-1.5">
+                  <Target className={`h-3 w-3 ${goalReached ? "text-primary" : ""}`} />
+                  <span className={goalReached ? "text-primary font-medium" : ""}>
+                    {wordCount} / {goal}
+                  </span>
+                </span>
+                <span
+                  className="relative h-1 w-16 overflow-hidden rounded-full bg-muted"
+                  aria-hidden
+                >
+                  <span
+                    className={`absolute inset-y-0 left-0 transition-all ${
+                      goalReached ? "bg-primary" : "bg-foreground/60"
+                    }`}
+                    style={{ width: `${goalPct}%` }}
+                  />
+                </span>
+              </>
+            ) : (
+              <>
+                <span>{wordCount} words</span>
+                <span>{charCount} chars</span>
+              </>
+            )}
+          </button>
 
           <PresenceDots users={users} />
 
@@ -311,6 +347,10 @@ export function Topbar({
                 <CopyPlus className="h-3.5 w-3.5" />
                 Duplicate note...
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setGoalOpen(true)}>
+                <Target className="h-3.5 w-3.5" />
+                {goal ? `Mục tiêu: ${goal.toLocaleString()} từ` : "Đặt mục tiêu số từ..."}
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuLabel className="flex items-center gap-2 text-xs">
                 <Link2 className="h-3.5 w-3.5" />
@@ -330,6 +370,12 @@ export function Topbar({
       </header>
       <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
       <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />
+      <WordGoalDialog
+        open={goalOpen}
+        onOpenChange={setGoalOpen}
+        slug={slug}
+        currentWords={wordCount}
+      />
     </>
   );
 }
