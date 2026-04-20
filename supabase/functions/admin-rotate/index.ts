@@ -39,55 +39,51 @@ Deno.serve(async (req) => {
 
   try {
     const body = await req.json().catch(() => ({}));
-    const passphrase = String(body?.passphrase ?? "");
-    const slugs: unknown = body?.slugs;
-    const all = body?.all === true;
+    const currentPass = String(body?.currentPass ?? "");
+    const newPass = String(body?.newPass ?? "");
+
+    if (newPass.length < 12) {
+      return new Response(JSON.stringify({ error: "Khoá mới phải ≥ 12 ký tự." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (newPass === currentPass) {
+      return new Response(JSON.stringify({ error: "Khoá mới phải khác khoá cũ." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    const ok = await verifyPass(supabase, passphrase);
+    const ok = await verifyPass(supabase, currentPass);
     if (!ok) {
+      // Small constant delay to mask timing.
+      await new Promise((r) => setTimeout(r, 300));
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (all) {
-      const { error, count } = await supabase
-        .from("notes")
-        .delete({ count: "exact" })
-        .gte("created_at", "1970-01-01");
-      if (error) throw error;
-      return new Response(JSON.stringify({ deleted: count ?? 0 }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const hash = await bcrypt.hash(newPass, 10);
 
-    if (!Array.isArray(slugs) || slugs.length === 0) {
-      return new Response(JSON.stringify({ error: "slugs[] required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const { error } = await supabase
+      .from("admin_config")
+      .upsert({ id: 1, pass_hash: hash, updated_at: new Date().toISOString() });
 
-    const cleaned = slugs.filter((s): s is string => typeof s === "string");
-    const { error, count } = await supabase
-      .from("notes")
-      .delete({ count: "exact" })
-      .in("slug", cleaned);
     if (error) throw error;
 
-    return new Response(JSON.stringify({ deleted: count ?? 0 }), {
+    return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("admin-delete error", e);
+    console.error("admin-rotate error", e);
     return new Response(JSON.stringify({ error: String(e) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

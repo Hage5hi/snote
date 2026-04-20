@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import bcrypt from "https://esm.sh/bcryptjs@2.4.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,20 @@ function constantTimeEqual(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+async function verifyPass(supabase: any, input: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("admin_config")
+    .select("pass_hash")
+    .eq("id", 1)
+    .maybeSingle();
+  if (data?.pass_hash) {
+    try { return await bcrypt.compare(input, data.pass_hash); } catch { return false; }
+  }
+  const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
+  if (!expected) return false;
+  return constantTimeEqual(input, expected);
 }
 
 // Deletes empty notes older than `olderThanHours` (default 1 hour).
@@ -28,26 +43,21 @@ Deno.serve(async (req) => {
     const passphrase = String(body?.passphrase ?? "");
     const olderThanHours = Math.max(parseInt(body?.olderThanHours ?? "1", 10) || 1, 1);
 
-    const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
-    if (!expected || !constantTimeEqual(passphrase, expected)) {
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    const ok = await verifyPass(supabase, passphrase);
+    if (!ok) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
     const cutoff = new Date(Date.now() - olderThanHours * 3600 * 1000).toISOString();
 
-    // Delete only TRULY empty notes older than cutoff.
-    // - Plaintext: char_count = 0 is reliable
-    // - Encrypted: char_count is always 0 by design (cipher over Y.update binary),
-    //   so we MUST also check ydoc_state length is below the empty-doc threshold
-    //   (~100 chars covers IV + check + minimal Y header).
     const { error: e1, count: c1 } = await supabase
       .from("notes")
       .delete({ count: "exact" })
@@ -61,9 +71,8 @@ Deno.serve(async (req) => {
       .delete({ count: "exact" })
       .eq("is_encrypted", true)
       .lt("created_at", cutoff)
-      .filter("ydoc_state", "lt", "x".repeat(100)); // length comparison via lexicographic isn't safe — use RPC fallback below
+      .filter("ydoc_state", "lt", "x".repeat(100));
 
-    // Fallback: if filter above is unreliable, do a select+delete loop for encrypted notes.
     let encryptedDeleted = c2 ?? 0;
     if (e2 || c2 == null) {
       const { data: candidates } = await supabase
