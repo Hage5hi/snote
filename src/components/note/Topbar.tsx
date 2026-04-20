@@ -240,7 +240,11 @@ export function Topbar({
               <DropdownMenuItem onClick={copyAsAI}>
                 <Sparkles className="h-3.5 w-3.5" /> Copy as AI context
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={copyRawUrl} disabled={isEncrypted}>
+              <DropdownMenuItem
+                onClick={copyRawUrl}
+                disabled={isEncrypted}
+                title="URL trỏ thẳng edge function — cURL/wget nhận text/plain ngay (không qua SPA)"
+              >
                 <Terminal className="h-3.5 w-3.5" /> Copy raw URL (cURL)
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -276,11 +280,15 @@ export function Topbar({
                 <span className="ml-auto text-[10px] text-muted-foreground">⌘⇧P</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link to={`/${slug}+${slug}`} className="flex items-center gap-2">
-                  <Link2 className="h-3.5 w-3.5" />
-                  Mở Split view (cùng note)
-                </Link>
+              <DropdownMenuLabel className="flex items-center gap-2 text-xs">
+                <Link2 className="h-3.5 w-3.5" />
+                Split view
+              </DropdownMenuLabel>
+              <DropdownMenuItem
+                className="text-xs text-muted-foreground"
+                onSelect={(e) => e.preventDefault()}
+              >
+                Mở URL <code className="mx-1 font-mono">/a+b</code> để xem 2 note cạnh nhau.
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
