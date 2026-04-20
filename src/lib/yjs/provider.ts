@@ -73,7 +73,15 @@ export class SupabaseYjsProvider {
     this.statusListeners.forEach((cb) => cb(s));
   }
 
-  async connect(identity: { name: string; color: string }) {
+  /**
+   * Connect with an optional pre-fetched snapshot. When the caller already
+   * has the `ydoc_state` (e.g. from a single combined query in NotePage), we
+   * skip the extra round-trip.
+   */
+  async connect(
+    identity: { name: string; color: string },
+    options?: { prefetchedYdocState?: string | null; rowExists?: boolean },
+  ) {
     // 0) Try the prefetched snapshot stashed by Home page hover/touch.
     // Skip prefetched snapshot when encrypted, since the prefetch path doesn't
     // know the key and the bytes would not be Y.update format yet.
@@ -94,16 +102,24 @@ export class SupabaseYjsProvider {
       }
     }
 
-    // 1) Load snapshot from Postgres (if any)
-    const { data, error } = await supabase
-      .from("notes")
-      .select("ydoc_state")
-      .eq("slug", this.slug)
-      .maybeSingle();
+    // 1) Apply pre-fetched ydoc_state if caller passed one; else fetch now.
+    let ydocState = options?.prefetchedYdocState ?? null;
+    let rowExists = options?.rowExists ?? null;
+    if (ydocState === null && rowExists === null) {
+      const { data, error } = await supabase
+        .from("notes")
+        .select("ydoc_state")
+        .eq("slug", this.slug)
+        .maybeSingle();
+      if (!error) {
+        ydocState = data?.ydoc_state ?? null;
+        rowExists = !!data;
+      }
+    }
 
-    if (!error && data?.ydoc_state) {
+    if (ydocState) {
       try {
-        let update = base64ToBytes(data.ydoc_state);
+        let update = base64ToBytes(ydocState);
         if (this.encryption && update.byteLength > 0) {
           update = await this.encryption.decrypt(update);
         }
@@ -111,9 +127,9 @@ export class SupabaseYjsProvider {
       } catch (e) {
         console.warn("Failed to apply snapshot", e);
       }
-    } else if (!data) {
+    } else if (rowExists === false) {
       // Create empty row so multiple clients can find the slug immediately.
-      await supabase.from("notes").upsert({ slug: this.slug }, { onConflict: "slug" });
+      void supabase.from("notes").upsert({ slug: this.slug }, { onConflict: "slug" });
     }
 
     // 2) Set local awareness identity.
