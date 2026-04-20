@@ -321,6 +321,7 @@ export function Topbar({
           <ThemeToggle />
         </div>
       </header>
+      <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
     </>
   );
 }
