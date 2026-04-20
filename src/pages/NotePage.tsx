@@ -235,6 +235,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handleBeforeUnload);
       document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(snapshotTimer);
       if (countTimer) window.clearTimeout(countTimer);
