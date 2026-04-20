@@ -52,16 +52,17 @@ export default function AdminPanel() {
     }
   }, []);
 
-  const fetchList = async (passToUse: string, q = "") => {
+  const fetchList = async (passToUse: string, q = "", tag = "") => {
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("admin-list", {
-        body: { passphrase: passToUse, search: q, limit: 200, offset: 0 },
+        body: { passphrase: passToUse, search: q, tag, limit: 200, offset: 0 },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       setItems(data.items ?? []);
       setTotal(data.total ?? 0);
+      setTopTags(data.topTags ?? []);
       setSelected(new Set());
       return true;
     } catch (e: any) {
@@ -89,7 +90,13 @@ export default function AdminPanel() {
 
   const onSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    await fetchList(pass, search);
+    await fetchList(pass, search, tagFilter);
+  };
+
+  const applyTag = async (tag: string) => {
+    const next = tagFilter === tag ? "" : tag;
+    setTagFilter(next);
+    await fetchList(pass, search, next);
   };
 
   const toggleAll = () => {
