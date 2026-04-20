@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { lazy, Suspense } from "react";
 import Home from "./pages/Home";
@@ -15,8 +15,44 @@ const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 
 const queryClient = new QueryClient();
-
 const SuspenseFallback = <div className="h-svh bg-background" />;
+
+/**
+ * SlugDispatcher inspects the single-segment path and routes to the right view:
+ *  - "/note"            → admin panel
+ *  - ends with ".md"    → raw plaintext view
+ *  - contains "+"       → split view
+ *  - otherwise          → note editor
+ */
+function SlugDispatcher() {
+  const { slug = "" } = useParams();
+  if (slug === "note") {
+    return (
+      <Suspense fallback={SuspenseFallback}>
+        <AdminPanel />
+      </Suspense>
+    );
+  }
+  if (/\.md$/i.test(slug)) {
+    return (
+      <Suspense fallback={SuspenseFallback}>
+        <RawView />
+      </Suspense>
+    );
+  }
+  if (slug.includes("+")) {
+    return (
+      <Suspense fallback={SuspenseFallback}>
+        <SplitView />
+      </Suspense>
+    );
+  }
+  return (
+    <Suspense fallback={SuspenseFallback}>
+      <NotePage />
+    </Suspense>
+  );
+}
 
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
@@ -27,40 +63,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Home />} />
-            <Route
-              path="/note"
-              element={
-                <Suspense fallback={SuspenseFallback}>
-                  <AdminPanel />
-                </Suspense>
-              }
-            />
-            {/* Raw plaintext view: /xxx.md → React route, decrypts encrypted notes locally */}
-            <Route
-              path="/:slugMd"
-              element={
-                <Suspense fallback={SuspenseFallback}>
-                  <RawView />
-                </Suspense>
-              }
-            />
-            {/* Split view: /a+b */}
-            <Route
-              path="/:slugs"
-              element={
-                <Suspense fallback={SuspenseFallback}>
-                  <SplitView />
-                </Suspense>
-              }
-            />
-            <Route
-              path="/:slug"
-              element={
-                <Suspense fallback={SuspenseFallback}>
-                  <NotePage />
-                </Suspense>
-              }
-            />
+            <Route path="/:slug" element={<SlugDispatcher />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
