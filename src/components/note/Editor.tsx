@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 
 // Detect dominant CJK script in text so we can set the right `lang` attribute
 // for word-break and font-fallback rules.
@@ -17,14 +17,16 @@ function detectLang(text: string): string {
   return "en";
 }
 import { EditorState } from "@codemirror/state";
-import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from "@codemirror/view";
+import { EditorView, keymap, highlightActiveLine, drawSelection } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
 import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
+import { completionKeymap } from "@codemirror/autocomplete";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
+import { slashCommands } from "@/lib/slash-commands";
 
 interface EditorProps {
   doc: Y.Doc;
@@ -32,10 +34,37 @@ interface EditorProps {
   className?: string;
 }
 
-export function Editor({ doc, awareness, className }: EditorProps) {
+export interface EditorHandle {
+  /** Scroll to a 0-indexed line and place the cursor there. */
+  jumpToLine: (line: number) => void;
+}
+
+export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
+  { doc, awareness, className },
+  ref,
+) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [lang, setLang] = useState("en");
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      jumpToLine: (line: number) => {
+        const view = viewRef.current;
+        if (!view) return;
+        const total = view.state.doc.lines;
+        const target = Math.max(1, Math.min(total, line + 1));
+        const linePos = view.state.doc.line(target);
+        view.dispatch({
+          selection: { anchor: linePos.from },
+          effects: EditorView.scrollIntoView(linePos.from, { y: "start", yMargin: 16 }),
+        });
+        view.focus();
+      },
+    }),
+    [],
+  );
 
   // Track dominant script of the document so CSS word-break rules apply.
   useEffect(() => {
@@ -61,7 +90,8 @@ export function Editor({ doc, awareness, className }: EditorProps) {
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         search({ top: true }),
         highlightSelectionMatches(),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        slashCommands(),
+        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),
         EditorView.theme({
@@ -111,4 +141,4 @@ export function Editor({ doc, awareness, className }: EditorProps) {
   }, [doc, awareness]);
 
   return <div ref={hostRef} lang={lang} className={className} />;
-}
+});
