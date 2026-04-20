@@ -8,6 +8,8 @@ import { Topbar } from "@/components/note/Topbar";
 import { UnlockForm } from "@/components/note/UnlockForm";
 import { PageIndicator } from "@/components/note/PageIndicator";
 import { WordCountPill } from "@/components/note/WordCountPill";
+import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
+import { toast } from "@/hooks/use-toast";
 import { OutlineSidebar } from "@/components/note/OutlineSidebar";
 import { SupabaseYjsProvider, type SaveStatus, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
