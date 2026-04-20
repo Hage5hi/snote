@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, FileText, Shuffle, Trash2 } from "lucide-react";
+import { ArrowRight, Check, FileText, Loader2, Shuffle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -9,6 +9,7 @@ import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
 function randomSlug() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -41,8 +42,45 @@ export default function Home() {
   const [slug, setSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentNote[]>([]);
+  const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
 
   useEffect(() => setRecents(getRecents()), []);
+
+  // Debounced availability check.
+  useEffect(() => {
+    const trimmed = slug.trim();
+    if (!trimmed) {
+      setSlugStatus("idle");
+      return;
+    }
+    if (!SLUG_RE.test(trimmed)) {
+      setSlugStatus("invalid");
+      return;
+    }
+    setSlugStatus("checking");
+    const ctrl = new AbortController();
+    const t = window.setTimeout(async () => {
+      const { data, error } = await supabase
+        .from("notes")
+        .select("slug, char_count")
+        .eq("slug", trimmed)
+        .abortSignal(ctrl.signal)
+        .maybeSingle();
+      if (ctrl.signal.aborted) return;
+      if (error) {
+        setSlugStatus("idle");
+        return;
+      }
+      // Treat empty notes as still available — common case is auto-created
+      // from a typo or prefetch path.
+      if (!data || (data.char_count ?? 0) === 0) setSlugStatus("available");
+      else setSlugStatus("taken");
+    }, 350);
+    return () => {
+      ctrl.abort();
+      window.clearTimeout(t);
+    };
+  }, [slug]);
 
   // Warm up heavy editor modules so opening a note feels instant.
   useEffect(() => {
