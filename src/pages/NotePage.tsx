@@ -7,6 +7,7 @@ import { Preview } from "@/components/note/Preview";
 import { Topbar } from "@/components/note/Topbar";
 import { UnlockForm } from "@/components/note/UnlockForm";
 import { PageIndicator } from "@/components/note/PageIndicator";
+import { WordCountPill } from "@/components/note/WordCountPill";
 import { SupabaseYjsProvider, type SaveStatus, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
@@ -269,6 +270,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           onNext={() => flip(1)}
         />
       )}
+
+      <WordCountPill words={counts.words} chars={counts.chars} />
     </div>
   );
 }

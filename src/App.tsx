@@ -7,6 +7,7 @@ import { ThemeProvider } from "next-themes";
 import { lazy, Suspense } from "react";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
+import { CommandPalette } from "./components/CommandPalette";
 
 // Lazy-load heavy routes so the editor / admin bundles only load when needed.
 const NotePage = lazy(() => import("./pages/NotePage"));
@@ -61,6 +62,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <CommandPalette />
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/:slug" element={<SlugDispatcher />} />
