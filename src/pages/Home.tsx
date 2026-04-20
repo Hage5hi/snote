@@ -8,6 +8,18 @@ import { getRecents, removeRecent, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 
+// Cross-fade navigation when the browser supports the View Transitions API.
+function softNavigate(navigate: (path: string) => void, path: string) {
+  const w = document as unknown as {
+    startViewTransition?: (cb: () => void) => unknown;
+  };
+  if (w.startViewTransition) {
+    w.startViewTransition(() => navigate(path));
+  } else {
+    navigate(path);
+  }
+}
+
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
@@ -101,21 +113,25 @@ export default function Home() {
       setError("Tên note chỉ chứa chữ, số, dấu - hoặc _ (tối đa 64 ký tự)");
       return;
     }
-    navigate(`/${trimmed}`);
+    softNavigate(navigate, `/${trimmed}`);
   };
 
-  // Prefetch a note's snapshot on hover, stash in sessionStorage as a hint.
+  // Prefetch a note's full opening payload on hover. We grab enc-meta AND the
+  // ydoc snapshot in one query so the eventual NotePage mount has zero
+  // network waterfall.
   const prefetchSnapshot = (s: string) => {
     const key = `note-prefetch:${s}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
     void supabase
       .from("notes")
-      .select("ydoc_state")
+      .select("ydoc_state, is_encrypted, enc_salt, enc_check")
       .eq("slug", s)
       .maybeSingle()
       .then(({ data }) => {
-        if (data?.ydoc_state) {
+        // Only stash the snapshot for plaintext notes — encrypted bytes need
+        // the key to be useful and would just take cache space.
+        if (data?.ydoc_state && !data?.is_encrypted) {
           try {
             sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
           } catch {
@@ -189,7 +205,7 @@ export default function Home() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => navigate(`/${randomSlug()}`)}
+            onClick={() => softNavigate(navigate, `/${randomSlug()}`)}
           >
             <Shuffle className="h-3.5 w-3.5" />
             Note ngẫu nhiên
@@ -216,7 +232,7 @@ export default function Home() {
                 >
                   <button
                     className="flex flex-1 items-center justify-between text-left"
-                    onClick={() => navigate(`/${r.slug}`)}
+                    onClick={() => softNavigate(navigate, `/${r.slug}`)}
                   >
                     <span className="font-mono text-sm">/{r.slug}</span>
                     <span className="text-xs text-muted-foreground">{timeAgo(r.lastOpenedAt)}</span>
@@ -248,7 +264,7 @@ export default function Home() {
               {["scratch", "todo", "ideas", "journal"].map((s) => (
                 <button
                   key={s}
-                  onClick={() => navigate(`/${s}`)}
+                  onClick={() => softNavigate(navigate, `/${s}`)}
                   onMouseEnter={() => prefetchSnapshot(s)}
                   className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground hover:bg-accent"
                 >

@@ -21,13 +21,13 @@ import { useEink } from "@/hooks/use-eink";
 import { usePagination } from "@/hooks/use-pagination";
 import { supabase } from "@/integrations/supabase/client";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck } from "@/lib/crypto";
-
-type ProviderBundle = { provider: SupabaseYjsProvider; doc: Y.Doc };
+import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
 const SUDDEN_DELETE_THRESHOLD = 500;
 const SUDDEN_DELETE_WINDOW_MS = 2000;
+const COUNT_DEBOUNCE_MS = 150;
 
 interface NotePageProps {
   /** When provided (e.g. from SplitView), use this slug instead of the route param. */
@@ -38,17 +38,32 @@ type EncMeta = {
   isEncrypted: boolean;
   salt: string | null;
   check: string | null;
+  ydocState: string | null;
+  rowExists: boolean;
 };
 
 export default function NotePage({ embedSlug }: NotePageProps) {
   const params = useParams();
   const slug = embedSlug ?? params.slug ?? "";
+  const validSlug = SLUG_RE.test(slug);
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
   const [showPreview, setShowPreview] = useState(!isMobile && !embedSlug);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { goal } = useWordGoal(slug);
+
+  // Mount Y.Doc IMMEDIATELY (synchronously) — no waiting on enc-meta or any
+  // fetch. The doc-cache returns the previously-warm doc when navigating
+  // back so re-opens are essentially free.
+  const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
+
+  // Provider is created alongside the doc and reused; encryption hooks are
+  // attached later if/when they become available.
+  const providerRef = useRef<SupabaseYjsProvider | null>(null);
+  if (validSlug && doc && !providerRef.current) {
+    providerRef.current = new SupabaseYjsProvider(slug, doc);
+  }
 
   // Celebrate when crossing the goal threshold (once per goal value).
   useEffect(() => {
@@ -59,23 +74,25 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       });
     }
   }, [slug, counts.words, goal]);
+
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
-  // Mount the eink hook here so the document class stays in sync on this page.
   useEink();
 
-  const validSlug = SLUG_RE.test(slug);
-
-  // Encryption state. Three phases:
-  //  - "loading": waiting on enc metadata fetch
-  //  - "needs-key": note is encrypted, waiting for user to enter the key
-  //  - "ready": encryption (or lack thereof) is decided, provider can mount
+  // Encryption phases: "loading" (waiting on enc-meta), "needs-key", "ready".
+  // Editor mounts during "loading" too — only the network sync is gated.
   const [encPhase, setEncPhase] = useState<"loading" | "needs-key" | "ready">("loading");
-  const [encMeta, setEncMeta] = useState<EncMeta>({ isEncrypted: false, salt: null, check: null });
+  const [encMeta, setEncMeta] = useState<EncMeta>({
+    isEncrypted: false,
+    salt: null,
+    check: null,
+    ydocState: null,
+    rowExists: false,
+  });
   const [encryption, setEncryption] = useState<Encryption | null>(null);
 
-  // Read enc metadata once per slug.
+  // Single combined fetch: enc-meta + ydoc_state in one round-trip.
   useEffect(() => {
     if (!validSlug) return;
     setEncPhase("loading");
@@ -83,7 +100,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     (async () => {
       const { data } = await supabase
         .from("notes")
-        .select("is_encrypted, enc_salt, enc_check")
+        .select("is_encrypted, enc_salt, enc_check, ydoc_state")
         .eq("slug", slug)
         .maybeSingle();
       if (cancelled) return;
@@ -91,6 +108,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         isEncrypted: !!data?.is_encrypted,
         salt: data?.enc_salt ?? null,
         check: data?.enc_check ?? null,
+        ydocState: data?.ydoc_state ?? null,
+        rowExists: !!data,
       };
       setEncMeta(meta);
 
@@ -99,7 +118,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         setEncPhase("ready");
         return;
       }
-      // Try the URL hash first.
       const hashKey = window.location.hash.startsWith("#")
         ? decodeURIComponent(window.location.hash.slice(1))
         : "";
@@ -126,19 +144,10 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     };
   }, [slug, validSlug]);
 
-  // Build provider only once we know whether we have encryption (or none).
-  const bundle = useMemo<ProviderBundle | null>(() => {
-    if (!validSlug || encPhase !== "ready") return null;
-    const doc = new Y.Doc();
-    const provider = new SupabaseYjsProvider(slug, doc, encryption ?? undefined);
-    return { provider, doc };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, validSlug, encPhase]);
-
+  // Mount IDB + connect provider once enc decision is made.
   useEffect(() => {
-    if (!bundle) return;
-    const { doc, provider } = bundle;
-    // Keep encryption ref in sync (in case user locks/unlocks later).
+    if (!validSlug || !doc || encPhase !== "ready") return;
+    const provider = providerRef.current!;
     provider.setEncryption(encryption);
 
     const identity = getIdentity();
@@ -161,6 +170,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     let prevContent = ytext.toString();
     let lastBigDeleteAt = 0;
 
+    // Debounced counts: avoid string scan + setState on every keystroke.
+    let countTimer: number | null = null;
     const updateCounts = () => {
       const text = ytext.toString();
       const chars = text.length;
@@ -179,63 +190,69 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       }
       prevContent = text;
     };
+    const scheduleCounts = () => {
+      if (countTimer) window.clearTimeout(countTimer);
+      countTimer = window.setTimeout(updateCounts, COUNT_DEBOUNCE_MS);
+    };
     updateCounts();
-    ytext.observe(updateCounts);
+    ytext.observe(scheduleCounts);
 
     idb.whenSynced.then(() => {
-      provider.connect(identity).catch((e) => console.warn("Provider connect failed", e));
+      provider
+        .connect(identity, {
+          prefetchedYdocState: encMeta.ydocState,
+          rowExists: encMeta.rowExists,
+        })
+        .catch((e) => console.warn("Provider connect failed", e));
       prevContent = ytext.toString();
       updateCounts();
       void maybeSaveSnapshot(slug, prevContent);
     });
 
-    const snapshotTimer = window.setInterval(() => {
+    // Pause snapshot interval while tab hidden; flush when visible again.
+    let snapshotTimer = window.setInterval(() => {
       void maybeSaveSnapshot(slug, ytext.toString());
     }, SNAPSHOT_INTERVAL_MS);
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        window.clearInterval(snapshotTimer);
+        // Best-effort flush before browser may freeze the tab.
+        void maybeSaveSnapshot(slug, ytext.toString());
+      } else {
+        snapshotTimer = window.setInterval(() => {
+          void maybeSaveSnapshot(slug, ytext.toString());
+        }, SNAPSHOT_INTERVAL_MS);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     const handleBeforeUnload = () => {
-      provider.saveSnapshot();
-      void maybeSaveSnapshot(slug, ytext.toString());
+      // sendBeacon survives the page teardown; sync supabase fetch may not.
+      provider.flushBeacon();
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handleBeforeUnload);
 
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handleBeforeUnload);
+      document.removeEventListener("visibilitychange", onVisibility);
       window.clearInterval(snapshotTimer);
-      ytext.unobserve(updateCounts);
+      if (countTimer) window.clearTimeout(countTimer);
+      ytext.unobserve(scheduleCounts);
       unsubStatus();
       unsubAwareness();
-      provider.destroy();
+      void provider.destroy();
+      providerRef.current = null;
       idb.destroy();
-      doc.destroy();
+      // Doc itself stays warm in cache for fast re-open; only release.
+      releaseDoc(slug);
     };
-  }, [bundle, slug, embedSlug, encryption]);
+  }, [slug, validSlug, doc, embedSlug, encPhase, encryption, encMeta.ydocState, encMeta.rowExists]);
 
   if (!validSlug) return <Navigate to="/" replace />;
-
-  if (encPhase === "loading") {
-    return <div className="h-svh bg-background" />;
-  }
-
-  if (encPhase === "needs-key") {
-    return (
-      <UnlockForm
-        slug={slug}
-        salt={encMeta.salt!}
-        check={encMeta.check!}
-        onUnlock={(key) => {
-          setEncryption({
-            encrypt: (b) => encryptBytes(key, b),
-            decrypt: (b) => decryptBytes(key, b),
-          });
-          setEncPhase("ready");
-        }}
-      />
-    );
-  }
-
-  if (!bundle) return null;
-  const { doc, provider } = bundle;
+  if (!doc) return null;
+  const provider = providerRef.current!;
   const getContent = () => doc.getText("content").toString();
 
   // SplitView wraps each panel — render the workspace without the global topbar.
@@ -246,6 +263,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       </div>
     );
   }
+
+  const showUnlockOverlay = encPhase === "needs-key";
 
   return (
     <div className="flex h-svh flex-col bg-background">
@@ -266,13 +285,30 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         onTogglePagination={togglePagination}
       />
 
-      <main className="flex flex-1 min-h-0 divide-x divide-border">
+      <main className="relative flex flex-1 min-h-0 divide-x divide-border">
         <div className={showPreview ? "hidden md:block md:flex-1 min-w-0" : "flex-1 min-w-0"}>
           <Editor ref={editorRef} doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
         </div>
         {showPreview && (
           <div className={`flex-1 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}>
             <Preview doc={doc} />
+          </div>
+        )}
+
+        {showUnlockOverlay && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
+            <UnlockForm
+              slug={slug}
+              salt={encMeta.salt!}
+              check={encMeta.check!}
+              onUnlock={(key) => {
+                setEncryption({
+                  encrypt: (b) => encryptBytes(key, b),
+                  decrypt: (b) => decryptBytes(key, b),
+                });
+                setEncPhase("ready");
+              }}
+            />
           </div>
         )}
       </main>

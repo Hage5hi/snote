@@ -12,6 +12,33 @@ import {
 import { FileText, Home as HomeIcon, Keyboard, Pin, PinOff, Plus, Shuffle } from "lucide-react";
 import { getRecents, getPinned, togglePin } from "@/lib/recent-notes";
 import { ShortcutHelp } from "./ShortcutHelp";
+import { supabase } from "@/integrations/supabase/client";
+
+// Prefetch a slug's payload (snapshot + enc-meta) so the editor opens with
+// no network waterfall. Idempotent per session.
+function prefetchSlug(s: string) {
+  const key = `note-prefetch:${s}`;
+  if (sessionStorage.getItem(key)) return;
+  sessionStorage.setItem(key, "1");
+  void supabase
+    .from("notes")
+    .select("ydoc_state, is_encrypted")
+    .eq("slug", s)
+    .maybeSingle()
+    .then(({ data }) => {
+      if (data?.ydoc_state && !data?.is_encrypted) {
+        try {
+          sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
+        } catch { /* quota */ }
+      }
+    });
+}
+
+function softNavigate(navigate: (p: string) => void, path: string) {
+  const w = document as unknown as { startViewTransition?: (cb: () => void) => unknown };
+  if (w.startViewTransition) w.startViewTransition(() => navigate(path));
+  else navigate(path);
+}
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -71,7 +98,7 @@ export function CommandPalette() {
   const go = (slug: string) => {
     setOpen(false);
     setQuery("");
-    navigate(`/${slug}`);
+    softNavigate(navigate, `/${slug}`);
   };
 
   const handleTogglePin = (slug: string, e: React.MouseEvent) => {
@@ -118,6 +145,7 @@ export function CommandPalette() {
                     key={r.slug}
                     value={`pinned-${r.slug}`}
                     onSelect={() => go(r.slug)}
+                    onMouseEnter={() => prefetchSlug(r.slug)}
                   >
                     <Pin className="h-4 w-4 text-primary" />
                     <span className="font-mono flex-1">/{r.slug}</span>
@@ -145,6 +173,7 @@ export function CommandPalette() {
                     key={r.slug}
                     value={`recent-${r.slug}`}
                     onSelect={() => go(r.slug)}
+                    onMouseEnter={() => prefetchSlug(r.slug)}
                   >
                     <FileText className="h-4 w-4" />
                     <span className="font-mono flex-1">/{r.slug}</span>
