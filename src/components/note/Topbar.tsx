@@ -239,6 +239,12 @@ export function Topbar({
               <DropdownMenuItem onClick={() => exportMarkdown(slug, getContent())}>
                 <Download className="h-3.5 w-3.5" /> Download .md
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportHtml(slug, getContent())}>
+                <FileCode className="h-3.5 w-3.5" /> Download .html
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => exportPdf(slug, getContent())}>
+                <FileType className="h-3.5 w-3.5" /> Print to PDF
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => exportPlainText(slug, getContent())}>
                 <Download className="h-3.5 w-3.5" /> Download .txt
               </DropdownMenuItem>
