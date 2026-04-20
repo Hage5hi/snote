@@ -277,7 +277,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         />
       )}
 
-      <WordCountPill words={counts.words} chars={counts.chars} />
+      <WordCountPill words={counts.words} chars={counts.chars} goal={goal} />
     </div>
   );
 }
