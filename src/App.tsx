@@ -16,7 +16,11 @@ const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 
 const queryClient = new QueryClient();
-const SuspenseFallback = <div className="h-svh bg-background" />;
+const SuspenseFallback = (
+  <div className="flex h-svh items-center justify-center bg-background">
+    <div className="h-7 w-7 animate-spin rounded-full border-2 border-muted border-t-foreground/60" />
+  </div>
+);
 
 /**
  * SlugDispatcher inspects the single-segment path and routes to the right view:
