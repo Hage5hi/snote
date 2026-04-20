@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import * as Y from "yjs";
 import { ClipboardCopy, Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PresenceDots, type PresenceUser } from "../PresenceDots";
