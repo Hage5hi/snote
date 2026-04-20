@@ -93,7 +93,7 @@ export default function AdminPanel() {
   const onLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pass.trim()) return;
-    const ok = await fetchList(pass);
+    const ok = await fetchList(pass, "", tagFilter);
     if (ok) {
       sessionStorage.setItem(SESSION_KEY, pass);
       setAuthed(true);
