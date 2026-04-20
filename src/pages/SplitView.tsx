@@ -12,8 +12,8 @@ const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
  * Optional sync-scroll keeps the two panels at the same scroll ratio.
  */
 export default function SplitView() {
-  const { slugs = "" } = useParams();
-  const [left, right] = slugs.split("+");
+  const { slug = "" } = useParams();
+  const [left, right] = slug.split("+");
   const [syncScroll, setSyncScroll] = useState(true);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);

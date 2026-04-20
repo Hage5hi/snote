@@ -16,8 +16,8 @@ const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 export default function RawView() {
   const params = useParams();
   const [searchParams] = useSearchParams();
-  // Route is `/:slugMd` where slugMd = "abc.md"; strip the suffix.
-  const slugMd = params.slugMd ?? "";
+  // Single-segment route — App.tsx routes anything ending in `.md` here.
+  const slugMd = params.slug ?? "";
   const slug = slugMd.replace(/\.md$/i, "");
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
