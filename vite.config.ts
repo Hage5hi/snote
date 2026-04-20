@@ -18,4 +18,39 @@ export default defineConfig(({ mode }) => ({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    target: "es2020",
+    cssCodeSplit: true,
+    sourcemap: false,
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        // Split heavy vendors so first paint pulls only what's needed.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return;
+          if (id.includes("/react-dom/") || id.includes("/react-router") || id.match(/\/react\//)) {
+            return "react-vendor";
+          }
+          if (id.includes("@codemirror") || id.includes("y-codemirror")) {
+            return "cm-vendor";
+          }
+          if (id.includes("/yjs/") || id.includes("y-indexeddb") || id.includes("y-protocols")) {
+            return "yjs-vendor";
+          }
+          if (id.includes("/marked/") || id.includes("/dompurify/")) {
+            return "md-vendor";
+          }
+          if (id.includes("@radix-ui")) {
+            return "radix-vendor";
+          }
+          if (id.includes("@supabase")) {
+            return "supabase-vendor";
+          }
+          if (id.includes("/qrcode/")) {
+            return "qrcode-vendor";
+          }
+        },
+      },
+    },
+  },
 }));
