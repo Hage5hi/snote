@@ -134,7 +134,7 @@ export default function Home() {
         </form>
         {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
 
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
@@ -143,6 +143,9 @@ export default function Home() {
             <Shuffle className="h-3.5 w-3.5" />
             Note ngẫu nhiên
           </Button>
+          <span className="text-[11px] text-muted-foreground">
+            hoặc nhấn <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd> để mở bảng lệnh
+          </span>
         </div>
 
         <InstallPrompt />
