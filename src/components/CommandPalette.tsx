@@ -98,7 +98,7 @@ export function CommandPalette() {
   const go = (slug: string) => {
     setOpen(false);
     setQuery("");
-    navigate(`/${slug}`);
+    softNavigate(navigate, `/${slug}`);
   };
 
   const handleTogglePin = (slug: string, e: React.MouseEvent) => {
@@ -145,6 +145,7 @@ export function CommandPalette() {
                     key={r.slug}
                     value={`pinned-${r.slug}`}
                     onSelect={() => go(r.slug)}
+                    onMouseEnter={() => prefetchSlug(r.slug)}
                   >
                     <Pin className="h-4 w-4 text-primary" />
                     <span className="font-mono flex-1">/{r.slug}</span>
@@ -172,6 +173,7 @@ export function CommandPalette() {
                     key={r.slug}
                     value={`recent-${r.slug}`}
                     onSelect={() => go(r.slug)}
+                    onMouseEnter={() => prefetchSlug(r.slug)}
                   >
                     <FileText className="h-4 w-4" />
                     <span className="font-mono flex-1">/{r.slug}</span>
