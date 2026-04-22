@@ -91,6 +91,14 @@ export default function AdminPanel() {
     const candidate = hashKey || cached;
     initialTagRef.current = hashTag;
 
+    // SECURITY: scrub the hash from the URL *synchronously* before any async
+    // network call so the passphrase never lingers in window.location during
+    // the await. This protects against extensions, screen recording, and
+    // referrer leakage that could capture the hash mid-verification.
+    if (window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+
     (async () => {
       // Always make a verify request — even with empty key — so timing
       // looks the same to an outside observer.
