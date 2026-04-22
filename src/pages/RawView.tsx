@@ -52,11 +52,26 @@ export default function RawView() {
         setText(data.content ?? "");
         return;
       }
-      // Encrypted: pull key from URL hash (#key) or ?key=
-      const hashKey = window.location.hash.startsWith("#")
+      // Encrypted: pull key from URL hash (#key) ONLY.
+      // Hash fragments are never sent to servers, never appear in Referer
+      // headers, and are not captured by most logging/analytics — unlike
+      // query params. Backward-compat with `?key=`: migrate to hash, then
+      // strip the query param before doing anything else with the key.
+      let hashKey = window.location.hash.startsWith("#")
         ? decodeURIComponent(window.location.hash.slice(1))
         : "";
-      const key = hashKey || searchParams.get("key") || "";
+      const legacyQueryKey = searchParams.get("key");
+      if (!hashKey && legacyQueryKey) {
+        hashKey = legacyQueryKey;
+        try {
+          window.history.replaceState(
+            null,
+            "",
+            `${window.location.pathname}#${encodeURIComponent(legacyQueryKey)}`
+          );
+        } catch {}
+      }
+      const key = hashKey;
       if (!key) {
         setError("Note này được mã hoá. Thêm `#<khoá>` vào URL để xem.");
         return;
