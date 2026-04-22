@@ -113,12 +113,8 @@ export default function AdminPanel() {
           setGate("denied");
           return;
         }
-        // Verified. Persist + scrub hash from URL so it doesn't leak via
-        // browser history / screenshots / screen-share.
+        // Verified. Persist (hash already scrubbed synchronously above).
         sessionStorage.setItem(SESSION_KEY, candidate);
-        if (window.location.hash) {
-          window.history.replaceState(null, "", window.location.pathname);
-        }
         setPass(candidate);
         if (hashTag) setTagFilter(hashTag);
         setItems(data.items ?? []);
