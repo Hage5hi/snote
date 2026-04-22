@@ -47,7 +47,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const slug = embedSlug ?? params.slug ?? "";
   const validSlug = SLUG_RE.test(slug);
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
-  const [showPreview, setShowPreview] = useState(!isMobile && !embedSlug);
+  const [showPreview, setShowPreview] = useState(false);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
