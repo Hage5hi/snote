@@ -1,7 +1,7 @@
 {
-  "name": "Inkat Note — Realtime markdown notes",
-  "short_name": "Inkat",
-  "description": "Inkat Note — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.",
+  "name": "Inkat Notes — Realtime markdown notes",
+  "short_name": "Inkat Notes",
+  "description": "Inkat Notes — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
