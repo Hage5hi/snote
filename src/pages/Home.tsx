@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Check, FileText, Loader2, Shuffle, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, Check, Loader2, Shuffle, Sparkles, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { getRecents, removeRecent, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
+import { useI18n } from "@/i18n";
 
 // Cross-fade navigation when the browser supports the View Transitions API.
 function softNavigate(navigate: (path: string) => void, path: string) {
@@ -30,15 +32,18 @@ function randomSlug() {
   return s;
 }
 
-function timeAgo(ts: number) {
-  const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "vừa xong";
-  if (m < 60) return `${m} phút trước`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} giờ trước`;
-  const d = Math.floor(h / 24);
-  return `${d} ngày trước`;
+function useTimeAgo() {
+  const { t } = useI18n();
+  return (ts: number) => {
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return t("time.just_now");
+    if (m < 60) return t("time.minutes_ago", { n: m });
+    const h = Math.floor(m / 60);
+    if (h < 24) return t("time.hours_ago", { n: h });
+    const d = Math.floor(h / 24);
+    return t("time.days_ago", { n: d });
+  };
 }
 
 // Idle prefetch helper.
@@ -51,6 +56,8 @@ function onIdle(cb: () => void) {
 
 export default function Home() {
   const navigate = useNavigate();
+  const { t } = useI18n();
+  const timeAgo = useTimeAgo();
   const [slug, setSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentNote[]>([]);
