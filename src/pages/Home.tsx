@@ -117,7 +117,7 @@ export default function Home() {
   const open = (s: string) => {
     const trimmed = s.trim();
     if (!SLUG_RE.test(trimmed)) {
-      setError("Tên note chỉ chứa chữ, số, dấu - hoặc _ (tối đa 64 ký tự)");
+      setError(t("home.error.invalid_slug"));
       return;
     }
     softNavigate(navigate, `/${trimmed}`);
@@ -155,15 +155,20 @@ export default function Home() {
           <img src="/logo.png" alt="Inkat Notes logo" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Inkat Notes</span>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-1">
+          <LanguageToggle />
+          <ThemeToggle />
+        </div>
       </header>
 
       <main className="mx-auto w-full max-w-xl px-4 py-12 md:py-20">
         <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-          Note online, đồng bộ tức thì.
+          {t("home.tagline")}
         </h1>
         <p className="mt-3 text-muted-foreground">
-          Mở bất kỳ note nào bằng URL — ví dụ <code className="rounded bg-muted px-1.5 py-0.5 text-sm">/{`hello`}</code>. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.
+          {t("home.intro_prefix")}
+          <code className="rounded bg-muted px-1.5 py-0.5 text-sm">/hello</code>
+          {t("home.intro_suffix")}
         </p>
 
         <form
@@ -182,25 +187,25 @@ export default function Home() {
                 setSlug(e.target.value);
                 setError(null);
               }}
-              placeholder="my-note"
+              placeholder={t("home.placeholder")}
               className="border-0 focus-visible:ring-0 font-mono"
               maxLength={64}
             />
             <div className="shrink-0 whitespace-nowrap pr-2 text-muted-foreground">
               {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {slugStatus === "available" && (
-                <Check className="h-3.5 w-3.5 text-success" aria-label="Slug trống" />
+                <Check className="h-3.5 w-3.5 text-success" aria-label={t("home.status.available")} />
               )}
               {slugStatus === "taken" && (
-                <span className="text-[10px] font-medium text-warning">Đã có note</span>
+                <span className="text-[10px] font-medium text-warning">{t("home.status.taken")}</span>
               )}
               {slugStatus === "invalid" && (
-                <span className="text-[10px] font-medium text-destructive">Sai định dạng</span>
+                <span className="text-[10px] font-medium text-destructive">{t("home.status.invalid")}</span>
               )}
             </div>
           </div>
           <Button type="submit" disabled={!slug.trim()}>
-            {slugStatus === "taken" ? "Mở note có sẵn" : "Mở"}
+            {slugStatus === "taken" ? t("home.btn.open_existing") : t("home.btn.open")}
             <ArrowRight className="h-4 w-4" />
           </Button>
         </form>
@@ -213,10 +218,10 @@ export default function Home() {
             onClick={() => softNavigate(navigate, `/${randomSlug()}`)}
           >
             <Shuffle className="h-3.5 w-3.5" />
-            Note ngẫu nhiên
+            {t("home.btn.random")}
           </Button>
           <span className="text-[11px] text-muted-foreground">
-            hoặc nhấn <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd> để mở bảng lệnh
+            {t("home.cmdk_hint_prefix")}<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>{t("home.cmdk_hint_suffix")}
           </span>
         </div>
 
@@ -225,7 +230,7 @@ export default function Home() {
         {recents.length > 0 ? (
           <section className="mt-12">
             <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Note gần đây
+              {t("home.recent.title")}
             </h2>
             <ul className="divide-y divide-border rounded-md border border-border">
               {recents.slice(0, 12).map((r) => (
@@ -243,7 +248,7 @@ export default function Home() {
                     <span className="text-xs text-muted-foreground">{timeAgo(r.lastOpenedAt)}</span>
                   </button>
                   <button
-                    aria-label="Xoá khỏi danh sách"
+                    aria-label={t("home.recent.remove")}
                     onClick={() => setRecents(removeRecent(r.slug))}
                     className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
                   >
@@ -253,7 +258,7 @@ export default function Home() {
               ))}
             </ul>
             <p className="mt-2 text-[11px] text-muted-foreground">
-              Danh sách này chỉ lưu trên thiết bị của bạn.
+              {t("home.recent.local_only")}
             </p>
           </section>
         ) : (
@@ -261,9 +266,9 @@ export default function Home() {
             <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-background ring-1 ring-border">
               <Sparkles className="h-4 w-4 text-muted-foreground" />
             </div>
-            <p className="text-sm font-medium">Chưa có note nào</p>
+            <p className="text-sm font-medium">{t("home.empty.title")}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Thử mở một slug có sẵn để bắt đầu:
+              {t("home.empty.hint")}
             </p>
             <div className="mt-3 flex flex-wrap justify-center gap-1.5">
               {["scratch", "todo", "ideas", "journal"].map((s) => (
