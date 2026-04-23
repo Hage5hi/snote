@@ -145,9 +145,7 @@ export default function Home() {
     <div className="min-h-svh bg-background">
       <header className="flex h-12 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-foreground text-background">
-            <FileText className="h-3.5 w-3.5" />
-          </div>
+          <img src="/logo.png" alt="Notes logo" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Notes</span>
         </div>
         <ThemeToggle />
