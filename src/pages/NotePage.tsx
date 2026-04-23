@@ -58,12 +58,13 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // back so re-opens are essentially free.
   const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
 
-  // Provider is created alongside the doc and reused; encryption hooks are
-  // attached later if/when they become available.
-  const providerRef = useRef<SupabaseYjsProvider | null>(null);
-  if (validSlug && doc && !providerRef.current) {
-    providerRef.current = new SupabaseYjsProvider(slug, doc);
-  }
+  // Provider is bound to (slug, doc). Recreated whenever either changes —
+  // critical so navigating to a new slug (e.g. after rename) gets a fresh
+  // provider instead of dereferencing a destroyed one.
+  const provider = useMemo(
+    () => (validSlug && doc ? new SupabaseYjsProvider(slug, doc) : null),
+    [slug, validSlug, doc],
+  );
 
   // Celebrate when crossing the goal threshold (once per goal value).
   useEffect(() => {
