@@ -20,6 +20,10 @@ export type Encryption = {
   decrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
 };
 
+export type AwarenessState = {
+  user?: { name: string; color: string };
+} & Record<string, unknown>;
+
 /**
  * SupabaseYjsProvider
  * - Loads initial Y.Doc snapshot from public.notes
@@ -38,7 +42,7 @@ export class SupabaseYjsProvider {
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
   private statusListeners = new Set<Listener<SaveStatus>>();
-  private awarenessListeners = new Set<Listener<Map<number, any>>>();
+  private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
   private status: SaveStatus = "idle";
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
@@ -61,9 +65,9 @@ export class SupabaseYjsProvider {
     return () => this.statusListeners.delete(cb);
   }
 
-  onAwareness(cb: Listener<Map<number, any>>) {
+  onAwareness(cb: Listener<Map<number, AwarenessState>>) {
     this.awarenessListeners.add(cb);
-    cb(this.awareness.getStates());
+    cb(this.awareness.getStates() as Map<number, AwarenessState>);
     return () => this.awarenessListeners.delete(cb);
   }
 
@@ -212,7 +216,7 @@ export class SupabaseYjsProvider {
     origin: unknown
   ) => {
     // Notify listeners.
-    this.awarenessListeners.forEach((cb) => cb(this.awareness.getStates()));
+    this.awarenessListeners.forEach((cb) => cb(this.awareness.getStates() as Map<number, AwarenessState>));
     if (origin === "remote") return;
     const changed = added.concat(updated).concat(removed);
     if (changed.length === 0) return;
@@ -370,7 +374,9 @@ export class SupabaseYjsProvider {
     if (this.channel) {
       try {
         await this.channel.unsubscribe();
-      } catch {}
+      } catch {
+        // ignore
+      }
       supabase.removeChannel(this.channel);
       this.channel = null;
     }
