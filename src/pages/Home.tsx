@@ -152,8 +152,8 @@ export default function Home() {
     <div className="min-h-svh bg-background">
       <header className="flex h-12 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2">
-          <img src="/logo.png" alt="Inkat Notes logo" className="h-6 w-6 rounded-md object-contain" />
-          <span className="font-semibold tracking-tight">Inkat Notes</span>
+          <img src="/logo.png" alt="Syrin Notes logo" className="h-6 w-6 rounded-md object-contain" />
+          <span className="font-semibold tracking-tight">Syrin Notes</span>
         </div>
         <div className="flex items-center gap-1">
           <LanguageToggle />

@@ -1,7 +1,7 @@
 {
-  "name": "Inkat Notes — Realtime markdown notes",
-  "short_name": "Inkat Notes",
-  "description": "Inkat Notes — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.",
+  "name": "Syrin Notes — Realtime markdown notes",
+  "short_name": "Syrin Notes",
+  "description": "Syrin Notes — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
