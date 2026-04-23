@@ -2,7 +2,7 @@
 // and owns dialog open-state for rename/duplicate/history/word-goal.
 import { useEffect, useState } from "react";
 import * as Y from "yjs";
-import { ClipboardCopy, Keyboard } from "lucide-react";
+import { ClipboardCopy, Keyboard, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
@@ -133,6 +133,21 @@ export function Topbar({
           </Tooltip>
 
           <ShareDialog isEncrypted={isEncrypted} />
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setRenameOpen(true)}
+                aria-label="Đổi tên slug"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Đổi tên slug</TooltipContent>
+          </Tooltip>
 
           <ViewControls
             showPreview={showPreview}

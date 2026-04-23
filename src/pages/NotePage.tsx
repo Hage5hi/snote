@@ -58,12 +58,13 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // back so re-opens are essentially free.
   const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
 
-  // Provider is created alongside the doc and reused; encryption hooks are
-  // attached later if/when they become available.
-  const providerRef = useRef<SupabaseYjsProvider | null>(null);
-  if (validSlug && doc && !providerRef.current) {
-    providerRef.current = new SupabaseYjsProvider(slug, doc);
-  }
+  // Provider is bound to (slug, doc). Recreated whenever either changes —
+  // critical so navigating to a new slug (e.g. after rename) gets a fresh
+  // provider instead of dereferencing a destroyed one.
+  const provider = useMemo(
+    () => (validSlug && doc ? new SupabaseYjsProvider(slug, doc) : null),
+    [slug, validSlug, doc],
+  );
 
   // Celebrate when crossing the goal threshold (once per goal value).
   useEffect(() => {
@@ -146,8 +147,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   // Mount IDB + connect provider once enc decision is made.
   useEffect(() => {
-    if (!validSlug || !doc || encPhase !== "ready") return;
-    const provider = providerRef.current!;
+    if (!validSlug || !doc || !provider || encPhase !== "ready") return;
     provider.setEncryption(encryption);
 
     const identity = getIdentity();
@@ -243,16 +243,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       unsubStatus();
       unsubAwareness();
       void provider.destroy();
-      providerRef.current = null;
       idb.destroy();
       // Doc itself stays warm in cache for fast re-open; only release.
       releaseDoc(slug);
     };
-  }, [slug, validSlug, doc, embedSlug, encPhase, encryption, encMeta.ydocState, encMeta.rowExists]);
+  }, [slug, validSlug, doc, provider, embedSlug, encPhase, encryption, encMeta.ydocState, encMeta.rowExists]);
 
   if (!validSlug) return <Navigate to="/" replace />;
-  if (!doc) return null;
-  const provider = providerRef.current!;
+  if (!doc || !provider) return null;
   const getContent = () => doc.getText("content").toString();
 
   // SplitView wraps each panel — render the workspace without the global topbar.
