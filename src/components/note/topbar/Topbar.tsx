@@ -134,6 +134,21 @@ export function Topbar({
 
           <ShareDialog isEncrypted={isEncrypted} />
 
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => setRenameOpen(true)}
+                aria-label="Đổi tên slug"
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Đổi tên slug</TooltipContent>
+          </Tooltip>
+
           <ViewControls
             showPreview={showPreview}
             onTogglePreview={onTogglePreview}
