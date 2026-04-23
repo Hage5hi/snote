@@ -9,6 +9,7 @@ import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 import { CommandPalette } from "./components/CommandPalette";
 import { EditorSkeleton } from "./components/note/EditorSkeleton";
+import { I18nProvider } from "./i18n";
 
 // Lazy-load heavy routes so the editor / admin bundles only load when needed.
 const NotePage = lazy(() => import("./pages/NotePage"));
@@ -61,29 +62,31 @@ function SlugDispatcher() {
 
 const App = () => (
   <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
-    <QueryClientProvider client={queryClient}>
-      {/* Toasters live OUTSIDE TooltipProvider — Tooltip's Provider passes a
-          ref to its first child and these toaster wrappers are plain function
-          components, which produces a noisy "Function components cannot be
-          given refs" warning. */}
-      <Toaster />
-      <Sonner />
-      <TooltipProvider delayDuration={250}>
-        <BrowserRouter
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true,
-          }}
-        >
-          <CommandPalette />
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/:slug" element={<SlugDispatcher />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <I18nProvider>
+      <QueryClientProvider client={queryClient}>
+        {/* Toasters live OUTSIDE TooltipProvider — Tooltip's Provider passes a
+            ref to its first child and these toaster wrappers are plain function
+            components, which produces a noisy "Function components cannot be
+            given refs" warning. */}
+        <Toaster />
+        <Sonner />
+        <TooltipProvider delayDuration={250}>
+          <BrowserRouter
+            future={{
+              v7_startTransition: true,
+              v7_relativeSplatPath: true,
+            }}
+          >
+            <CommandPalette />
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/:slug" element={<SlugDispatcher />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </I18nProvider>
   </ThemeProvider>
 );
 
