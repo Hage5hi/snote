@@ -156,6 +156,28 @@
   h1, h2, h3, h4, h5, h6 {
     @apply font-medium tracking-tight;
   }
+
+  /* Make text selection clearly visible in both light and dark themes.
+     The editor in dark mode was using the browser default (a near-invisible
+     dark blue on the dark editor background). Use the primary colour with
+     a low alpha so it reads as a tint without overpowering the text. */
+  ::selection {
+    background-color: hsl(var(--primary) / 0.35);
+    color: hsl(var(--foreground));
+  }
+  .cm-content ::selection,
+  .cm-line ::selection,
+  .markdown-preview ::selection {
+    background-color: hsl(var(--primary) / 0.35);
+    color: hsl(var(--foreground));
+  }
+  /* CodeMirror renders its own selection layer via `.cm-selectionBackground`
+     when the view isn't focused — keep it in sync so blurred selection stays
+     legible. */
+  .cm-editor .cm-selectionBackground,
+  .cm-editor.cm-focused .cm-selectionBackground {
+    background-color: hsl(var(--primary) / 0.35) !important;
+  }
 }
 
 @layer utilities {
@@ -188,6 +210,11 @@
     transform: translateY(-100%);
     transition: transform 180ms ease;
   }
+  /* Reveal topbar when user hovers the thin strip at the top OR the topbar
+     itself (once revealed, so moving the cursor up into it keeps it visible).
+     Previously only the topbar's own :hover reveal worked, which required the
+     cursor to be at -100% Y = unreachable. */
+  html.zen-mode .zen-hover-zone:hover ~ header.zen-topbar,
   html.zen-mode header.zen-topbar:hover,
   html.zen-mode header.zen-topbar:focus-within {
     transform: translateY(0);
@@ -197,8 +224,11 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 8px;
-    z-index: 40;
+    /* Wider trigger area (24px) so small upward mouse movements reliably hit
+       it. Keep it below the topbar's z so it doesn't eat clicks on the first
+       row of the reveal target. */
+    height: 24px;
+    z-index: 29;
   }
   html.zen-mode .zen-hide {
     display: none !important;
