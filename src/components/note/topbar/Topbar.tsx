@@ -136,7 +136,7 @@ export function Topbar({
             <TooltipContent side="bottom">Copy toàn bộ nội dung note (⌘⇧C)</TooltipContent>
           </Tooltip>
 
-          <ShareDialog isEncrypted={isEncrypted} />
+          <ShareDialog slug={slug} isEncrypted={isEncrypted} />
 
           <Tooltip>
             <TooltipTrigger asChild>

@@ -14,3 +14,15 @@ verify_jwt = false
 
 [functions.admin-rotate]
 verify_jwt = false
+
+[functions.share-create]
+verify_jwt = false
+
+[functions.share-view]
+verify_jwt = false
+
+[functions.share-revoke]
+verify_jwt = false
+
+[functions.share-rename]
+verify_jwt = false
