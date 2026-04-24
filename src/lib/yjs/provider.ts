@@ -46,6 +46,13 @@ export class SupabaseYjsProvider {
   private status: SaveStatus = "idle";
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
+  // The Realtime `subscribe` callback fires `SUBSCRIBED` once on the initial
+  // join and again on every auto-reconnect. We treat reconnects specially:
+  // peer broadcasts that happened while we were offline are NOT replayed by
+  // Supabase Realtime, so we re-read the DB snapshot to pick up anything
+  // other clients persisted in the meantime — otherwise our next
+  // `saveSnapshot` would overwrite their work.
+  private hasSubscribedOnce = false;
 
   constructor(slug: string, doc: Y.Doc, encryption?: Encryption) {
     this.slug = slug;
@@ -176,6 +183,13 @@ export class SupabaseYjsProvider {
       if (status === "SUBSCRIBED") {
         this.connected = true;
         this.setStatus("saved");
+        if (this.hasSubscribedOnce) {
+          // Reconnect path: another client may have snapshotted to Postgres
+          // while we were offline. Merge that state in BEFORE we ask peers
+          // for updates so a subsequent `saveSnapshot` doesn't clobber it.
+          await this.refetchDbSnapshot();
+        }
+        this.hasSubscribedOnce = true;
         // Ask peers for any newer state.
         await this.channel?.send({
           type: "broadcast",
@@ -204,6 +218,30 @@ export class SupabaseYjsProvider {
   }
 
   private cleanupFns: Array<() => void> = [];
+
+  /**
+   * Fetch the latest `ydoc_state` from Postgres and merge it into the local
+   * doc. Used on reconnect; `Y.applyUpdate` is merge-safe so this never
+   * loses local edits, only adds whatever the DB has that we don't.
+   */
+  private async refetchDbSnapshot() {
+    if (this.destroyed) return;
+    try {
+      const { data, error } = await supabase
+        .from("notes")
+        .select("ydoc_state")
+        .eq("slug", this.slug)
+        .maybeSingle();
+      if (error || !data?.ydoc_state) return;
+      let update = base64ToBytes(data.ydoc_state);
+      if (this.encryption && update.byteLength > 0) {
+        update = await this.encryption.decrypt(update);
+      }
+      if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
+    } catch (e) {
+      console.warn("Refetch snapshot failed", e);
+    }
+  }
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote" || origin === "remote-snapshot") return;
