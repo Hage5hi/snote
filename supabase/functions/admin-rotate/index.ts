@@ -14,14 +14,15 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-async function verifyPass(supabase: ReturnType<typeof createClient>, input: string): Promise<boolean> {
+async function verifyPass(supabase: any, input: string): Promise<boolean> {
   const { data } = await supabase
     .from("admin_config")
     .select("pass_hash")
     .eq("id", 1)
     .maybeSingle();
-  if (data?.pass_hash) {
-    try { return await bcrypt.compare(input, data.pass_hash); } catch { return false; }
+  const storedHash = typeof data?.pass_hash === "string" ? data.pass_hash : "";
+  if (storedHash) {
+    try { return await bcrypt.compare(input, storedHash); } catch { return false; }
   }
   const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
   if (!expected) return false;

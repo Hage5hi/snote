@@ -41,7 +41,6 @@ async function copyNoteRow(sourceSlug: string, targetSlug: string) {
       is_encrypted: src.is_encrypted,
       enc_salt: src.enc_salt,
       enc_check: src.enc_check,
-      enc_iterations: src.enc_iterations,
       char_count: src.char_count,
     },
     { onConflict: "slug" },

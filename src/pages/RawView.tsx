@@ -36,7 +36,7 @@ export default function RawView() {
       }
       const { data, error: dbError } = await supabase
         .from("notes")
-        .select("content, ydoc_state, is_encrypted, enc_salt, enc_check, enc_iterations")
+        .select("content, ydoc_state, is_encrypted, enc_salt, enc_check")
         .eq("slug", slug)
         .maybeSingle();
       if (cancelled) return;
@@ -83,7 +83,7 @@ export default function RawView() {
         return;
       }
       try {
-        const cryptoKey = await deriveKey(key, data.enc_salt, iterationsFor(data.enc_iterations));
+        const cryptoKey = await deriveKey(key, data.enc_salt, iterationsFor(null));
         const ok = await verifyCheck(cryptoKey, data.enc_check);
         if (!ok) {
           setError("Khoá không đúng.");
