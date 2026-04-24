@@ -352,7 +352,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
               slug={slug}
               salt={encMeta.salt!}
               check={encMeta.check!}
-              iterations={iterationsFor(encMeta.iterations)}
+              iterations={iterationsFor(null)}
               onUnlock={(key) => {
                 setEncryption({
                   encrypt: (b) => encryptBytes(key, b),
