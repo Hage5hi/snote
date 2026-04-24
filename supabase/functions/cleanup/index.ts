@@ -66,33 +66,30 @@ Deno.serve(async (req) => {
       .lt("created_at", cutoff);
     if (e1) throw e1;
 
-    const { error: e2, count: c2 } = await supabase
+    // Encrypted empties: char_count is always 0 for encrypted rows (the
+    // provider zeroes it to stay zero-knowledge), so we can't use that as
+    // the "empty" signal. Instead select candidates and filter by the
+    // encoded ydoc_state length in JS. A Y.Doc with zero text but some
+    // structure is ~40-80 chars of base64; >100 means the user actually
+    // typed something.
+    const { data: candidates, error: e2 } = await supabase
       .from("notes")
-      .delete({ count: "exact" })
+      .select("slug, ydoc_state")
       .eq("is_encrypted", true)
       .lt("created_at", cutoff)
-      .filter("ydoc_state", "lt", "x".repeat(100));
-
-    let encryptedDeleted = c2 ?? 0;
-    if (e2 || c2 == null) {
-      const { data: candidates } = await supabase
+      .limit(1000);
+    if (e2) throw e2;
+    const emptySlugs = (candidates ?? [])
+      .filter((r) => (r.ydoc_state ?? "").length < 100)
+      .map((r) => r.slug);
+    let encryptedDeleted = 0;
+    if (emptySlugs.length > 0) {
+      const { error: e3, count: c3 } = await supabase
         .from("notes")
-        .select("slug, ydoc_state")
-        .eq("is_encrypted", true)
-        .lt("created_at", cutoff)
-        .limit(1000);
-      const slugs = (candidates ?? [])
-        .filter((r) => (r.ydoc_state ?? "").length < 100)
-        .map((r) => r.slug);
-      if (slugs.length > 0) {
-        const { count: c3 } = await supabase
-          .from("notes")
-          .delete({ count: "exact" })
-          .in("slug", slugs);
-        encryptedDeleted = c3 ?? slugs.length;
-      } else {
-        encryptedDeleted = 0;
-      }
+        .delete({ count: "exact" })
+        .in("slug", emptySlugs);
+      if (e3) throw e3;
+      encryptedDeleted = c3 ?? emptySlugs.length;
     }
 
     const total = (c1 ?? 0) + encryptedDeleted;
