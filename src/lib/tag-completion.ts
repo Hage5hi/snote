@@ -19,7 +19,7 @@ export const tagCompletionSource: CompletionSource = (context: CompletionContext
   const line = context.state.doc.lineAt(context.pos);
   const beforeCursor = line.text.slice(0, context.pos - line.from);
 
-  const match = beforeCursor.match(/(^|[\s([{])#([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]*)$/);
+  const match = beforeCursor.match(/(^|[\s(\[{])#([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]*)$/);
   if (!match) return null;
 
   const tagPart = match[2];

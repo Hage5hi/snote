@@ -69,9 +69,7 @@ export default function RawView() {
             "",
             `${window.location.pathname}#${encodeURIComponent(legacyQueryKey)}`
           );
-        } catch {
-          // ignore
-        }
+        } catch {}
       }
       const key = hashKey;
       if (!key) {

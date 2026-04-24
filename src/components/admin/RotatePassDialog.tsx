@@ -62,10 +62,10 @@ export function RotatePassDialog({
       onSuccess(newPass);
       reset();
       onOpenChange(false);
-    } catch (e) {
+    } catch (e: any) {
       toast({
         title: "Đổi khoá thất bại",
-        description: String((e as Error | undefined)?.message ?? e),
+        description: String(e?.message ?? e),
         variant: "destructive",
       });
     } finally {

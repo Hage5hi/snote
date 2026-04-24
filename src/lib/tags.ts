@@ -8,7 +8,7 @@
  *  - NOT be inside a fenced ```code``` block
  */
 
-const TAG_RE = /(?:^|[\s([{])#([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]{1,32})/g;
+const TAG_RE = /(?:^|[\s(\[{])#([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]{1,32})/g;
 
 export function extractTags(content: string): string[] {
   if (!content) return [];
