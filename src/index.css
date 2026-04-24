@@ -251,6 +251,17 @@
   }
 }
 
+/* ================== Focus-line highlight ==================
+   Tints the active line of the editor so the eye immediately snaps to
+   where the caret is. Pairs with Typewriter mode but lives on its own
+   toggle. `highlightActiveLine()` from @codemirror/view is always
+   installed; we just surface its background when the user opts in. */
+@layer utilities {
+  html.focus-line .cm-editor .cm-activeLine {
+    background-color: hsl(var(--primary) / 0.08);
+  }
+}
+
 /* ================== E-ink mode ==================
    Force light, high-contrast, zero motion. Designed for slow refresh
    displays where animations cause ghosting. */

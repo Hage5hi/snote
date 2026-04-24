@@ -21,6 +21,7 @@ import { useTypewriterMode } from "@/hooks/use-typewriter-mode";
 import { usePreviewVisible } from "@/hooks/use-preview-visible";
 import { useScrollSyncEnabled } from "@/hooks/use-scroll-sync-enabled";
 import { useScrollSync } from "@/hooks/use-scroll-sync";
+import { useFocusLine } from "@/hooks/use-focus-line";
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 import { useEink } from "@/hooks/use-eink";
 import { usePagination } from "@/hooks/use-pagination";
@@ -88,6 +89,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { typewriter, toggle: toggleTypewriter } = useTypewriterMode();
+  const { focusLine, toggle: toggleFocusLine } = useFocusLine();
   const navigate = useNavigate();
 
   // Ctrl/Cmd+Click on a `[[slug]]` token in the editor dispatches this event.
@@ -317,6 +319,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         onToggleZen={toggleZen}
         typewriter={typewriter}
         onToggleTypewriter={toggleTypewriter}
+        focusLine={focusLine}
+        onToggleFocusLine={toggleFocusLine}
         getContent={getContent}
         isEncrypted={encMeta.isEncrypted}
         paginated={paginated}
