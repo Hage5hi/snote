@@ -45,18 +45,24 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!note) return json({ error: "note not found" }, 404);
 
-    // "One link per slug" contract: drop the previous token before inserting
-    // the new one so a user re-generating always ends up with exactly one
-    // active share link. Last-write-wins if two tabs race.
-    const { error: delErr } = await supabase.from("note_shares").delete().eq("slug", slug);
-    if (delErr) throw delErr;
-
+    // "One link per slug" contract, enforced atomically via UNIQUE(slug) +
+    // UPSERT onConflict=slug. A brand-new slug inserts; an existing slug
+    // has its token/created_at replaced. Two concurrent callers cannot
+    // both win and leave an orphan row — one request updates the row and
+    // the other updates it back; exactly one token survives.
     let token = "";
     let lastErr: unknown = null;
     for (let i = 0; i < 5; i++) {
       token = generateToken();
-      const { error } = await supabase.from("note_shares").insert({ token, slug });
+      const { error } = await supabase
+        .from("note_shares")
+        .upsert(
+          { token, slug, created_at: new Date().toISOString() },
+          { onConflict: "slug" },
+        );
       if (!error) { lastErr = null; break; }
+      // Retry on the astronomically unlikely token PK collision (would
+      // appear as unique_violation on the token PK, not the slug).
       lastErr = error;
     }
     if (lastErr) throw lastErr;

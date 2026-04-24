@@ -13,14 +13,18 @@
 
 CREATE TABLE public.note_shares (
   token TEXT PRIMARY KEY,
-  slug TEXT NOT NULL REFERENCES public.notes(slug) ON DELETE CASCADE,
+  -- UNIQUE on slug enforces the "one link per slug" contract at the DB
+  -- level. Without it, two concurrent share-create calls could race past
+  -- the DELETE and leave two active tokens, one of which would be
+  -- orphaned (not in localStorage, not revokable from the UI).
+  slug TEXT NOT NULL UNIQUE REFERENCES public.notes(slug) ON DELETE CASCADE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE public.note_shares
   ADD CONSTRAINT note_shares_token_format CHECK (token ~ '^[A-Za-z0-9_-]{16,64}$');
 
-CREATE INDEX idx_note_shares_slug ON public.note_shares(slug);
+-- UNIQUE already creates an index on slug, so no explicit CREATE INDEX.
 
 ALTER TABLE public.note_shares ENABLE ROW LEVEL SECURITY;
 -- No policies. Deny-by-default. Access only via Edge functions.
