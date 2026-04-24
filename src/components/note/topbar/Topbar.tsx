@@ -32,6 +32,8 @@ interface TopbarProps {
   users: PresenceUser[];
   showPreview: boolean;
   onTogglePreview: () => void;
+  scrollSync: boolean;
+  onToggleScrollSync: () => void;
   zen: boolean;
   onToggleZen: () => void;
   typewriter: boolean;
@@ -51,6 +53,8 @@ export function Topbar({
   users,
   showPreview,
   onTogglePreview,
+  scrollSync,
+  onToggleScrollSync,
   zen,
   onToggleZen,
   typewriter,
@@ -156,6 +160,8 @@ export function Topbar({
           <ViewControls
             showPreview={showPreview}
             onTogglePreview={onTogglePreview}
+            scrollSync={scrollSync}
+            onToggleScrollSync={onToggleScrollSync}
             zen={zen}
             onToggleZen={onToggleZen}
           />

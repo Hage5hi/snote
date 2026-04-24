@@ -1,17 +1,26 @@
-// Three quick toggles: preview pane, zen mode, and (handled in SettingsMenu) pagination.
-// Pagination toggle lives in Settings menu; this file only exposes Preview + Zen.
-import { Eye, EyeOff, Maximize2, Minimize2 } from "lucide-react";
+// Three quick toggles: preview pane, scroll sync (only when preview is on),
+// and Zen mode. Pagination toggle lives in Settings menu.
+import { Eye, EyeOff, Link2, Link2Off, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ViewControlsProps {
   showPreview: boolean;
   onTogglePreview: () => void;
+  scrollSync: boolean;
+  onToggleScrollSync: () => void;
   zen: boolean;
   onToggleZen: () => void;
 }
 
-export function ViewControls({ showPreview, onTogglePreview, zen, onToggleZen }: ViewControlsProps) {
+export function ViewControls({
+  showPreview,
+  onTogglePreview,
+  scrollSync,
+  onToggleScrollSync,
+  zen,
+  onToggleZen,
+}: ViewControlsProps) {
   return (
     <>
       <Tooltip>
@@ -30,6 +39,32 @@ export function ViewControls({ showPreview, onTogglePreview, zen, onToggleZen }:
           {showPreview ? "Ẩn preview Markdown" : "Hiện preview Markdown"} (⌘⇧V)
         </TooltipContent>
       </Tooltip>
+
+      {showPreview && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onToggleScrollSync}
+              aria-label={scrollSync ? "Tắt scroll sync" : "Bật scroll sync"}
+              aria-pressed={scrollSync}
+            >
+              {scrollSync ? (
+                <Link2 className="h-4 w-4" />
+              ) : (
+                <Link2Off className="h-4 w-4 opacity-60" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {scrollSync
+              ? "Tắt đồng bộ cuộn editor ↔ preview"
+              : "Bật đồng bộ cuộn editor ↔ preview"}
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       <Tooltip>
         <TooltipTrigger asChild>
