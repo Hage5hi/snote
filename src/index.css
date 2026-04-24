@@ -209,6 +209,18 @@
   }
 }
 
+/* ================== Typewriter mode ==================
+   Keeps the caret line vertically centered (logic in src/lib/typewriter.ts).
+   Adds ~45vh of padding at top/bottom of the editor so the first and last
+   lines can actually scroll to the middle — without this the content would
+   hit the edge of the scroller before reaching center. */
+@layer utilities {
+  html.typewriter-mode .cm-scroller {
+    padding-top: 45vh !important;
+    padding-bottom: 45vh !important;
+  }
+}
+
 /* ================== E-ink mode ==================
    Force light, high-contrast, zero motion. Designed for slow refresh
    displays where animations cause ghosting. */

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useParams } from "react-router-dom";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Editor, type EditorHandle } from "@/components/note/Editor";
@@ -17,6 +17,8 @@ import { touchRecent } from "@/lib/recent-notes";
 import type { PresenceUser } from "@/components/note/PresenceDots";
 import { maybeSaveSnapshot, recordOnSuddenDelete } from "@/lib/snapshots";
 import { useZenMode } from "@/hooks/use-zen-mode";
+import { useTypewriterMode } from "@/hooks/use-typewriter-mode";
+import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 import { useEink } from "@/hooks/use-eink";
 import { usePagination } from "@/hooks/use-pagination";
 import { supabase } from "@/integrations/supabase/client";
@@ -78,6 +80,21 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
+  const { typewriter, toggle: toggleTypewriter } = useTypewriterMode();
+  const navigate = useNavigate();
+
+  // Ctrl/Cmd+Click on a `[[slug]]` token in the editor dispatches this event.
+  // Skip in embed (SplitView) mode — otherwise both panels would navigate and
+  // push duplicate history entries.
+  useEffect(() => {
+    if (embedSlug) return;
+    const onNav = (e: Event) => {
+      const target = (e as CustomEvent<{ slug: string }>).detail?.slug;
+      if (target) navigate("/" + target);
+    };
+    window.addEventListener(WIKI_NAV_EVENT, onNav);
+    return () => window.removeEventListener(WIKI_NAV_EVENT, onNav);
+  }, [navigate, embedSlug]);
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
   useEink();
 
@@ -277,6 +294,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         onTogglePreview={() => setShowPreview((v) => !v)}
         zen={zen}
         onToggleZen={toggleZen}
+        typewriter={typewriter}
+        onToggleTypewriter={toggleTypewriter}
         getContent={getContent}
         isEncrypted={encMeta.isEncrypted}
         paginated={paginated}

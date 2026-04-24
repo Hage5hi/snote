@@ -24,6 +24,7 @@ const SECTIONS: { title: string; items: { keys: string[]; label: string }[] }[] 
       { keys: ["?"], label: "Mở bảng phím tắt này" },
       { keys: [Mod, "\\"], label: "Toggle Outline sidebar" },
       { keys: ["F11"], label: "Toggle Zen mode" },
+      { keys: ["F9"], label: "Toggle Typewriter mode (line giữ ở giữa màn hình)" },
     ],
   },
   {

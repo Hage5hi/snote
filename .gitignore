@@ -12,6 +12,18 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (use .env.example for reference)
+.env
+.env.local
+.env.*.local
+
+# Lockfiles from other package managers — project uses bun.lock.
+# Prevents accidental drift when someone runs `npm install` or an old bun.
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+bun.lockb
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

@@ -9,7 +9,7 @@ import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 import { CommandPalette } from "./components/CommandPalette";
 import { EditorSkeleton } from "./components/note/EditorSkeleton";
-import { I18nProvider } from "./i18n";
+import { I18nProvider } from "./i18n/provider";
 
 // Lazy-load heavy routes so the editor / admin bundles only load when needed.
 const NotePage = lazy(() => import("./pages/NotePage"));
