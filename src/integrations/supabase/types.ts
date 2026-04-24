@@ -38,7 +38,6 @@ export type Database = {
           content: string
           created_at: string
           enc_check: string | null
-          enc_iterations: number | null
           enc_salt: string | null
           is_encrypted: boolean
           slug: string
@@ -51,7 +50,6 @@ export type Database = {
           content?: string
           created_at?: string
           enc_check?: string | null
-          enc_iterations?: number | null
           enc_salt?: string | null
           is_encrypted?: boolean
           slug: string
@@ -64,7 +62,6 @@ export type Database = {
           content?: string
           created_at?: string
           enc_check?: string | null
-          enc_iterations?: number | null
           enc_salt?: string | null
           is_encrypted?: boolean
           slug?: string
