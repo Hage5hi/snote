@@ -18,6 +18,7 @@ import type { PresenceUser } from "@/components/note/PresenceDots";
 import { maybeSaveSnapshot, recordOnSuddenDelete } from "@/lib/snapshots";
 import { useZenMode } from "@/hooks/use-zen-mode";
 import { useTypewriterMode } from "@/hooks/use-typewriter-mode";
+import { usePreviewVisible } from "@/hooks/use-preview-visible";
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 import { useEink } from "@/hooks/use-eink";
 import { usePagination } from "@/hooks/use-pagination";
@@ -49,7 +50,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const slug = embedSlug ?? params.slug ?? "";
   const validSlug = SLUG_RE.test(slug);
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
-  const [showPreview, setShowPreview] = useState(false);
+  const { visible: showPreview, setVisible: setShowPreview } = usePreviewVisible();
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
@@ -95,6 +96,18 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     window.addEventListener(WIKI_NAV_EVENT, onNav);
     return () => window.removeEventListener(WIKI_NAV_EVENT, onNav);
   }, [navigate, embedSlug]);
+
+  // Reflect the current slug in the browser tab so users can distinguish
+  // multiple open notes. Restores on unmount (the Home / splash title).
+  useEffect(() => {
+    if (embedSlug) return;
+    if (!slug) return;
+    const prev = document.title;
+    document.title = `Syrin Notes — ${slug}`;
+    return () => {
+      document.title = prev;
+    };
+  }, [slug, embedSlug]);
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
   useEink();
 
