@@ -39,6 +39,18 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
+    // If newSlug already has share tokens (possible when renaming into a
+    // slug whose previous content was cleared but whose share link was
+    // never revoked), they'd collide with the UNIQUE(slug) constraint
+    // on the UPDATE below. Drop them first; the rename semantically
+    // means "the old note is now at newSlug", so prior tokens at newSlug
+    // should not persist.
+    const { error: purgeErr } = await supabase
+      .from("note_shares")
+      .delete()
+      .eq("slug", newSlug);
+    if (purgeErr) throw purgeErr;
+
     const { data, error } = await supabase
       .from("note_shares")
       .update({ slug: newSlug })
