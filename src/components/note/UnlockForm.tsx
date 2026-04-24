@@ -9,10 +9,12 @@ interface UnlockFormProps {
   slug: string;
   salt: string;
   check: string;
+  /** PBKDF2 iteration count from the note row (legacy rows: 100k). */
+  iterations: number;
   onUnlock: (key: CryptoKey) => void;
 }
 
-export function UnlockForm({ slug, salt, check, onUnlock }: UnlockFormProps) {
+export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFormProps) {
   const [pass, setPass] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,7 +25,7 @@ export function UnlockForm({ slug, salt, check, onUnlock }: UnlockFormProps) {
     setBusy(true);
     setError(null);
     try {
-      const key = await deriveKey(pass, salt);
+      const key = await deriveKey(pass, salt, iterations);
       const ok = await verifyCheck(key, check);
       if (!ok) {
         setError("Khoá không đúng. Thử lại.");
