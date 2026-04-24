@@ -16,6 +16,7 @@ const NotePage = lazy(() => import("./pages/NotePage"));
 const RawView = lazy(() => import("./pages/RawView"));
 const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+const SharePage = lazy(() => import("./pages/SharePage"));
 
 const queryClient = new QueryClient();
 // EditorSkeleton mimics the topbar + editor layout so there's no shift when
@@ -80,6 +81,14 @@ const App = () => (
             <CommandPalette />
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route
+                path="/s/:token"
+                element={
+                  <Suspense fallback={PlainFallback}>
+                    <SharePage />
+                  </Suspense>
+                }
+              />
               <Route path="/:slug" element={<SlugDispatcher />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
