@@ -32,10 +32,14 @@ interface TopbarProps {
   users: PresenceUser[];
   showPreview: boolean;
   onTogglePreview: () => void;
+  scrollSync: boolean;
+  onToggleScrollSync: () => void;
   zen: boolean;
   onToggleZen: () => void;
   typewriter: boolean;
   onToggleTypewriter: () => void;
+  focusLine: boolean;
+  onToggleFocusLine: () => void;
   getContent: () => string;
   isEncrypted: boolean;
   paginated: boolean;
@@ -51,10 +55,14 @@ export function Topbar({
   users,
   showPreview,
   onTogglePreview,
+  scrollSync,
+  onToggleScrollSync,
   zen,
   onToggleZen,
   typewriter,
   onToggleTypewriter,
+  focusLine,
+  onToggleFocusLine,
   getContent,
   isEncrypted,
   paginated,
@@ -156,6 +164,8 @@ export function Topbar({
           <ViewControls
             showPreview={showPreview}
             onTogglePreview={onTogglePreview}
+            scrollSync={scrollSync}
+            onToggleScrollSync={onToggleScrollSync}
             zen={zen}
             onToggleZen={onToggleZen}
           />
@@ -183,6 +193,8 @@ export function Topbar({
             onToggleZen={onToggleZen}
             typewriter={typewriter}
             onToggleTypewriter={onToggleTypewriter}
+            focusLine={focusLine}
+            onToggleFocusLine={onToggleFocusLine}
             paginated={paginated}
             onTogglePagination={onTogglePagination}
             onOpenRename={() => setRenameOpen(true)}

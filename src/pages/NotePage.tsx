@@ -19,6 +19,9 @@ import { maybeSaveSnapshot, recordOnSuddenDelete } from "@/lib/snapshots";
 import { useZenMode } from "@/hooks/use-zen-mode";
 import { useTypewriterMode } from "@/hooks/use-typewriter-mode";
 import { usePreviewVisible } from "@/hooks/use-preview-visible";
+import { useScrollSyncEnabled } from "@/hooks/use-scroll-sync-enabled";
+import { useScrollSync } from "@/hooks/use-scroll-sync";
+import { useFocusLine } from "@/hooks/use-focus-line";
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 import { useEink } from "@/hooks/use-eink";
 import { usePagination } from "@/hooks/use-pagination";
@@ -51,6 +54,10 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const validSlug = SLUG_RE.test(slug);
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
   const { visible: showPreview, setVisible: setShowPreview } = usePreviewVisible();
+  const { enabled: scrollSync, toggle: toggleScrollSync } = useScrollSyncEnabled();
+  const [editorScrollEl, setEditorScrollEl] = useState<HTMLElement | null>(null);
+  const [previewScrollEl, setPreviewScrollEl] = useState<HTMLElement | null>(null);
+  useScrollSync(editorScrollEl, previewScrollEl, scrollSync && showPreview);
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
@@ -82,6 +89,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { typewriter, toggle: toggleTypewriter } = useTypewriterMode();
+  const { focusLine, toggle: toggleFocusLine } = useFocusLine();
   const navigate = useNavigate();
 
   // Ctrl/Cmd+Click on a `[[slug]]` token in the editor dispatches this event.
@@ -305,10 +313,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         users={users}
         showPreview={showPreview}
         onTogglePreview={() => setShowPreview((v) => !v)}
+        scrollSync={scrollSync}
+        onToggleScrollSync={toggleScrollSync}
         zen={zen}
         onToggleZen={toggleZen}
         typewriter={typewriter}
         onToggleTypewriter={toggleTypewriter}
+        focusLine={focusLine}
+        onToggleFocusLine={toggleFocusLine}
         getContent={getContent}
         isEncrypted={encMeta.isEncrypted}
         paginated={paginated}
@@ -317,10 +329,19 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
       <main className="relative flex flex-1 min-h-0 divide-x divide-border">
         <div className={showPreview ? "hidden md:block md:flex-1 min-w-0" : "flex-1 min-w-0"}>
-          <Editor ref={editorRef} doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
+          <Editor
+            ref={editorRef}
+            doc={doc}
+            awareness={provider.awareness}
+            className="h-full overflow-auto"
+            onScrollEl={setEditorScrollEl}
+          />
         </div>
         {showPreview && (
-          <div className={`flex-1 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}>
+          <div
+            ref={setPreviewScrollEl}
+            className={`flex-1 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}
+          >
             <Preview doc={doc} />
           </div>
         )}

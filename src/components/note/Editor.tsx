@@ -37,6 +37,10 @@ interface EditorProps {
   doc: Y.Doc;
   awareness: Awareness;
   className?: string;
+  /** Called with the scrollable DOM element (`view.scrollDOM`) when the
+   *  editor mounts, and with null when it unmounts. Used by the scroll-sync
+   *  hook in NotePage to mirror scroll position into the preview pane. */
+  onScrollEl?: (el: HTMLElement | null) => void;
 }
 
 export interface EditorHandle {
@@ -45,7 +49,7 @@ export interface EditorHandle {
 }
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
-  { doc, awareness, className },
+  { doc, awareness, className, onScrollEl },
   ref,
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -146,6 +150,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    onScrollEl?.(view.scrollDOM);
 
     // Global Cmd/Ctrl+F → open the CodeMirror search panel even if focus is outside.
     const onKey = (e: KeyboardEvent) => {
@@ -162,10 +167,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
 
     return () => {
       window.removeEventListener("keydown", onKey);
+      onScrollEl?.(null);
       view.destroy();
       viewRef.current = null;
     };
-  }, [doc, awareness]);
+  }, [doc, awareness, onScrollEl]);
 
   return <div ref={hostRef} lang={lang} className={className} />;
 });

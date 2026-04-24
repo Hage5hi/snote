@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Check, Loader2, Shuffle, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, Check, Loader2, Shuffle, Sparkles, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { getRecents, removeRecent, type RecentNote } from "@/lib/recent-notes";
+import { getPinned, getRecents, removeRecent, togglePin, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
@@ -61,9 +61,22 @@ export default function Home() {
   const [slug, setSlug] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentNote[]>([]);
+  const [pinned, setPinned] = useState<string[]>([]);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
 
-  useEffect(() => setRecents(getRecents()), []);
+  useEffect(() => {
+    setRecents(getRecents());
+    setPinned(getPinned());
+  }, []);
+
+  // Stay in sync with pins toggled elsewhere (NotePage's PinButton, Cmd+K).
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "note.pinned") setPinned(getPinned());
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
 
   // Debounced availability check.
   useEffect(() => {
@@ -226,6 +239,41 @@ export default function Home() {
         </div>
 
         <InstallPrompt />
+
+        {pinned.length > 0 && (
+          <section
+            className="sticky top-0 z-10 mt-10 -mx-4 bg-background/95 px-4 pb-3 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+            aria-label={t("home.pinned.aria")}
+          >
+            <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <Star className="h-3 w-3 fill-primary text-primary" />
+              {t("home.pinned.title")}
+            </h2>
+            <ul className="flex flex-wrap gap-1.5">
+              {pinned.map((s) => (
+                <li key={s} className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background">
+                  <button
+                    className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-sm hover:bg-accent"
+                    onClick={() => softNavigate(navigate, `/${s}`)}
+                    onMouseEnter={() => prefetchSnapshot(s)}
+                    onTouchStart={() => prefetchSnapshot(s)}
+                  >
+                    <Star className="h-3 w-3 fill-primary text-primary" />
+                    /{s}
+                  </button>
+                  <button
+                    aria-label={t("home.pinned.unpin")}
+                    title={t("home.pinned.unpin")}
+                    onClick={() => setPinned(togglePin(s))}
+                    className="flex items-center px-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         {recents.length > 0 ? (
           <section className="mt-12">

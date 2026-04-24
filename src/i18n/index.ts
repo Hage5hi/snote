@@ -44,6 +44,10 @@ export const dict = {
     "home.recent.title": "Note gần đây",
     "home.recent.local_only": "Danh sách này chỉ lưu trên thiết bị của bạn.",
     "home.recent.remove": "Xoá khỏi danh sách",
+    "home.pinned.title": "Ghim",
+    "home.pinned.unpin": "Bỏ ghim",
+    "home.pinned.aria": "Note đã ghim",
+
     "home.empty.title": "Chưa có note nào",
     "home.empty.hint": "Thử mở một slug có sẵn để bắt đầu:",
     "time.just_now": "vừa xong",
@@ -73,6 +77,10 @@ export const dict = {
     "home.recent.title": "Recent notes",
     "home.recent.local_only": "This list is only stored on your device.",
     "home.recent.remove": "Remove from list",
+    "home.pinned.title": "Pinned",
+    "home.pinned.unpin": "Unpin",
+    "home.pinned.aria": "Pinned notes",
+
     "home.empty.title": "No notes yet",
     "home.empty.hint": "Try opening one of these to get started:",
     "time.just_now": "just now",

@@ -3,6 +3,7 @@ import {
   AlignVerticalJustifyCenter,
   BookOpen,
   CopyPlus,
+  Highlighter,
   Link2,
   MonitorSmartphone,
   Pencil,
@@ -29,6 +30,8 @@ interface SettingsMenuProps {
   onToggleZen: () => void;
   typewriter: boolean;
   onToggleTypewriter: () => void;
+  focusLine: boolean;
+  onToggleFocusLine: () => void;
   paginated: boolean;
   onTogglePagination: () => void;
   onOpenRename: () => void;
@@ -42,6 +45,8 @@ export function SettingsMenu({
   onToggleZen,
   typewriter,
   onToggleTypewriter,
+  focusLine,
+  onToggleFocusLine,
   paginated,
   onTogglePagination,
   onOpenRename,
@@ -80,6 +85,10 @@ export function SettingsMenu({
           <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
           {typewriter ? "Tắt Typewriter mode" : "Bật Typewriter mode"}
           <span className="ml-auto text-[10px] text-muted-foreground">F9</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onToggleFocusLine}>
+          <Highlighter className="h-3.5 w-3.5" />
+          {focusLine ? "Tắt Focus line" : "Bật Focus line"}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onTogglePagination}>
           <BookOpen className="h-3.5 w-3.5" />
