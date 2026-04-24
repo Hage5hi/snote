@@ -133,7 +133,6 @@ export default function AdminPanel() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchList = async (passToUse: string, q = "", tag = "") => {
@@ -149,8 +148,8 @@ export default function AdminPanel() {
       setTopTags(data.topTags ?? []);
       setSelected(new Set());
       return true;
-    } catch (e: any) {
-      const msg = String(e?.message ?? e);
+    } catch (e) {
+      const msg = String((e as Error | undefined)?.message ?? e);
       toast({
         title: "Không tải được danh sách",
         description: msg.includes("unauthorized") ? "Khoá admin sai." : msg,
@@ -187,7 +186,7 @@ export default function AdminPanel() {
   const doDelete = async (mode: "selected" | "all") => {
     setLoading(true);
     try {
-      const body: any = { passphrase: pass };
+      const body: { passphrase: string; all?: boolean; slugs?: string[] } = { passphrase: pass };
       if (mode === "all") body.all = true;
       else body.slugs = Array.from(selected);
       const { data, error } = await supabase.functions.invoke("admin-delete", {
@@ -197,10 +196,10 @@ export default function AdminPanel() {
       if (data?.error) throw new Error(data.error);
       toast({ title: `Đã xoá ${data.deleted} note` });
       await fetchList(pass, search, tagFilter);
-    } catch (e: any) {
+    } catch (e) {
       toast({
         title: "Xoá thất bại",
-        description: String(e?.message ?? e),
+        description: String((e as Error | undefined)?.message ?? e),
         variant: "destructive",
       });
     } finally {
@@ -219,8 +218,8 @@ export default function AdminPanel() {
       if (data?.error) throw new Error(data.error);
       toast({ title: `Đã dọn ${data.deleted} note rỗng` });
       await fetchList(pass, search, tagFilter);
-    } catch (e: any) {
-      toast({ title: "Cleanup lỗi", description: String(e?.message ?? e), variant: "destructive" });
+    } catch (e) {
+      toast({ title: "Cleanup lỗi", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
     } finally {
       setLoading(false);
     }

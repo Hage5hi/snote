@@ -27,7 +27,9 @@ export function touchRecent(slug: string, preview?: string) {
   const trimmed = list.slice(0, MAX);
   try {
     localStorage.setItem(KEY, JSON.stringify(trimmed));
-  } catch {}
+  } catch {
+    // ignore
+  }
   return trimmed;
 }
 
@@ -63,7 +65,9 @@ export function togglePin(slug: string): string[] {
   const next = list.includes(slug) ? list.filter((s) => s !== slug) : [slug, ...list];
   try {
     localStorage.setItem(PIN_KEY, JSON.stringify(next));
-  } catch {}
+  } catch {
+    // ignore
+  }
   return next;
 }
 
@@ -81,7 +85,9 @@ export function renameRecent(oldSlug: string, newSlug: string) {
   if (i2 !== -1) filtered[i2] = { ...filtered[i2], slug: newSlug };
   try {
     localStorage.setItem(KEY, JSON.stringify(filtered));
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
 
 export function renamePinned(oldSlug: string, newSlug: string) {
@@ -90,5 +96,7 @@ export function renamePinned(oldSlug: string, newSlug: string) {
   const next = Array.from(new Set(list.map((s) => (s === oldSlug ? newSlug : s))));
   try {
     localStorage.setItem(PIN_KEY, JSON.stringify(next));
-  } catch {}
+  } catch {
+    // ignore
+  }
 }
