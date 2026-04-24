@@ -90,7 +90,11 @@ export function pasteMarkdown() {
       const html = clipboard.getData("text/html");
       if (!html || !STRUCTURED_TAG_RE.test(html)) return false;
 
-      // Snapshot selection at event time — conversion is async.
+      // ClipboardData is only readable inside the synchronous paste handler —
+      // it's cleared once the handler returns. Capture the plain-text fallback
+      // now so the async catch branch still has it.
+      const plainFallback = clipboard.getData("text/plain");
+
       event.preventDefault();
 
       void loadConverter().then(({ convert }) => {
@@ -99,12 +103,18 @@ export function pasteMarkdown() {
           md = fixTurndownLinks(convert(html)).trim();
         } catch {
           // Turndown choke → fall back to whatever plain text we had.
-          md = clipboard.getData("text/plain");
+          md = plainFallback;
         }
         if (!md) return;
+        // Use the live selection at dispatch time, not positions captured at
+        // paste-event time: on the first structured paste turndown is fetched
+        // lazily, and yjs remote edits arriving in that window would shift the
+        // original from/to out from under us. CodeMirror maps selections
+        // through incoming ChangeSets automatically.
+        const { from: insFrom, to: insTo } = view.state.selection.main;
         view.dispatch({
-          changes: { from, to, insert: md },
-          selection: { anchor: from + md.length },
+          changes: { from: insFrom, to: insTo, insert: md },
+          selection: { anchor: insFrom + md.length },
           scrollIntoView: true,
         });
       });
