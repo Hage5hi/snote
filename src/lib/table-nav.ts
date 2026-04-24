@@ -118,10 +118,14 @@ function enterNewRow(view: EditorView): boolean {
   const newCells = parseCells(newRow);
   const insertAt = line.to;
   const newLineStart = insertAt + 1;
+  // Cursor goes to first cell of the new row. Use the known structure of
+  // buildEmptyRow (`|<spaces>|...`) to place the cursor right after the
+  // opening pipe — we can't call cellCursorPos here because it would read
+  // the pre-change document at positions that only exist in the post-change
+  // document.
   view.dispatch({
     changes: { from: insertAt, to: insertAt, insert: `\n${newRow}` },
-    // Cursor goes to first cell of the new row.
-    selection: { anchor: cellCursorPos(state, newLineStart, newCells[0]) },
+    selection: { anchor: newLineStart + newCells[0].start },
     scrollIntoView: true,
   });
   return true;

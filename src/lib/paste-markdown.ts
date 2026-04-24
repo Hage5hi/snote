@@ -13,7 +13,7 @@ let converterPromise: Promise<Converter> | null = null;
 
 function loadConverter(): Promise<Converter> {
   if (!converterPromise) {
-    converterPromise = Promise.all([
+    const p: Promise<Converter> = Promise.all([
       import("turndown"),
       import("turndown-plugin-gfm" as string) as Promise<{
         gfm: (service: unknown) => void;
@@ -29,6 +29,12 @@ function loadConverter(): Promise<Converter> {
       service.use(gfm.gfm);
       return { convert: (html: string) => service.turndown(html) };
     });
+    // Don't cache the rejection — a transient chunk-loading failure shouldn't
+    // disable structured paste for the rest of the session.
+    p.catch(() => {
+      if (converterPromise === p) converterPromise = null;
+    });
+    converterPromise = p;
   }
   return converterPromise;
 }
@@ -97,27 +103,36 @@ export function pasteMarkdown() {
 
       event.preventDefault();
 
-      void loadConverter().then(({ convert }) => {
-        let md = "";
-        try {
-          md = fixTurndownLinks(convert(html)).trim();
-        } catch {
-          // Turndown choke → fall back to whatever plain text we had.
-          md = plainFallback;
-        }
+      // Use the live selection at dispatch time, not positions captured at
+      // paste-event time: on the first structured paste turndown is fetched
+      // lazily, and yjs remote edits arriving in that window would shift the
+      // original from/to out from under us. CodeMirror maps selections
+      // through incoming ChangeSets automatically.
+      const insertAtCurrentSelection = (md: string) => {
         if (!md) return;
-        // Use the live selection at dispatch time, not positions captured at
-        // paste-event time: on the first structured paste turndown is fetched
-        // lazily, and yjs remote edits arriving in that window would shift the
-        // original from/to out from under us. CodeMirror maps selections
-        // through incoming ChangeSets automatically.
         const { from: insFrom, to: insTo } = view.state.selection.main;
         view.dispatch({
           changes: { from: insFrom, to: insTo, insert: md },
           selection: { anchor: insFrom + md.length },
           scrollIntoView: true,
         });
-      });
+      };
+
+      loadConverter().then(
+        ({ convert }) => {
+          let md = "";
+          try {
+            md = fixTurndownLinks(convert(html)).trim();
+          } catch {
+            // Turndown choke → fall back to whatever plain text we had.
+            md = plainFallback;
+          }
+          insertAtCurrentSelection(md);
+        },
+        // Dynamic-import failure (chunk load error, offline, etc.) — don't
+        // silently drop the paste; insert the plain-text fallback instead.
+        () => insertAtCurrentSelection(plainFallback),
+      );
       return true;
     },
   });
