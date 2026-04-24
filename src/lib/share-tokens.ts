@@ -45,3 +45,16 @@ export function clearShareToken(slug: string) {
   delete store[slug];
   write(store);
 }
+
+/** Re-key the cached token so the ShareDialog for the new slug shows the
+ *  migrated link. Called by renameNote after the server-side share-rename
+ *  function has migrated the note_shares row. */
+export function renameShareToken(oldSlug: string, newSlug: string) {
+  if (oldSlug === newSlug) return;
+  const store = read();
+  const token = store[oldSlug];
+  if (token === undefined) return;
+  delete store[oldSlug];
+  store[newSlug] = token;
+  write(store);
+}

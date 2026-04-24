@@ -3,6 +3,7 @@
 // Rename additionally deletes the source and migrates localStorage.
 import { supabase } from "@/integrations/supabase/client";
 import { renamePinned, renameRecent } from "@/lib/recent-notes";
+import { renameShareToken } from "@/lib/share-tokens";
 
 export const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -53,12 +54,23 @@ export async function renameNote(oldSlug: string, newSlug: string): Promise<void
 
   await copyNoteRow(oldSlug, newSlug);
 
+  // Migrate active share tokens BEFORE the delete. note_shares FK is ON
+  // DELETE CASCADE, so deleting the old row would otherwise destroy every
+  // share link for this note. share-rename runs with the service role and
+  // re-points the token rows at newSlug; the subsequent delete cascades
+  // onto an empty set.
+  const { error: shareErr } = await supabase.functions.invoke("share-rename", {
+    body: { oldSlug, newSlug },
+  });
+  if (shareErr) throw shareErr;
+
   // Remove the old row. If this fails the new row still exists.
   const { error: delErr } = await supabase.from("notes").delete().eq("slug", oldSlug);
   if (delErr) throw delErr;
 
   renameRecent(oldSlug, newSlug);
   renamePinned(oldSlug, newSlug);
+  renameShareToken(oldSlug, newSlug);
 }
 
 /**

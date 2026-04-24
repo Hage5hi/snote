@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.share-revoke]
 verify_jwt = false
+
+[functions.share-rename]
+verify_jwt = false

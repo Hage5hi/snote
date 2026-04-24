@@ -48,7 +48,8 @@ Deno.serve(async (req) => {
     // "One link per slug" contract: drop the previous token before inserting
     // the new one so a user re-generating always ends up with exactly one
     // active share link. Last-write-wins if two tabs race.
-    await supabase.from("note_shares").delete().eq("slug", slug);
+    const { error: delErr } = await supabase.from("note_shares").delete().eq("slug", slug);
+    if (delErr) throw delErr;
 
     let token = "";
     let lastErr: unknown = null;
