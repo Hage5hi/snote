@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import bcrypt from "https://esm.sh/bcryptjs@2.4.3";
 
 const corsHeaders = {
@@ -14,7 +14,7 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-async function verifyPass(supabase: any, input: string): Promise<boolean> {
+async function verifyPass(supabase: SupabaseClient, input: string): Promise<boolean> {
   const { data } = await supabase
     .from("admin_config")
     .select("pass_hash")
