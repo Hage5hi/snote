@@ -1,12 +1,12 @@
 // Lightweight i18n: auto-detects Vietnamese (navigator.language starts with "vi")
 // and falls back to English everywhere else. Choice is persisted in localStorage.
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext } from "react";
 
 export type Lang = "vi" | "en";
 
-const STORAGE_KEY = "lang";
+export const STORAGE_KEY = "lang";
 
-function detectLang(): Lang {
+export function detectLang(): Lang {
   if (typeof window === "undefined") return "en";
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -24,7 +24,7 @@ function detectLang(): Lang {
 }
 
 // Translation dictionary. Keep keys flat and stable.
-const dict = {
+export const dict = {
   vi: {
     "home.tagline": "Note online, đồng bộ tức thì.",
     "home.intro_prefix": "Mở bất kỳ note nào bằng URL — ví dụ ",
@@ -86,48 +86,13 @@ const dict = {
 
 export type TKey = keyof (typeof dict)["en"];
 
-interface I18nCtx {
+export interface I18nCtx {
   lang: Lang;
   setLang: (l: Lang) => void;
   t: (key: TKey, vars?: Record<string, string | number>) => string;
 }
 
-const Ctx = createContext<I18nCtx | null>(null);
-
-export function I18nProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<Lang>(() => detectLang());
-
-  const setLang = useCallback((l: Lang) => {
-    setLangState(l);
-    try {
-      localStorage.setItem(STORAGE_KEY, l);
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Keep <html lang="..."> in sync for accessibility/SEO.
-  useEffect(() => {
-    if (typeof document !== "undefined") {
-      document.documentElement.lang = lang;
-    }
-  }, [lang]);
-
-  const value = useMemo<I18nCtx>(
-    () => ({
-      lang,
-      setLang,
-      t: (key, vars) => {
-        const raw = (dict[lang] as Record<string, string>)[key] ?? (dict.en as Record<string, string>)[key] ?? key;
-        if (!vars) return raw;
-        return raw.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
-      },
-    }),
-    [lang, setLang],
-  );
-
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
-}
+export const Ctx = createContext<I18nCtx | null>(null);
 
 export function useI18n() {
   const ctx = useContext(Ctx);

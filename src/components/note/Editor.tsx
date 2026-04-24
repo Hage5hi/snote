@@ -28,6 +28,10 @@ import * as Y from "yjs";
 import type { Awareness } from "y-protocols/awareness";
 import { slashCommands } from "@/lib/slash-commands";
 import { tagHighlight } from "@/lib/tag-highlight";
+import { pasteMarkdown } from "@/lib/paste-markdown";
+import { tableNav } from "@/lib/table-nav";
+import { typewriterMode } from "@/lib/typewriter";
+import { wikiLink } from "@/lib/wiki-link";
 
 interface EditorProps {
   doc: Y.Doc;
@@ -110,6 +114,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         highlightSelectionMatches(),
         slashCommands(),
         tagHighlight(),
+        wikiLink(),
+        tableNav(),
+        pasteMarkdown(),
+        typewriterMode(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),

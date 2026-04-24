@@ -1,6 +1,7 @@
 import { autocompletion, type CompletionContext, type Completion, type CompletionSource } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
 import { tagCompletionSource } from "@/lib/tag-completion";
+import { wikiLinkCompletionSource } from "@/lib/wiki-link-completion";
 
 /**
  * Insert a snippet at the current selection. Replaces the matched "/foo" prefix
@@ -89,7 +90,7 @@ const slashSource: CompletionSource = (context: CompletionContext) => {
  */
 export function slashCommands() {
   return autocompletion({
-    override: [slashSource, tagCompletionSource],
+    override: [slashSource, tagCompletionSource, wikiLinkCompletionSource],
     activateOnTyping: true,
     closeOnBlur: true,
     icons: false,

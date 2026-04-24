@@ -1,5 +1,6 @@
 // Settings dropdown: e-ink mode, zen, pagination, rename, duplicate, word goal, split view hint.
 import {
+  AlignVerticalJustifyCenter,
   BookOpen,
   CopyPlus,
   Link2,
@@ -26,6 +27,8 @@ interface SettingsMenuProps {
   slug: string;
   zen: boolean;
   onToggleZen: () => void;
+  typewriter: boolean;
+  onToggleTypewriter: () => void;
   paginated: boolean;
   onTogglePagination: () => void;
   onOpenRename: () => void;
@@ -37,6 +40,8 @@ export function SettingsMenu({
   slug,
   zen,
   onToggleZen,
+  typewriter,
+  onToggleTypewriter,
   paginated,
   onTogglePagination,
   onOpenRename,
@@ -70,6 +75,11 @@ export function SettingsMenu({
         <DropdownMenuItem onClick={onToggleZen}>
           {zen ? "Tắt Zen mode" : "Bật Zen mode"}
           <span className="ml-auto text-[10px] text-muted-foreground">F11</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onToggleTypewriter}>
+          <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
+          {typewriter ? "Tắt Typewriter mode" : "Bật Typewriter mode"}
+          <span className="ml-auto text-[10px] text-muted-foreground">F9</span>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onTogglePagination}>
           <BookOpen className="h-3.5 w-3.5" />

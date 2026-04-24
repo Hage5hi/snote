@@ -20,7 +20,9 @@ export function getIdentity(): Identity {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch {
+    // ignore
+  }
   const name = `${ANIMALS[Math.floor(Math.random() * ANIMALS.length)]}-${Math.floor(
     Math.random() * 1000
   )}`;
@@ -28,7 +30,9 @@ export function getIdentity(): Identity {
   const identity = { name, color };
   try {
     localStorage.setItem(KEY, JSON.stringify(identity));
-  } catch {}
+  } catch {
+    // ignore
+  }
   return identity;
 }
 

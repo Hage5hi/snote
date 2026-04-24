@@ -33,7 +33,9 @@ export function UnlockForm({ slug, salt, check, onUnlock }: UnlockFormProps) {
       // Reflect in URL hash (so refresh keeps unlocked) without triggering a navigation.
       try {
         history.replaceState(null, "", `${window.location.pathname}#${encodeURIComponent(pass)}`);
-      } catch {}
+      } catch {
+        // ignore
+      }
       onUnlock(key);
     } catch (err) {
       console.error(err);

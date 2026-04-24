@@ -34,6 +34,8 @@ interface TopbarProps {
   onTogglePreview: () => void;
   zen: boolean;
   onToggleZen: () => void;
+  typewriter: boolean;
+  onToggleTypewriter: () => void;
   getContent: () => string;
   isEncrypted: boolean;
   paginated: boolean;
@@ -51,6 +53,8 @@ export function Topbar({
   onTogglePreview,
   zen,
   onToggleZen,
+  typewriter,
+  onToggleTypewriter,
   getContent,
   isEncrypted,
   paginated,
@@ -177,6 +181,8 @@ export function Topbar({
             slug={slug}
             zen={zen}
             onToggleZen={onToggleZen}
+            typewriter={typewriter}
+            onToggleTypewriter={onToggleTypewriter}
             paginated={paginated}
             onTogglePagination={onTogglePagination}
             onOpenRename={() => setRenameOpen(true)}

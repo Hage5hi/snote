@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
+import { expandWikiLinks } from "@/lib/wiki-link";
 
 // `marked` + `dompurify` are loaded lazily on first render so the
 // editor-only path never pulls them. Result is a smaller initial chunk and
@@ -69,7 +70,7 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
         lastTextLenRef.current = text.length;
       }
       if (!mod) return;
-      const raw = mod.marked(text);
+      const raw = mod.marked(expandWikiLinks(text));
       setHtml(mod.sanitize(raw));
     };
 
@@ -107,7 +108,6 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
     <div
       lang={lang}
       className={`markdown-preview prose prose-neutral dark:prose-invert max-w-none px-6 py-6 ${className ?? ""}`}
-      // eslint-disable-next-line react/no-danger
       dangerouslySetInnerHTML={{
         __html: html || '<p class="text-muted-foreground">Empty note. Bắt đầu gõ để xem preview.</p>',
       }}
