@@ -92,9 +92,9 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
       toast({ title: "Đã mã hoá note" });
       // Reload with the key in hash so the provider re-mounts with encryption.
       window.location.replace(`/${slug}#${encodeURIComponent(passphrase)}`);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      toast({ title: "Mã hoá thất bại", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
+      toast({ title: "Mã hoá thất bại", description: String(e?.message ?? e), variant: "destructive" });
       setBusy(false);
     }
   };
@@ -122,9 +122,9 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
 
       toast({ title: "Đã bỏ mã hoá" });
       window.location.replace(`/${slug}`);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      toast({ title: "Bỏ mã hoá thất bại", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
+      toast({ title: "Bỏ mã hoá thất bại", description: String(e?.message ?? e), variant: "destructive" });
       setBusy(false);
     }
   };

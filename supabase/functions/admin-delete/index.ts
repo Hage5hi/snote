@@ -14,7 +14,7 @@ function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
-async function verifyPass(supabase: ReturnType<typeof createClient>, input: string): Promise<boolean> {
+async function verifyPass(supabase: any, input: string): Promise<boolean> {
   const { data } = await supabase
     .from("admin_config")
     .select("pass_hash")

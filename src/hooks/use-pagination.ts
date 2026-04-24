@@ -22,9 +22,7 @@ export function usePagination() {
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY, enabled ? "1" : "0");
-    } catch {
-      // ignore
-    }
+    } catch {}
     document.documentElement.classList.toggle("paginated", enabled);
   }, [enabled]);
 
