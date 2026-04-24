@@ -70,7 +70,7 @@ export function pasteMarkdown() {
       const clipboard = event.clipboardData;
       if (!clipboard) return false;
       // Shift held = user wants raw paste, standard OS convention.
-      if (event.shiftKey) return false;
+      if ((event as ClipboardEvent & { shiftKey?: boolean }).shiftKey) return false;
 
       // Smart paste URL onto selection: if the clipboard contains only a pure
       // http(s) URL and the editor has a non-empty selection, wrap the
