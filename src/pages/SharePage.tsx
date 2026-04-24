@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Preview } from "@/components/note/Preview";
 import { UnlockForm } from "@/components/note/UnlockForm";
 import { EditorSkeleton } from "@/components/note/EditorSkeleton";
-import { deriveKey, decryptBytes, verifyCheck } from "@/lib/crypto";
+import { deriveKey, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { base64ToBytes } from "@/lib/yjs/base64";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
@@ -17,6 +17,7 @@ type ShareViewResponse = {
   is_encrypted: boolean;
   enc_salt: string | null;
   enc_check: string | null;
+  enc_iterations: number | null;
   updated_at: string;
 };
 
@@ -25,7 +26,7 @@ type ViewState =
   | { kind: "notfound" }
   | { kind: "error"; message: string }
   | { kind: "ready"; doc: Y.Doc }
-  | { kind: "needs-key"; salt: string; check: string; ydocState: string };
+  | { kind: "needs-key"; salt: string; check: string; iterations: number; ydocState: string };
 
 function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
   const doc = new Y.Doc();
@@ -85,10 +86,11 @@ export default function SharePage() {
 
       // If a key is already in the URL hash (typical share-with-key flow),
       // try to unlock silently. On failure, drop through to the password form.
+      const iterations = iterationsFor(data.enc_iterations);
       const hash = decodeURIComponent(window.location.hash.replace(/^#/, ""));
       if (hash) {
         try {
-          const key = await deriveKey(hash, data.enc_salt);
+          const key = await deriveKey(hash, data.enc_salt, iterations);
           if (await verifyCheck(key, data.enc_check)) {
             const pt = await decryptBytes(key, base64ToBytes(data.ydoc_state));
             const doc = new Y.Doc();
@@ -106,6 +108,7 @@ export default function SharePage() {
           kind: "needs-key",
           salt: data.enc_salt,
           check: data.enc_check,
+          iterations,
           ydocState: data.ydoc_state,
         });
       }
@@ -153,7 +156,13 @@ export default function SharePage() {
     // as a caption. Using "(chia sẻ)" instead of the real slug keeps the
     // slug hidden.
     return (
-      <UnlockForm slug="(chia sẻ)" salt={state.salt} check={state.check} onUnlock={onUnlock} />
+      <UnlockForm
+        slug="(chia sẻ)"
+        salt={state.salt}
+        check={state.check}
+        iterations={state.iterations}
+        onUnlock={onUnlock}
+      />
     );
   }
 

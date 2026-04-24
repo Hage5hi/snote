@@ -3,7 +3,11 @@
 
 import { bytesToBase64, base64ToBytes } from "./yjs/base64";
 
-const PBKDF2_ITERATIONS = 100_000;
+// OWASP 2023 guidance for PBKDF2-SHA256 is 600k iterations. Notes encrypted
+// before this bump have `enc_iterations = NULL` in the DB and must keep
+// deriving with the legacy count so existing passphrases still work.
+export const PBKDF2_ITERATIONS = 600_000;
+export const LEGACY_PBKDF2_ITERATIONS = 100_000;
 const KEY_LENGTH = 256;
 const IV_LENGTH = 12; // bytes for AES-GCM
 const SALT_LENGTH = 16;
@@ -19,7 +23,18 @@ export function randomSalt(): string {
   return bytesToBase64(bytes);
 }
 
-export async function deriveKey(passphrase: string, saltB64: string): Promise<CryptoKey> {
+/**
+ * Derive an AES-GCM key from a passphrase + salt using PBKDF2-SHA256.
+ *
+ * Pass the note's `enc_iterations` value from the DB. If the row predates
+ * the 600k bump (NULL), pass `LEGACY_PBKDF2_ITERATIONS` (100k) so the
+ * derived key matches the one used at encryption time.
+ */
+export async function deriveKey(
+  passphrase: string,
+  saltB64: string,
+  iterations: number = PBKDF2_ITERATIONS,
+): Promise<CryptoKey> {
   const salt = base64ToBytes(saltB64);
   const baseKey = await crypto.subtle.importKey(
     "raw",
@@ -32,7 +47,7 @@ export async function deriveKey(passphrase: string, saltB64: string): Promise<Cr
     {
       name: "PBKDF2",
       salt: salt as BufferSource,
-      iterations: PBKDF2_ITERATIONS,
+      iterations,
       hash: "SHA-256",
     },
     baseKey,
@@ -40,6 +55,14 @@ export async function deriveKey(passphrase: string, saltB64: string): Promise<Cr
     false,
     ["encrypt", "decrypt"]
   );
+}
+
+/**
+ * Resolve the correct iteration count for a note row. `NULL` means the
+ * note was encrypted before the 600k bump; fall back to the legacy 100k.
+ */
+export function iterationsFor(dbValue: number | null | undefined): number {
+  return dbValue ?? LEGACY_PBKDF2_ITERATIONS;
 }
 
 export async function encryptBytes(key: CryptoKey, data: Uint8Array): Promise<Uint8Array> {

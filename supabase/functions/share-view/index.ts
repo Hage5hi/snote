@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
 
     const { data: note, error } = await supabase
       .from("notes")
-      .select("content, ydoc_state, is_encrypted, enc_salt, enc_check, updated_at")
+      .select("content, ydoc_state, is_encrypted, enc_salt, enc_check, enc_iterations, updated_at")
       .eq("slug", share.slug)
       .maybeSingle();
     if (error || !note) return json({ error: "not found" }, 404);
@@ -54,6 +54,7 @@ Deno.serve(async (req) => {
       is_encrypted: note.is_encrypted,
       enc_salt: note.enc_salt,
       enc_check: note.enc_check,
+      enc_iterations: note.enc_iterations,
       updated_at: note.updated_at,
     }, 200);
   } catch (e) {

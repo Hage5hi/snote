@@ -27,6 +27,7 @@ import {
   generatePassphrase,
   makeCheck,
   randomSalt,
+  PBKDF2_ITERATIONS,
 } from "@/lib/crypto";
 import { bytesToBase64 } from "@/lib/yjs/base64";
 
@@ -68,7 +69,7 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
     setBusy(true);
     try {
       const salt = randomSalt();
-      const key = await deriveKey(passphrase, salt);
+      const key = await deriveKey(passphrase, salt, PBKDF2_ITERATIONS);
       const check = await makeCheck(key);
       const state = Y.encodeStateAsUpdate(doc);
       const encrypted = await encryptBytes(key, state);
@@ -81,6 +82,7 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
             is_encrypted: true,
             enc_salt: salt,
             enc_check: check,
+            enc_iterations: PBKDF2_ITERATIONS,
             ydoc_state: bytesToBase64(encrypted),
             content: "",
             char_count: 0,
@@ -112,6 +114,7 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
             is_encrypted: false,
             enc_salt: null,
             enc_check: null,
+            enc_iterations: null,
             ydoc_state: bytesToBase64(state),
             content: text,
             char_count: text.length,

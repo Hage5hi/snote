@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { deriveKey, decryptString, verifyCheck } from "@/lib/crypto";
+import { deriveKey, verifyCheck, iterationsFor } from "@/lib/crypto";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -36,7 +36,7 @@ export default function RawView() {
       }
       const { data, error: dbError } = await supabase
         .from("notes")
-        .select("content, ydoc_state, is_encrypted, enc_salt, enc_check")
+        .select("content, ydoc_state, is_encrypted, enc_salt, enc_check, enc_iterations")
         .eq("slug", slug)
         .maybeSingle();
       if (cancelled) return;
@@ -83,7 +83,7 @@ export default function RawView() {
         return;
       }
       try {
-        const cryptoKey = await deriveKey(key, data.enc_salt);
+        const cryptoKey = await deriveKey(key, data.enc_salt, iterationsFor(data.enc_iterations));
         const ok = await verifyCheck(cryptoKey, data.enc_check);
         if (!ok) {
           setError("Khoá không đúng.");
