@@ -12,8 +12,11 @@ dist
 dist-ssr
 *.local
 
-# Environment variables (use .env.example for reference)
-.env
+# Environment variables — only ignore local overrides.
+# `.env` is committed because it only contains VITE_* publishable
+# (anon) keys that are designed to ship to the client; security is
+# enforced via Supabase RLS, not by hiding the key. Committing it
+# also keeps Lovable preview sandboxes working across resumes.
 .env.local
 .env.*.local
 
