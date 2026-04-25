@@ -112,7 +112,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     if (embedSlug) return;
     if (!slug) return;
     const prev = document.title;
-    document.title = `Syrin Notes — ${slug}`;
+    document.title = `${slug} — Syrin Notes`;
     return () => {
       document.title = prev;
     };
