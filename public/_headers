@@ -1,0 +1,16 @@
+# Cloudflare Pages / Netlify-style headers config.
+# Lighthouse Speed report: "Use efficient cache lifetimes" (~754 KiB savings).
+#
+# Vite's hashed asset filenames (e.g. index-BHPmQ4m1.js) are content-addressed
+# and never overwritten, so they're safe to mark immutable for a year.
+# index.html itself must NOT be cached, otherwise users would never see new
+# deploys until forcing a refresh.
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/
+  Cache-Control: no-cache, must-revalidate
+
+/index.html
+  Cache-Control: no-cache, must-revalidate
