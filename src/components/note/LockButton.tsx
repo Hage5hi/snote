@@ -82,6 +82,7 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
             is_encrypted: true,
             enc_salt: salt,
             enc_check: check,
+            enc_iterations: PBKDF2_ITERATIONS,
             ydoc_state: bytesToBase64(encrypted),
             content: "",
             char_count: 0,
