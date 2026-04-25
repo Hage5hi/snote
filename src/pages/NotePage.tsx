@@ -44,6 +44,7 @@ type EncMeta = {
   isEncrypted: boolean;
   salt: string | null;
   check: string | null;
+  iterations: number | null;
   ydocState: string | null;
   rowExists: boolean;
 };
@@ -126,6 +127,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     isEncrypted: false,
     salt: null,
     check: null,
+    iterations: null,
     ydocState: null,
     rowExists: false,
   });
@@ -139,7 +141,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     (async () => {
       const { data } = await supabase
         .from("notes")
-        .select("is_encrypted, enc_salt, enc_check, ydoc_state")
+        .select("is_encrypted, enc_salt, enc_check, enc_iterations, ydoc_state")
         .eq("slug", slug)
         .maybeSingle();
       if (cancelled) return;
@@ -147,6 +149,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         isEncrypted: !!data?.is_encrypted,
         salt: data?.enc_salt ?? null,
         check: data?.enc_check ?? null,
+        iterations: data?.enc_iterations ?? null,
         ydocState: data?.ydoc_state ?? null,
         rowExists: !!data,
       };
@@ -162,7 +165,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         : "";
       if (hashKey && meta.salt && meta.check) {
         try {
-          const key = await deriveKey(hashKey, meta.salt, iterationsFor(null));
+          const key = await deriveKey(hashKey, meta.salt, iterationsFor(meta.iterations));
           const ok = await verifyCheck(key, meta.check);
           if (ok) {
             setEncryption({
@@ -352,7 +355,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
               slug={slug}
               salt={encMeta.salt!}
               check={encMeta.check!}
-              iterations={iterationsFor(null)}
+              iterations={iterationsFor(encMeta.iterations)}
               onUnlock={(key) => {
                 setEncryption({
                   encrypt: (b) => encryptBytes(key, b),
