@@ -44,6 +44,10 @@ interface TopbarProps {
   isEncrypted: boolean;
   paginated: boolean;
   onTogglePagination: () => void;
+  /** Compact mode for SplitView panels: hides app-wide toggles (zen, theme,
+   *  shortcuts, settings) that would be redundant when two topbars are on
+   *  screen. Keeps per-note actions (preview, lock, share, rename, status). */
+  compact?: boolean;
 }
 
 export function Topbar({
@@ -67,6 +71,7 @@ export function Topbar({
   isEncrypted,
   paginated,
   onTogglePagination,
+  compact = false,
 }: TopbarProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
