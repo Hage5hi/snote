@@ -69,22 +69,24 @@ export function ViewControls({
         </Tooltip>
       )}
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={onToggleZen}
-            aria-label={zen ? "Tắt Zen" : "Bật Zen"}
-          >
-            {zen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          {zen ? "Thoát chế độ Zen" : "Bật chế độ Zen — ẩn topbar khi không di chuột"} (F11)
-        </TooltipContent>
-      </Tooltip>
+      {!compact && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={onToggleZen}
+              aria-label={zen ? "Tắt Zen" : "Bật Zen"}
+            >
+              {zen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {zen ? "Thoát chế độ Zen" : "Bật chế độ Zen — ẩn topbar khi không di chuột"} (F11)
+          </TooltipContent>
+        </Tooltip>
+      )}
     </>
   );
 }
