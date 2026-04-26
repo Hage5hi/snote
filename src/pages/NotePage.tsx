@@ -295,10 +295,45 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const getContent = () => doc.getText("content").toString();
 
   // SplitView wraps each panel — render the workspace without the global topbar.
+  // SplitView wraps each panel — render compact topbar + editor (+ preview if toggled).
+  // Compact topbar hides app-wide toggles (zen, theme, settings) but keeps
+  // per-note actions (preview toggle, lock, share, rename, status, presence).
   if (embedSlug) {
     return (
-      <div className="flex h-full flex-col bg-background">
-        <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
+      <div className="flex h-full min-h-0 flex-col bg-background">
+        <Topbar
+          slug={slug}
+          doc={doc}
+          status={status}
+          charCount={counts.chars}
+          wordCount={counts.words}
+          users={users}
+          showPreview={showPreview}
+          onTogglePreview={() => setShowPreview((v) => !v)}
+          scrollSync={scrollSync}
+          onToggleScrollSync={toggleScrollSync}
+          zen={zen}
+          onToggleZen={toggleZen}
+          typewriter={typewriter}
+          onToggleTypewriter={toggleTypewriter}
+          focusLine={focusLine}
+          onToggleFocusLine={toggleFocusLine}
+          getContent={() => doc.getText("content").toString()}
+          isEncrypted={encMeta.isEncrypted}
+          paginated={paginated}
+          onTogglePagination={togglePagination}
+          compact
+        />
+        <div className="flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0">
+          <div className="flex-1 min-h-0 min-w-0">
+            <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
+          </div>
+          {showPreview && (
+            <div className="flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30">
+              <Preview doc={doc} />
+            </div>
+          )}
+        </div>
       </div>
     );
   }
