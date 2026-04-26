@@ -11,6 +11,8 @@ interface ViewControlsProps {
   onToggleScrollSync: () => void;
   zen: boolean;
   onToggleZen: () => void;
+  /** When true, hide app-wide toggles (Zen) — used by SplitView panels. */
+  compact?: boolean;
 }
 
 export function ViewControls({
@@ -20,6 +22,7 @@ export function ViewControls({
   onToggleScrollSync,
   zen,
   onToggleZen,
+  compact = false,
 }: ViewControlsProps) {
   return (
     <>
