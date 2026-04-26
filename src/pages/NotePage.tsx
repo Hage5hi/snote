@@ -330,8 +330,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         onTogglePagination={togglePagination}
       />
 
-      <main className="relative flex flex-1 min-h-0 divide-x divide-border">
-        <div className={showPreview ? "hidden md:block md:flex-1 min-w-0" : "flex-1 min-w-0"}>
+      <main className="relative flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0">
+        <div className={showPreview ? "flex-1 min-h-0 min-w-0" : "flex-1 min-w-0"}>
           <Editor
             ref={editorRef}
             doc={doc}
@@ -343,7 +343,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         {showPreview && (
           <div
             ref={setPreviewScrollEl}
-            className={`flex-1 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}
+            className={`flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}
           >
             <Preview doc={doc} />
           </div>
