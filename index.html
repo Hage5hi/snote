@@ -46,7 +46,7 @@
         try {
           var t = localStorage.getItem("theme");
           var sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          var dark = t === "dark" || (t !== "light" && (t === "system" || !t) && sysDark) || (!t && true);
+          var dark = t === "dark" || ((t === "system" || !t) && sysDark);
           var root = document.documentElement;
           if (dark) {
             root.classList.add("dark");
