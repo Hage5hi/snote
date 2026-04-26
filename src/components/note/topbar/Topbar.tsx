@@ -44,6 +44,10 @@ interface TopbarProps {
   isEncrypted: boolean;
   paginated: boolean;
   onTogglePagination: () => void;
+  /** Compact mode for SplitView panels: hides app-wide toggles (zen, theme,
+   *  shortcuts, settings) that would be redundant when two topbars are on
+   *  screen. Keeps per-note actions (preview, lock, share, rename, status). */
+  compact?: boolean;
 }
 
 export function Topbar({
@@ -67,6 +71,7 @@ export function Topbar({
   isEncrypted,
   paginated,
   onTogglePagination,
+  compact = false,
 }: TopbarProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -105,7 +110,7 @@ export function Topbar({
 
   return (
     <>
-      {zen && <div className="zen-hover-zone" aria-hidden />}
+      {zen && !compact && <div className="zen-hover-zone" aria-hidden />}
       <header className="zen-topbar sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <TopbarBrand
           slug={slug}
@@ -168,41 +173,46 @@ export function Topbar({
             onToggleScrollSync={onToggleScrollSync}
             zen={zen}
             onToggleZen={onToggleZen}
+            compact={compact}
           />
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setShortcutsOpen(true)}
-                aria-label="Phím tắt"
-              >
-                <Keyboard className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Xem danh sách phím tắt (?)</TooltipContent>
-          </Tooltip>
+          {!compact && (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    onClick={() => setShortcutsOpen(true)}
+                    aria-label="Phím tắt"
+                  >
+                    <Keyboard className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Xem danh sách phím tắt (?)</TooltipContent>
+              </Tooltip>
 
-          <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
+              <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
 
-          <SettingsMenu
-            slug={slug}
-            zen={zen}
-            onToggleZen={onToggleZen}
-            typewriter={typewriter}
-            onToggleTypewriter={onToggleTypewriter}
-            focusLine={focusLine}
-            onToggleFocusLine={onToggleFocusLine}
-            paginated={paginated}
-            onTogglePagination={onTogglePagination}
-            onOpenRename={() => setRenameOpen(true)}
-            onOpenDuplicate={() => setDuplicateOpen(true)}
-            onOpenGoal={() => setGoalOpen(true)}
-          />
+              <SettingsMenu
+                slug={slug}
+                zen={zen}
+                onToggleZen={onToggleZen}
+                typewriter={typewriter}
+                onToggleTypewriter={onToggleTypewriter}
+                focusLine={focusLine}
+                onToggleFocusLine={onToggleFocusLine}
+                paginated={paginated}
+                onTogglePagination={onTogglePagination}
+                onOpenRename={() => setRenameOpen(true)}
+                onOpenDuplicate={() => setDuplicateOpen(true)}
+                onOpenGoal={() => setGoalOpen(true)}
+              />
 
-          <ThemeToggle />
+              <ThemeToggle />
+            </>
+          )}
         </div>
       </header>
 

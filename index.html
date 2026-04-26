@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" class="dark" style="background:#0f0f12;color-scheme:dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
@@ -39,14 +39,14 @@
   <meta name="twitter:image" content="https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/612b5d23-78f8-4a95-a824-8a2667fdea89/id-preview-45f9d3a3--cf32dc79-9c60-414b-b4e3-c720f81a5079.lovable.app-1776865936529.png">
 </head>
 
-  <body style="background:#0f0f12;margin:0">
+  <body style="margin:0">
     <!-- Apply saved theme BEFORE React mounts to prevent white flash on light theme. -->
     <script>
       (function () {
         try {
           var t = localStorage.getItem("theme");
           var sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          var dark = t === "dark" || (t !== "light" && (t === "system" || !t) && sysDark) || (!t && true);
+          var dark = t === "dark" || ((t === "system" || !t) && sysDark);
           var root = document.documentElement;
           if (dark) {
             root.classList.add("dark");

@@ -60,6 +60,10 @@
     --severity-high: 25 95% 53%;
     --severity-medium: 38 92% 50%;
     --severity-low: 142 70% 40%;
+
+    /* Text selection — light mode: tint primary, chữ đen, contrast tốt. */
+    --selection-bg: 234 55% 58%;
+    --selection-fg: 0 0% 9%;
   }
 
   .dark {
@@ -113,6 +117,11 @@
     --severity-high: 25 100% 58%;
     --severity-medium: 38 100% 55%;
     --severity-low: 145 100% 50%;
+
+    /* Text selection — dark mode: vàng amber + chữ đen, contrast cao,
+       không che chữ. Vàng nền sáng → chữ đen luôn dễ đọc nhất. */
+    --selection-bg: 45 100% 55%;
+    --selection-fg: 0 0% 5%;
   }
 }
 
@@ -158,25 +167,25 @@
   }
 
   /* Make text selection clearly visible in both light and dark themes.
-     The editor in dark mode was using the browser default (a near-invisible
-     dark blue on the dark editor background). Use the primary colour with
-     a low alpha so it reads as a tint without overpowering the text. */
+     Uses dedicated --selection-bg / --selection-fg tokens so dark mode can
+     pick a high-contrast colour (amber on near-black) without bleeding into
+     other primary-coloured UI. */
   ::selection {
-    background-color: hsl(var(--primary) / 0.35);
-    color: hsl(var(--foreground));
+    background-color: hsl(var(--selection-bg) / 0.55);
+    color: hsl(var(--selection-fg));
   }
   .cm-content ::selection,
   .cm-line ::selection,
   .markdown-preview ::selection {
-    background-color: hsl(var(--primary) / 0.35);
-    color: hsl(var(--foreground));
+    background-color: hsl(var(--selection-bg) / 0.55);
+    color: hsl(var(--selection-fg));
   }
   /* CodeMirror renders its own selection layer via `.cm-selectionBackground`
      when the view isn't focused — keep it in sync so blurred selection stays
      legible. */
   .cm-editor .cm-selectionBackground,
   .cm-editor.cm-focused .cm-selectionBackground {
-    background-color: hsl(var(--primary) / 0.35) !important;
+    background-color: hsl(var(--selection-bg) / 0.55) !important;
   }
 }
 

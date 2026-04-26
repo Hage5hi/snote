@@ -63,7 +63,7 @@ function SlugDispatcher() {
 }
 
 const App = () => (
-  <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
+  <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
     <I18nProvider>
       <QueryClientProvider client={queryClient}>
         {/* Toasters live OUTSIDE TooltipProvider — Tooltip's Provider passes a
