@@ -119,7 +119,7 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           <Share2 className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Share note</DialogTitle>
           <DialogDescription>
@@ -138,13 +138,13 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-3">
           {dataUrl ? (
-            <div className="rounded-md border border-border bg-white p-3">
-              <img src={dataUrl} alt="QR code" className="h-64 w-64" />
+            <div className="rounded-md border border-border bg-white p-2">
+              <img src={dataUrl} alt="QR code" className="h-48 w-48" />
             </div>
           ) : (
-            <div className="h-64 w-64 animate-pulse rounded-md bg-muted" />
+            <div className="h-48 w-48 animate-pulse rounded-md bg-muted" />
           )}
 
           <div className="flex w-full items-center gap-2">
