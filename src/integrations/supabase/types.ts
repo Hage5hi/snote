@@ -32,6 +32,32 @@ export type Database = {
         }
         Relationships: []
       }
+      note_shares: {
+        Row: {
+          created_at: string
+          slug: string
+          token: string
+        }
+        Insert: {
+          created_at?: string
+          slug: string
+          token: string
+        }
+        Update: {
+          created_at?: string
+          slug?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_shares_slug_fkey"
+            columns: ["slug"]
+            isOneToOne: true
+            referencedRelation: "notes"
+            referencedColumns: ["slug"]
+          },
+        ]
+      }
       notes: {
         Row: {
           char_count: number
