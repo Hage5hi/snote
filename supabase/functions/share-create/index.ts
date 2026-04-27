@@ -38,12 +38,16 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data: note } = await supabase
+    // Ensure the notes row exists. The client-side provider fires an
+    // unawaited upsert when a fresh slug is opened (provider.ts), but that
+    // can race with a fast user clicking "Generate share link", or fail
+    // silently if the request is cancelled mid-flight. Anonymous CRUD on
+    // `notes` is by design (slug-as-key), so claiming an empty row here
+    // adds no security exposure — it just makes share-create idempotent.
+    const { error: ensureErr } = await supabase
       .from("notes")
-      .select("slug")
-      .eq("slug", slug)
-      .maybeSingle();
-    if (!note) return json({ error: "note not found" }, 404);
+      .upsert({ slug }, { onConflict: "slug", ignoreDuplicates: true });
+    if (ensureErr) return json({ error: String(ensureErr) }, 500);
 
     // "One link per slug" contract, enforced atomically via UNIQUE(slug) +
     // UPSERT onConflict=slug. A brand-new slug inserts; an existing slug
