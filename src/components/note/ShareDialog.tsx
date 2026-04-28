@@ -119,10 +119,10 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           <Share2 className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+      <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-md overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+        <DialogHeader className="min-w-0 pr-6">
           <DialogTitle>Share note</DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="min-w-0 leading-relaxed">
             Quét QR bằng điện thoại để mở note nhanh, hoặc tạo link chỉ đọc bên dưới.
             {isEncrypted && hasKey && (
               <span className="mt-1 flex items-center gap-1 text-warning">
@@ -138,27 +138,26 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col items-center gap-3">
+        <div className="flex w-full min-w-0 flex-col items-center gap-3">
           {dataUrl ? (
-            <div className="rounded-md border border-border bg-white p-2">
-              <img src={dataUrl} alt="QR code" className="h-48 w-48" />
+            <div className="shrink-0 rounded-md border border-border bg-white p-2">
+              <img src={dataUrl} alt="QR code" className="h-48 w-48 max-w-full" />
             </div>
           ) : (
-            <div className="h-48 w-48 animate-pulse rounded-md bg-muted" />
+            <div className="h-48 w-48 max-w-full animate-pulse rounded-md bg-muted" />
           )}
 
-          <div className="flex w-full items-center gap-2 min-w-0">
-            <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs">
+          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden">
+            <code className="block min-w-0 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
               {url}
             </code>
-            <Button variant="outline" size="sm" onClick={copyUrl} className="shrink-0">
+            <Button variant="outline" size="icon" onClick={copyUrl} className="h-9 w-9 shrink-0" aria-label="Copy URL">
               <Copy className="h-3.5 w-3.5" />
-              Copy
             </Button>
           </div>
         </div>
 
-        <div className="mt-2 border-t border-border pt-3">
+        <div className="mt-2 min-w-0 border-t border-border pt-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
             <Eye className="h-3.5 w-3.5" />
             Link chỉ đọc
@@ -185,13 +184,12 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
             </>
           ) : (
             <>
-              <div className="flex w-full items-center gap-2 min-w-0">
-                <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs">
+              <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden">
+                <code className="block min-w-0 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
                   {shareUrl}
                 </code>
-                <Button variant="outline" size="sm" onClick={copyShareUrl} className="shrink-0">
+                <Button variant="outline" size="icon" onClick={copyShareUrl} className="h-9 w-9 shrink-0" aria-label="Copy read-only link">
                   <Copy className="h-3.5 w-3.5" />
-                  Copy
                 </Button>
               </div>
               {isEncrypted && hasKey && (
