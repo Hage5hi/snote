@@ -119,7 +119,7 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           <Share2 className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100vh-2rem)] !w-[min(28rem,calc(100vw-2rem))] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+      <DialogContent className="min-w-0 max-h-[calc(100vh-2rem)] !w-[min(28rem,calc(100vw-2rem))] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
           <DialogTitle>Share note</DialogTitle>
           <DialogDescription className="min-w-0 leading-relaxed">
@@ -138,16 +138,16 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex w-full min-w-0 flex-col items-center gap-3">
+        <div className="w-full min-w-0 overflow-hidden">
           {dataUrl ? (
-            <div className="shrink-0 rounded-md border border-border bg-white p-2">
+            <div className="mx-auto w-fit max-w-full rounded-md border border-border bg-white p-2">
               <img src={dataUrl} alt="QR code" className="h-48 w-48 max-w-full" />
             </div>
           ) : (
-            <div className="h-48 w-48 max-w-full animate-pulse rounded-md bg-muted" />
+            <div className="mx-auto h-48 w-48 max-w-full animate-pulse rounded-md bg-muted" />
           )}
 
-          <div className="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
+          <div className="mt-3 flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
             <code className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
               {url}
             </code>
