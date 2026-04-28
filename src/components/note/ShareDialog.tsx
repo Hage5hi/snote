@@ -119,7 +119,7 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           <Share2 className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100vh-2rem)] w-[calc(100vw-2rem)] max-w-md overflow-y-auto overflow-x-hidden p-4 sm:p-6">
+      <DialogContent className="max-h-[calc(100vh-2rem)] !w-[min(28rem,calc(100vw-2rem))] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
           <DialogTitle>Share note</DialogTitle>
           <DialogDescription className="min-w-0 leading-relaxed">
