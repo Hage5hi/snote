@@ -147,11 +147,11 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
             <div className="h-48 w-48 animate-pulse rounded-md bg-muted" />
           )}
 
-          <div className="flex w-full items-center gap-2">
-            <code className="flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs">
+          <div className="flex w-full items-center gap-2 min-w-0">
+            <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs">
               {url}
             </code>
-            <Button variant="outline" size="sm" onClick={copyUrl}>
+            <Button variant="outline" size="sm" onClick={copyUrl} className="shrink-0">
               <Copy className="h-3.5 w-3.5" />
               Copy
             </Button>
