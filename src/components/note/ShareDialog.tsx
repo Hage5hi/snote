@@ -147,8 +147,8 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
             <div className="h-48 w-48 max-w-full animate-pulse rounded-md bg-muted" />
           )}
 
-          <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden">
-            <code className="block min-w-0 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
+          <div className="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
+            <code className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
               {url}
             </code>
             <Button variant="outline" size="icon" onClick={copyUrl} className="h-9 w-9 shrink-0" aria-label="Copy URL">
@@ -184,8 +184,8 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
             </>
           ) : (
             <>
-              <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 overflow-hidden">
-                <code className="block min-w-0 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
+              <div className="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
+                <code className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
                   {shareUrl}
                 </code>
                 <Button variant="outline" size="icon" onClick={copyShareUrl} className="h-9 w-9 shrink-0" aria-label="Copy read-only link">
