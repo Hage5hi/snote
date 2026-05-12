@@ -113,6 +113,35 @@ export class SupabaseYjsProvider {
     return () => this.awarenessListeners.delete(cb);
   }
 
+  /**
+   * Subscribe to sync lifecycle events. See `SyncEvent` for semantics.
+   * Returns an unsubscribe function.
+   */
+  onSyncEvent(cb: Listener<SyncEvent>) {
+    this.syncListeners.add(cb);
+    return () => this.syncListeners.delete(cb);
+  }
+
+  /** Running byte count of local updates not yet durably saved to Postgres. */
+  getPendingBytes() {
+    return this.pendingBytes;
+  }
+
+  /** True iff there are local edits that haven't been persisted to the DB. */
+  hasUnflushedLocalChanges() {
+    return this.pendingBytes > 0;
+  }
+
+  private emitSync(ev: SyncEvent) {
+    this.syncListeners.forEach((cb) => {
+      try {
+        cb(ev);
+      } catch (e) {
+        console.warn("sync listener threw", e);
+      }
+    });
+  }
+
   private setStatus(s: SaveStatus) {
     if (this.status === s) return;
     this.status = s;
