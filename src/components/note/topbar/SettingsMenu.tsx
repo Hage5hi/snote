@@ -9,6 +9,7 @@ import {
   Pencil,
   Settings2,
   Target,
+  Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEink } from "@/hooks/use-eink";
+import { useVimMode } from "@/hooks/use-vim-mode";
 import { useWordGoal } from "@/hooks/use-word-goal";
 
 interface SettingsMenuProps {
