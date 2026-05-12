@@ -429,6 +429,7 @@ export class SupabaseYjsProvider {
     const queue = this.pendingUpdates;
     this.pendingUpdates = [];
     const merged = queue.length === 1 ? queue[0] : Y.mergeUpdates(queue);
+    this.broadcastCount++;
     void this.broadcastUpdate(merged);
   }
 
