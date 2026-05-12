@@ -26,11 +26,12 @@ afterEach(() => {
 function makeProvider() {
   const doc = new Y.Doc();
   const p = new SupabaseYjsProvider("test-slug", doc);
-  // Pretend channel is open so broadcastUpdate doesn't early-return.
-  // We don't care about actual send — flushBroadcasts increments the counter
-  // before broadcastUpdate runs.
+  // Wire the doc update handler ourselves (connect() would do this, but it
+  // needs a live Supabase channel which we deliberately skip in unit tests).
+  doc.on("update", (p as unknown as { handleDocUpdate: (u: Uint8Array, o: unknown) => void }).handleDocUpdate);
   return { provider: p, doc };
 }
+
 
 describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {
   it("batches multiple updates into 1 broadcast per rAF", async () => {
