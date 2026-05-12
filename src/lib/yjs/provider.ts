@@ -431,6 +431,9 @@ export class SupabaseYjsProvider {
         this.setStatus(this.connected ? "editing" : "offline");
       } else {
         this.lastSnapshotAt = Date.now();
+        // Durable persistence achieved — clear the pending counter and notify.
+        this.pendingBytes = 0;
+        this.emitSync({ type: "synced-durable" });
         this.setStatus(this.connected ? "saved" : "offline");
       }
     } catch (e) {
