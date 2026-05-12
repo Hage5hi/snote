@@ -181,7 +181,26 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       view.destroy();
       viewRef.current = null;
     };
-  }, [doc, awareness, onScrollEl]);
+  }, [doc, awareness, onScrollEl, vimCompartment]);
+
+  // Toggle vim mode without recreating the editor. Lazy-imports the chunk
+  // on first enable; subsequent toggles reuse the module.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    let cancelled = false;
+    if (vim) {
+      void import("@replit/codemirror-vim").then(({ vim: vimExt }) => {
+        if (cancelled || !viewRef.current) return;
+        viewRef.current.dispatch({ effects: vimCompartment.reconfigure(vimExt()) });
+      });
+    } else {
+      view.dispatch({ effects: vimCompartment.reconfigure([]) });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [vim, vimCompartment]);
 
   return <div ref={hostRef} lang={lang} className={className} />;
 });
