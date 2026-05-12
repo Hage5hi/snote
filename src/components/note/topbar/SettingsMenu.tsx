@@ -56,6 +56,7 @@ export function SettingsMenu({
   onOpenGoal,
 }: SettingsMenuProps) {
   const { pref: einkPref, setMode: setEinkMode } = useEink();
+  const { vim, toggleVim } = useVimMode();
   const { goal } = useWordGoal(slug);
 
   return (
