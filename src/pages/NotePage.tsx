@@ -341,7 +341,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         />
         <div className="flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0">
           <div className="flex-1 min-h-0 min-w-0">
-            <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
+            <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" vim={vim} />
           </div>
           {showPreview && (
             <div className="flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30">
