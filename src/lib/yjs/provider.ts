@@ -98,6 +98,16 @@ export class SupabaseYjsProvider {
   // Safety valve — if rAF is starved (background tab) and the queue grows
   // beyond this, flush eagerly to avoid unbounded memory.
   private static readonly MAX_PENDING_UPDATES = 50;
+  // Dev-only counters for verifying batching behavior. Tree-shaken in prod
+  // (gated reads via `import.meta.env.DEV`). Always incremented so unit
+  // tests under vitest can assert without env tweaks.
+  private broadcastCount = 0;
+  private updateCount = 0;
+
+  /** Dev-only: number of times `flushBroadcasts` has sent on the wire. */
+  getBroadcastCount() { return this.broadcastCount; }
+  /** Dev-only: number of local doc updates observed by `handleDocUpdate`. */
+  getUpdateCount() { return this.updateCount; }
 
   constructor(slug: string, doc: Y.Doc, encryption?: Encryption) {
     this.slug = slug;
@@ -113,6 +123,10 @@ export class SupabaseYjsProvider {
     // reconnects.
     if (typeof window !== "undefined") {
       window.addEventListener("offline", this.handleNativeOffline);
+      // Dev-only: expose for DevTools verification (Phase 2.5 batching audit).
+      if (import.meta.env.DEV) {
+        (window as unknown as { __provider?: SupabaseYjsProvider }).__provider = this;
+      }
     }
   }
 
@@ -389,6 +403,7 @@ export class SupabaseYjsProvider {
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote" || origin === "remote-snapshot") return;
+    this.updateCount++;
     // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
     // to avoid render storms when typing fast (~30 keystrokes/s).
     this.pendingBytes += update.byteLength;
@@ -418,6 +433,7 @@ export class SupabaseYjsProvider {
     const queue = this.pendingUpdates;
     this.pendingUpdates = [];
     const merged = queue.length === 1 ? queue[0] : Y.mergeUpdates(queue);
+    this.broadcastCount++;
     void this.broadcastUpdate(merged);
   }
 
