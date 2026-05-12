@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Compartment } from "@codemirror/state";
 
 // Detect dominant CJK script in text so we can set the right `lang` attribute
 // for word-break and font-fallback rules.
