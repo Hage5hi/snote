@@ -245,6 +245,7 @@ export class SupabaseYjsProvider {
 
     await this.channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
+        const wasOffline = !this.connected && this.hasSubscribedOnce;
         this.connected = true;
         this.setStatus("saved");
         if (this.hasSubscribedOnce) {
@@ -254,6 +255,7 @@ export class SupabaseYjsProvider {
           await this.refetchDbSnapshot();
         }
         this.hasSubscribedOnce = true;
+        if (wasOffline) this.emitSync({ type: "online" });
         // Ask peers for any newer state.
         await this.channel?.send({
           type: "broadcast",
@@ -262,8 +264,10 @@ export class SupabaseYjsProvider {
         });
         this.broadcastAwareness();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        const wasConnected = this.connected;
         this.connected = false;
         this.setStatus("offline");
+        if (wasConnected) this.emitSync({ type: "offline" });
       }
     });
 
