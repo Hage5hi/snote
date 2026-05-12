@@ -107,9 +107,9 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("/highlight.js/")) {
             return "hljs-vendor";
           }
-          if (id.includes("@replit/codemirror-vim")) {
-            return "cm-vendor";
-          }
+          // NOTE: do NOT lump @replit/codemirror-vim into cm-vendor — it's
+          // dynamically imported by Editor.tsx only when the user enables
+          // Vim mode, so it must be a separate chunk to stay lazy.
         },
       },
     },

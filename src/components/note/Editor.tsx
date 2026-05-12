@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { Compartment } from "@codemirror/state";
 
 // Detect dominant CJK script in text so we can set the right `lang` attribute
 // for word-break and font-fallback rules.
@@ -41,6 +42,9 @@ interface EditorProps {
    *  editor mounts, and with null when it unmounts. Used by the scroll-sync
    *  hook in NotePage to mirror scroll position into the preview pane. */
   onScrollEl?: (el: HTMLElement | null) => void;
+  /** Vim mode toggle. Lazy-loads `@replit/codemirror-vim` on first enable
+   *  via a Compartment so the editor itself doesn't need to be re-created. */
+  vim?: boolean;
 }
 
 export interface EditorHandle {
@@ -49,9 +53,12 @@ export interface EditorHandle {
 }
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
-  { doc, awareness, className, onScrollEl },
+  { doc, awareness, className, onScrollEl, vim = false },
   ref,
 ) {
+  // Stable Compartment lives across re-renders so reconfigure() targets the
+  // same slot. Re-creating it would force the editor to drop vim state.
+  const vimCompartment = useMemo(() => new Compartment(), []);
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [lang, setLang] = useState("en");
@@ -125,6 +132,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),
+        // Empty slot — Vim extension is appended later via Compartment so
+        // the heavy `@replit/codemirror-vim` chunk only loads on demand.
+        vimCompartment.of([]),
         EditorView.theme({
           "&": {
             height: "100%",
@@ -171,7 +181,26 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       view.destroy();
       viewRef.current = null;
     };
-  }, [doc, awareness, onScrollEl]);
+  }, [doc, awareness, onScrollEl, vimCompartment]);
+
+  // Toggle vim mode without recreating the editor. Lazy-imports the chunk
+  // on first enable; subsequent toggles reuse the module.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    let cancelled = false;
+    if (vim) {
+      void import("@replit/codemirror-vim").then(({ vim: vimExt }) => {
+        if (cancelled || !viewRef.current) return;
+        viewRef.current.dispatch({ effects: vimCompartment.reconfigure(vimExt()) });
+      });
+    } else {
+      view.dispatch({ effects: vimCompartment.reconfigure([]) });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [vim, vimCompartment]);
 
   return <div ref={hostRef} lang={lang} className={className} />;
 });

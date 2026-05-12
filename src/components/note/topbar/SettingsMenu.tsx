@@ -9,6 +9,7 @@ import {
   Pencil,
   Settings2,
   Target,
+  Terminal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useEink } from "@/hooks/use-eink";
+import { useVimMode } from "@/hooks/use-vim-mode";
 import { useWordGoal } from "@/hooks/use-word-goal";
 
 interface SettingsMenuProps {
@@ -54,6 +56,7 @@ export function SettingsMenu({
   onOpenGoal,
 }: SettingsMenuProps) {
   const { pref: einkPref, setMode: setEinkMode } = useEink();
+  const { vim, toggleVim } = useVimMode();
   const { goal } = useWordGoal(slug);
 
   return (
@@ -94,6 +97,10 @@ export function SettingsMenu({
           <BookOpen className="h-3.5 w-3.5" />
           {paginated ? "Tắt Lật trang" : "Bật Lật trang"}
           <span className="ml-auto text-[10px] text-muted-foreground">⌘⇧P</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={toggleVim}>
+          <Terminal className="h-3.5 w-3.5" />
+          {vim ? "Tắt Vim mode" : "Bật Vim mode"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onOpenRename}>

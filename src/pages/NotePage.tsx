@@ -24,6 +24,7 @@ import { useScrollSync } from "@/hooks/use-scroll-sync";
 import { useFocusLine } from "@/hooks/use-focus-line";
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 import { useEink } from "@/hooks/use-eink";
+import { useVimMode } from "@/hooks/use-vim-mode";
 import { usePagination } from "@/hooks/use-pagination";
 import { supabase } from "@/integrations/supabase/client";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
@@ -90,6 +91,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { typewriter, toggle: toggleTypewriter } = useTypewriterMode();
+  const { vim } = useVimMode();
   const { focusLine, toggle: toggleFocusLine } = useFocusLine();
   const navigate = useNavigate();
 
@@ -339,7 +341,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         />
         <div className="flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0">
           <div className="flex-1 min-h-0 min-w-0">
-            <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" />
+            <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" vim={vim} />
           </div>
           {showPreview && (
             <div className="flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30">
@@ -387,6 +389,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
             awareness={provider.awareness}
             className="h-full overflow-auto"
             onScrollEl={setEditorScrollEl}
+            vim={vim}
           />
         </div>
         {showPreview && (

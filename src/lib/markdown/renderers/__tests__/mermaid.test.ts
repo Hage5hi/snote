@@ -1,0 +1,41 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { __resetMermaidForTests, renderMermaid } from "../mermaid";
+
+describe("renderMermaid (lazy singleton)", () => {
+  afterEach(() => {
+    vi.resetModules();
+    __resetMermaidForTests();
+  });
+
+  it("imports the mermaid module exactly once across multiple invocations", async () => {
+    const initialize = vi.fn();
+    const render = vi.fn(async (id: string) => ({ svg: `<svg id="${id}">x</svg>` }));
+    let importCount = 0;
+
+    vi.doMock("mermaid", () => {
+      importCount += 1;
+      return { default: { initialize, render } };
+    });
+
+    // Re-import target so the mock takes effect.
+    const { renderMermaid: lazy, __resetMermaidForTests: reset } = await import("../mermaid");
+    reset();
+
+    const svg1 = await lazy("graph TD;A-->B;", false);
+    const svg2 = await lazy("graph TD;C-->D;", true);
+    const svg3 = await lazy("graph TD;E-->F;", false);
+
+    expect(svg1).toContain("<svg");
+    expect(svg2).toContain("<svg");
+    expect(svg3).toContain("<svg");
+    // Module factory invoked exactly once even though we called the
+    // renderer three times — singleton promise prevents reload thrash.
+    expect(importCount).toBe(1);
+    // initialize is called per-render (cheap) so theme switches take effect;
+    // render is called once per invocation.
+    expect(render).toHaveBeenCalledTimes(3);
+
+    // Use the imported `renderMermaid` to satisfy the import-binding lint.
+    expect(typeof renderMermaid).toBe("function");
+  });
+});
