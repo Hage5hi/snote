@@ -392,9 +392,34 @@ export class SupabaseYjsProvider {
     // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
     // to avoid render storms when typing fast (~30 keystrokes/s).
     this.pendingBytes += update.byteLength;
-    this.broadcastUpdate(update);
+    this.queueBroadcast(update);
     this.scheduleSnapshot();
   };
+
+  private queueBroadcast(update: Uint8Array) {
+    this.pendingUpdates.push(update);
+    // Eager flush if rAF starved (background tab) — bounds memory.
+    if (this.pendingUpdates.length >= SupabaseYjsProvider.MAX_PENDING_UPDATES) {
+      this.flushBroadcasts();
+      return;
+    }
+    if (this.flushScheduled) return;
+    this.flushScheduled = true;
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(() => this.flushBroadcasts());
+    } else {
+      setTimeout(() => this.flushBroadcasts(), 16);
+    }
+  }
+
+  private flushBroadcasts() {
+    this.flushScheduled = false;
+    if (this.pendingUpdates.length === 0) return;
+    const queue = this.pendingUpdates;
+    this.pendingUpdates = [];
+    const merged = queue.length === 1 ? queue[0] : Y.mergeUpdates(queue);
+    void this.broadcastUpdate(merged);
+  }
 
   private handleAwarenessUpdate = (
     { added, updated, removed }: { added: number[]; updated: number[]; removed: number[] },
