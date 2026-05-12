@@ -123,6 +123,10 @@ export class SupabaseYjsProvider {
     // reconnects.
     if (typeof window !== "undefined") {
       window.addEventListener("offline", this.handleNativeOffline);
+      // Dev-only: expose for DevTools verification (Phase 2.5 batching audit).
+      if (import.meta.env.DEV) {
+        (window as unknown as { __provider?: SupabaseYjsProvider }).__provider = this;
+      }
     }
   }
 
