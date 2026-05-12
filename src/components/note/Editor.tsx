@@ -132,6 +132,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
         yCollab(ytext, awareness),
+        // Empty slot — Vim extension is appended later via Compartment so
+        // the heavy `@replit/codemirror-vim` chunk only loads on demand.
+        vimCompartment.of([]),
         EditorView.theme({
           "&": {
             height: "100%",
