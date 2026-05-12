@@ -98,6 +98,10 @@ export function SettingsMenu({
           {paginated ? "Tắt Lật trang" : "Bật Lật trang"}
           <span className="ml-auto text-[10px] text-muted-foreground">⌘⇧P</span>
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={toggleVim}>
+          <Terminal className="h-3.5 w-3.5" />
+          {vim ? "Tắt Vim mode" : "Bật Vim mode"}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={onOpenRename}>
           <Pencil className="h-3.5 w-3.5" />
