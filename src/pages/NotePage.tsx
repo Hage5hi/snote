@@ -91,6 +91,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
   const { typewriter, toggle: toggleTypewriter } = useTypewriterMode();
+  const { vim } = useVimMode();
   const { focusLine, toggle: toggleFocusLine } = useFocusLine();
   const navigate = useNavigate();
 
