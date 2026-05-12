@@ -30,10 +30,10 @@ export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
  *   - "online"         Channel re-subscribed.
  */
 export type SyncEvent =
-  | { type: "pending"; bytes: number }
-  | { type: "synced-peer" }
   | { type: "synced-durable" }
   | { type: "recovered"; bytes: number }
+  | { type: "conflict"; bytes: number }
+  | { type: "error"; message: string }
   | { type: "offline" }
   | { type: "online" };
 
