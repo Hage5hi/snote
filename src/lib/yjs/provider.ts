@@ -7,6 +7,36 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
 
+/**
+ * Sync lifecycle events emitted by the provider. These are ADDITIVE to the
+ * existing `SaveStatus` stream — `SaveStatus` describes the local persistence
+ * pipeline (editing → saving → saved), while `SyncEvent` describes what
+ * happened on the wire. UI surfaces (SyncIndicator) consume both.
+ *
+ *   - "pending"        Local edit produced bytes that have not yet been
+ *                       acknowledged by either the broadcast peer fan-out OR
+ *                       the durable Postgres snapshot. `bytes` is the running
+ *                       total of un-flushed update payload size.
+ *   - "synced-peer"    A local update was sent on the broadcast channel.
+ *                       Peers in the same room will apply it within ~1 RTT.
+ *                       (Does NOT mean durable yet.)
+ *   - "synced-durable" Postgres `notes.ydoc_state` was successfully upserted.
+ *                       From this moment forward, a fresh client opening the
+ *                       slug will see the edit.
+ *   - "recovered"      On reconnect, the DB snapshot contained state our
+ *                       local doc didn't have, and we merged it in. `bytes`
+ *                       is the size delta in the state vector.
+ *   - "offline"        Channel dropped / network lost.
+ *   - "online"         Channel re-subscribed.
+ */
+export type SyncEvent =
+  | { type: "pending"; bytes: number }
+  | { type: "synced-peer" }
+  | { type: "synced-durable" }
+  | { type: "recovered"; bytes: number }
+  | { type: "offline" }
+  | { type: "online" };
+
 type Listener<T> = (v: T) => void;
 
 /**
