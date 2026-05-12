@@ -7,6 +7,36 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 
 export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
 
+/**
+ * Sync lifecycle events emitted by the provider. These are ADDITIVE to the
+ * existing `SaveStatus` stream — `SaveStatus` describes the local persistence
+ * pipeline (editing → saving → saved), while `SyncEvent` describes what
+ * happened on the wire. UI surfaces (SyncIndicator) consume both.
+ *
+ *   - "pending"        Local edit produced bytes that have not yet been
+ *                       acknowledged by either the broadcast peer fan-out OR
+ *                       the durable Postgres snapshot. `bytes` is the running
+ *                       total of un-flushed update payload size.
+ *   - "synced-peer"    A local update was sent on the broadcast channel.
+ *                       Peers in the same room will apply it within ~1 RTT.
+ *                       (Does NOT mean durable yet.)
+ *   - "synced-durable" Postgres `notes.ydoc_state` was successfully upserted.
+ *                       From this moment forward, a fresh client opening the
+ *                       slug will see the edit.
+ *   - "recovered"      On reconnect, the DB snapshot contained state our
+ *                       local doc didn't have, and we merged it in. `bytes`
+ *                       is the size delta in the state vector.
+ *   - "offline"        Channel dropped / network lost.
+ *   - "online"         Channel re-subscribed.
+ */
+export type SyncEvent =
+  | { type: "pending"; bytes: number }
+  | { type: "synced-peer" }
+  | { type: "synced-durable" }
+  | { type: "recovered"; bytes: number }
+  | { type: "offline" }
+  | { type: "online" };
+
 type Listener<T> = (v: T) => void;
 
 /**
@@ -43,9 +73,14 @@ export class SupabaseYjsProvider {
   private lastSnapshotAt = 0;
   private statusListeners = new Set<Listener<SaveStatus>>();
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
+  private syncListeners = new Set<Listener<SyncEvent>>();
   private status: SaveStatus = "idle";
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
+  // Bytes of local updates that have not yet been durably saved to Postgres.
+  // Reset to 0 after each successful `saveSnapshot`. Read via
+  // `getPendingBytes()` / `hasUnflushedLocalChanges()`.
+  private pendingBytes = 0;
   // The Realtime `subscribe` callback fires `SUBSCRIBED` once on the initial
   // join and again on every auto-reconnect. We treat reconnects specially:
   // peer broadcasts that happened while we were offline are NOT replayed by
@@ -76,6 +111,35 @@ export class SupabaseYjsProvider {
     this.awarenessListeners.add(cb);
     cb(this.awareness.getStates() as Map<number, AwarenessState>);
     return () => this.awarenessListeners.delete(cb);
+  }
+
+  /**
+   * Subscribe to sync lifecycle events. See `SyncEvent` for semantics.
+   * Returns an unsubscribe function.
+   */
+  onSyncEvent(cb: Listener<SyncEvent>) {
+    this.syncListeners.add(cb);
+    return () => this.syncListeners.delete(cb);
+  }
+
+  /** Running byte count of local updates not yet durably saved to Postgres. */
+  getPendingBytes() {
+    return this.pendingBytes;
+  }
+
+  /** True iff there are local edits that haven't been persisted to the DB. */
+  hasUnflushedLocalChanges() {
+    return this.pendingBytes > 0;
+  }
+
+  private emitSync(ev: SyncEvent) {
+    this.syncListeners.forEach((cb) => {
+      try {
+        cb(ev);
+      } catch (e) {
+        console.warn("sync listener threw", e);
+      }
+    });
   }
 
   private setStatus(s: SaveStatus) {
@@ -181,6 +245,7 @@ export class SupabaseYjsProvider {
 
     await this.channel.subscribe(async (status) => {
       if (status === "SUBSCRIBED") {
+        const wasOffline = !this.connected && this.hasSubscribedOnce;
         this.connected = true;
         this.setStatus("saved");
         if (this.hasSubscribedOnce) {
@@ -190,6 +255,7 @@ export class SupabaseYjsProvider {
           await this.refetchDbSnapshot();
         }
         this.hasSubscribedOnce = true;
+        if (wasOffline) this.emitSync({ type: "online" });
         // Ask peers for any newer state.
         await this.channel?.send({
           type: "broadcast",
@@ -198,8 +264,10 @@ export class SupabaseYjsProvider {
         });
         this.broadcastAwareness();
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+        const wasConnected = this.connected;
         this.connected = false;
         this.setStatus("offline");
+        if (wasConnected) this.emitSync({ type: "offline" });
       }
     });
 
@@ -237,7 +305,27 @@ export class SupabaseYjsProvider {
       if (this.encryption && update.byteLength > 0) {
         update = await this.encryption.decrypt(update);
       }
-      if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
+      if (update.byteLength === 0) return;
+      // Compare state vector pre/post-merge so we only emit `recovered` when
+      // the DB actually had something we didn't. Without this guard every
+      // reconnect would spam a "synced from cloud" toast even if our local
+      // doc was already up-to-date.
+      const before = Y.encodeStateVector(this.doc);
+      Y.applyUpdate(this.doc, update, "remote-snapshot");
+      const after = Y.encodeStateVector(this.doc);
+      // Cheap byte-wise compare — state vectors are deterministic per state.
+      let changed = before.byteLength !== after.byteLength;
+      if (!changed) {
+        for (let i = 0; i < before.byteLength; i++) {
+          if (before[i] !== after[i]) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      if (changed) {
+        this.emitSync({ type: "recovered", bytes: Math.abs(after.byteLength - before.byteLength) });
+      }
     } catch (e) {
       console.warn("Refetch snapshot failed", e);
     }
@@ -245,6 +333,8 @@ export class SupabaseYjsProvider {
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote" || origin === "remote-snapshot") return;
+    this.pendingBytes += update.byteLength;
+    this.emitSync({ type: "pending", bytes: this.pendingBytes });
     this.broadcastUpdate(update);
     this.scheduleSnapshot();
   };
@@ -277,6 +367,9 @@ export class SupabaseYjsProvider {
       event: "y-update",
       payload: { update: bytesToBase64(bytes) },
     });
+    // Fire-and-forget broadcast — Supabase Realtime has no per-message ack in
+    // this config, so "synced-peer" means "we handed it to the channel".
+    this.emitSync({ type: "synced-peer" });
   }
 
   private broadcastAwareness(clients?: number[]) {
@@ -338,6 +431,9 @@ export class SupabaseYjsProvider {
         this.setStatus(this.connected ? "editing" : "offline");
       } else {
         this.lastSnapshotAt = Date.now();
+        // Durable persistence achieved — clear the pending counter and notify.
+        this.pendingBytes = 0;
+        this.emitSync({ type: "synced-durable" });
         this.setStatus(this.connected ? "saved" : "offline");
       }
     } catch (e) {
