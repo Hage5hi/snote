@@ -360,3 +360,36 @@
     animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 }
+
+/* ================== Mobile viewport vars (Phase 1) ==================
+   - --kb-inset: height of the on-screen keyboard, updated by
+     `useVisualViewport` (src/hooks/use-visual-viewport.ts). Used to lift
+     bottom-anchored UI (toolbars, FAB) above the keyboard on iOS/Android.
+   - --sa-{top,right,bottom,left}: safe-area inset env() shortcuts so
+     components can rely on a single var name regardless of platform. */
+:root {
+  --kb-inset: 0px;
+  --sa-top: env(safe-area-inset-top, 0px);
+  --sa-right: env(safe-area-inset-right, 0px);
+  --sa-bottom: env(safe-area-inset-bottom, 0px);
+  --sa-left: env(safe-area-inset-left, 0px);
+}
+
+/* Sticky topbar in Zen mode keeps clear of the notch / status bar. */
+.zen-topbar {
+  padding-top: var(--sa-top);
+}
+
+/* Lift floating UI above the keyboard + home indicator. */
+.lift-bottom {
+  padding-bottom: calc(var(--kb-inset) + var(--sa-bottom));
+}
+
+/* Swipe-to-paginate nudge animation (Phase 3 mobile editor). */
+@keyframes swipe-nudge {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-6px); }
+}
+.animate-swipe-nudge {
+  animation: swipe-nudge 1.2s ease-in-out 2;
+}

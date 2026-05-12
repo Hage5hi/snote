@@ -93,6 +93,23 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("/qrcode/")) {
             return "qrcode-vendor";
           }
+          // Phase 1: pre-declare chunks for heavy editor libs.
+          // They are not imported anywhere yet — chunks stay empty until
+          // Phase 3 lazy-imports them inside the render worker / Preview /
+          // Editor. Declaring the rule early keeps the split stable and
+          // makes the bundle gate (grep on initial chunk) deterministic.
+          if (id.includes("/mermaid/")) {
+            return "mermaid-vendor";
+          }
+          if (id.includes("/katex/")) {
+            return "katex-vendor";
+          }
+          if (id.includes("/highlight.js/")) {
+            return "hljs-vendor";
+          }
+          if (id.includes("@replit/codemirror-vim")) {
+            return "cm-vendor";
+          }
         },
       },
     },
