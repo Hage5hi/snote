@@ -15,7 +15,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import { useI18n } from "@/i18n";
+import { useI18n, type TKey } from "@/i18n";
 import {
   useSyncStatus,
   type SyncIndicatorStatus,
@@ -40,7 +40,7 @@ const STYLES: Record<SyncIndicatorStatus, PillStyle> = {
   offline:  { Icon: CloudOff,       cls: "text-warning" },
 };
 
-function relTime(t: (k: string, v?: Record<string, string | number>) => string, ms: number): string {
+function relTime(t: (k: TKey, v?: Record<string, string | number>) => string, ms: number): string {
   if (ms < 5_000) return t("sync.time.just_now");
   const s = Math.floor(ms / 1000);
   if (s < 60) return t("sync.time.s_ago", { n: s });
