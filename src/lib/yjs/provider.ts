@@ -305,7 +305,27 @@ export class SupabaseYjsProvider {
       if (this.encryption && update.byteLength > 0) {
         update = await this.encryption.decrypt(update);
       }
-      if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
+      if (update.byteLength === 0) return;
+      // Compare state vector pre/post-merge so we only emit `recovered` when
+      // the DB actually had something we didn't. Without this guard every
+      // reconnect would spam a "synced from cloud" toast even if our local
+      // doc was already up-to-date.
+      const before = Y.encodeStateVector(this.doc);
+      Y.applyUpdate(this.doc, update, "remote-snapshot");
+      const after = Y.encodeStateVector(this.doc);
+      // Cheap byte-wise compare — state vectors are deterministic per state.
+      let changed = before.byteLength !== after.byteLength;
+      if (!changed) {
+        for (let i = 0; i < before.byteLength; i++) {
+          if (before[i] !== after[i]) {
+            changed = true;
+            break;
+          }
+        }
+      }
+      if (changed) {
+        this.emitSync({ type: "recovered", bytes: Math.abs(after.byteLength - before.byteLength) });
+      }
     } catch (e) {
       console.warn("Refetch snapshot failed", e);
     }
