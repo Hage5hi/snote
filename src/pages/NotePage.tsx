@@ -24,6 +24,7 @@ import { useScrollSync } from "@/hooks/use-scroll-sync";
 import { useFocusLine } from "@/hooks/use-focus-line";
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 import { useEink } from "@/hooks/use-eink";
+import { useVimMode } from "@/hooks/use-vim-mode";
 import { usePagination } from "@/hooks/use-pagination";
 import { supabase } from "@/integrations/supabase/client";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
