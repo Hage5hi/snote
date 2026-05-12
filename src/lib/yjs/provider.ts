@@ -96,7 +96,24 @@ export class SupabaseYjsProvider {
     this.awareness = new Awareness(doc);
     this.awareness.clientID = this.clientId;
     this.encryption = encryption ?? null;
+    // Bug A fix — listen to native online/offline events so the indicator
+    // flips to "offline" instantly instead of waiting ~13–20s for the
+    // Realtime channel to time out. We only act on "offline" here; the
+    // "online" event is left to the channel SUBSCRIBED callback so we don't
+    // emit a false-positive "online" before the WebSocket actually
+    // reconnects.
+    if (typeof window !== "undefined") {
+      window.addEventListener("offline", this.handleNativeOffline);
+    }
   }
+
+  private handleNativeOffline = () => {
+    if (this.destroyed) return;
+    if (!this.connected) return;
+    this.connected = false;
+    this.setStatus("offline");
+    this.emitSync({ type: "offline" });
+  };
 
   setEncryption(enc: Encryption | null) {
     this.encryption = enc;
@@ -266,7 +283,18 @@ export class SupabaseYjsProvider {
           await this.refetchDbSnapshot();
         }
         this.hasSubscribedOnce = true;
-        if (wasOffline) this.emitSync({ type: "online" });
+        if (wasOffline) {
+          this.emitSync({ type: "online" });
+          // Bug B fix — flush any pending local edits that piled up while
+          // offline. Without this, `pendingBytes` stays > 0 and the stale
+          // `lastError` (e.g. "Failed to fetch") never clears until the
+          // user types again. A successful saveSnapshot emits
+          // `synced-durable`, which the hook uses to clear the error.
+          if (this.hasUnflushedLocalChanges()) {
+            if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
+            this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), 0);
+          }
+        }
         // Ask peers for any newer state.
         await this.channel?.send({
           type: "broadcast",
@@ -519,6 +547,9 @@ export class SupabaseYjsProvider {
 
   async destroy() {
     this.destroyed = true;
+    if (typeof window !== "undefined") {
+      window.removeEventListener("offline", this.handleNativeOffline);
+    }
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
     // Final flush.
     await this.saveSnapshot();
