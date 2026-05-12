@@ -207,6 +207,17 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       setUsers(list);
     });
 
+    // Phase 2.2 — toast on `recovered` (DB had updates we didn't on reconnect).
+    // Conflict events are surfaced by SyncIndicator's pill+popover, not a toast.
+    const unsubSync = provider.onSyncEvent((ev) => {
+      if (ev.type === "recovered") {
+        toast({
+          title: "Đã đồng bộ từ thiết bị khác",
+          description: `Hợp nhất ${ev.bytes} byte mới từ cloud.`,
+        });
+      }
+    });
+
     const ytext = doc.getText("content");
     let prevContent = ytext.toString();
     let lastBigDeleteAt = 0;
@@ -283,6 +294,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       ytext.unobserve(scheduleCounts);
       unsubStatus();
       unsubAwareness();
+      unsubSync();
       void provider.destroy();
       idb.destroy();
       // Doc itself stays warm in cache for fast re-open; only release.
@@ -305,6 +317,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           slug={slug}
           doc={doc}
           status={status}
+          provider={provider}
           charCount={counts.chars}
           wordCount={counts.words}
           users={users}
@@ -346,6 +359,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         slug={slug}
         doc={doc}
         status={status}
+        provider={provider}
         charCount={counts.chars}
         wordCount={counts.words}
         users={users}
