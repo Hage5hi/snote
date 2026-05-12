@@ -42,6 +42,9 @@ interface EditorProps {
    *  editor mounts, and with null when it unmounts. Used by the scroll-sync
    *  hook in NotePage to mirror scroll position into the preview pane. */
   onScrollEl?: (el: HTMLElement | null) => void;
+  /** Vim mode toggle. Lazy-loads `@replit/codemirror-vim` on first enable
+   *  via a Compartment so the editor itself doesn't need to be re-created. */
+  vim?: boolean;
 }
 
 export interface EditorHandle {
@@ -50,9 +53,12 @@ export interface EditorHandle {
 }
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
-  { doc, awareness, className, onScrollEl },
+  { doc, awareness, className, onScrollEl, vim = false },
   ref,
 ) {
+  // Stable Compartment lives across re-renders so reconfigure() targets the
+  // same slot. Re-creating it would force the editor to drop vim state.
+  const vimCompartment = useMemo(() => new Compartment(), []);
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [lang, setLang] = useState("en");
