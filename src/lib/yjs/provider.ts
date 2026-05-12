@@ -30,10 +30,10 @@ export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
  *   - "online"         Channel re-subscribed.
  */
 export type SyncEvent =
-  | { type: "pending"; bytes: number }
-  | { type: "synced-peer" }
   | { type: "synced-durable" }
   | { type: "recovered"; bytes: number }
+  | { type: "conflict"; bytes: number }
+  | { type: "error"; message: string }
   | { type: "offline" }
   | { type: "online" };
 
@@ -71,6 +71,7 @@ export class SupabaseYjsProvider {
 
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
+  private lastBroadcastAt = 0;
   private statusListeners = new Set<Listener<SaveStatus>>();
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
   private syncListeners = new Set<Listener<SyncEvent>>();
@@ -125,6 +126,16 @@ export class SupabaseYjsProvider {
   /** Running byte count of local updates not yet durably saved to Postgres. */
   getPendingBytes() {
     return this.pendingBytes;
+  }
+
+  /** Timestamp (ms) of last successful broadcast send; 0 if never. */
+  getLastBroadcastAt() {
+    return this.lastBroadcastAt;
+  }
+
+  /** Timestamp (ms) of last successful Postgres snapshot; 0 if never. */
+  getLastSnapshotAt() {
+    return this.lastSnapshotAt;
   }
 
   /** True iff there are local edits that haven't been persisted to the DB. */
@@ -310,6 +321,11 @@ export class SupabaseYjsProvider {
       // the DB actually had something we didn't. Without this guard every
       // reconnect would spam a "synced from cloud" toast even if our local
       // doc was already up-to-date.
+      // Capture pending state BEFORE merge so we can distinguish:
+      //   - recovered: remote had updates we didn't, no local pending
+      //   - conflict:  remote had updates we didn't, AND we have local pending
+      // (Yjs merges both safely; we just want to surface the right UI affordance.)
+      const hadLocal = this.hasUnflushedLocalChanges();
       const before = Y.encodeStateVector(this.doc);
       Y.applyUpdate(this.doc, update, "remote-snapshot");
       const after = Y.encodeStateVector(this.doc);
@@ -324,7 +340,10 @@ export class SupabaseYjsProvider {
         }
       }
       if (changed) {
-        this.emitSync({ type: "recovered", bytes: Math.abs(after.byteLength - before.byteLength) });
+        const bytes = Math.abs(after.byteLength - before.byteLength);
+        this.emitSync(
+          hadLocal ? { type: "conflict", bytes } : { type: "recovered", bytes },
+        );
       }
     } catch (e) {
       console.warn("Refetch snapshot failed", e);
@@ -333,8 +352,9 @@ export class SupabaseYjsProvider {
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote" || origin === "remote-snapshot") return;
+    // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
+    // to avoid render storms when typing fast (~30 keystrokes/s).
     this.pendingBytes += update.byteLength;
-    this.emitSync({ type: "pending", bytes: this.pendingBytes });
     this.broadcastUpdate(update);
     this.scheduleSnapshot();
   };
@@ -367,9 +387,8 @@ export class SupabaseYjsProvider {
       event: "y-update",
       payload: { update: bytesToBase64(bytes) },
     });
-    // Fire-and-forget broadcast — Supabase Realtime has no per-message ack in
-    // this config, so "synced-peer" means "we handed it to the channel".
-    this.emitSync({ type: "synced-peer" });
+    // Counter only — no event emit. UI polls `getLastBroadcastAt()`.
+    this.lastBroadcastAt = Date.now();
   }
 
   private broadcastAwareness(clients?: number[]) {
@@ -428,6 +447,7 @@ export class SupabaseYjsProvider {
       );
       if (error) {
         console.warn("Snapshot save failed", error);
+        this.emitSync({ type: "error", message: error.message ?? String(error) });
         this.setStatus(this.connected ? "editing" : "offline");
       } else {
         this.lastSnapshotAt = Date.now();
@@ -438,6 +458,7 @@ export class SupabaseYjsProvider {
       }
     } catch (e) {
       console.warn("Snapshot exception", e);
+      this.emitSync({ type: "error", message: e instanceof Error ? e.message : String(e) });
       this.setStatus("offline");
     }
   }
