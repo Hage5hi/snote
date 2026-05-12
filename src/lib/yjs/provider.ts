@@ -89,6 +89,15 @@ export class SupabaseYjsProvider {
   // other clients persisted in the meantime — otherwise our next
   // `saveSnapshot` would overwrite their work.
   private hasSubscribedOnce = false;
+  // Phase 2.5 — broadcast batching. Local updates accumulate here and are
+  // merged via Y.mergeUpdates then flushed once per animation frame. This
+  // collapses 30+ keystrokes/s into ≤60 broadcast messages/s without
+  // affecting durability (snapshot debounce is unchanged).
+  private pendingUpdates: Uint8Array[] = [];
+  private flushScheduled = false;
+  // Safety valve — if rAF is starved (background tab) and the queue grows
+  // beyond this, flush eagerly to avoid unbounded memory.
+  private static readonly MAX_PENDING_UPDATES = 50;
 
   constructor(slug: string, doc: Y.Doc, encryption?: Encryption) {
     this.slug = slug;
