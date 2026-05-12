@@ -333,6 +333,8 @@ export class SupabaseYjsProvider {
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote" || origin === "remote-snapshot") return;
+    this.pendingBytes += update.byteLength;
+    this.emitSync({ type: "pending", bytes: this.pendingBytes });
     this.broadcastUpdate(update);
     this.scheduleSnapshot();
   };
