@@ -447,6 +447,7 @@ export class SupabaseYjsProvider {
       );
       if (error) {
         console.warn("Snapshot save failed", error);
+        this.emitSync({ type: "error", message: error.message ?? String(error) });
         this.setStatus(this.connected ? "editing" : "offline");
       } else {
         this.lastSnapshotAt = Date.now();
@@ -457,6 +458,7 @@ export class SupabaseYjsProvider {
       }
     } catch (e) {
       console.warn("Snapshot exception", e);
+      this.emitSync({ type: "error", message: e instanceof Error ? e.message : String(e) });
       this.setStatus("offline");
     }
   }
