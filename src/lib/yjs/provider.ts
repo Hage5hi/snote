@@ -73,9 +73,14 @@ export class SupabaseYjsProvider {
   private lastSnapshotAt = 0;
   private statusListeners = new Set<Listener<SaveStatus>>();
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
+  private syncListeners = new Set<Listener<SyncEvent>>();
   private status: SaveStatus = "idle";
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
+  // Bytes of local updates that have not yet been durably saved to Postgres.
+  // Reset to 0 after each successful `saveSnapshot`. Read via
+  // `getPendingBytes()` / `hasUnflushedLocalChanges()`.
+  private pendingBytes = 0;
   // The Realtime `subscribe` callback fires `SUBSCRIBED` once on the initial
   // join and again on every auto-reconnect. We treat reconnects specially:
   // peer broadcasts that happened while we were offline are NOT replayed by
