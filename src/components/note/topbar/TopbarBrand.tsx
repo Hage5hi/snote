@@ -1,10 +1,11 @@
-// Brand block on the left of the Topbar: home link, slug, copy-URL, status pill, tag chips.
+// Brand block on the left of the Topbar: home link, slug, copy-URL, status pill, sync indicator, tag chips.
 import { Link } from "react-router-dom";
 import * as Y from "yjs";
 import { ArrowLeft, Cloud, Copy } from "lucide-react";
 import { StatusPill } from "../StatusPill";
+import { SyncIndicator } from "../SyncIndicator";
 import { TagChips } from "../TagChips";
-import type { SaveStatus } from "@/lib/yjs/provider";
+import type { SaveStatus, SupabaseYjsProvider } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 
 interface TopbarBrandProps {
@@ -13,9 +14,11 @@ interface TopbarBrandProps {
   isEncrypted: boolean;
   status: SaveStatus;
   onOpenHistory: () => void;
+  /** Phase 2.2 — when present, the SyncIndicator pill renders next to StatusPill. */
+  provider?: SupabaseYjsProvider | null;
 }
 
-export function TopbarBrand({ slug, doc, isEncrypted, status, onOpenHistory }: TopbarBrandProps) {
+export function TopbarBrand({ slug, doc, isEncrypted, status, onOpenHistory, provider }: TopbarBrandProps) {
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
     toast({ title: "Đã copy URL", description: window.location.href });
@@ -45,8 +48,9 @@ export function TopbarBrand({ slug, doc, isEncrypted, status, onOpenHistory }: T
         <Copy className="h-3.5 w-3.5" />
       </button>
 
-      <div className="ml-2">
+      <div className="ml-2 flex items-center gap-1">
         <StatusPill status={status} onClick={onOpenHistory} />
+        {provider && <SyncIndicator provider={provider} />}
       </div>
 
       <TagChips doc={doc} isEncrypted={isEncrypted} />
