@@ -367,6 +367,9 @@ export class SupabaseYjsProvider {
       event: "y-update",
       payload: { update: bytesToBase64(bytes) },
     });
+    // Fire-and-forget broadcast — Supabase Realtime has no per-message ack in
+    // this config, so "synced-peer" means "we handed it to the channel".
+    this.emitSync({ type: "synced-peer" });
   }
 
   private broadcastAwareness(clients?: number[]) {
