@@ -389,6 +389,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
             awareness={provider.awareness}
             className="h-full overflow-auto"
             onScrollEl={setEditorScrollEl}
+            vim={vim}
           />
         </div>
         {showPreview && (
