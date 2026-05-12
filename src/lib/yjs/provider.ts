@@ -399,6 +399,7 @@ export class SupabaseYjsProvider {
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === "remote" || origin === "remote-snapshot") return;
+    this.updateCount++;
     // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
     // to avoid render storms when typing fast (~30 keystrokes/s).
     this.pendingBytes += update.byteLength;
