@@ -68,10 +68,8 @@ export class SupabaseYjsProvider {
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
   private lastBroadcastAt = 0;
-  private statusListeners = new Set<Listener<SaveStatus>>();
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
   private syncListeners = new Set<Listener<SyncEvent>>();
-  private status: SaveStatus = "idle";
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
   // Bytes of local updates that have not yet been durably saved to Postgres.
