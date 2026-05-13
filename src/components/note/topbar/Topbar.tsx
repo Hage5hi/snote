@@ -117,8 +117,6 @@ export function Topbar({
           slug={slug}
           doc={doc}
           isEncrypted={isEncrypted}
-          status={status}
-          onOpenHistory={() => setHistoryOpen(true)}
           provider={provider}
         />
 
