@@ -197,7 +197,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
     const idb = new IndexeddbPersistence(`note:${slug}`, doc);
 
-    const unsubStatus = provider.onStatus(setStatus);
+    
     const unsubAwareness = provider.onAwareness((states) => {
       const list: PresenceUser[] = [];
       states.forEach((state, clientId) => {
