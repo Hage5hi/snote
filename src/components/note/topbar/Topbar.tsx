@@ -26,7 +26,7 @@ import { SettingsMenu } from "./SettingsMenu";
 interface TopbarProps {
   slug: string;
   doc: Y.Doc;
-  status: SaveStatus;
+  
   provider?: SupabaseYjsProvider | null;
   charCount: number;
   wordCount: number;
