@@ -3,7 +3,11 @@
 // by monotonic ID; the latest call wins (older ones can still resolve but
 // caller should guard against stale state — see Preview.tsx).
 
+import DOMPurify from "isomorphic-dompurify";
+
 type Resolver = (html: string) => void;
+
+const ADD_ATTR = ["data-mermaid", "data-katex", "data-hljs-lang", "data-hljs-code"];
 
 let worker: Worker | null = null;
 let nextId = 0;
@@ -18,7 +22,8 @@ function ensureWorker(): Worker {
     const cb = pending.get(e.data.id);
     if (cb) {
       pending.delete(e.data.id);
-      cb(e.data.html);
+      const safe = DOMPurify.sanitize(e.data.html, { ADD_ATTR });
+      cb(safe);
     }
   };
   worker.onerror = (e) => {

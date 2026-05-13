@@ -1,10 +1,9 @@
 // Web Worker entry. Receives `{ id, text }`, returns `{ id, html }` after
-// running marked.parse + DOMPurify.sanitize. Custom renderer outputs
-// placeholder divs for mermaid/katex/hljs blocks — main-thread hydration
-// effect picks them up after setHtml.
+// running marked.parse. Sanitization (DOMPurify) runs on the main thread
+// because isomorphic-dompurify needs a DOM/window which Web Workers lack
+// (caused "Cannot read properties of undefined (reading 'bind')" at init).
 
 import { marked } from "marked";
-import DOMPurify from "isomorphic-dompurify";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -29,8 +28,6 @@ marked.use({
   },
 });
 
-const ADD_ATTR = ["data-mermaid", "data-katex", "data-hljs-lang", "data-hljs-code"];
-
 interface RequestMessage {
   id: number;
   text: string;
@@ -42,8 +39,7 @@ interface ResponseMessage {
 
 self.onmessage = (e: MessageEvent<RequestMessage>) => {
   const { id, text } = e.data;
-  const raw = marked.parse(text) as string;
-  const html = DOMPurify.sanitize(raw, { ADD_ATTR });
+  const html = marked.parse(text) as string;
   (self as unknown as Worker).postMessage({ id, html } as ResponseMessage);
 };
 
