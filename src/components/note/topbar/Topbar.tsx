@@ -15,7 +15,7 @@ import { RenameDialog } from "../RenameDialog";
 import { DuplicateDialog } from "../DuplicateDialog";
 import { WordGoalDialog } from "../WordGoalDialog";
 import { ShareDialog } from "../ShareDialog";
-import type { SaveStatus, SupabaseYjsProvider } from "@/lib/yjs/provider";
+import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 import { TopbarBrand } from "./TopbarBrand";
 import { WordCountTrigger } from "./WordCountTrigger";
