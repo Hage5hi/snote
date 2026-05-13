@@ -136,12 +136,6 @@ export class SupabaseYjsProvider {
     this.encryption = enc;
   }
 
-  onStatus(cb: Listener<SaveStatus>) {
-    this.statusListeners.add(cb);
-    cb(this.status);
-    return () => this.statusListeners.delete(cb);
-  }
-
   onAwareness(cb: Listener<Map<number, AwarenessState>>) {
     this.awarenessListeners.add(cb);
     cb(this.awareness.getStates() as Map<number, AwarenessState>);
