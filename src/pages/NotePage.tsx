@@ -11,7 +11,7 @@ import { WordCountPill } from "@/components/note/WordCountPill";
 import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
 import { toast } from "@/hooks/use-toast";
 import { OutlineSidebar } from "@/components/note/OutlineSidebar";
-import { SupabaseYjsProvider, type SaveStatus, type Encryption } from "@/lib/yjs/provider";
+import { SupabaseYjsProvider, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
 import type { PresenceUser } from "@/components/note/PresenceDots";
