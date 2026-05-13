@@ -3,7 +3,7 @@
 // by monotonic ID; the latest call wins (older ones can still resolve but
 // caller should guard against stale state — see Preview.tsx).
 
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "dompurify";
 
 type Resolver = (html: string) => void;
 
