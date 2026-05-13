@@ -75,7 +75,6 @@ export function Topbar({
   onTogglePagination,
   compact = false,
 }: TopbarProps) {
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
