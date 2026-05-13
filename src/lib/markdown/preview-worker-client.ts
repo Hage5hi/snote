@@ -22,7 +22,8 @@ function ensureWorker(): Worker {
     const cb = pending.get(e.data.id);
     if (cb) {
       pending.delete(e.data.id);
-      cb(e.data.html);
+      const safe = DOMPurify.sanitize(e.data.html, { ADD_ATTR });
+      cb(safe);
     }
   };
   worker.onerror = (e) => {
