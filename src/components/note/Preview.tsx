@@ -5,6 +5,7 @@ import { expandWikiLinks } from "@/lib/wiki-link";
 import { renderMermaid } from "@/lib/markdown/renderers/mermaid";
 import { renderKatex } from "@/lib/markdown/renderers/katex";
 import { highlightCode } from "@/lib/markdown/renderers/highlight";
+import { getCachedHtml, setCachedHtml } from "@/lib/markdown/render-cache";
 
 // `marked` + `dompurify` are loaded lazily on first render so the
 // editor-only path never pulls them. Result is a smaller initial chunk and
@@ -104,8 +105,18 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
         lastTextLenRef.current = text.length;
       }
       if (!mod) return;
-      const raw = mod.marked(expandWikiLinks(text));
-      setHtml(mod.sanitize(raw));
+      const expanded = expandWikiLinks(text);
+      // Cache key is post-`expandWikiLinks` text (pre-hydration HTML).
+      // Hydration (mermaid/katex/hljs + theme) re-runs in the next effect
+      // regardless of cache hit, so theme toggles still apply.
+      const cached = getCachedHtml(expanded);
+      if (cached !== undefined) {
+        setHtml(cached);
+        return;
+      }
+      const sanitized = mod.sanitize(mod.marked(expanded));
+      setCachedHtml(expanded, sanitized);
+      setHtml(sanitized);
     };
 
     const schedule = () => {
