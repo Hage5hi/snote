@@ -317,7 +317,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         <Topbar
           slug={slug}
           doc={doc}
-          status={status}
           provider={provider}
           charCount={counts.chars}
           wordCount={counts.words}
@@ -359,7 +358,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       <Topbar
         slug={slug}
         doc={doc}
-        status={status}
         provider={provider}
         charCount={counts.chars}
         wordCount={counts.words}
