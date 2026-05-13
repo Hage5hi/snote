@@ -62,6 +62,18 @@ export default defineConfig(({ mode }) => ({
     cssCodeSplit: true,
     sourcemap: false,
     chunkSizeWarningLimit: 900,
+    modulePreload: {
+      // Vite's default emits <link rel="modulepreload"> for every chunk it
+      // thinks the entry needs. mermaid/katex/hljs are dynamic-only and must
+      // stay OUT of the eager preload list — otherwise users pay the network
+      // cost on every page load even when they never render those blocks.
+      // The runtime `__vitePreload` helper still fetches them when the
+      // dynamic import() call site executes (i.e., on first use).
+      resolveDependencies: (_filename, deps) =>
+        deps.filter(
+          (dep) => !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor)-/.test(dep),
+        ),
+    },
     rollupOptions: {
       output: {
         // Split heavy vendors so first paint pulls only what's needed.
