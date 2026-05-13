@@ -5,13 +5,9 @@ import { bytesToBase64, base64ToBytes } from "./base64";
 import { extractTags } from "@/lib/tags";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
-export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
-
 /**
- * Sync lifecycle events emitted by the provider. These are ADDITIVE to the
- * existing `SaveStatus` stream — `SaveStatus` describes the local persistence
- * pipeline (editing → saving → saved), while `SyncEvent` describes what
- * happened on the wire. UI surfaces (SyncIndicator) consume both.
+ * Sync lifecycle events emitted by the provider. UI surfaces (SyncIndicator)
+ * consume these to show wire/persistence state.
  *
  *   - "pending"        Local edit produced bytes that have not yet been
  *                       acknowledged by either the broadcast peer fan-out OR
