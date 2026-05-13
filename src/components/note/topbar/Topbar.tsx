@@ -15,7 +15,7 @@ import { RenameDialog } from "../RenameDialog";
 import { DuplicateDialog } from "../DuplicateDialog";
 import { WordGoalDialog } from "../WordGoalDialog";
 import { ShareDialog } from "../ShareDialog";
-import type { SaveStatus, SupabaseYjsProvider } from "@/lib/yjs/provider";
+import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 import { TopbarBrand } from "./TopbarBrand";
 import { WordCountTrigger } from "./WordCountTrigger";
@@ -26,7 +26,7 @@ import { SettingsMenu } from "./SettingsMenu";
 interface TopbarProps {
   slug: string;
   doc: Y.Doc;
-  status: SaveStatus;
+  
   provider?: SupabaseYjsProvider | null;
   charCount: number;
   wordCount: number;
@@ -54,7 +54,7 @@ interface TopbarProps {
 export function Topbar({
   slug,
   doc,
-  status,
+  
   provider,
   charCount,
   wordCount,
@@ -75,7 +75,6 @@ export function Topbar({
   onTogglePagination,
   compact = false,
 }: TopbarProps) {
-  const [historyOpen, setHistoryOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
@@ -118,8 +117,6 @@ export function Topbar({
           slug={slug}
           doc={doc}
           isEncrypted={isEncrypted}
-          status={status}
-          onOpenHistory={() => setHistoryOpen(true)}
           provider={provider}
         />
 
@@ -219,7 +216,7 @@ export function Topbar({
         </div>
       </header>
 
-      <HistoryDialog slug={slug} doc={doc} open={historyOpen} onOpenChange={setHistoryOpen} />
+      <HistoryDialog slug={slug} doc={doc} />
       <ShortcutHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
       <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />

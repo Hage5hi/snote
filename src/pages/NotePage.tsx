@@ -11,7 +11,7 @@ import { WordCountPill } from "@/components/note/WordCountPill";
 import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
 import { toast } from "@/hooks/use-toast";
 import { OutlineSidebar } from "@/components/note/OutlineSidebar";
-import { SupabaseYjsProvider, type SaveStatus, type Encryption } from "@/lib/yjs/provider";
+import { SupabaseYjsProvider, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
 import type { PresenceUser } from "@/components/note/PresenceDots";
@@ -60,7 +60,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [editorScrollEl, setEditorScrollEl] = useState<HTMLElement | null>(null);
   const [previewScrollEl, setPreviewScrollEl] = useState<HTMLElement | null>(null);
   useScrollSync(editorScrollEl, previewScrollEl, scrollSync && showPreview);
-  const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { goal } = useWordGoal(slug);
@@ -198,7 +197,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
     const idb = new IndexeddbPersistence(`note:${slug}`, doc);
 
-    const unsubStatus = provider.onStatus(setStatus);
+    
     const unsubAwareness = provider.onAwareness((states) => {
       const list: PresenceUser[] = [];
       states.forEach((state, clientId) => {
@@ -294,7 +293,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       window.clearInterval(snapshotTimer);
       if (countTimer) window.clearTimeout(countTimer);
       ytext.unobserve(scheduleCounts);
-      unsubStatus();
+      
       unsubAwareness();
       unsubSync();
       void provider.destroy();
@@ -318,7 +317,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         <Topbar
           slug={slug}
           doc={doc}
-          status={status}
           provider={provider}
           charCount={counts.chars}
           wordCount={counts.words}
@@ -360,7 +358,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       <Topbar
         slug={slug}
         doc={doc}
-        status={status}
         provider={provider}
         charCount={counts.chars}
         wordCount={counts.words}

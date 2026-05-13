@@ -5,13 +5,9 @@ import { bytesToBase64, base64ToBytes } from "./base64";
 import { extractTags } from "@/lib/tags";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
-export type SaveStatus = "idle" | "editing" | "saving" | "saved" | "offline";
-
 /**
- * Sync lifecycle events emitted by the provider. These are ADDITIVE to the
- * existing `SaveStatus` stream — `SaveStatus` describes the local persistence
- * pipeline (editing → saving → saved), while `SyncEvent` describes what
- * happened on the wire. UI surfaces (SyncIndicator) consume both.
+ * Sync lifecycle events emitted by the provider. UI surfaces (SyncIndicator)
+ * consume these to show wire/persistence state.
  *
  *   - "pending"        Local edit produced bytes that have not yet been
  *                       acknowledged by either the broadcast peer fan-out OR
@@ -72,10 +68,8 @@ export class SupabaseYjsProvider {
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
   private lastBroadcastAt = 0;
-  private statusListeners = new Set<Listener<SaveStatus>>();
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
   private syncListeners = new Set<Listener<SyncEvent>>();
-  private status: SaveStatus = "idle";
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
   // Bytes of local updates that have not yet been durably saved to Postgres.
@@ -134,18 +128,11 @@ export class SupabaseYjsProvider {
     if (this.destroyed) return;
     if (!this.connected) return;
     this.connected = false;
-    this.setStatus("offline");
     this.emitSync({ type: "offline" });
   };
 
   setEncryption(enc: Encryption | null) {
     this.encryption = enc;
-  }
-
-  onStatus(cb: Listener<SaveStatus>) {
-    this.statusListeners.add(cb);
-    cb(this.status);
-    return () => this.statusListeners.delete(cb);
   }
 
   onAwareness(cb: Listener<Map<number, AwarenessState>>) {
@@ -191,12 +178,6 @@ export class SupabaseYjsProvider {
         console.warn("sync listener threw", e);
       }
     });
-  }
-
-  private setStatus(s: SaveStatus) {
-    if (this.status === s) return;
-    this.status = s;
-    this.statusListeners.forEach((cb) => cb(s));
   }
 
   /**
@@ -298,7 +279,6 @@ export class SupabaseYjsProvider {
       if (status === "SUBSCRIBED") {
         const wasOffline = !this.connected && this.hasSubscribedOnce;
         this.connected = true;
-        this.setStatus("saved");
         if (this.hasSubscribedOnce) {
           // Reconnect path: another client may have snapshotted to Postgres
           // while we were offline. Merge that state in BEFORE we ask peers
@@ -328,7 +308,6 @@ export class SupabaseYjsProvider {
       } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
         const wasConnected = this.connected;
         this.connected = false;
-        this.setStatus("offline");
         if (wasConnected) this.emitSync({ type: "offline" });
       }
     });
@@ -483,14 +462,12 @@ export class SupabaseYjsProvider {
   }
 
   private scheduleSnapshot() {
-    this.setStatus("editing");
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), 800);
   }
 
   async saveSnapshot() {
     if (this.destroyed) return;
-    this.setStatus("saving");
     try {
       const state = Y.encodeStateAsUpdate(this.doc);
       const text = this.doc.getText("content").toString();
@@ -509,7 +486,6 @@ export class SupabaseYjsProvider {
           storedTags = [];
         } catch (e) {
           console.warn("Encrypt snapshot failed", e);
-          this.setStatus(this.connected ? "editing" : "offline");
           return;
         }
       }
@@ -526,18 +502,15 @@ export class SupabaseYjsProvider {
       if (error) {
         console.warn("Snapshot save failed", error);
         this.emitSync({ type: "error", message: error.message ?? String(error) });
-        this.setStatus(this.connected ? "editing" : "offline");
       } else {
         this.lastSnapshotAt = Date.now();
         // Durable persistence achieved — clear the pending counter and notify.
         this.pendingBytes = 0;
         this.emitSync({ type: "synced-durable" });
-        this.setStatus(this.connected ? "saved" : "offline");
       }
     } catch (e) {
       console.warn("Snapshot exception", e);
       this.emitSync({ type: "error", message: e instanceof Error ? e.message : String(e) });
-      this.setStatus("offline");
     }
   }
 
