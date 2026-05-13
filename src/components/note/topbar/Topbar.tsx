@@ -216,7 +216,7 @@ export function Topbar({
         </div>
       </header>
 
-      <HistoryDialog slug={slug} doc={doc} open={historyOpen} onOpenChange={setHistoryOpen} />
+      <HistoryDialog slug={slug} doc={doc} />
       <ShortcutHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
       <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />
