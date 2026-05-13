@@ -54,7 +54,7 @@ interface TopbarProps {
 export function Topbar({
   slug,
   doc,
-  status,
+  
   provider,
   charCount,
   wordCount,
