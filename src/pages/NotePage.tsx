@@ -293,7 +293,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       window.clearInterval(snapshotTimer);
       if (countTimer) window.clearTimeout(countTimer);
       ytext.unobserve(scheduleCounts);
-      unsubStatus();
+      
       unsubAwareness();
       unsubSync();
       void provider.destroy();
