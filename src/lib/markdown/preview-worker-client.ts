@@ -42,3 +42,5 @@ export function __resetPreviewWorkerForTests(): void {
   nextId = 0;
   pending.clear();
 }
+
+// rebuild trigger: phase5 republish
