@@ -181,12 +181,6 @@ export class SupabaseYjsProvider {
     });
   }
 
-  private setStatus(s: SaveStatus) {
-    if (this.status === s) return;
-    this.status = s;
-    this.statusListeners.forEach((cb) => cb(s));
-  }
-
   /**
    * Connect with an optional pre-fetched snapshot. When the caller already
    * has the `ydoc_state` (e.g. from a single combined query in NotePage), we
