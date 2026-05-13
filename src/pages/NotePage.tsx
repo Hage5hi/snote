@@ -60,7 +60,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [editorScrollEl, setEditorScrollEl] = useState<HTMLElement | null>(null);
   const [previewScrollEl, setPreviewScrollEl] = useState<HTMLElement | null>(null);
   useScrollSync(editorScrollEl, previewScrollEl, scrollSync && showPreview);
-  const [status, setStatus] = useState<SaveStatus>("idle");
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { goal } = useWordGoal(slug);
