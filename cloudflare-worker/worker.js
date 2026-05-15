@@ -135,6 +135,16 @@ export default {
       return Response.redirect(url.toString(), 301);
     }
 
+    if (url.pathname === "/robots.txt") {
+      return new Response(renderRobotsTxt(env), {
+        status: 200,
+        headers: {
+          "content-type": "text/plain; charset=utf-8",
+          "cache-control": "public, max-age=300, s-maxage=300",
+        },
+      });
+    }
+
     const isCrawler = CRAWLER_UA.test(ua);
 
     if (!isCrawler || isAssetPath(url.pathname)) {
@@ -340,4 +350,35 @@ function renderHtml(meta, url, env) {
 <p><a href="${U}">Mở trên Syrin Notes</a></p>
 </body>
 </html>`;
+}
+
+function renderRobotsTxt(env) {
+  const siteUrl = (env.SITE_URL || "https://syrin.online").replace(/\/+$/, "");
+  return `User-agent: facebookexternalhit
+Allow: /
+
+User-agent: Facebot
+Allow: /
+
+User-agent: meta-externalagent
+Allow: /
+
+User-agent: Googlebot
+Allow: /
+Disallow: /note
+
+User-agent: Bingbot
+Allow: /
+Disallow: /note
+
+User-agent: Twitterbot
+Allow: /
+Disallow: /note
+
+User-agent: *
+Allow: /
+Disallow: /note
+
+Sitemap: ${siteUrl}/sitemap.xml
+`;
 }
