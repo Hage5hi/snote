@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Helmet } from "react-helmet-async";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
@@ -107,17 +108,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     return () => window.removeEventListener(WIKI_NAV_EVENT, onNav);
   }, [navigate, embedSlug]);
 
-  // Reflect the current slug in the browser tab so users can distinguish
-  // multiple open notes. Restores on unmount (the Home / splash title).
-  useEffect(() => {
-    if (embedSlug) return;
-    if (!slug) return;
-    const prev = document.title;
-    document.title = `${slug} — Syrin Notes`;
-    return () => {
-      document.title = prev;
-    };
-  }, [slug, embedSlug]);
+  // Per-note head tags rendered via react-helmet-async below (in JSX).
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
   useEink();
 
@@ -353,8 +344,24 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   const showUnlockOverlay = encPhase === "needs-key";
 
+  const noteUrl = `https://syrin.online/${slug}`;
+  const noteTitle = `${slug} — Syrin Notes`;
+  const noteDesc = `Note "${slug}" trên Syrin Notes — markdown realtime, tự động lưu, đồng bộ giữa các thiết bị.`;
+
   return (
     <div className="flex h-svh flex-col bg-background">
+      <Helmet>
+        <title>{noteTitle}</title>
+        <meta name="description" content={noteDesc} />
+        <link rel="canonical" href={noteUrl} />
+        <meta property="og:title" content={noteTitle} />
+        <meta property="og:description" content={noteDesc} />
+        <meta property="og:url" content={noteUrl} />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:title" content={noteTitle} />
+        <meta name="twitter:description" content={noteDesc} />
+        {encMeta.isEncrypted && <meta name="robots" content="noindex" />}
+      </Helmet>
       <Topbar
         slug={slug}
         doc={doc}
