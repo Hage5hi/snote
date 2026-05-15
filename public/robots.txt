@@ -17,3 +17,5 @@ Disallow: /note
 User-agent: *
 Allow: /
 Disallow: /note
+
+Sitemap: https://syrin.online/sitemap.xml
