@@ -414,3 +414,26 @@ Disallow: /note
 Sitemap: ${siteUrl}/sitemap.xml
 `;
 }
+
+// FNV-1a 32-bit → ETag yếu, đủ để so sánh body.
+function etagOf(input) {
+  const s = typeof input === "string" ? input : String(input);
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return `W/"${h.toString(16)}-${s.length.toString(16)}"`;
+}
+
+function matchesEtag(request, etag) {
+  const inm = request.headers.get("if-none-match");
+  if (!inm) return false;
+  // Hỗ trợ list comma-separated và '*'
+  if (inm.trim() === "*") return true;
+  const bare = etag.replace(/^W\//, "");
+  return inm.split(",").some((t) => {
+    const v = t.trim().replace(/^W\//, "");
+    return v === bare;
+  });
+}
