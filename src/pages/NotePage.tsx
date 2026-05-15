@@ -108,17 +108,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     return () => window.removeEventListener(WIKI_NAV_EVENT, onNav);
   }, [navigate, embedSlug]);
 
-  // Reflect the current slug in the browser tab so users can distinguish
-  // multiple open notes. Restores on unmount (the Home / splash title).
-  useEffect(() => {
-    if (embedSlug) return;
-    if (!slug) return;
-    const prev = document.title;
-    document.title = `${slug} — Syrin Notes`;
-    return () => {
-      document.title = prev;
-    };
-  }, [slug, embedSlug]);
+  // Per-note head tags rendered via react-helmet-async below (in JSX).
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
   useEink();
 
