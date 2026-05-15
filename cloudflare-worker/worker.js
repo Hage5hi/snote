@@ -101,8 +101,12 @@ export default {
     const cache = caches.default;
     const cacheKey = new Request(url.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
-    if (cached) return cached;
+    if (cached) {
+      logEvent(env, "info", "cache_hit", { ip, ua, path: url.pathname });
+      return cached;
+    }
 
+    const t0 = Date.now();
     try {
       const meta = await fetchNoteMeta(route, env);
       const html = renderHtml(meta, url, env);
@@ -113,14 +117,22 @@ export default {
           ? "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"
           : "public, max-age=60, s-maxage=60";
 
+      const status = meta.kind === "home" || meta.found ? 200 : 404;
       const response = new Response(html, {
-        status: meta.kind === "home" || meta.found ? 200 : 404,
+        status,
         headers: {
           "content-type": "text/html; charset=utf-8",
           "cache-control": cacheControl,
           "x-prerendered": "1",
           "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
+          "x-ratelimit-remaining": String(rl.remaining),
         },
+      });
+
+      logEvent(env, "info", "prerender", {
+        ip, ua, path: url.pathname, kind: route.kind,
+        status, found: !!meta.found, encrypted: !!isEncrypted,
+        ms: Date.now() - t0,
       });
 
       // Lưu cache nền (chỉ cache 200)
@@ -128,7 +140,10 @@ export default {
         ctx.waitUntil(cache.put(cacheKey, response.clone()));
       }
       return response;
-    } catch {
+    } catch (err) {
+      logEvent(env, "error", "prerender_failed", {
+        ip, ua, path: url.pathname, error: String(err), ms: Date.now() - t0,
+      });
       return passThrough(request, env);
     }
   },
