@@ -27,25 +27,94 @@ const CRAWLER_UA = /(facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot
 const SLUG_RE = /^[a-zA-Z0-9._-]{1,80}$/;
 const TOKEN_RE = /^[a-zA-Z0-9_-]{8,128}$/;
 
-// Rate limit (in-memory per-isolate). Token bucket đơn giản theo IP.
+// Rate limit (in-memory per-isolate). Token bucket đơn giản.
 // Ghi chú: Mỗi colo/isolate giữ state riêng, không 100% chính xác toàn cầu,
-// nhưng đủ chặn spike từ 1 IP. Để chính xác hơn dùng Durable Objects.
-const RL_WINDOW_MS = 60_000;       // cửa sổ 60s
-const RL_MAX_PER_WINDOW = 60;      // 60 req crawler / IP / 60s
-const rlBuckets = new Map();       // ip -> { count, resetAt }
+// nhưng đủ chặn spike. Để chính xác hơn dùng Durable Objects / KV.
+//
+// Hai tầng giới hạn (đều phải pass):
+//   1. Per-IP:        chặn 1 client spam.
+//   2. Per-(IP,bot):  mỗi nhóm bot có hạn mức riêng cho cùng 1 IP, để 1 bot
+//                     đơn lẻ không "xơi" hết quota chung và bóp các bot khác.
+const RL_WINDOW_MS = 60_000;        // cửa sổ 60s
+const RL_IP_MAX = 120;              // tổng / IP / 60s
+const RL_BOT_DEFAULT_MAX = 30;      // mỗi (IP, bot) / 60s
+const RL_BOT_MAX = {                // override theo nhóm bot
+  facebook: 40, slack: 40, linkedin: 30, twitter: 30, discord: 30,
+  whatsapp: 20, telegram: 20, google: 60, bing: 40, apple: 30,
+  tiktok: 20, reddit: 20, pinterest: 20, yandex: 20, baidu: 20,
+  zalo: 20, line: 20, viber: 20, kakao: 20, mastodon: 20,
+  bluesky: 20, threads: 20, microsoft: 30, seo: 10, archive: 10,
+  other: 20,
+};
 
-function rateLimit(ip) {
+// Map UA → nhóm bot (thứ tự quan trọng, match đầu tiên thắng).
+const BOT_GROUPS = [
+  ["facebook",  /facebookexternalhit|facebot|metainspector/i],
+  ["slack",     /slack/i],
+  ["linkedin",  /linkedinbot/i],
+  ["twitter",   /twitterbot/i],
+  ["discord",   /discordbot/i],
+  ["whatsapp",  /whatsapp/i],
+  ["telegram",  /telegrambot/i],
+  ["apple",     /applebot|imessagelinkpreview/i],
+  ["tiktok",    /tiktokbot|bytespider/i],
+  ["google",    /googlebot|google-(read-aloud|site-verification|inspectiontool)/i],
+  ["bing",      /bingbot|microsoftpreview/i],
+  ["microsoft", /teams|outlook|office/i],
+  ["yandex",    /yandexbot/i],
+  ["baidu",     /baiduspider/i],
+  ["reddit",    /redditbot/i],
+  ["pinterest", /pinterest/i],
+  ["zalo",      /zalo/i],
+  ["line",      /\bline\b/i],
+  ["viber",     /viber/i],
+  ["kakao",     /kakaotalk/i],
+  ["mastodon",  /mastodon|pleroma|misskey/i],
+  ["bluesky",   /bluesky/i],
+  ["threads",   /threads/i],
+  ["seo",       /ahrefsbot|semrushbot|mj12bot|dotbot|petalbot/i],
+  ["archive",   /archive\.org_bot|ia_archiver/i],
+];
+
+function botGroup(ua) {
+  for (const [name, re] of BOT_GROUPS) if (re.test(ua)) return name;
+  return "other";
+}
+
+const rlBuckets = new Map();        // key -> { count, resetAt }
+
+function takeBucket(key, limit) {
   const now = Date.now();
-  const b = rlBuckets.get(ip);
+  const b = rlBuckets.get(key);
   if (!b || now >= b.resetAt) {
-    rlBuckets.set(ip, { count: 1, resetAt: now + RL_WINDOW_MS });
-    return { ok: true, remaining: RL_MAX_PER_WINDOW - 1, retryAfter: 0 };
+    rlBuckets.set(key, { count: 1, resetAt: now + RL_WINDOW_MS });
+    return { ok: true, remaining: limit - 1, retryAfter: 0 };
   }
   b.count += 1;
-  if (b.count > RL_MAX_PER_WINDOW) {
+  if (b.count > limit) {
     return { ok: false, remaining: 0, retryAfter: Math.ceil((b.resetAt - now) / 1000) };
   }
-  return { ok: true, remaining: RL_MAX_PER_WINDOW - b.count, retryAfter: 0 };
+  return { ok: true, remaining: limit - b.count, retryAfter: 0 };
+}
+
+// Dọn map định kỳ để tránh phình bộ nhớ isolate.
+function gcBuckets() {
+  if (rlBuckets.size < 5000) return;
+  const now = Date.now();
+  for (const [k, v] of rlBuckets) if (now >= v.resetAt) rlBuckets.delete(k);
+}
+
+function rateLimit(ip, ua) {
+  gcBuckets();
+  const group = botGroup(ua);
+  const botMax = RL_BOT_MAX[group] ?? RL_BOT_DEFAULT_MAX;
+  const ipRes  = takeBucket(`ip:${ip}`, RL_IP_MAX);
+  const botRes = takeBucket(`bot:${ip}|${group}`, botMax);
+  const ok = ipRes.ok && botRes.ok;
+  const reason = !ipRes.ok ? "ip" : !botRes.ok ? "bot" : null;
+  const retryAfter = Math.max(ipRes.retryAfter, botRes.retryAfter);
+  const remaining = Math.min(ipRes.remaining, botRes.remaining);
+  return { ok, remaining, retryAfter, group, reason };
 }
 
 function logEvent(env, level, msg, fields = {}) {
