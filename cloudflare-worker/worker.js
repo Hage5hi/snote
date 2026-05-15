@@ -136,11 +136,25 @@ export default {
     }
 
     if (url.pathname === "/robots.txt") {
-      return new Response(renderRobotsTxt(env), {
+      const body = renderRobotsTxt(env);
+      const etag = etagOf(body);
+      if (matchesEtag(request, etag)) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            etag,
+            "cache-control": "public, max-age=300, s-maxage=300, must-revalidate",
+            vary: "User-Agent",
+          },
+        });
+      }
+      return new Response(body, {
         status: 200,
         headers: {
           "content-type": "text/plain; charset=utf-8",
-          "cache-control": "public, max-age=300, s-maxage=300",
+          "cache-control": "public, max-age=300, s-maxage=300, must-revalidate",
+          etag,
+          vary: "User-Agent",
         },
       });
     }
