@@ -142,15 +142,20 @@ export default {
     }
 
     // Rate limit chỉ áp dụng cho nhánh crawler (đã rẽ vào prerender).
-    const rl = rateLimit(ip);
+    const rl = rateLimit(ip, ua);
     if (!rl.ok) {
-      logEvent(env, "warn", "rate_limited", { ip, ua, path: url.pathname, retryAfter: rl.retryAfter });
+      logEvent(env, "warn", "rate_limited", {
+        ip, ua, path: url.pathname, group: rl.group, scope: rl.reason,
+        retryAfter: rl.retryAfter,
+      });
       return new Response("Too Many Requests", {
         status: 429,
         headers: {
           "retry-after": String(rl.retryAfter),
           "cache-control": "no-store",
           "x-ratelimit-remaining": "0",
+          "x-ratelimit-scope": rl.reason ?? "",
+          "x-bot-group": rl.group,
         },
       });
     }
