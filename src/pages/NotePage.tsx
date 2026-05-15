@@ -344,8 +344,24 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   const showUnlockOverlay = encPhase === "needs-key";
 
+  const noteUrl = `https://syrin.online/${slug}`;
+  const noteTitle = `${slug} — Syrin Notes`;
+  const noteDesc = `Note "${slug}" trên Syrin Notes — markdown realtime, tự động lưu, đồng bộ giữa các thiết bị.`;
+
   return (
     <div className="flex h-svh flex-col bg-background">
+      <Helmet>
+        <title>{noteTitle}</title>
+        <meta name="description" content={noteDesc} />
+        <link rel="canonical" href={noteUrl} />
+        <meta property="og:title" content={noteTitle} />
+        <meta property="og:description" content={noteDesc} />
+        <meta property="og:url" content={noteUrl} />
+        <meta property="og:type" content="article" />
+        <meta name="twitter:title" content={noteTitle} />
+        <meta name="twitter:description" content={noteDesc} />
+        {encMeta.isEncrypted && <meta name="robots" content="noindex" />}
+      </Helmet>
       <Topbar
         slug={slug}
         doc={doc}
