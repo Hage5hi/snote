@@ -210,20 +210,38 @@ export default {
       const html = renderHtml(meta, url, env);
       const isEncrypted = meta.kind !== "home" && meta.found && meta.isEncrypted;
       const cacheControl = isEncrypted
-        ? "public, max-age=60, s-maxage=60"
+        ? "public, max-age=60, s-maxage=60, must-revalidate"
         : meta.found
-          ? "public, max-age=300, s-maxage=300, stale-while-revalidate=3600"
-          : "public, max-age=60, s-maxage=60";
+          ? "public, max-age=300, s-maxage=300, stale-while-revalidate=3600, must-revalidate"
+          : "public, max-age=60, s-maxage=60, must-revalidate";
 
       const status = meta.kind === "home" || meta.found ? 200 : 404;
+      const etag = etagOf(html);
+
+      // Conditional GET: trả 304 nếu client/scraper đã có bản cũ còn hợp lệ
+      if (status === 200 && matchesEtag(request, etag)) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            etag,
+            "cache-control": cacheControl,
+            "x-prerendered": "1",
+            "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
+            vary: "User-Agent",
+          },
+        });
+      }
+
       const response = new Response(html, {
         status,
         headers: {
           "content-type": "text/html; charset=utf-8",
           "cache-control": cacheControl,
+          etag,
           "x-prerendered": "1",
           "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
           "x-ratelimit-remaining": String(rl.remaining),
+          vary: "User-Agent",
         },
       });
 
