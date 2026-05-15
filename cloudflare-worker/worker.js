@@ -292,7 +292,7 @@ function renderHtml(meta, url, env) {
 
   if (meta.kind === "note" || meta.kind === "share") {
     if (meta.found) {
-      title = `${meta.slug} — Syrin Notes`;
+      title = `Syrin Notes — /${meta.slug}`;
       ogType = "article";
       if (meta.isEncrypted) {
         desc = `Note "${meta.slug}" được mã hoá đầu cuối trên Syrin Notes. Cần khoá để mở.`;
