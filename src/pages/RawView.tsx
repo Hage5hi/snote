@@ -118,6 +118,11 @@ export default function RawView() {
       <meta name="description" content={`Xem nội dung markdown thuần (plaintext) của note /${slug} trên Syrin Notes — không render, không UI.`} />
       <link rel="canonical" href={`https://snote.lovable.app/${slug}.md`} />
       <meta name="robots" content="noindex, follow" />
+      <meta property="og:title" content={`Raw markdown: /${slug}.md — Syrin Notes`} />
+      <meta property="og:description" content={`Plaintext markdown của note /${slug} trên Syrin Notes.`} />
+      <meta property="og:url" content={`https://snote.lovable.app/${slug}.md`} />
+      <meta name="twitter:title" content={`Raw markdown: /${slug}.md — Syrin Notes`} />
+      <meta name="twitter:description" content={`Plaintext markdown của note /${slug}.`} />
     </Helmet>
   );
   if (error) {

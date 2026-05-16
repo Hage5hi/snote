@@ -59,6 +59,11 @@ export default function SplitView() {
         <meta name="description" content={`So sánh hai note markdown cạnh nhau (/${left} và /${right}) với chế độ cuộn đồng bộ trên Syrin Notes.`} />
         <link rel="canonical" href={`https://snote.lovable.app/${left}+${right}`} />
         <meta name="robots" content="noindex, follow" />
+        <meta property="og:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
+        <meta property="og:description" content={`So sánh hai note markdown cạnh nhau (/${left} và /${right}) với chế độ cuộn đồng bộ.`} />
+        <meta property="og:url" content={`https://snote.lovable.app/${left}+${right}`} />
+        <meta name="twitter:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
+        <meta name="twitter:description" content={`So sánh hai note markdown cạnh nhau (/${left} và /${right}).`} />
       </Helmet>
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 text-xs">
         <Tooltip>
