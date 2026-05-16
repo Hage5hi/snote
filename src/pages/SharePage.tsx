@@ -138,6 +138,11 @@ export default function SharePage() {
       <meta name="description" content="Xem note markdown được chia sẻ ở chế độ chỉ đọc trên Syrin Notes. Link riêng tư, có thể thu hồi bất cứ lúc nào." />
       <link rel="canonical" href={`https://snote.lovable.app/s/${token}`} />
       <meta name="robots" content="noindex, nofollow" />
+      <meta property="og:title" content="Shared note — Syrin Notes" />
+      <meta property="og:description" content="Note markdown được chia sẻ ở chế độ chỉ đọc. Link riêng tư, có thể thu hồi." />
+      <meta property="og:url" content={`https://snote.lovable.app/s/${token}`} />
+      <meta name="twitter:title" content="Shared note — Syrin Notes" />
+      <meta name="twitter:description" content="Note markdown được chia sẻ ở chế độ chỉ đọc." />
     </Helmet>
   );
 
