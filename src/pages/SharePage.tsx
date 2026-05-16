@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Eye } from "lucide-react";
 import * as Y from "yjs";
 import { supabase } from "@/integrations/supabase/client";
@@ -131,53 +132,71 @@ export default function SharePage() {
     }
   };
 
-  if (state.kind === "loading") return <EditorSkeleton />;
+  const head = (
+    <Helmet>
+      <title>Shared note — Syrin Notes</title>
+      <meta name="description" content="Xem note markdown được chia sẻ ở chế độ chỉ đọc trên Syrin Notes. Link riêng tư, có thể thu hồi bất cứ lúc nào." />
+      <link rel="canonical" href={`https://snote.lovable.app/s/${token}`} />
+      <meta name="robots" content="noindex, nofollow" />
+    </Helmet>
+  );
+
+  if (state.kind === "loading") return <>{head}<EditorSkeleton /></>;
 
   if (state.kind === "notfound") {
     return (
-      <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-        <p className="text-sm text-muted-foreground">Link không tồn tại hoặc đã bị thu hồi.</p>
-        <Link to="/" className="text-sm text-primary hover:underline">← Về trang chủ</Link>
-      </div>
+      <>
+        {head}
+        <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+          <p className="text-sm text-muted-foreground">Link không tồn tại hoặc đã bị thu hồi.</p>
+          <Link to="/" className="text-sm text-primary hover:underline">← Về trang chủ</Link>
+        </div>
+      </>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-        <p className="text-sm text-destructive">{state.message}</p>
-        <Link to="/" className="text-sm text-primary hover:underline">← Về trang chủ</Link>
-      </div>
+      <>
+        {head}
+        <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+          <p className="text-sm text-destructive">{state.message}</p>
+          <Link to="/" className="text-sm text-primary hover:underline">← Về trang chủ</Link>
+        </div>
+      </>
     );
   }
 
   if (state.kind === "needs-key") {
-    // UnlockForm is reused as-is; it takes a `slug` label but shows it only
-    // as a caption. Using "(chia sẻ)" instead of the real slug keeps the
-    // slug hidden.
     return (
-      <UnlockForm
-        slug="(chia sẻ)"
-        salt={state.salt}
-        check={state.check}
-        iterations={state.iterations}
-        onUnlock={onUnlock}
-      />
+      <>
+        {head}
+        <UnlockForm
+          slug="(chia sẻ)"
+          salt={state.salt}
+          check={state.check}
+          iterations={state.iterations}
+          onUnlock={onUnlock}
+        />
+      </>
     );
   }
 
   return (
-    <div className="flex min-h-svh flex-col bg-background">
-      <header className="sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 text-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Về trang chủ">
-          <ArrowLeft className="h-4 w-4" />
-        </Link>
-        <Eye className="h-4 w-4 text-muted-foreground" />
-        <span className="font-mono text-xs text-muted-foreground">Chế độ chỉ đọc</span>
-      </header>
-      <div className="flex-1 overflow-auto bg-muted/30">
-        <Preview doc={state.doc} />
+    <>
+      {head}
+      <div className="flex min-h-svh flex-col bg-background">
+        <header className="sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 text-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Về trang chủ">
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <Eye className="h-4 w-4 text-muted-foreground" />
+          <span className="font-mono text-xs text-muted-foreground">Chế độ chỉ đọc</span>
+        </header>
+        <div className="flex-1 overflow-auto bg-muted/30">
+          <Preview doc={state.doc} />
+        </div>
       </div>
-    </div>
+    </>
   );
 }
