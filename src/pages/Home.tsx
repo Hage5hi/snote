@@ -165,7 +165,7 @@ export default function Home() {
     <div className="min-h-svh bg-background">
       <header className="flex h-12 items-center justify-between border-b border-border px-4">
         <div className="flex items-center gap-2">
-          <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" className="h-6 w-6 rounded-md object-contain" />
+          <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" fetchPriority="high" decoding="async" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Syrin Notes</span>
         </div>
         <div className="flex items-center gap-1">
