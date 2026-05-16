@@ -7,6 +7,31 @@ import { marked } from "marked";
 
 marked.setOptions({ gfm: true, breaks: true });
 
+// Disable raw HTML parsing so stray tags in prose like `<title>` (mentioned
+// as text, not as real markup) don't swallow following content. DOMPurify
+// still sanitizes the final output as a safety net.
+marked.use({
+  tokenizer: {
+    html() { return undefined; },
+  },
+  extensions: [
+    {
+      name: "inlineHtml",
+      level: "inline",
+      start(src: string) { return src.indexOf("<"); },
+      tokenizer(src: string) {
+        const m = /^<[^\n>]{1,200}>/.exec(src);
+        if (!m) return undefined;
+        return {
+          type: "text",
+          raw: m[0],
+          text: m[0].replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!),
+        };
+      },
+    },
+  ],
+});
+
 function escapeHtml(s: string): string {
   return s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!);
 }
