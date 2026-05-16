@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Eye } from "lucide-react";
 import * as Y from "yjs";
 import { supabase } from "@/integrations/supabase/client";
@@ -131,7 +132,16 @@ export default function SharePage() {
     }
   };
 
-  if (state.kind === "loading") return <EditorSkeleton />;
+  const head = (
+    <Helmet>
+      <title>Shared note — Syrin Notes</title>
+      <meta name="description" content="Xem note markdown được chia sẻ ở chế độ chỉ đọc trên Syrin Notes. Link riêng tư, có thể thu hồi bất cứ lúc nào." />
+      <link rel="canonical" href={`https://snote.lovable.app/s/${token}`} />
+      <meta name="robots" content="noindex, nofollow" />
+    </Helmet>
+  );
+
+  if (state.kind === "loading") return <>{head}<EditorSkeleton /></>;
 
   if (state.kind === "notfound") {
     return (

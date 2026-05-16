@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -53,6 +54,12 @@ export default function SplitView() {
 
   return (
     <div className="flex h-svh flex-col bg-background">
+      <Helmet>
+        <title>{`Split view: /${left} + /${right} — Syrin Notes`}</title>
+        <meta name="description" content={`So sánh hai note markdown cạnh nhau (/${left} và /${right}) với chế độ cuộn đồng bộ trên Syrin Notes.`} />
+        <link rel="canonical" href={`https://snote.lovable.app/${left}+${right}`} />
+        <meta name="robots" content="noindex, follow" />
+      </Helmet>
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 text-xs">
         <Tooltip>
           <TooltipTrigger asChild>

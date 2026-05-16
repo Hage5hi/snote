@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
+import { Helmet } from "react-helmet-async";
 import { supabase } from "@/integrations/supabase/client";
 import { deriveKey, verifyCheck, iterationsFor } from "@/lib/crypto";
 
@@ -111,13 +112,34 @@ export default function RawView() {
     };
   }, [slug, searchParams]);
 
+  const head = (
+    <Helmet>
+      <title>{`Raw markdown: /${slug}.md — Syrin Notes`}</title>
+      <meta name="description" content={`Xem nội dung markdown thuần (plaintext) của note /${slug} trên Syrin Notes — không render, không UI.`} />
+      <link rel="canonical" href={`https://snote.lovable.app/${slug}.md`} />
+      <meta name="robots" content="noindex, follow" />
+    </Helmet>
+  );
   if (error) {
     return (
-      <pre className="raw-pre">{`# ${error}`}</pre>
+      <>
+        {head}
+        <pre className="raw-pre">{`# ${error}`}</pre>
+      </>
     );
   }
   if (text === null) {
-    return <pre className="raw-pre"># loading…</pre>;
+    return (
+      <>
+        {head}
+        <pre className="raw-pre"># loading…</pre>
+      </>
+    );
   }
-  return <pre className="raw-pre">{text}</pre>;
+  return (
+    <>
+      {head}
+      <pre className="raw-pre">{text}</pre>
+    </>
+  );
 }
