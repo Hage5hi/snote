@@ -1,6 +1,6 @@
-// Three quick toggles: preview pane, scroll sync (only when preview is on),
-// and Zen mode. Pagination toggle lives in Settings menu.
-import { Eye, EyeOff, Link2, Link2Off, Maximize2, Minimize2 } from "lucide-react";
+// Two quick toggles kept as icons: preview pane and scroll sync (only when preview is on).
+// Zen mode moved to Mode menu.
+import { Eye, EyeOff, Link2, Link2Off } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -9,10 +9,6 @@ interface ViewControlsProps {
   onTogglePreview: () => void;
   scrollSync: boolean;
   onToggleScrollSync: () => void;
-  zen: boolean;
-  onToggleZen: () => void;
-  /** When true, hide app-wide toggles (Zen) — used by SplitView panels. */
-  compact?: boolean;
 }
 
 export function ViewControls({
@@ -20,9 +16,6 @@ export function ViewControls({
   onTogglePreview,
   scrollSync,
   onToggleScrollSync,
-  zen,
-  onToggleZen,
-  compact = false,
 }: ViewControlsProps) {
   return (
     <>
@@ -65,25 +58,6 @@ export function ViewControls({
             {scrollSync
               ? "Tắt đồng bộ cuộn editor ↔ preview"
               : "Bật đồng bộ cuộn editor ↔ preview"}
-          </TooltipContent>
-        </Tooltip>
-      )}
-
-      {!compact && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={onToggleZen}
-              aria-label={zen ? "Tắt Zen" : "Bật Zen"}
-            >
-              {zen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {zen ? "Thoát chế độ Zen" : "Bật chế độ Zen — ẩn topbar khi không di chuột"} (F11)
           </TooltipContent>
         </Tooltip>
       )}

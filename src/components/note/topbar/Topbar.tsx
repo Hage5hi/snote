@@ -1,10 +1,9 @@
-// Topbar container: composes brand, counters, view controls, export & settings menus,
-// and owns dialog open-state for rename/duplicate/history/word-goal.
+// Topbar: brand + counters + per-note icons + Note/Mode/Export/Help dropdowns + theme.
+// Inspired by Replit's topbar — text-label menus replace the dense icon row.
 import { useEffect, useState } from "react";
 import * as Y from "yjs";
-import { ClipboardCopy, Keyboard, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { PresenceDots, type PresenceUser } from "../PresenceDots";
@@ -21,12 +20,14 @@ import { TopbarBrand } from "./TopbarBrand";
 import { WordCountTrigger } from "./WordCountTrigger";
 import { ViewControls } from "./ViewControls";
 import { ExportMenu } from "./ExportMenu";
-import { SettingsMenu } from "./SettingsMenu";
+import { NoteMenu } from "./NoteMenu";
+import { ModeMenu } from "./ModeMenu";
+import { HelpMenu } from "./HelpMenu";
+import { CopyUrlButton } from "./CopyUrlButton";
 
 interface TopbarProps {
   slug: string;
   doc: Y.Doc;
-  
   provider?: SupabaseYjsProvider | null;
   charCount: number;
   wordCount: number;
@@ -45,16 +46,15 @@ interface TopbarProps {
   isEncrypted: boolean;
   paginated: boolean;
   onTogglePagination: () => void;
-  /** Compact mode for SplitView panels: hides app-wide toggles (zen, theme,
-   *  shortcuts, settings) that would be redundant when two topbars are on
-   *  screen. Keeps per-note actions (preview, lock, share, rename, status). */
+  /** Compact mode for SplitView panels: hides app-wide menus (Mode, Help, theme)
+   *  that would be redundant when two topbars are on screen. Keeps per-note
+   *  icons + Note + Export. */
   compact?: boolean;
 }
 
 export function Topbar({
   slug,
   doc,
-  
   provider,
   charCount,
   wordCount,
@@ -79,6 +79,7 @@ export function Topbar({
   const [renameOpen, setRenameOpen] = useState(false);
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const copyAll = async () => {
     const text = getContent();
@@ -91,6 +92,7 @@ export function Topbar({
   };
 
   // Cmd/Ctrl + Shift + C to copy all. Cmd/Ctrl + Shift + V to toggle preview.
+  // ? to open shortcuts (when not typing in a field).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "c" || e.key === "C")) {
@@ -120,7 +122,7 @@ export function Topbar({
           provider={provider}
         />
 
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+        <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
           <WordCountTrigger
             slug={slug}
             words={wordCount}
@@ -134,81 +136,47 @@ export function Topbar({
 
           <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={copyAll}
-                aria-label="Copy toàn bộ note"
-              >
-                <ClipboardCopy className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Copy toàn bộ nội dung note (⌘⇧C)</TooltipContent>
-          </Tooltip>
-
           <ShareDialog slug={slug} isEncrypted={isEncrypted} />
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={() => setRenameOpen(true)}
-                aria-label="Đổi tên slug"
-              >
-                <Pencil className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Đổi tên slug</TooltipContent>
-          </Tooltip>
 
           <ViewControls
             showPreview={showPreview}
             onTogglePreview={onTogglePreview}
             scrollSync={scrollSync}
             onToggleScrollSync={onToggleScrollSync}
-            zen={zen}
-            onToggleZen={onToggleZen}
-            compact={compact}
+          />
+
+          <CopyUrlButton />
+
+          <Separator orientation="vertical" className="mx-1 h-5" />
+
+          <NoteMenu
+            onOpenRename={() => setRenameOpen(true)}
+            onOpenDuplicate={() => setDuplicateOpen(true)}
+            onOpenGoal={() => setGoalOpen(true)}
+            onOpenHistory={() => setHistoryOpen(true)}
+            onCopyAll={copyAll}
           />
 
           {!compact && (
+            <ModeMenu
+              zen={zen}
+              onToggleZen={onToggleZen}
+              typewriter={typewriter}
+              onToggleTypewriter={onToggleTypewriter}
+              focusLine={focusLine}
+              onToggleFocusLine={onToggleFocusLine}
+              paginated={paginated}
+              onTogglePagination={onTogglePagination}
+            />
+          )}
+
+          <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
+
+          {!compact && (
             <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={() => setShortcutsOpen(true)}
-                    aria-label="Phím tắt"
-                  >
-                    <Keyboard className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Xem danh sách phím tắt (?)</TooltipContent>
-              </Tooltip>
+              <HelpMenu onOpenShortcuts={() => setShortcutsOpen(true)} />
 
-              <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
-
-              <SettingsMenu
-                slug={slug}
-                zen={zen}
-                onToggleZen={onToggleZen}
-                typewriter={typewriter}
-                onToggleTypewriter={onToggleTypewriter}
-                focusLine={focusLine}
-                onToggleFocusLine={onToggleFocusLine}
-                paginated={paginated}
-                onTogglePagination={onTogglePagination}
-                onOpenRename={() => setRenameOpen(true)}
-                onOpenDuplicate={() => setDuplicateOpen(true)}
-                onOpenGoal={() => setGoalOpen(true)}
-              />
+              <Separator orientation="vertical" className="mx-1 h-5" />
 
               <ThemeToggle />
             </>
@@ -216,7 +184,13 @@ export function Topbar({
         </div>
       </header>
 
-      <HistoryDialog slug={slug} doc={doc} />
+      <HistoryDialog
+        slug={slug}
+        doc={doc}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        trigger={false}
+      />
       <ShortcutHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
       <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />
