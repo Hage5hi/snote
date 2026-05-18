@@ -2,6 +2,7 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
+import { VitePWA } from "vite-plugin-pwa";
 
 // Inject `<link rel="prefetch">` hints into the built index.html for the
 // editor route's heavy chunks. They're imported dynamically by NotePage and
@@ -51,6 +52,28 @@ export default defineConfig(({ mode }) => ({
     react(),
     mode === "development" && componentTagger(),
     prefetchEditorChunks(),
+    VitePWA({
+      // Keep the existing public/manifest.webmanifest as-is.
+      manifest: false,
+      registerType: "autoUpdate",
+      injectRegister: "auto",
+      // SW only activates in production builds — preview iframes stay clean.
+      devOptions: { enabled: false },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,svg,png,webp,woff,woff2,json,ico}"],
+        // Exclude heavy lazy-loaded vendors + the markdown preview worker from
+        // precache so first install stays light. They still get cached via the
+        // browser HTTP cache on first use.
+        globIgnores: [
+          "**/mermaid-vendor-*",
+          "**/wardley-*",
+          "**/preview-worker-*",
+        ],
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      },
+    }),
   ].filter(Boolean),
   resolve: {
     alias: {
