@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
     if (!note.is_encrypted && note.content) {
       const plain = String(note.content)
         .replace(/```[\s\S]*?```/g, " ")
-        .replace(/[#>*_`~\[\]()!-]/g, " ")
+        .replace(/[#>*_`~[\]()!-]/g, " ")
         .replace(/\s+/g, " ")
         .trim();
       snippet = plain.length > 160 ? plain.slice(0, 157) + "…" : plain;
