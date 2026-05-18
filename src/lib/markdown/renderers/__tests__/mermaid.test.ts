@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { __resetMermaidForTests, renderMermaid } from "../mermaid";
+import { __resetMermaidCacheForTests } from "../mermaid-cache";
 
 describe("renderMermaid (lazy singleton)", () => {
   afterEach(() => {
     vi.resetModules();
     __resetMermaidForTests();
+    __resetMermaidCacheForTests();
   });
 
   it("imports the mermaid module exactly once across multiple invocations", async () => {
