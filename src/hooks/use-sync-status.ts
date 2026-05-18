@@ -124,7 +124,10 @@ export function useSyncStatus(
       const lastSnapshotAt = provider.getLastSnapshotAt();
       const s = internalRef.current;
       const next: SyncSnapshot = {
-        status: deriveStatus(s, pendingBytes, lastBroadcastAt, now),
+        status: deriveStatus(
+          { offline: s.offline, lastErrorMessage: s.lastErrorMessage, conflictPending: s.conflictPending, pendingBytes, lastBroadcastAt },
+          now,
+        ),
         pendingBytes,
         lastBroadcastAt,
         lastSnapshotAt,
