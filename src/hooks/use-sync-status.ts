@@ -46,17 +46,31 @@ interface InternalState {
   lastErrorAt: number | null;
 }
 
-function deriveStatus(
-  s: InternalState,
-  pendingBytes: number,
-  lastBroadcastAt: number,
-  now: number,
+/**
+ * Pure derivation of the displayed sync status. Exported for unit testing
+ * (Phase 9) — keep functionally equivalent to the inline logic that lived
+ * in the hook body.
+ *
+ * Priority order: offline > error > conflict > syncing(pending) >
+ * syncing(broadcast window) > synced.
+ */
+export interface DeriveStatusInput {
+  offline: boolean;
+  lastErrorMessage: string | null;
+  conflictPending: boolean;
+  pendingBytes: number;
+  lastBroadcastAt: number;
+}
+
+export function deriveStatus(
+  s: DeriveStatusInput,
+  now: number = Date.now(),
 ): SyncIndicatorStatus {
   if (s.offline) return "offline";
   if (s.lastErrorMessage) return "error";
   if (s.conflictPending) return "conflict";
-  if (pendingBytes > 0) return "syncing";
-  if (lastBroadcastAt > 0 && now - lastBroadcastAt < SYNCING_WINDOW_MS) return "syncing";
+  if (s.pendingBytes > 0) return "syncing";
+  if (s.lastBroadcastAt > 0 && now - s.lastBroadcastAt < SYNCING_WINDOW_MS) return "syncing";
   return "synced";
 }
 
@@ -110,7 +124,10 @@ export function useSyncStatus(
       const lastSnapshotAt = provider.getLastSnapshotAt();
       const s = internalRef.current;
       const next: SyncSnapshot = {
-        status: deriveStatus(s, pendingBytes, lastBroadcastAt, now),
+        status: deriveStatus(
+          { offline: s.offline, lastErrorMessage: s.lastErrorMessage, conflictPending: s.conflictPending, pendingBytes, lastBroadcastAt },
+          now,
+        ),
         pendingBytes,
         lastBroadcastAt,
         lastSnapshotAt,

@@ -64,3 +64,41 @@ describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {
     expect(provider.getBroadcastCount()).toBe(2);
   });
 });
+
+describe("SupabaseYjsProvider — SyncEvent lifecycle", () => {
+  it("emits 'offline' to subscribed listeners", () => {
+    const { provider } = makeProvider();
+    const events: string[] = [];
+    provider.onSyncEvent((e) => events.push(e.type));
+    (provider as unknown as { emitSync: (e: { type: string }) => void }).emitSync({ type: "offline" });
+    expect(events).toContain("offline");
+  });
+
+  it("emits 'online' to subscribed listeners", () => {
+    const { provider } = makeProvider();
+    const events: string[] = [];
+    provider.onSyncEvent((e) => events.push(e.type));
+    (provider as unknown as { emitSync: (e: { type: string }) => void }).emitSync({ type: "online" });
+    expect(events).toContain("online");
+  });
+
+  it("emits 'error' with message payload", () => {
+    const { provider } = makeProvider();
+    const events: { type: string; message?: string }[] = [];
+    provider.onSyncEvent((e) => events.push({ type: e.type, message: (e as { message?: string }).message }));
+    (provider as unknown as { emitSync: (e: { type: string; message: string }) => void })
+      .emitSync({ type: "error", message: "upsert failed" });
+    const err = events.find((e) => e.type === "error");
+    expect(err).toBeDefined();
+    expect(err?.message).toBe("upsert failed");
+  });
+
+  it("unsubscribe stops further deliveries", () => {
+    const { provider } = makeProvider();
+    const events: string[] = [];
+    const unsub = provider.onSyncEvent((e) => events.push(e.type));
+    unsub();
+    (provider as unknown as { emitSync: (e: { type: string }) => void }).emitSync({ type: "offline" });
+    expect(events).toHaveLength(0);
+  });
+});
