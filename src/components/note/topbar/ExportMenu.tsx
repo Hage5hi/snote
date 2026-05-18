@@ -1,5 +1,5 @@
-// Export dropdown: download note as .md/.html/.pdf/.txt, copy as AI context, copy raw URL.
-import { Download, FileCode, FileType, Sparkles, Terminal } from "lucide-react";
+// Export dropdown: copy URL, download as .md/.html/.pdf/.txt, copy as AI context, copy raw URL.
+import { ChevronDown, Copy, Download, FileCode, FileType, Sparkles, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -8,7 +8,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/export";
 import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
@@ -22,6 +21,11 @@ interface ExportMenuProps {
 }
 
 export function ExportMenu({ slug, getContent, isEncrypted }: ExportMenuProps) {
+  const copyNoteUrl = async () => {
+    await navigator.clipboard.writeText(window.location.href);
+    toast({ title: "Đã copy URL note" });
+  };
+
   const copyAsAI = async () => {
     const text = getContent();
     if (!text) {
@@ -41,17 +45,17 @@ export function ExportMenu({ slug, getContent, isEncrypted }: ExportMenuProps) {
 
   return (
     <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Export">
-              <Download className="h-4 w-4" />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">Export note: .md / .html / .pdf / .txt / AI / cURL</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end">
+      <DropdownMenuTrigger asChild>
+        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-sm font-normal">
+          Export
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem onClick={copyNoteUrl}>
+          <Copy className="h-3.5 w-3.5" /> Copy note URL
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => exportMarkdown(slug, getContent())}>
           <Download className="h-3.5 w-3.5" /> Download .md
         </DropdownMenuItem>
@@ -71,7 +75,7 @@ export function ExportMenu({ slug, getContent, isEncrypted }: ExportMenuProps) {
         <DropdownMenuItem
           onClick={copyRawUrl}
           disabled={isEncrypted}
-          title="URL trỏ thẳng edge function — cURL/wget nhận text/plain ngay (không qua SPA)"
+          title="URL trỏ thẳng edge function — cURL/wget nhận text/plain ngay"
         >
           <Terminal className="h-3.5 w-3.5" /> Copy raw URL (cURL)
         </DropdownMenuItem>
