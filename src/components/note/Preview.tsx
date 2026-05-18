@@ -113,22 +113,38 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
     const isCurrent = () =>
       (host as unknown as { __hydrationToken?: symbol }).__hydrationToken === token;
 
-    const mermaidEls = host.querySelectorAll<HTMLElement>("[data-mermaid]");
-    mermaidEls.forEach((el) => {
+    const mermaidEls = Array.from(host.querySelectorAll<HTMLElement>("[data-mermaid]"));
+    const yieldIdle = () =>
+      new Promise<void>((resolve) => {
+        const w = window as unknown as {
+          requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        };
+        if (w.requestIdleCallback) {
+          w.requestIdleCallback(() => resolve(), { timeout: 200 });
+        } else {
+          setTimeout(resolve, 0);
+        }
+      });
+    const hydrateOneMermaid = async (index: number): Promise<void> => {
+      if (!isCurrent() || index >= mermaidEls.length) return;
+      const el = mermaidEls[index];
       const code = decodeURIComponent(el.getAttribute("data-mermaid") || "");
       el.removeAttribute("data-mermaid");
-      renderMermaid(code, isDark)
-        .then((svg) => {
-          if (isCurrent()) el.innerHTML = svg;
-        })
-        .catch((e) => {
-          if (isCurrent()) {
-            el.innerHTML = `<pre class="text-destructive text-sm">${escapeHtml(
-              e instanceof Error ? e.message : String(e),
-            )}</pre>`;
-          }
-        });
-    });
+      try {
+        const svg = await renderMermaid(code, isDark);
+        if (isCurrent()) el.innerHTML = svg;
+      } catch (e) {
+        if (isCurrent()) {
+          el.innerHTML = `<pre class="text-destructive text-sm">${escapeHtml(
+            e instanceof Error ? e.message : String(e),
+          )}</pre>`;
+        }
+      }
+      if (!isCurrent()) return;
+      await yieldIdle();
+      await hydrateOneMermaid(index + 1);
+    };
+    void hydrateOneMermaid(0);
 
     const katexEls = host.querySelectorAll<HTMLElement>("[data-katex]");
     katexEls.forEach((el) => {
