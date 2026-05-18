@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { __resetMermaidForTests, renderMermaid } from "../mermaid";
+import { __resetMermaidCacheForTests } from "../mermaid-cache";
 
 describe("renderMermaid (lazy singleton)", () => {
   afterEach(() => {
     vi.resetModules();
     __resetMermaidForTests();
+    __resetMermaidCacheForTests();
   });
 
   it("imports the mermaid module exactly once across multiple invocations", async () => {
@@ -37,5 +39,23 @@ describe("renderMermaid (lazy singleton)", () => {
 
     // Use the imported `renderMermaid` to satisfy the import-binding lint.
     expect(typeof renderMermaid).toBe("function");
+  });
+
+  it("caches SVG output: same code+theme calls mermaid.render only once", async () => {
+    const initialize = vi.fn();
+    const render = vi.fn(async (id: string) => ({ svg: `<svg id="${id}">cached</svg>` }));
+
+    vi.doMock("mermaid", () => ({ default: { initialize, render } }));
+
+    const { renderMermaid: lazy, __resetMermaidForTests: reset } = await import("../mermaid");
+    const { __resetMermaidCacheForTests: resetCache } = await import("../mermaid-cache");
+    reset();
+    resetCache();
+
+    const svg1 = await lazy("graph TD;A-->B;", false);
+    const svg2 = await lazy("graph TD;A-->B;", false);
+
+    expect(svg1).toBe(svg2);
+    expect(render).toHaveBeenCalledTimes(1);
   });
 });
