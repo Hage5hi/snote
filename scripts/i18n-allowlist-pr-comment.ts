@@ -162,7 +162,7 @@ export function renderFailureSection(summary: Summary): string[] {
   const lines: string[] = [];
   lines.push(`**Failure category:** \`${summary.failure.category}\``);
   lines.push("");
-  lines.push(`**Reason:** ${escapeMd(formatReasonFromSummary(summary))}`);
+  lines.push(`**Reason:** ${escapeMd(formatFailureReason(summary.failure, summary))}`);
   if (summary.failure.topFiles.length) {
     lines.push("");
     lines.push("**Top offending paths:**");
@@ -170,13 +170,6 @@ export function renderFailureSection(summary: Summary): string[] {
   }
   lines.push("");
   return lines;
-}
-
-/** Re-export the report's reason formatter so we render the identical string. */
-function formatReasonFromSummary(summary: Summary): string {
-  // Lazy require avoids a circular import at module-init time.
-  const mod = require("./i18n-allowlist-report") as typeof import("./i18n-allowlist-report");
-  return mod.formatFailureReason(summary.failure!, summary);
 }
 
 function escapeMd(s: string): string {
