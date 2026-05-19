@@ -181,8 +181,13 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       # Sticky PR comment with a one-click link to the HTML coverage
-      # artifact so reviewers don't have to dig through the run UI.
+      # artifact — only posted/updated when the upload step actually
+      # produced an artifact-id. When the upload was skipped or failed
+      # (e.g. coverage dir empty), the comment is updated in-place with
+      # a clear "report missing" message so reviewers aren't left with a
+      # stale link from a previous run.
       - if: always() && github.event_name == 'pull_request'
+        id: build_cli_coverage_comment
         name: Build CLI coverage PR comment
         env:
           COVERAGE_ARTIFACT_ID: ${{ steps.upload_cli_coverage_html.outputs.artifact-id }}
@@ -191,19 +196,26 @@ jobs:
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
             ARTIFACT_URL="${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}"
+            {
+              echo "### i18n CLI test coverage"
+              echo ""
+              echo "[📊 Download HTML coverage report](${ARTIFACT_URL}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
+            } > reports/_ci/coverage-pr-comment.md
+            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
           else
-            ARTIFACT_URL="${RUN_URL}#artifacts"
+            {
+              echo "### i18n CLI test coverage"
+              echo ""
+              echo "_⚠️ HTML coverage artifact was not uploaded for this run_ — the coverage step may have been skipped, or \`coverage/i18n-cli/\` was empty. Check the [run logs](${RUN_URL}) for details."
+            } > reports/_ci/coverage-pr-comment.md
+            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
           fi
-          {
-            echo "### i18n CLI test coverage"
-            echo ""
-            echo "[📊 Download HTML coverage report](${ARTIFACT_URL}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
-          } > reports/_ci/coverage-pr-comment.md
-      - if: always() && github.event_name == 'pull_request'
+      - if: always() && github.event_name == 'pull_request' && env.COVERAGE_COMMENT_READY == '1'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: i18n-cli-coverage
           path: reports/_ci/coverage-pr-comment.md
+
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
