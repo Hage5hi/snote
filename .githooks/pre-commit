@@ -3,11 +3,12 @@
 # (missing or stale eslint-disable entries) is caught BEFORE the CI run.
 #
 # Fast-path: only runs when the staged changeset can actually affect the
-# allowlist outcome — i.e. when it touches source files scanned by the
-# drift checker (src/**/*.{ts,tsx,js,jsx}) or the allowlist config itself
-# (.lintrc-i18n-allowlist.json / .schema.json). On unrelated commits
-# (docs, assets, workflows, …) the hook exits early so large repos don't
-# pay the full scan cost on every commit.
+# allowlist outcome. We trigger on:
+#   • i18n / locale dictionaries — locales/**, i18n/**, src/i18n/**
+#     (any .json / .ts / .tsx / .js / .jsx)
+#   • the allowlist config / schema —
+#     .lintrc-i18n-allowlist.json, .lintrc-i18n-allowlist.schema.json
+#   • source files scanned by the drift checker — src/**/*.{ts,tsx,js,jsx}
 #
 # Override:
 #   I18N_HOOK_FORCE=1 git commit ...    # always run, even if no i18n files changed
@@ -23,8 +24,13 @@ STAGED=$(git diff --cached --name-only --diff-filter=ACMR || true)
 needs_check() {
   if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
   if [ -z "$STAGED" ]; then return 1; fi
-  # Match src/**/*.{ts,tsx,js,jsx} OR the allowlist config/schema.
-  echo "$STAGED" | grep -E '^(src/.*\.(t|j)sx?$|\.lintrc-i18n-allowlist(\.schema)?\.json$)' > /dev/null
+  # i18n/locale dictionaries (any extension we care about) OR allowlist
+  # config/schema OR drift-scanned source files under src/**.
+  echo "$STAGED" | grep -E \
+    -e '^(locales|i18n|src/i18n)/.+\.(json|tsx?|jsx?)$' \
+    -e '^\.lintrc-i18n-allowlist(\.schema)?\.json$' \
+    -e '^src/.+\.(t|j)sx?$' \
+    > /dev/null
 }
 
 if ! needs_check; then
@@ -34,11 +40,11 @@ if ! needs_check; then
 fi
 
 echo "▶ pre-commit: i18n allowlist check (staged i18n-relevant files detected)"
-if ! bun run i18n:allowlist:report; then
+if ! bun run i18n:allowlist:summary --changed; then
   echo ""
   echo "❌ pre-commit: i18n allowlist check FAILED."
   echo "   See reports/i18n-allowlist-report.md for details, or run:"
-  echo "     bun run i18n:allowlist:report"
+  echo "     bun run i18n:allowlist:summary"
   echo "   To bypass (not recommended): git commit --no-verify"
   exit 1
 fi
