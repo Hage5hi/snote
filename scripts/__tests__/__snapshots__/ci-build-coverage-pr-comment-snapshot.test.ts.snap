@@ -1,0 +1,179 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildCoverageComment — markdown snapshots > success: ALL artifact ids missing 1`] = `
+"### i18n CLI test coverage
+
+- _📊 HTML coverage report: artifact not uploaded for this run_ — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- _📦 debug-bundle: artifact not uploaded for this run_ — all of the below + raw vitest log in one zip
+- _📝 step-summary.md: artifact not uploaded for this run_ — rendered markdown GitHub shows in the job UI
+- _🧩 failure-breakdown.json: artifact not uploaded for this run_ — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > success: all artifacts present 1`] = `
+"### i18n CLI test coverage
+
+- [📊 HTML coverage report](https://github.com/o/r/actions/runs/42/artifacts/cov-1) — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- [📦 debug-bundle](https://github.com/o/r/actions/runs/42/artifacts/deb-1) — all of the below + raw vitest log in one zip
+- [📝 step-summary.md](https://github.com/o/r/actions/runs/42/artifacts/step-1) — rendered markdown GitHub shows in the job UI
+- [🧩 failure-breakdown.json](https://github.com/o/r/actions/runs/42/artifacts/fb-1) — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > success: coverage missing 1`] = `
+"### i18n CLI test coverage
+
+- _📊 HTML coverage report: artifact not uploaded for this run_ — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- [📦 debug-bundle](https://github.com/o/r/actions/runs/42/artifacts/deb-1) — all of the below + raw vitest log in one zip
+- [📝 step-summary.md](https://github.com/o/r/actions/runs/42/artifacts/step-1) — rendered markdown GitHub shows in the job UI
+- [🧩 failure-breakdown.json](https://github.com/o/r/actions/runs/42/artifacts/fb-1) — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > success: debug-bundle missing 1`] = `
+"### i18n CLI test coverage
+
+- [📊 HTML coverage report](https://github.com/o/r/actions/runs/42/artifacts/cov-1) — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- _📦 debug-bundle: artifact not uploaded for this run_ — all of the below + raw vitest log in one zip
+- [📝 step-summary.md](https://github.com/o/r/actions/runs/42/artifacts/step-1) — rendered markdown GitHub shows in the job UI
+- [🧩 failure-breakdown.json](https://github.com/o/r/actions/runs/42/artifacts/fb-1) — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > success: empty-string ids degrade to the missing form 1`] = `
+"### i18n CLI test coverage
+
+- _📊 HTML coverage report: artifact not uploaded for this run_ — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- _📦 debug-bundle: artifact not uploaded for this run_ — all of the below + raw vitest log in one zip
+- _📝 step-summary.md: artifact not uploaded for this run_ — rendered markdown GitHub shows in the job UI
+- _🧩 failure-breakdown.json: artifact not uploaded for this run_ — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > success: failure-breakdown missing 1`] = `
+"### i18n CLI test coverage
+
+- [📊 HTML coverage report](https://github.com/o/r/actions/runs/42/artifacts/cov-1) — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- [📦 debug-bundle](https://github.com/o/r/actions/runs/42/artifacts/deb-1) — all of the below + raw vitest log in one zip
+- [📝 step-summary.md](https://github.com/o/r/actions/runs/42/artifacts/step-1) — rendered markdown GitHub shows in the job UI
+- _🧩 failure-breakdown.json: artifact not uploaded for this run_ — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > success: step-summary missing 1`] = `
+"### i18n CLI test coverage
+
+- [📊 HTML coverage report](https://github.com/o/r/actions/runs/42/artifacts/cov-1) — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- [📦 debug-bundle](https://github.com/o/r/actions/runs/42/artifacts/deb-1) — all of the below + raw vitest log in one zip
+- _📝 step-summary.md: artifact not uploaded for this run_ — rendered markdown GitHub shows in the job UI
+- [🧩 failure-breakdown.json](https://github.com/o/r/actions/runs/42/artifacts/fb-1) — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > success: whitespace-only ids degrade to the missing form 1`] = `
+"### i18n CLI test coverage
+
+- _📊 HTML coverage report: artifact not uploaded for this run_ — browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download
+
+#### Debugging artifacts
+- _📦 debug-bundle: artifact not uploaded for this run_ — all of the below + raw vitest log in one zip
+- _📝 step-summary.md: artifact not uploaded for this run_ — rendered markdown GitHub shows in the job UI
+- _🧩 failure-breakdown.json: artifact not uploaded for this run_ — machine-readable suite/test/diff payload (schemaVersion ≥ 1)
+
+#### Per-OS matrix artifacts
+Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:
+- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS
+- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS
+- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS
+
+Direct downloads: [run artifacts page](https://github.com/o/r/actions/runs/42#artifacts).
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > validator-cancelled outcome also suppresses (any non-success) 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — markdown snapshots > validator-failed: suppresses every link 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
