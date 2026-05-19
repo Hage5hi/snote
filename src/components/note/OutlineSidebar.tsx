@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import * as Y from "yjs";
-import { List, X } from "lucide-react";
+import { X } from "lucide-react";
+
+export const OUTLINE_TOGGLE_EVENT = "outline:toggle";
 import { parseOutline, type Heading } from "@/lib/outline";
 import { Button } from "@/components/ui/button";
 
