@@ -1,0 +1,236 @@
+[
+  {
+    "file": "src/pages/SharePage.tsx",
+    "added": [
+      {
+        "file": "src/pages/SharePage.tsx",
+        "line": 59,
+        "kind": "aria-literal",
+        "snippet": "title = \"Syrin Notes\""
+      },
+      {
+        "file": "src/pages/SharePage.tsx",
+        "line": 141,
+        "kind": "meta-seo",
+        "snippet": "<meta name=\"description\" content=\"View a shared markdown note in read-only mode on Syrin Notes. Private link, revocable anytime.\""
+      },
+      {
+        "file": "src/pages/SharePage.tsx",
+        "line": 144,
+        "kind": "meta-seo",
+        "snippet": "<meta property=\"og:title\" content=\"Shared note — Syrin Notes\""
+      },
+      {
+        "file": "src/pages/SharePage.tsx",
+        "line": 145,
+        "kind": "meta-seo",
+        "snippet": "<meta property=\"og:description\" content=\"A markdown note shared in read-only mode. Private link, revocable.\""
+      },
+      {
+        "file": "src/pages/SharePage.tsx",
+        "line": 147,
+        "kind": "meta-seo",
+        "snippet": "<meta name=\"twitter:title\" content=\"Shared note — Syrin Notes\""
+      },
+      {
+        "file": "src/pages/SharePage.tsx",
+        "line": 148,
+        "kind": "meta-seo",
+        "snippet": "<meta name=\"twitter:description\" content=\"A markdown note shared in read-only mode.\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 6
+  },
+  {
+    "file": "src/lib/markdown/renderers/mermaid-cache.ts",
+    "added": [
+      {
+        "file": "src/lib/markdown/renderers/mermaid-cache.ts",
+        "line": 1,
+        "kind": "vietnamese",
+        "snippet": "// Singleton LRU cache cho mermaid SVG output. Key gắn theme vì cùng code +"
+      },
+      {
+        "file": "src/lib/markdown/renderers/mermaid-cache.ts",
+        "line": 2,
+        "kind": "vietnamese",
+        "snippet": "// theme khác = SVG khác. Insertion-order eviction khi size > MAX."
+      },
+      {
+        "file": "src/lib/markdown/renderers/mermaid-cache.ts",
+        "line": 3,
+        "kind": "vietnamese",
+        "snippet": "// Mục đích Phase 6: skip mermaid.render() call khi user xem lại note đã render"
+      },
+      {
+        "file": "src/lib/markdown/renderers/mermaid-cache.ts",
+        "line": 4,
+        "kind": "vietnamese",
+        "snippet": "// trước đó, hoặc khi cùng diagram xuất hiện trong nhiều note."
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 4
+  },
+  {
+    "file": "src/components/ui/pagination.tsx",
+    "added": [
+      {
+        "file": "src/components/ui/pagination.tsx",
+        "line": 11,
+        "kind": "aria-literal",
+        "snippet": "aria-label=\"pagination\""
+      },
+      {
+        "file": "src/components/ui/pagination.tsx",
+        "line": 51,
+        "kind": "aria-literal",
+        "snippet": "aria-label=\"Go to previous page\""
+      },
+      {
+        "file": "src/components/ui/pagination.tsx",
+        "line": 59,
+        "kind": "aria-literal",
+        "snippet": "aria-label=\"Go to next page\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 3
+  },
+  {
+    "file": "src/lib/markdown/preview-worker.ts",
+    "added": [
+      {
+        "file": "src/lib/markdown/preview-worker.ts",
+        "line": 45,
+        "kind": "vietnamese",
+        "snippet": "return `<div class=\"mermaid-block my-3\" data-mermaid=\"${enc}\"><div class=\"text-muted-foreground text-sm\">Đang tải biểu đồ…</div></div>`;"
+      },
+      {
+        "file": "src/lib/markdown/preview-worker.ts",
+        "line": 48,
+        "kind": "vietnamese",
+        "snippet": "return `<div class=\"katex-block my-3\" data-katex=\"${enc}\"><div class=\"text-muted-foreground text-sm\">Đang tải công thức…</div></div>`;"
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 2
+  },
+  {
+    "file": "src/components/DonateButton.tsx",
+    "added": [
+      {
+        "file": "src/components/DonateButton.tsx",
+        "line": 59,
+        "kind": "aria-literal",
+        "snippet": "aria-label=\"Support Syrin Notes\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  },
+  {
+    "file": "src/components/note/OutlineSidebar.tsx",
+    "added": [
+      {
+        "file": "src/components/note/OutlineSidebar.tsx",
+        "line": 96,
+        "kind": "aria-literal",
+        "snippet": "aria-label=\"Outline\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  },
+  {
+    "file": "src/components/ui/breadcrumb.tsx",
+    "added": [
+      {
+        "file": "src/components/ui/breadcrumb.tsx",
+        "line": 12,
+        "kind": "aria-literal",
+        "snippet": "aria-label=\"breadcrumb\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  },
+  {
+    "file": "src/hooks/use-sync-status.ts",
+    "added": [
+      {
+        "file": "src/hooks/use-sync-status.ts",
+        "line": 90,
+        "kind": "vietnamese",
+        "snippet": "/** Clear the latched error (user clicked \"Bỏ qua\"). */"
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  },
+  {
+    "file": "src/lib/markdown/renderers/katex.ts",
+    "added": [
+      {
+        "file": "src/lib/markdown/renderers/katex.ts",
+        "line": 32,
+        "kind": "aria-literal",
+        "snippet": "title=\"${escapeAttr(msg)}\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  },
+  {
+    "file": "src/lib/slash-commands.ts",
+    "added": [
+      {
+        "file": "src/lib/slash-commands.ts",
+        "line": 43,
+        "kind": "vietnamese",
+        "snippet": "text: \"| Cột 1 | Cột 2 | Cột 3 |\\n| --- | --- | --- |\\n|  |  |  |\\n\","
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  },
+  {
+    "file": "src/pages/AdminPanel.tsx",
+    "added": [
+      {
+        "file": "src/pages/AdminPanel.tsx",
+        "line": 284,
+        "kind": "placeholder-literal",
+        "snippet": "placeholder=\"Search by slug or content…\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  },
+  {
+    "file": "src/pages/SplitView.tsx",
+    "added": [
+      {
+        "file": "src/pages/SplitView.tsx",
+        "line": 73,
+        "kind": "aria-literal",
+        "snippet": "aria-label=\"Home\""
+      }
+    ],
+    "removed": [],
+    "beforeCount": 0,
+    "afterCount": 1
+  }
+]
