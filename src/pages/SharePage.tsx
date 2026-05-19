@@ -119,7 +119,7 @@ export default function SharePage() {
     return () => {
       cancelled = true;
     };
-  }, [token, valid]);
+  }, [token, valid, t]);
 
   const onUnlock = async (key: CryptoKey) => {
     if (state.kind !== "needs-key") return;
