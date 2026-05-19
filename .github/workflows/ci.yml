@@ -97,18 +97,84 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit 0  # never block here; final gate below enforces failure
-      # GitHub annotations — surface the top offending file paths from the
-      # concise failure reason as inline check annotations so reviewers
-      # see the same one-liner attached to the exact file (and line, when
-      # available) directly in the PR "Files changed" view.
+      # GitHub annotations — surface the top offending file paths from
+      # the concise failure reason as inline check annotations. The same
+      # invocation also writes reports/i18n-allowlist-summary.json which
+      # the Check Run step + artifact upload below consume.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
-        name: i18n allowlist GitHub annotations
+        name: i18n allowlist GitHub annotations + summary JSON
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            bun run i18n:allowlist:summary --changed --annotations --json > /dev/null || true
+            bun run i18n:allowlist:summary --changed --annotations --json --topFiles 5 > /dev/null || true
           else
-            bun run i18n:allowlist:summary --annotations --json > /dev/null || true
+            bun run i18n:allowlist:summary --annotations --json --topFiles 5 > /dev/null || true
           fi
+      # Standalone artifact upload so downstream tooling can fetch the
+      # concise summary JSON without pulling the full i18n-report bundle.
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-allowlist-summary
+          path: reports/i18n-allowlist-summary.json
+          retention-days: 14
+          if-no-files-found: warn
+      # GitHub Check Run — re-uses the same annotations + links to the
+      # uploaded allowlist report JSON artifact so the PR Checks tab shows
+      # the identical one-line failure category and top file paths.
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        name: Publish i18n allowlist Check Run
+        uses: actions/github-script@v7
+        env:
+          I18N_ARTIFACT_ID: ${{ steps.upload_i18n_report.outputs.artifact-id }}
+        with:
+          script: |
+            const fs = require('fs');
+            let summary;
+            try {
+              summary = JSON.parse(fs.readFileSync('reports/i18n-allowlist-summary.json', 'utf8'));
+            } catch (e) {
+              core.warning(`Skipping Check Run: ${e.message}`);
+              return;
+            }
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
+            const artifactUrl = process.env.I18N_ARTIFACT_ID
+              ? `${runUrl}/artifacts/${process.env.I18N_ARTIFACT_ID}`
+              : `${runUrl}#artifacts`;
+            const annotations = (summary.failure?.topFiles ?? []).map((entry) => {
+              const m = entry.match(/^(.*):(\d+)$/);
+              const path = m ? m[1] : entry;
+              const line = m ? Number(m[2]) : 1;
+              return {
+                path,
+                start_line: line,
+                end_line: line,
+                annotation_level: 'failure',
+                message: summary.failure.reason,
+                title: `i18n allowlist — ${summary.failure.category}`,
+              };
+            });
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'i18n allowlist',
+              head_sha: context.payload.pull_request?.head.sha ?? context.sha,
+              status: 'completed',
+              conclusion: summary.ok ? 'success' : 'failure',
+              details_url: artifactUrl,
+              output: {
+                title: summary.ok ? '✅ PASS' : `❌ FAIL — ${summary.failure?.category ?? 'unknown'}`,
+                summary: [
+                  summary.ok ? 'No drift detected.' : `**Reason:** ${summary.failure?.reason}`,
+                  '',
+                  `[📦 Download allowlist report bundle](${artifactUrl})`,
+                  '',
+                  '| Entries | Schema errors | Missing | Stale |',
+                  '|---|---|---|---|',
+                  `| ${summary.counts.entries} | ${summary.counts.schemaErrors} | ${summary.counts.missing} | ${summary.counts.stale} |`,
+                ].join('\n'),
+                annotations: annotations.slice(0, 50),
+              },
+            });
       # PR comment with direct links to the uploaded artifact + a short
       # pass/fail summary of the allowlist report so reviewers can grab the
       # audit diff / allowlist even on failed jobs.
