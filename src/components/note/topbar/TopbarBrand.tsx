@@ -46,6 +46,16 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider }: TopbarBrandPro
         <Copy className="h-3.5 w-3.5" />
       </button>
 
+      <button
+        onClick={() => window.dispatchEvent(new Event(OUTLINE_TOGGLE_EVENT))}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        aria-label="Outline (⌘\\)"
+        title="Outline (⌘\\)"
+      >
+        <List className="h-3.5 w-3.5" />
+      </button>
+
+
       {provider && (
         <div className="ml-2 flex items-center gap-1">
           <SyncIndicator provider={provider} />
