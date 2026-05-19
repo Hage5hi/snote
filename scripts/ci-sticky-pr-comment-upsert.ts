@@ -158,3 +158,134 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
 
   return { action: "updated", comment: updated, cleaned, usedFullScan };
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// CLI surface
+// ──────────────────────────────────────────────────────────────────────
+//
+// Usage (invoked from CI):
+//   bun run scripts/ci-sticky-pr-comment-upsert.ts \
+//     --marker "<!-- Sticky Pull Request Commenti18n-cli-coverage -->" \
+//     --body-file reports/_ci/coverage-pr-comment.md \
+//     [--cleanup-strategy delete|lock] \
+//     [--head-scan-lines 5]
+//
+// Environment variables (lower precedence than flags):
+//   STICKY_CLEANUP_STRATEGY   delete | lock     (default: delete)
+//   STICKY_HEAD_SCAN_LINES    positive integer  (default: 5)
+//
+// Cleanup strategies:
+//   • delete (DEFAULT) — older marker duplicates are removed via the
+//                        GitHub deleteComment API. The thread converges
+//                        to exactly one sticky comment. Requires
+//                        `pull-requests: write` AND delete permission
+//                        on issue comments for the bot identity.
+//   • lock             — older duplicates are rewritten to a tombstone
+//                        body that no longer carries the marker. Use
+//                        when the bot lacks delete permission, or when
+//                        you want an audit trail of prior runs. The
+//                        next rerun will ignore tombstones because
+//                        their bodies do not match the marker.
+//
+// If `--cleanup-strategy delete` is requested but the GitHub API client
+// is constructed without delete capability, the upsert silently falls
+// back to `lock` (see UpsertOptions / DEFAULT_CLEANUP_STRATEGY).
+
+export const HELP_TEXT = `ci-sticky-pr-comment-upsert — upsert a sticky PR comment with duplicate cleanup
+
+USAGE
+  bun run scripts/ci-sticky-pr-comment-upsert.ts [flags]
+
+FLAGS
+  --marker <string>             Required. HTML-comment marker that identifies the sticky comment.
+  --body-file <path>            Required. Path to the rendered comment body (markdown).
+  --cleanup-strategy <strategy> Optional. One of: delete | lock. Default: delete.
+                                  • delete (DEFAULT) — remove older duplicate marker comments.
+                                  • lock             — rewrite older duplicates to a tombstone
+                                                       body that no longer carries the marker.
+                                  Falls back to "lock" automatically if the API client lacks
+                                  delete permission.
+  --head-scan-lines <n>         Optional. Lines per comment to scan for the marker on the fast
+                                  path. Default: ${MARKER_HEAD_SCAN_LINES}. A full-body fallback
+                                  runs only if the head scan finds zero matches across the thread.
+  -h, --help                    Show this help.
+
+ENVIRONMENT VARIABLES (lower precedence than flags)
+  STICKY_CLEANUP_STRATEGY   delete | lock
+  STICKY_HEAD_SCAN_LINES    positive integer
+
+EXIT CODES
+  0  upserted (created or updated); cleanup completed
+  1  bad flags / missing required input
+  2  GitHub API error
+`;
+
+export interface ParsedCliConfig {
+  marker?: string;
+  bodyFile?: string;
+  cleanupStrategy: CleanupStrategy;
+  headScanLines: number;
+  help: boolean;
+}
+
+/**
+ * Parse argv + env into a config. Flags win over env. Invalid values
+ * for cleanupStrategy throw — silent fallbacks here would mask CI
+ * misconfiguration.
+ */
+export function parseCliConfig(
+  argv: string[],
+  env: Record<string, string | undefined> = {},
+): ParsedCliConfig {
+  const out: ParsedCliConfig = {
+    cleanupStrategy: parseStrategy(env.STICKY_CLEANUP_STRATEGY, DEFAULT_CLEANUP_STRATEGY),
+    headScanLines: parsePositiveInt(env.STICKY_HEAD_SCAN_LINES, MARKER_HEAD_SCAN_LINES),
+    help: false,
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    const take = () => argv[++i];
+    switch (a) {
+      case "-h":
+      case "--help":
+        out.help = true;
+        break;
+      case "--marker":
+        out.marker = take();
+        break;
+      case "--body-file":
+        out.bodyFile = take();
+        break;
+      case "--cleanup-strategy":
+        out.cleanupStrategy = parseStrategy(take(), DEFAULT_CLEANUP_STRATEGY, /* strict */ true);
+        break;
+      case "--head-scan-lines":
+        out.headScanLines = parsePositiveInt(take(), MARKER_HEAD_SCAN_LINES, /* strict */ true);
+        break;
+      default:
+        if (a.startsWith("--")) throw new Error(`Unknown flag: ${a}`);
+    }
+  }
+  return out;
+}
+
+function parseStrategy(
+  raw: string | undefined,
+  fallback: CleanupStrategy,
+  strict = false,
+): CleanupStrategy {
+  if (raw == null || raw === "") return fallback;
+  if (raw === "delete" || raw === "lock") return raw;
+  if (strict) throw new Error(`Invalid cleanup strategy: ${raw} (expected "delete" or "lock")`);
+  return fallback;
+}
+
+function parsePositiveInt(raw: string | undefined, fallback: number, strict = false): number {
+  if (raw == null || raw === "") return fallback;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) {
+    if (strict) throw new Error(`Invalid positive integer: ${raw}`);
+    return fallback;
+  }
+  return n;
+}
