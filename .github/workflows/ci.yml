@@ -166,6 +166,7 @@ jobs:
       # rendered markdown directly (mirrors what GitHub displays in the
       # job UI). Uploaded on every run, not just failures.
       - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: upload_step_summary_md
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-step-summary-ubuntu-latest
