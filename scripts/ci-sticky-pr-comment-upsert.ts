@@ -140,14 +140,9 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
     return { action: "created", comment: created, cleaned: [], usedFullScan: false };
   }
 
-  if (matches.length === 0) {
-    const created = await api.create(body);
-    return { action: "created", comment: created, cleaned: [], usedFullScan: false };
-  }
-
   // Newest = highest id (GitHub comment ids are monotonic).
   const newest = matches.reduce((a, b) => (a.id > b.id ? a : b));
-  const updated = await api.update(newest.id, body);
+  const updated = await api.update(newest.id, stamped);
 
   const cleaned: UpsertResult["cleaned"] = [];
   const stale = matches.filter((c) => c.id !== newest.id);
