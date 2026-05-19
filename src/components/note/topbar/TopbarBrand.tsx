@@ -8,6 +8,7 @@ import { OUTLINE_TOGGLE_EVENT } from "../OutlineSidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/i18n";
 
 interface TopbarBrandProps {
   slug: string;
@@ -18,9 +19,10 @@ interface TopbarBrandProps {
 }
 
 export function TopbarBrand({ slug, doc, isEncrypted, provider }: TopbarBrandProps) {
+  const { t } = useI18n();
   const copyUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
-    toast({ title: "Đã copy URL", description: window.location.href });
+    toast({ title: t("toast.copied_url"), description: window.location.href });
   };
 
   return (
@@ -30,12 +32,12 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider }: TopbarBrandPro
           <Link
             to="/"
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label="Trang chủ"
+            aria-label={t("brand.home")}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Trang chủ</TooltipContent>
+        <TooltipContent side="bottom">{t("brand.home")}</TooltipContent>
       </Tooltip>
 
       <div className="flex min-w-0 items-center gap-2">
@@ -48,12 +50,12 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider }: TopbarBrandPro
           <button
             onClick={copyUrl}
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label="Copy URL"
+            aria-label={t("brand.copy_url")}
           >
             <Copy className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Copy URL</TooltipContent>
+        <TooltipContent side="bottom">{t("brand.copy_url")}</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -61,12 +63,12 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider }: TopbarBrandPro
           <button
             onClick={() => window.dispatchEvent(new Event(OUTLINE_TOGGLE_EVENT))}
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label="Outline"
+            aria-label={t("brand.outline")}
           >
             <List className="h-3.5 w-3.5" />
           </button>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Outline (⌘\)</TooltipContent>
+        <TooltipContent side="bottom">{t("brand.outline")} (⌘\)</TooltipContent>
       </Tooltip>
 
       {provider && (
