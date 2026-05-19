@@ -20,12 +20,10 @@ jobs:
       - run: bun run test
       - run: bun run build:check
 
-  i18n-focused:
-    # Runs the i18n suite (dict coverage, IP fallback, cross-tab storage sync,
-    # Export/Help/Toast localization) on every PR that touches translations or
-    # UI components. Mirrors `check` but is fast and scoped — easy to require
-    # as a status check on i18n-sensitive changes.
-    name: i18n · IP fallback · storage sync
+  i18n:
+    # Coverage gate + focused i18n unit suite. Fails when any language drops
+    # below 100% key coverage or has placeholder mismatches against English.
+    name: i18n coverage · IP fallback · storage sync
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -35,11 +33,14 @@ jobs:
           filters: |
             i18n:
               - 'src/i18n/**'
+              - 'scripts/i18n-coverage.ts'
               - 'src/components/LanguageToggle.tsx'
               - 'src/components/note/topbar/**'
               - 'src/components/note/*.tsx'
               - 'src/pages/Home.tsx'
               - 'src/App.tsx'
+              - 'e2e/**'
+              - 'playwright.config.ts'
       - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
         uses: oven-sh/setup-bun@v2
         with:
@@ -47,4 +48,33 @@ jobs:
       - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
         run: bun install --frozen-lockfile
       - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
+        name: i18n coverage gate
+        run: bun run i18n:check
+      - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
+        name: Focused i18n vitest suite
         run: bunx vitest run src/i18n/__tests__/
+
+  e2e:
+    # Real-browser Playwright tests: cross-tab storage sync, persistence
+    # across reload, localized Export/Help menus & toasts.
+    name: Playwright E2E (i18n)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Install Playwright browsers
+        run: bunx playwright install --with-deps chromium
+      - name: Run E2E
+        run: bun run test:e2e
+        env:
+          CI: "1"
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

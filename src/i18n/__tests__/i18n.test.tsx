@@ -122,6 +122,48 @@ describe("I18nProvider — IP detection & storage sync", () => {
     vi.unstubAllGlobals();
   });
 
+  it("falls back to navigator language when ipapi rejects (CORS / network)", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch"); // browsers throw TypeError on CORS / DNS
+      }),
+    );
+    render(
+      <I18nProvider>
+        <Probe />
+      </I18nProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("lang").textContent).toBe("en");
+    // Sentinel set so future visits don't retry.
+    expect(localStorage.getItem(IP_DETECTED_KEY)).toBe("1");
+    vi.unstubAllGlobals();
+  });
+
+  it("ignores ipapi response when country_code is unknown to us", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({ country_code: "ZZ" }) })),
+    );
+    render(
+      <I18nProvider>
+        <Probe />
+      </I18nProvider>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Unknown country → stay on navigator-detected language.
+    expect(screen.getByTestId("lang").textContent).toBe("en");
+    vi.unstubAllGlobals();
+  });
+
+
   it("skips IP fetch when user already saved a language", () => {
     localStorage.setItem(STORAGE_KEY, "fr");
     const fetchMock = vi.fn();
