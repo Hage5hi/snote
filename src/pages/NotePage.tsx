@@ -84,11 +84,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   useEffect(() => {
     if (consumeGoalReached(slug, counts.words, goal)) {
       toast({
-        title: "🎯 Đạt mục tiêu!",
-        description: `${counts.words.toLocaleString()} / ${goal!.toLocaleString()} từ`,
+        title: t("note.goal_reached"),
+        description: `${counts.words.toLocaleString()} / ${goal!.toLocaleString()}`,
       });
     }
-  }, [slug, counts.words, goal]);
+  }, [slug, counts.words, goal, t]);
 
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
