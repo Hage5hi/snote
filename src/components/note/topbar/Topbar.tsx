@@ -23,7 +23,7 @@ import { ExportMenu } from "./ExportMenu";
 import { NoteMenu } from "./NoteMenu";
 import { ModeMenu } from "./ModeMenu";
 import { HelpMenu } from "./HelpMenu";
-import { CopyUrlButton } from "./CopyUrlButton";
+
 
 interface TopbarProps {
   slug: string;
@@ -144,8 +144,6 @@ export function Topbar({
             scrollSync={scrollSync}
             onToggleScrollSync={onToggleScrollSync}
           />
-
-          <CopyUrlButton />
 
           <Separator orientation="vertical" className="mx-1 h-5" />
 
