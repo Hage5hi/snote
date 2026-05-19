@@ -151,14 +151,37 @@ jobs:
             /tmp/i18n-cli-suite.log
           retention-days: 14
           if-no-files-found: warn
+      # Verify the rendered step-summary markdown was actually written
+      # so we surface a loud, actionable error if the rendering step
+      # silently no-op'd (e.g. $GITHUB_STEP_SUMMARY unset, cp failed,
+      # disk full). Runs on every CI invocation, not just failures.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        name: Verify rendered step-summary.md exists
+        run: |
+          if [ ! -s reports/_ci/step-summary.md ]; then
+            echo "::error file=reports/_ci/step-summary.md::Expected rendered step-summary.md to exist after CLI suites step on ubuntu-latest, but the file is missing or empty. The failure-breakdown rendering step may have failed silently."
+            exit 1
+          fi
       # Per-OS step-summary artifact so reviewers can download the
       # rendered markdown directly (mirrors what GitHub displays in the
       # job UI). Uploaded on every run, not just failures.
       - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: upload_step_summary_md
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-step-summary-ubuntu-latest
           path: reports/_ci/step-summary.md
+          retention-days: 14
+          if-no-files-found: warn
+      # Machine-readable failure breakdown JSON — uploaded on every run
+      # (green or red) so PR bots / dashboards can consume the same
+      # parsed shape without having to re-parse the raw vitest log.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: upload_failure_breakdown_json
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-failure-breakdown-json-ubuntu-latest
+          path: reports/_ci/failure-breakdown.json
           retention-days: 14
           if-no-files-found: warn
 
@@ -191,25 +214,33 @@ jobs:
         name: Build CLI coverage PR comment
         env:
           COVERAGE_ARTIFACT_ID: ${{ steps.upload_cli_coverage_html.outputs.artifact-id }}
+          STEP_SUMMARY_ARTIFACT_ID: ${{ steps.upload_step_summary_md.outputs.artifact-id }}
+          FAILURE_BREAKDOWN_ARTIFACT_ID: ${{ steps.upload_failure_breakdown_json.outputs.artifact-id }}
         run: |
           mkdir -p reports/_ci
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
-            ARTIFACT_URL="${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}"
-            {
-              echo "### i18n CLI test coverage"
-              echo ""
-              echo "[📊 Download HTML coverage report](${ARTIFACT_URL}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
-            } > reports/_ci/coverage-pr-comment.md
-            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
-          else
-            {
-              echo "### i18n CLI test coverage"
-              echo ""
+          link_or_missing() {
+            local id="$1" label="$2" hint="$3"
+            if [ -n "$id" ]; then
+              echo "- [${label}](${RUN_URL}/artifacts/${id}) — ${hint}"
+            else
+              echo "- _${label}: artifact not uploaded for this run_"
+            fi
+          }
+          {
+            echo "### i18n CLI test coverage"
+            echo ""
+            if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
+              echo "[📊 Download HTML coverage report](${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
+            else
               echo "_⚠️ HTML coverage artifact was not uploaded for this run_ — the coverage step may have been skipped, or \`coverage/i18n-cli/\` was empty. Check the [run logs](${RUN_URL}) for details."
-            } > reports/_ci/coverage-pr-comment.md
-            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
-          fi
+            fi
+            echo ""
+            echo "#### Debugging artifacts"
+            link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 Rendered step-summary.md" "same markdown GitHub shows in the job UI"
+            link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 failure-breakdown.json" "machine-readable suite/test/diff payload (schemaVersion ≥ 1)"
+          } > reports/_ci/coverage-pr-comment.md
+          echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
       - if: always() && github.event_name == 'pull_request' && env.COVERAGE_COMMENT_READY == '1'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
@@ -503,6 +534,18 @@ jobs:
             echo "help-snapshot diff not produced on ${{ matrix.os }} — --help output matched the committed snapshot, or the snapshot test did not run / failed before writing the diff." \
               > reports/_ci/help-snapshot.reason.txt
           fi
+      # Verify the rendered step-summary markdown was actually written
+      # on this OS, and fail loudly if not — catches silent rendering
+      # regressions (e.g. $GITHUB_STEP_SUMMARY unset under a future
+      # shell change) before they hide test failures.
+      - if: always()
+        name: Verify rendered step-summary.md exists
+        shell: bash
+        run: |
+          if [ ! -s reports/_ci/step-summary.md ]; then
+            echo "::error file=reports/_ci/step-summary.md::Expected rendered step-summary.md to exist on ${{ matrix.os }} after CLI flags step, but the file is missing or empty. The failure-breakdown rendering step may have failed silently."
+            exit 1
+          fi
       # Per-OS step-summary artifact: lets reviewers download the
       # rendered markdown directly (mirrors the GitHub job UI view).
       - if: always()
@@ -510,6 +553,18 @@ jobs:
         with:
           name: i18n-cli-step-summary-${{ matrix.os }}
           path: reports/_ci/step-summary.md
+          retention-days: 14
+          if-no-files-found: warn
+      # Machine-readable parity + flags breakdown JSONs — uploaded on
+      # every run (green or red) so dashboards / PR bots can consume the
+      # parsed shape without re-parsing the raw vitest logs.
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-failure-breakdown-json-${{ matrix.os }}
+          path: |
+            reports/_ci/parity-breakdown.json
+            reports/_ci/flags-breakdown.json
           retention-days: 14
           if-no-files-found: warn
       - if: failure() && (steps.cli_parity.outcome == 'failure' || steps.cli_flags.outcome == 'failure')

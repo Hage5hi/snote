@@ -15,6 +15,7 @@
 // later doesn't churn this file.
 import { describe, expect, it } from "vitest";
 import {
+  FAILURE_BREAKDOWN_SCHEMA_VERSION,
   parseVitestLog,
   renderJson,
   renderMarkdown,
@@ -118,7 +119,12 @@ describe("ci-vitest-failure-summary parser", () => {
     expect(f).toHaveLength(0);
     expect(renderMarkdown(f)).toMatch(/No failing tests/i);
     const json = JSON.parse(renderJson(f));
-    expect(json).toEqual({ failureCount: 0, suiteCount: 0, failures: [] });
+    expect(json).toMatchObject({
+      schemaVersion: FAILURE_BREAKDOWN_SCHEMA_VERSION,
+      failureCount: 0,
+      suiteCount: 0,
+      failures: [],
+    });
   });
 
   it("renders markdown grouped by suite with diff fences", () => {
@@ -154,5 +160,42 @@ describe("ci-vitest-failure-summary parser", () => {
       test: "z > one",
     });
     expect(obj.failures[0].diff).toContain("boom");
+  });
+
+  it("includes a schemaVersion field and stays backward-compatible", () => {
+    // Backward-compat contract: consumers that only know about the v1
+    // required fields (failureCount, suiteCount, failures[].{suite,test,diff})
+    // MUST still be able to consume the payload even as we add fields.
+    const log = [
+      " FAIL  scripts/__tests__/k.test.ts > s > t",
+      "    Error: schema",
+      "",
+      " Test Files  1 failed",
+    ].join("\n");
+    const obj = JSON.parse(renderJson(parseVitestLog(log)));
+    expect(typeof obj.schemaVersion).toBe("number");
+    expect(obj.schemaVersion).toBe(FAILURE_BREAKDOWN_SCHEMA_VERSION);
+    expect(obj.schemaVersion).toBeGreaterThanOrEqual(1);
+    // v1 required keys still present + correctly typed.
+    for (const key of ["failureCount", "suiteCount", "failures"]) {
+      expect(obj).toHaveProperty(key);
+    }
+    expect(Array.isArray(obj.failures)).toBe(true);
+    expect(obj.failures[0]).toMatchObject({
+      suite: "scripts/__tests__/k.test.ts",
+      test: "s > t",
+    });
+    // A naive v1-only reader that ignores schemaVersion should still work.
+    const v1View = {
+      failureCount: obj.failureCount,
+      suiteCount: obj.suiteCount,
+      failures: obj.failures.map((f: { suite: string; test: string; diff: string }) => ({
+        suite: f.suite,
+        test: f.test,
+        diff: f.diff,
+      })),
+    };
+    expect(v1View.failureCount).toBe(1);
+    expect(v1View.failures[0].suite).toBe("scripts/__tests__/k.test.ts");
   });
 });
