@@ -143,8 +143,7 @@ for (const lang of SUPPORTED_LANGS) {
       await dialog.getByRole("button", { name: t("lock.encrypt_btn"), exact: true }).click();
 
       const toast = page.getByText(t("lock.encrypted_ok"), { exact: true }).first();
-      await expect(toast).toBeVisible({ timeout: TOAST_TIMEOUT });
-      await expect(toast).toBeHidden({ timeout: TOAST_DISMISS_TIMEOUT });
+      await expectToastLifecycle(toast);
     });
 
     // ---------- SHARE -----------------------------------------------------
@@ -182,8 +181,7 @@ for (const lang of SUPPORTED_LANGS) {
       await dialog.getByRole("button", { name: copyAria, exact: true }).first().click();
 
       const toast = page.getByText(t("share.copied_url"), { exact: true }).first();
-      await expect(toast).toBeVisible({ timeout: TOAST_TIMEOUT });
-      await expect(toast).toBeHidden({ timeout: TOAST_DISMISS_TIMEOUT });
+      await expectToastLifecycle(toast);
     });
 
     // ---------- RENAME ----------------------------------------------------
@@ -234,8 +232,7 @@ for (const lang of SUPPORTED_LANGS) {
       await submit.click();
 
       const toast = page.getByText(t("rename.toast_failed"), { exact: true }).first();
-      await expect(toast).toBeVisible({ timeout: TOAST_TIMEOUT });
-      await expect(toast).toBeHidden({ timeout: TOAST_DISMISS_TIMEOUT });
+      await expectToastLifecycle(toast);
     });
 
     // ---------- HISTORY ---------------------------------------------------
