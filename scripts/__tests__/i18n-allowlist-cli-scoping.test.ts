@@ -247,4 +247,56 @@ describe("CLI --help stays in sync with docs/i18n-allowlist-summary.md", () => {
     expect(help.toLowerCase()).toContain("schema is checked first");
     expect(doc).toMatch(/schema \+ drift.*`2`|`2`.*[Ss]chema wins/);
   });
+
+  // Committed --help snapshot: byte-for-byte parity against
+  // scripts/__tests__/__snapshots__/cli-help.txt so any wording change
+  // shows up as a reviewable diff. On mismatch we render a unified-style
+  // line diff into the failure message so reviewers immediately see what
+  // changed. Refresh with:
+  //   bun run scripts/i18n-allowlist-report.ts --help \
+  //     > scripts/__tests__/__snapshots__/cli-help.txt
+  it("--help output exactly matches the committed snapshot file", () => {
+    const SNAPSHOT_PATH = resolve(
+      PROJECT_ROOT,
+      "scripts/__tests__/__snapshots__/cli-help.txt",
+    );
+    const expected = readFileSync(SNAPSHOT_PATH, "utf8");
+    if (expected !== help) {
+      throw new Error(
+        [
+          "--help output drifted from committed snapshot.",
+          "Snapshot: scripts/__tests__/__snapshots__/cli-help.txt",
+          "Refresh with:",
+          "  bun run scripts/i18n-allowlist-report.ts --help \\",
+          "    > scripts/__tests__/__snapshots__/cli-help.txt",
+          "",
+          "--- expected (snapshot)",
+          "+++ actual (--help)",
+          diffLines(expected, help),
+        ].join("\n"),
+      );
+    }
+    expect(help).toBe(expected);
+  });
 });
+
+/**
+ * Tiny line-oriented diff used by the --help snapshot assertion. We avoid
+ * pulling in a `diff` dependency just for one test — a marker per line is
+ * enough to localize the drift in CI logs.
+ */
+function diffLines(expected: string, actual: string): string {
+  const e = expected.split("\n");
+  const a = actual.split("\n");
+  const max = Math.max(e.length, a.length);
+  const out: string[] = [];
+  for (let i = 0; i < max; i++) {
+    if (e[i] === a[i]) {
+      out.push(`  ${e[i] ?? ""}`);
+    } else {
+      if (e[i] !== undefined) out.push(`- ${e[i]}`);
+      if (a[i] !== undefined) out.push(`+ ${a[i]}`);
+    }
+  }
+  return out.join("\n");
+}
