@@ -14,15 +14,40 @@ const ROOT = process.cwd();
 const REPORT_PATH = join(ROOT, "reports", "i18n-allowlist-report.json");
 const OUT_PATH = join(ROOT, "reports", "_i18n-allowlist-pr-comment.md");
 
-const SERVER = process.env.GITHUB_SERVER_URL ?? "https://github.com";
-const REPO = process.env.GITHUB_REPOSITORY ?? "<owner>/<repo>";
-const RUN_ID = process.env.GITHUB_RUN_ID ?? "0";
-const ARTIFACT_ID = process.env.I18N_ARTIFACT_ID ?? "";
+interface CIContext {
+  serverUrl: string;
+  repo: string;
+  runId: string;
+  artifactId: string;
+  missing: string[];
+}
 
-const runUrl = `${SERVER}/${REPO}/actions/runs/${RUN_ID}`;
+function resolveCIContext(): CIContext {
+  const missing: string[] = [];
+  const get = (name: string, fallback: string): string => {
+    const v = process.env[name];
+    if (!v || v.trim() === "") {
+      missing.push(name);
+      return fallback;
+    }
+    return v;
+  };
+  return {
+    serverUrl: get("GITHUB_SERVER_URL", "https://github.com"),
+    repo: get("GITHUB_REPOSITORY", "<owner>/<repo>"),
+    runId: get("GITHUB_RUN_ID", "0"),
+    // I18N_ARTIFACT_ID is wired from the upload-artifact step. Missing it
+    // just means we degrade to a run-level artifacts link (still useful).
+    artifactId: process.env.I18N_ARTIFACT_ID?.trim() ?? "",
+    missing,
+  };
+}
+
+const ctx = resolveCIContext();
+const runUrl = `${ctx.serverUrl}/${ctx.repo}/actions/runs/${ctx.runId}`;
 const artifactsUrl = `${runUrl}#artifacts`;
-const bundleUrl = ARTIFACT_ID
-  ? `${runUrl}/artifacts/${ARTIFACT_ID}`
+const bundleUrl = ctx.artifactId
+  ? `${runUrl}/artifacts/${ctx.artifactId}`
   : artifactsUrl;
 
 interface Report {
@@ -68,6 +93,15 @@ function build(): string {
   lines.push(`- 📦 [Download artifact bundle](${bundleUrl})`);
   lines.push(`- 🧾 [All artifacts for this run](${artifactsUrl})`);
   lines.push(`- 🔎 [Job logs](${runUrl})`);
+
+  if (ctx.missing.length) {
+    lines.push("");
+    lines.push(
+      `> ℹ️ Some CI env vars were missing — links may be incomplete: \`${ctx.missing.join("`, `")}\`. ` +
+        "This usually means the script was run outside of GitHub Actions.",
+    );
+  }
+
   lines.push("");
   lines.push("_Posted automatically — updates in place on each push._");
   return lines.join("\n");
@@ -77,3 +111,10 @@ const body = build();
 mkdirSync(dirname(OUT_PATH), { recursive: true });
 writeFileSync(OUT_PATH, body);
 process.stdout.write(body);
+if (ctx.missing.length) {
+  // Soft-fail: don't crash CI when invoked locally, just surface the issue.
+  console.error(
+    `\n⚠️ i18n PR comment: missing CI env var(s): ${ctx.missing.join(", ")}. ` +
+      "Links fall back to placeholders. Set them in the workflow step or run via GitHub Actions.",
+  );
+}
