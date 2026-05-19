@@ -50,16 +50,21 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
     };
   }, [doc]);
 
-  // Cmd/Ctrl+\ toggle.
+  // Cmd/Ctrl+\ toggle + external trigger via OUTLINE_TOGGLE_EVENT.
   useEffect(() => {
+    const toggle = () => setOpen((v) => !v);
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
         e.preventDefault();
-        setOpen((v) => !v);
+        toggle();
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener(OUTLINE_TOGGLE_EVENT, toggle);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OUTLINE_TOGGLE_EVENT, toggle);
+    };
   }, []);
 
   const handleJump = (line: number) => {
