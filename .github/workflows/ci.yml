@@ -103,9 +103,11 @@ jobs:
           # Concise per-failure breakdown (suite → test → main diff) parsed
           # from the raw vitest log. On green runs this prints a single
           # "no failing tests" line; on red runs it emits a markdown
-          # section per failing suite so reviewers don't have to scroll
-          # through the full reporter output.
+          # section per failing suite. `--json` writes a machine-readable
+          # mirror so downstream tooling / PR bots can consume the same
+          # parsed shape without re-parsing the log.
           bun run scripts/ci-vitest-failure-summary.ts /tmp/i18n-cli-suite.log \
+            --json reports/_ci/failure-breakdown.json \
             > reports/_ci/failure-breakdown.md || true
           {
             echo '### i18n allowlist CLI suites — failure breakdown'
@@ -120,27 +122,46 @@ jobs:
             echo '</details>'
           } >> "$GITHUB_STEP_SUMMARY"
           cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
+          # Record whether the help-snapshot test actually produced a diff
+          # so the artifact-bundle step can include the file only when
+          # real and otherwise log a clear reason for its absence.
+          if [ -f reports/_ci/help-snapshot.diff ]; then
+            echo "HELP_SNAPSHOT_DIFF_PRESENT=1" >> "$GITHUB_ENV"
+            echo "help-snapshot diff present (snapshot drift detected)" \
+              > reports/_ci/help-snapshot.reason.txt
+          else
+            echo "HELP_SNAPSHOT_DIFF_PRESENT=0" >> "$GITHUB_ENV"
+            echo "help-snapshot diff not produced — --help output matched the committed snapshot, or the snapshot test did not run / failed before writing the diff." \
+              > reports/_ci/help-snapshot.reason.txt
+          fi
           exit $status
       # When the CLI suites fail, ship the full raw log, the parsed
-      # breakdown, the step summary, the help-snapshot diff (if the
-      # snapshot test emitted one), and the generated report JSON so
-      # reviewers can diagnose without re-running locally.
+      # breakdown (markdown + JSON), the step summary, the help-snapshot
+      # diff (only when actually produced — see HELP_SNAPSHOT_DIFF_PRESENT
+      # gate below), the absence-reason file, and the generated report
+      # JSON so reviewers can diagnose without re-running locally.
       - if: failure() && steps.cli_suites.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-failure-bundle
-          # `reports/_ci/help-snapshot.diff` is written only by the
-          # snapshot test when --help drifts; listed explicitly so the
-          # bundle ships it when present and `if-no-files-found: warn`
-          # tolerates its absence on non-snapshot failures.
           path: |
             reports/i18n-allowlist-report.json
             reports/i18n-allowlist-summary.json
             reports/_ci/
-            reports/_ci/help-snapshot.diff
             /tmp/i18n-cli-suite.log
           retention-days: 14
           if-no-files-found: warn
+      # Per-OS step-summary artifact so reviewers can download the
+      # rendered markdown directly (mirrors what GitHub displays in the
+      # job UI). Uploaded on every run, not just failures.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-step-summary-ubuntu-latest
+          path: reports/_ci/step-summary.md
+          retention-days: 14
+          if-no-files-found: warn
+
       # Coverage artifacts for the CLI suites, only on PRs.
       #   • lcov + text → tooling / inline review
       #   • html        → standalone browsable report for reviewers
