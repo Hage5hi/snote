@@ -67,14 +67,70 @@ jobs:
       # --help snapshot suites so regressions in argv parsing, flag
       # aliasing, truncation, or doc/help drift surface as their own
       # red check rather than being lost in the broader suite.
+      #
+      # `--coverage` is enabled on pull requests so the lcov report can
+      # be uploaded as an artifact for reviewers; on push to main we skip
+      # coverage to keep the gate fast.
       - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: cli_suites
         name: i18n allowlist CLI flag integration + snapshot suites
         run: |
-          bunx vitest run \
-            scripts/__tests__/i18n-allowlist-cli-integration.test.ts \
-            scripts/__tests__/i18n-allowlist-cli-scoping.test.ts \
-            scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
-            scripts/__tests__/i18n-allowlist-cli-parity.test.ts
+          set +e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bunx vitest run \
+              --coverage \
+              --coverage.include='scripts/i18n-allowlist-*.ts' \
+              --coverage.reporter=text \
+              --coverage.reporter=lcov \
+              --coverage.reportsDirectory=coverage/i18n-cli \
+              scripts/__tests__/i18n-allowlist-cli-integration.test.ts \
+              scripts/__tests__/i18n-allowlist-cli-scoping.test.ts \
+              scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
+              scripts/__tests__/i18n-allowlist-cli-parity.test.ts \
+              | tee /tmp/i18n-cli-suite.log
+          else
+            bunx vitest run \
+              scripts/__tests__/i18n-allowlist-cli-integration.test.ts \
+              scripts/__tests__/i18n-allowlist-cli-scoping.test.ts \
+              scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
+              scripts/__tests__/i18n-allowlist-cli-parity.test.ts \
+              | tee /tmp/i18n-cli-suite.log
+          fi
+          status=${PIPESTATUS[0]}
+          # Mirror suite output into the step summary so failures are
+          # scannable without opening the raw job log.
+          {
+            echo '### i18n allowlist CLI suites'
+            echo '```'
+            tail -200 /tmp/i18n-cli-suite.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Persist copies so the failure-artifact upload below can ship
+          # them alongside the generated report JSON.
+          mkdir -p reports/_ci
+          cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
+          cp /tmp/i18n-cli-suite.log reports/_ci/i18n-cli-suite.log || true
+          exit $status
+      # When the CLI suites fail, upload the report JSON + captured step
+      # summary so reviewers can diagnose without re-running locally.
+      - if: failure() && steps.cli_suites.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-failure-bundle
+          path: |
+            reports/i18n-allowlist-report.json
+            reports/i18n-allowlist-summary.json
+            reports/_ci/
+          retention-days: 14
+          if-no-files-found: warn
+      # Coverage artifact (lcov + text) for the CLI suites, only on PRs.
+      - if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-coverage
+          path: coverage/i18n-cli/
+          retention-days: 14
+          if-no-files-found: warn
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
