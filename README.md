@@ -1,78 +1,82 @@
-# Welcome to your Lovable project
+# Syrin Notes
 
-## Project info
+Realtime markdown notes by URL. Create, share, and edit notes that sync across devices and work offline.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+**Live:** [syrin.online](https://syrin.online/)
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- **Instant notes by URL** — visit `syrin.online/my-note` to create or open a note
+- **Realtime sync** — edits sync across devices via Supabase Realtime + Yjs CRDT
+- **Offline support** — PWA with IndexedDB persistence, works without connectivity
+- **Markdown editor** — CodeMirror 6 with syntax highlighting, Vim mode, and typewriter mode
+- **Live preview** — rendered markdown with KaTeX math, Mermaid diagrams, and code highlighting
+- **Split view** — side-by-side editor + preview (e.g. `syrin.online/my-note+preview`)
+- **Share links** — revocable token-based read-only sharing (`/s/:token`)
+- **Encryption** — optional passphrase-based note locking
+- **Note history** — snapshot diffs to review past edits
+- **Tags & pinning** — organize notes with tags and pin favorites
+- **Word count & goals** — track progress with word count and configurable targets
+- **Zen mode & focus line** — distraction-free writing modes
+- **E-ink mode** — optimized display for e-ink screens
+- **Command palette** — quick access to actions via keyboard
+- **i18n** — English, Vietnamese, Chinese, Japanese, Korean, French, Spanish
+- **Dark / light theme** — system-aware with manual toggle
+- **Presence indicators** — see who else is viewing a note
+- **SEO prerendering** — Cloudflare Worker serves OpenGraph meta to crawlers
 
-**Use Lovable**
+## Tech Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- **Frontend:** React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui
+- **Editor:** CodeMirror 6, Yjs (CRDT)
+- **Backend:** Supabase (Postgres, Realtime, Edge Functions)
+- **Prerender:** Cloudflare Worker ([details](cloudflare-worker/README.md))
+- **Testing:** Vitest (unit), Playwright (e2e)
 
-Changes made via Lovable will be committed automatically to this repo.
+## Getting Started
 
-**Use your preferred IDE**
+### Prerequisites
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+- [Node.js](https://nodejs.org/) (or [Bun](https://bun.sh/))
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+### Setup
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+git clone https://github.com/sovergarden-dev/syrin-notes-4ec98658.git
+cd syrin-notes-4ec98658
+npm install      # or: bun install
+npm run dev      # start dev server at http://localhost:5173
 ```
 
-**Edit a file directly in GitHub**
+Copy `.env.example` to `.env` if not already present — it contains the public Supabase keys needed for local development.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Scripts
 
-**Use GitHub Codespaces**
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start dev server |
+| `npm run build` | Production build |
+| `npm run lint` | ESLint (zero warnings) |
+| `npm run test` | Unit tests (Vitest) |
+| `npm run test:e2e` | E2E tests (Playwright) |
+| `npm run preview` | Preview production build |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Project Structure
 
-## What technologies are used for this project?
+```
+src/
+  components/     # UI components (note/, admin/, ui/)
+  hooks/          # Custom React hooks
+  i18n/           # Internationalization
+  integrations/   # Supabase client
+  pages/          # Route pages (Home, NotePage, SplitView, etc.)
+cloudflare-worker/  # Prerender worker for SEO
+supabase/           # Migrations and edge functions
+e2e/                # Playwright end-to-end tests
+docs/               # Architecture and i18n docs
+```
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
-
-## i18n allowlist — local pre-commit hook
+## i18n Allowlist — Pre-commit Hook
 
 This repo ships a Git pre-commit hook that runs the i18n hardcoded-string
 allowlist gate locally so drift (missing or stale `eslint-disable`
@@ -114,3 +118,7 @@ git commit --no-verify -m "wip: …"
 
 CI will still run the same check on the PR, so don't ship code that
 relies on bypassing.
+
+## License
+
+Private.
