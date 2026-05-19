@@ -65,6 +65,8 @@ export interface Summary {
   schemaOk: boolean;
   driftOk: boolean;
   totals: AllowlistReport["totals"];
+  /** Full-repo totals — equals `totals` when no scoping was applied. */
+  fullTotals: AllowlistReport["totals"];
   missingCount: number;
   staleCount: number;
   /** Path to the JSON the summary was derived from (relative to cwd). */
