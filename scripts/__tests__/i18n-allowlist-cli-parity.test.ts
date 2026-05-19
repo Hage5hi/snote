@@ -234,7 +234,12 @@ describe("SummaryJSON, written artifact, and stderr annotations agree on topFile
   ];
 
   for (const combo of COMBOS) {
-    it(`combo: ${combo.label} → identical ordered topFiles across all 3 surfaces`, () => {
+    // --changed combos rely on a POSIX `#!/bin/sh` git shim that doesn't
+    // execute on Windows runners. Cross-platform path coverage there is
+    // provided by the buildSummary unit tests above; the non-`--changed`
+    // combos still run on Windows to keep three-surface parity covered.
+    const test = combo.changed && process.platform === "win32" ? it.skip : it;
+    test(`combo: ${combo.label} → identical ordered topFiles across all 3 surfaces`, () => {
       const { dir, files } = makeDriftFixture(5);
       const pathPrefix = combo.changed
         ? makeFakeGit(files.slice(0, combo.changed))
