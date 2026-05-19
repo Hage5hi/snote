@@ -63,6 +63,18 @@ jobs:
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
         name: Focused i18n + allowlist-script vitest suites
         run: bunx vitest run src/i18n/__tests__/ scripts/__tests__/
+      # Dedicated step (runs on every PR) for the CLI flag integration +
+      # --help snapshot suites so regressions in argv parsing, flag
+      # aliasing, truncation, or doc/help drift surface as their own
+      # red check rather than being lost in the broader suite.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        name: i18n allowlist CLI flag integration + snapshot suites
+        run: |
+          bunx vitest run \
+            scripts/__tests__/i18n-allowlist-cli-integration.test.ts \
+            scripts/__tests__/i18n-allowlist-cli-scoping.test.ts \
+            scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
+            scripts/__tests__/i18n-allowlist-cli-parity.test.ts
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
