@@ -9,6 +9,12 @@
 // via its `path:` input.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import {
+  buildSummary,
+  formatFailureReason,
+  type AllowlistReport,
+  type Summary,
+} from "./i18n-allowlist-report";
 
 const ROOT = process.cwd();
 const REPORT_PATH = join(ROOT, "reports", "i18n-allowlist-report.json");
@@ -80,46 +86,54 @@ export function buildUrls(ctx: CIContext): {
   return { runUrl, artifactsUrl, bundleUrl };
 }
 
-interface Report {
-  ok: boolean;
-  schemaOk: boolean;
-  driftOk: boolean;
-  totals: { entries: number; schemaErrors: number; missing: number; stale: number };
-}
-
-function loadReport(): Report | null {
+function loadReport(): AllowlistReport | null {
   if (!existsSync(REPORT_PATH)) return null;
   try {
-    return JSON.parse(readFileSync(REPORT_PATH, "utf8")) as Report;
+    return JSON.parse(readFileSync(REPORT_PATH, "utf8")) as AllowlistReport;
   } catch {
     return null;
   }
 }
 
-export function build(ctx: CIContext): string {
+export function build(ctx: CIContext, report: AllowlistReport | null = loadReport()): string {
   const { runUrl, artifactsUrl, bundleUrl } = buildUrls(ctx);
-  const r = loadReport();
   const lines: string[] = [];
   lines.push("### 🌐 i18n audit + allowlist artifacts");
   lines.push("");
 
-  if (!r) {
-    lines.push("> ⚠️ `reports/i18n-allowlist-report.json` was not produced — the allowlist script likely crashed before writing.");
+  if (!report) {
+    lines.push(
+      "> ⚠️ `reports/i18n-allowlist-report.json` was not produced — the allowlist script likely crashed before writing.",
+    );
   } else {
-    const status = r.ok ? "✅ **PASS**" : "❌ **FAIL**";
-    lines.push(`**Allowlist status:** ${status} · Schema: ${r.schemaOk ? "✅" : "❌"} · Drift: ${r.driftOk ? "✅" : "❌"}`);
+    const status = report.ok ? "✅ **PASS**" : "❌ **FAIL**";
+    lines.push(
+      `**Allowlist status:** ${status} · Schema: ${report.schemaOk ? "✅" : "❌"} · Drift: ${report.driftOk ? "✅" : "❌"}`,
+    );
     lines.push("");
     lines.push(`| Entries | Schema errors | Missing | Stale |`);
     lines.push(`|---------|---------------|---------|-------|`);
     lines.push(
-      `| ${r.totals.entries} | ${r.totals.schemaErrors} | ${r.totals.missing} | ${r.totals.stale} |`,
+      `| ${report.totals.entries} | ${report.totals.schemaErrors} | ${report.totals.missing} | ${report.totals.stale} |`,
     );
     lines.push("");
-    lines.push(`Report path: \`reports/i18n-allowlist-report.json\` · \`reports/i18n-allowlist-report.md\``);
+    // When the report failed, mirror the EXACT one-line failure reason
+    // (category + top file paths) that `bun run i18n:allowlist:summary`
+    // prints locally + the GitHub step summary shows. Reviewers see the
+    // same actionable signal in every surface.
+    if (!report.ok) {
+      const summary: Summary = buildSummary(report, "reports/i18n-allowlist-report.json");
+      lines.push(...renderFailureSection(summary));
+    }
+    lines.push(
+      `Report path: \`reports/i18n-allowlist-report.json\` · \`reports/i18n-allowlist-report.md\``,
+    );
   }
 
   lines.push("");
-  lines.push("**Artifact:** `i18n-report` — contains `reports/i18n-audit-diff.{json,md}`, `reports/i18n-report.{json,html}`, `reports/i18n-allowlist-report.{json,md}`, `.lintrc-i18n-allowlist.json`.");
+  lines.push(
+    "**Artifact:** `i18n-report` — contains `reports/i18n-audit-diff.{json,md}`, `reports/i18n-report.{json,html}`, `reports/i18n-allowlist-report.{json,md}`, `.lintrc-i18n-allowlist.json`.",
+  );
   lines.push("");
   lines.push(`- 📦 [Download artifact bundle](${bundleUrl})`);
   lines.push(`- 🧾 [All artifacts for this run](${artifactsUrl})`);
@@ -136,6 +150,30 @@ export function build(ctx: CIContext): string {
   lines.push("");
   lines.push("_Posted automatically — updates in place on each push._");
   return lines.join("\n");
+}
+
+/**
+ * Render the same one-line failure category + top file paths shown in
+ * the CLI summary + GitHub step summary. Exported for tests that pin the
+ * three surfaces together.
+ */
+export function renderFailureSection(summary: Summary): string[] {
+  if (summary.ok || !summary.failure) return [];
+  const lines: string[] = [];
+  lines.push(`**Failure category:** \`${summary.failure.category}\``);
+  lines.push("");
+  lines.push(`**Reason:** ${escapeMd(formatFailureReason(summary.failure, summary))}`);
+  if (summary.failure.topFiles.length) {
+    lines.push("");
+    lines.push("**Top offending paths:**");
+    for (const f of summary.failure.topFiles) lines.push(`- \`${f}\``);
+  }
+  lines.push("");
+  return lines;
+}
+
+function escapeMd(s: string): string {
+  return s.replaceAll("|", "\\|");
 }
 
 // CLI entrypoint — only runs when invoked directly so importers (tests)
