@@ -379,27 +379,49 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - name: Run CLI truncation/parity + snapshot suites
-        id: cli_suites_win
+      # Split into two steps so a failure in one suite is isolated and
+      # the other can be re-run independently. Each step appends its own
+      # log slice and breakdown to the bundle.
+      - name: Run CLI parity suite
+        id: cli_parity_win
         shell: bash
         run: |
           set +e
           bunx vitest run \
             scripts/__tests__/i18n-allowlist-cli-parity.test.ts \
-            scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
-            2>&1 | tee /tmp/i18n-cli-suite.log
+            2>&1 | tee /tmp/i18n-cli-parity.log
           status=${PIPESTATUS[0]}
-          {
-            echo "### i18n allowlist CLI suites (${{ matrix.os }})"
-            echo '```'
-            tail -200 /tmp/i18n-cli-suite.log
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
           mkdir -p reports/_ci
-          cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
-          cp /tmp/i18n-cli-suite.log reports/_ci/i18n-cli-suite.log || true
+          cp /tmp/i18n-cli-parity.log reports/_ci/i18n-cli-parity.log || true
+          bun run scripts/ci-vitest-failure-summary.ts /tmp/i18n-cli-parity.log \
+            > reports/_ci/parity-breakdown.md || true
+          {
+            echo "### i18n CLI parity (${{ matrix.os }}) — failure breakdown"
+            cat reports/_ci/parity-breakdown.md
+          } >> "$GITHUB_STEP_SUMMARY"
           exit $status
-      - if: failure() && steps.cli_suites_win.outcome == 'failure'
+      - name: Run CLI flags suite
+        id: cli_flags_win
+        shell: bash
+        # Run regardless of parity outcome so we get both reports in one CI run.
+        if: always()
+        run: |
+          set +e
+          bunx vitest run \
+            scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
+            2>&1 | tee /tmp/i18n-cli-flags.log
+          status=${PIPESTATUS[0]}
+          mkdir -p reports/_ci
+          cp /tmp/i18n-cli-flags.log reports/_ci/i18n-cli-flags.log || true
+          bun run scripts/ci-vitest-failure-summary.ts /tmp/i18n-cli-flags.log \
+            > reports/_ci/flags-breakdown.md || true
+          {
+            echo "### i18n CLI flags (${{ matrix.os }}) — failure breakdown"
+            cat reports/_ci/flags-breakdown.md
+          } >> "$GITHUB_STEP_SUMMARY"
+          cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
+          exit $status
+      - if: failure() && (steps.cli_parity_win.outcome == 'failure' || steps.cli_flags_win.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-failure-bundle-${{ matrix.os }}
@@ -407,5 +429,7 @@ jobs:
             reports/i18n-allowlist-report.json
             reports/i18n-allowlist-summary.json
             reports/_ci/
+            /tmp/i18n-cli-parity.log
+            /tmp/i18n-cli-flags.log
           retention-days: 14
           if-no-files-found: warn
