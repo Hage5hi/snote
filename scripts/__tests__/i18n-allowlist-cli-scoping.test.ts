@@ -250,9 +250,11 @@ describe("CLI --help stays in sync with docs/i18n-allowlist-summary.md", () => {
 
   // Committed --help snapshot: byte-for-byte parity against
   // scripts/__tests__/__snapshots__/cli-help.txt so any wording change
-  // shows up as a reviewable diff. On mismatch we render a unified-style
-  // line diff into the failure message so reviewers immediately see what
-  // changed. Refresh with:
+  // shows up as a reviewable diff. Both sides are normalized to LF +
+  // stripped of a trailing newline so the snapshot is stable across
+  // Windows (CRLF) and macOS/Linux (LF) runners. On mismatch we render
+  // a unified-style line diff into the failure message AND drop it on
+  // disk so the CI failure-artifact step can ship it. Refresh with:
   //   bun run scripts/i18n-allowlist-report.ts --help \
   //     > scripts/__tests__/__snapshots__/cli-help.txt
   it("--help output exactly matches the committed snapshot file", () => {
@@ -260,8 +262,20 @@ describe("CLI --help stays in sync with docs/i18n-allowlist-summary.md", () => {
       PROJECT_ROOT,
       "scripts/__tests__/__snapshots__/cli-help.txt",
     );
-    const expected = readFileSync(SNAPSHOT_PATH, "utf8");
-    if (expected !== help) {
+    const norm = (s: string) => s.replace(/\r\n/g, "\n").replace(/\n+$/, "");
+    const expected = norm(readFileSync(SNAPSHOT_PATH, "utf8"));
+    const actual = norm(help);
+    if (expected !== actual) {
+      const diff = diffLines(expected, actual);
+      try {
+        mkdirSync(resolve(PROJECT_ROOT, "reports/_ci"), { recursive: true });
+        writeFileSync(
+          resolve(PROJECT_ROOT, "reports/_ci/help-snapshot.diff"),
+          diff,
+        );
+      } catch {
+        /* best-effort — CI artifact upload tolerates missing files */
+      }
       throw new Error(
         [
           "--help output drifted from committed snapshot.",
@@ -272,11 +286,11 @@ describe("CLI --help stays in sync with docs/i18n-allowlist-summary.md", () => {
           "",
           "--- expected (snapshot)",
           "+++ actual (--help)",
-          diffLines(expected, help),
+          diff,
         ].join("\n"),
       );
     }
-    expect(help).toBe(expected);
+    expect(actual).toBe(expected);
   });
 });
 
