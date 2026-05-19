@@ -131,9 +131,7 @@ describe("ci-validate-breakdown-json CLI", () => {
       writeFileSync(failureFile, goodPayload());
       const r = runCli([failureFile, "--summary-json", summaryOut]);
       expect(r.status).toBe(0);
-      const onDisk = JSON.parse(
-        (readFileSync as typeof readFileSync)(summaryOut, "utf8"),
-      );
+      const onDisk = JSON.parse(readFileSync(summaryOut, "utf8"));
       expect(onDisk).toMatchObject({
         schemaVersion: 1,
         ok: true,
