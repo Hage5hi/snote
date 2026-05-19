@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { isPinned, togglePin } from "@/lib/recent-notes";
 import { toast } from "@/hooks/use-toast";
 
@@ -42,19 +43,23 @@ export function PinButton({ slug }: PinButtonProps) {
   };
 
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      className="h-7 w-7"
-      onClick={onClick}
-      aria-label={pinned ? "Bỏ pin" : "Pin note"}
-      title={pinned ? "Bỏ pin" : "Pin note (hiện ở đầu Cmd+K)"}
-    >
-      <Star
-        className={`h-4 w-4 transition-colors ${
-          pinned ? "fill-primary text-primary" : "text-muted-foreground"
-        }`}
-      />
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          onClick={onClick}
+          aria-label={pinned ? "Bỏ pin" : "Pin note"}
+        >
+          <Star
+            className={`h-4 w-4 transition-colors ${
+              pinned ? "fill-primary text-primary" : "text-muted-foreground"
+            }`}
+          />
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{pinned ? "Bỏ pin" : "Pin note (hiện ở đầu Cmd+K)"}</TooltipContent>
+    </Tooltip>
   );
 }

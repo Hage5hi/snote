@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getShareToken, setShareToken, clearShareToken } from "@/lib/share-tokens";
@@ -108,17 +109,21 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          aria-label="Share QR"
-          title="Share QR code"
-        >
-          <Share2 className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              aria-label="Share QR"
+            >
+              <Share2 className="h-4 w-4" />
+            </Button>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Share QR code</TooltipContent>
+      </Tooltip>
       <DialogContent className="min-w-0 max-h-[calc(100vh-2rem)] !w-[min(28rem,calc(100vw-2rem))] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
           <DialogTitle>Share note</DialogTitle>

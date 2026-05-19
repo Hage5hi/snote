@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listSnapshots, type Snapshot } from "@/lib/snapshots";
 import { toast } from "@/hooks/use-toast";
@@ -101,17 +102,21 @@ export function HistoryDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {trigger && (
-        <DialogTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            aria-label="Lịch sử (Khôi phục)"
-            title="Lịch sử & Khôi phục"
-          >
-            <Clock className="h-4 w-4" />
-          </Button>
-        </DialogTrigger>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                aria-label="Lịch sử (Khôi phục)"
+              >
+                <Clock className="h-4 w-4" />
+              </Button>
+            </DialogTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Lịch sử & Khôi phục</TooltipContent>
+        </Tooltip>
       )}
       <DialogContent className="max-w-3xl">
         <DialogHeader>
