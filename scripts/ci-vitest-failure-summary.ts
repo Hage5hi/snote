@@ -80,13 +80,30 @@ const pushCurrent = () => {
   current = null;
 };
 
+let currentFile: string | null = null;
+
 for (const line of lines) {
-  const header = matchHeader(line);
+  // Track the most-recent file-level header so two-line failure rows
+  // (e.g. "× test name 12ms" indented under "❯ path/foo.test.ts") can
+  // attribute themselves.
+  const fileHeader = FILE_HEADER.exec(line);
+  if (fileHeader) currentFile = fileHeader[1];
+
+  const header = matchHeaderWithPath(line);
   if (header) {
     pushCurrent();
     current = { file: header.file, test: header.test, diff: [] };
     continue;
   }
+
+  // Two-line form: "× test name" under a prior "❯ path/foo.test.ts" header.
+  const row = FAILED_TEST_ROW.exec(line);
+  if (row && currentFile && !matchHeaderWithPath(line)) {
+    pushCurrent();
+    current = { file: currentFile, test: row[1].trim(), diff: [] };
+    continue;
+  }
+
   if (current) {
     if (TERMINATORS.test(line)) {
       pushCurrent();
