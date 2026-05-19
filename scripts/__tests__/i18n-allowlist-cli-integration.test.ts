@@ -106,27 +106,27 @@ describe("CLI --no-check-run", () => {
     summary = readSummaryJSON(dir);
   });
 
-  it("exits 2 (schema failure)", () => {
-    expect(res.status).toBe(2);
+  it("exits 1 (drift-stale failure)", () => {
+    expect(res.status).toBe(1);
   });
 
   it("persists publishCheckRun=false on the summary JSON", () => {
     expect(summary.publishCheckRun).toBe(false);
-    expect(summary.exitCode).toBe(2);
-    expect(summary.failure?.category).toBe("schema");
+    expect(summary.exitCode).toBe(1);
+    expect(summary.failure?.category).toBe("drift-stale");
   });
 
   it("emits ::error annotations on stderr despite Check Run being disabled", () => {
     const anns = res.stderr.split("\n").filter((l) => l.startsWith("::error"));
     expect(anns.length).toBeGreaterThan(0);
-    expect(anns[0]).toContain("file=.lintrc-i18n-allowlist.json");
-    expect(anns[0]).toContain("schema validation failed");
+    expect(anns[0]).toContain("file=src/ghost.tsx");
+    expect(anns[0]).toContain("drift (stale)");
   });
 
   it("stdout still contains the machine-readable SummaryJSON", () => {
     const parsed = JSON.parse(res.stdout) as SummaryJSON;
     expect(parsed.publishCheckRun).toBe(false);
-    expect(parsed.exitCode).toBe(2);
+    expect(parsed.exitCode).toBe(1);
   });
 });
 
