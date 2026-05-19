@@ -600,6 +600,13 @@ if (isMain()) {
   const JSON_OUT = process.argv.includes("--json");
   const ANNOTATIONS = process.argv.includes("--annotations");
   const TOP_N = parseTopFilesArg(process.argv);
+  // `--no-check-run` (alias: `--no-checkRun`) flips the persisted
+  // `publishCheckRun` field to false so the workflow's Check Run step
+  // can skip without losing annotations or the uploaded summary JSON.
+  const PUBLISH_CHECK_RUN = !(
+    process.argv.includes("--no-check-run") ||
+    process.argv.includes("--no-checkRun")
+  );
 
   runAllowlistCheck({ silent: true });
 
@@ -627,11 +634,14 @@ if (isMain()) {
         driftOk: false,
         scopedToChanges: false,
         reportPath: reportRel,
+        exitCode: 1,
+        publishCheckRun: PUBLISH_CHECK_RUN,
         counts: { entries: 0, schemaErrors: 0, missing: 0, stale: 0 },
         fullCounts: { entries: 0, schemaErrors: 0, missing: 0, stale: 0 },
         failure: {
           category: "unknown",
           topFiles: [],
+          topMessages: [],
           reason:
             "report file was not written (allowlist script crashed before emitting JSON)",
         },
@@ -666,13 +676,18 @@ if (isMain()) {
   // (check runs, dashboards, downstream jobs) can fetch it as an artifact
   // regardless of whether --json was requested on stdout.
   try {
-    writeFileSync(SUMMARY_JSON_PATH, JSON.stringify(toJSON(summary), null, 2));
+    writeFileSync(
+      SUMMARY_JSON_PATH,
+      JSON.stringify(toJSON(summary, { publishCheckRun: PUBLISH_CHECK_RUN }), null, 2),
+    );
   } catch {
     /* best-effort */
   }
 
   if (JSON_OUT) {
-    console.log(JSON.stringify(toJSON(summary), null, 2));
+    console.log(
+      JSON.stringify(toJSON(summary, { publishCheckRun: PUBLISH_CHECK_RUN }), null, 2),
+    );
   } else {
     console.log(formatSummary(summary, { changed: CHANGED }));
     console.log("");
@@ -682,5 +697,7 @@ if (isMain()) {
     for (const a of formatAnnotations(summary)) console.error(a);
   }
 
-  if (!summary.ok) process.exit(1);
+  // Distinct exit codes so CI can branch on the failure cause:
+  //   0 = pass, 2 = schema invalid, 1 = drift (or other failure).
+  process.exit(exitCodeFor(summary));
 }
