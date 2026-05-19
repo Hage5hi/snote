@@ -154,10 +154,10 @@ describe("CLI flag aliases — identical SummaryJSON + exit code", () => {
     }
   });
 
-  it("all variants exit with the same code (2 — schema)", () => {
+  it("all variants exit with the same code (1 — drift)", () => {
     const codes = [...results.values()].map((r) => r.status);
     expect(new Set(codes).size).toBe(1);
-    expect(codes[0]).toBe(2);
+    expect(codes[0]).toBe(1);
   });
 
   it("all variants produce byte-identical SummaryJSON", () => {
