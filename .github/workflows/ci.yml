@@ -214,25 +214,33 @@ jobs:
         name: Build CLI coverage PR comment
         env:
           COVERAGE_ARTIFACT_ID: ${{ steps.upload_cli_coverage_html.outputs.artifact-id }}
+          STEP_SUMMARY_ARTIFACT_ID: ${{ steps.upload_step_summary_md.outputs.artifact-id }}
+          FAILURE_BREAKDOWN_ARTIFACT_ID: ${{ steps.upload_failure_breakdown_json.outputs.artifact-id }}
         run: |
           mkdir -p reports/_ci
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
-            ARTIFACT_URL="${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}"
-            {
-              echo "### i18n CLI test coverage"
-              echo ""
-              echo "[📊 Download HTML coverage report](${ARTIFACT_URL}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
-            } > reports/_ci/coverage-pr-comment.md
-            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
-          else
-            {
-              echo "### i18n CLI test coverage"
-              echo ""
+          link_or_missing() {
+            local id="$1" label="$2" hint="$3"
+            if [ -n "$id" ]; then
+              echo "- [${label}](${RUN_URL}/artifacts/${id}) — ${hint}"
+            else
+              echo "- _${label}: artifact not uploaded for this run_"
+            fi
+          }
+          {
+            echo "### i18n CLI test coverage"
+            echo ""
+            if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
+              echo "[📊 Download HTML coverage report](${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
+            else
               echo "_⚠️ HTML coverage artifact was not uploaded for this run_ — the coverage step may have been skipped, or \`coverage/i18n-cli/\` was empty. Check the [run logs](${RUN_URL}) for details."
-            } > reports/_ci/coverage-pr-comment.md
-            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
-          fi
+            fi
+            echo ""
+            echo "#### Debugging artifacts"
+            link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 Rendered step-summary.md" "same markdown GitHub shows in the job UI"
+            link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 failure-breakdown.json" "machine-readable suite/test/diff payload (schemaVersion ≥ 1)"
+          } > reports/_ci/coverage-pr-comment.md
+          echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
       - if: always() && github.event_name == 'pull_request' && env.COVERAGE_COMMENT_READY == '1'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
