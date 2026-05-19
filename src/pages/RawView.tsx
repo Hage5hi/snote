@@ -117,6 +117,7 @@ export default function RawView() {
       <title>{`Raw markdown: /${slug}.md — Syrin Notes`}</title>
       <meta name="description" content={`View plain markdown (plaintext) of note /${slug} on Syrin Notes — no rendering, no UI.`} />
       <link rel="canonical" href={`https://snote.lovable.app/${slug}.md`} />
+      {/* eslint-disable-next-line no-restricted-syntax -- SEO control value */}
       <meta name="robots" content="noindex, follow" />
       <meta property="og:title" content={`Raw markdown: /${slug}.md — Syrin Notes`} />
       <meta property="og:description" content={`Plaintext markdown of note /${slug} on Syrin Notes.`} />

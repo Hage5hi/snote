@@ -361,9 +361,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         <meta property="og:title" content={noteTitle} />
         <meta property="og:description" content={noteDesc} />
         <meta property="og:url" content={noteUrl} />
+        {/* eslint-disable-next-line no-restricted-syntax -- SEO control value */}
         <meta property="og:type" content="article" />
         <meta name="twitter:title" content={noteTitle} />
         <meta name="twitter:description" content={noteDesc} />
+        {/* eslint-disable-next-line no-restricted-syntax -- SEO control value */}
         {encMeta.isEncrypted && <meta name="robots" content="noindex" />}
       </Helmet>
       <Topbar

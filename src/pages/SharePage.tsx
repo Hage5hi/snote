@@ -119,7 +119,7 @@ export default function SharePage() {
     return () => {
       cancelled = true;
     };
-  }, [token, valid]);
+  }, [token, valid, t]);
 
   const onUnlock = async (key: CryptoKey) => {
     if (state.kind !== "needs-key") return;
@@ -137,6 +137,7 @@ export default function SharePage() {
   const head = (
     <Helmet>
       <title>Shared note — Syrin Notes</title>
+      {/* eslint-disable no-restricted-syntax -- crawler-facing SEO copy (page is noindex) */}
       <meta name="description" content="View a shared markdown note in read-only mode on Syrin Notes. Private link, revocable anytime." />
       <link rel="canonical" href={`https://snote.lovable.app/s/${token}`} />
       <meta name="robots" content="noindex, nofollow" />
@@ -145,6 +146,7 @@ export default function SharePage() {
       <meta property="og:url" content={`https://snote.lovable.app/s/${token}`} />
       <meta name="twitter:title" content="Shared note — Syrin Notes" />
       <meta name="twitter:description" content="A markdown note shared in read-only mode." />
+      {/* eslint-enable no-restricted-syntax */}
     </Helmet>
   );
 

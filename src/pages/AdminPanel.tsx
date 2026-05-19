@@ -280,6 +280,7 @@ export default function AdminPanel() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              // eslint-disable-next-line no-restricted-syntax -- internal admin-only UI
               placeholder="Search by slug or content…"
               className="border-0 focus-visible:ring-0"
             />

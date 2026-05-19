@@ -55,6 +55,7 @@ export function DonateButton() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
+        // eslint-disable-next-line no-restricted-syntax -- brand label
         aria-label="Support Syrin Notes"
         className="zen-hide fixed bottom-20 right-4 z-40 flex h-11 w-11 items-center justify-center rounded-full border border-border bg-background/80 text-primary shadow-sm backdrop-blur-md transition duration-300 animate-heartbeat motion-reduce:animate-none hover:scale-110 hover:animate-none hover:shadow-lg hover:shadow-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:animate-none"
       >
