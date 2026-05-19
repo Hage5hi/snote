@@ -599,9 +599,23 @@ jobs:
             echo "::error file=reports/_ci/step-summary.md::Expected rendered step-summary.md to exist on ${{ matrix.os }} after CLI flags step, but the file is missing or empty. The failure-breakdown rendering step may have failed silently."
             exit 1
           fi
+      # Validate parity + flags breakdown JSONs against the expected
+      # schemaVersion + required keys BEFORE uploading or linking, so
+      # reviewers never land on a malformed payload from a silently-
+      # broken renderer. `--allow-missing` because one suite may be
+      # skipped on a given OS (e.g. POSIX-shim gated).
+      - if: always()
+        name: Validate parity + flags breakdown JSON shape
+        shell: bash
+        run: |
+          bun run scripts/ci-validate-breakdown-json.ts \
+            --allow-missing \
+            reports/_ci/parity-breakdown.json \
+            reports/_ci/flags-breakdown.json
       # Per-OS step-summary artifact: lets reviewers download the
       # rendered markdown directly (mirrors the GitHub job UI view).
       - if: always()
+        id: upload_step_summary_md_matrix
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-step-summary-${{ matrix.os }}
@@ -612,6 +626,7 @@ jobs:
       # every run (green or red) so dashboards / PR bots can consume the
       # parsed shape without re-parsing the raw vitest logs.
       - if: always()
+        id: upload_failure_breakdown_json_matrix
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-failure-breakdown-json-${{ matrix.os }}
@@ -620,6 +635,53 @@ jobs:
             reports/_ci/flags-breakdown.json
           retention-days: 14
           if-no-files-found: warn
+      # Single consolidated debug-bundle artifact — uploaded on every
+      # run so reviewers can grab the rendered markdown, both JSON
+      # breakdowns, and both raw vitest logs in one click.
+      - if: always()
+        id: upload_debug_bundle_matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-debug-bundle-${{ matrix.os }}
+          path: |
+            reports/_ci/step-summary.md
+            reports/_ci/parity-breakdown.json
+            reports/_ci/flags-breakdown.json
+            reports/_ci/parity-breakdown.md
+            reports/_ci/flags-breakdown.md
+            reports/_ci/i18n-cli-parity.log
+            reports/_ci/i18n-cli-flags.log
+          retention-days: 14
+          if-no-files-found: warn
+      # Append clickable artifact URLs to the rendered step-summary so
+      # the markdown itself contains direct debug links for this OS.
+      - if: always()
+        name: Append artifact links to step-summary.md
+        shell: bash
+        env:
+          STEP_SUMMARY_ARTIFACT_ID: ${{ steps.upload_step_summary_md_matrix.outputs.artifact-id }}
+          FAILURE_BREAKDOWN_ARTIFACT_ID: ${{ steps.upload_failure_breakdown_json_matrix.outputs.artifact-id }}
+          DEBUG_BUNDLE_ARTIFACT_ID: ${{ steps.upload_debug_bundle_matrix.outputs.artifact-id }}
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          link_or_missing() {
+            local id="$1" label="$2"
+            if [ -n "$id" ]; then
+              echo "- [${label}](${RUN_URL}/artifacts/${id})"
+            else
+              echo "- _${label}: artifact not uploaded_"
+            fi
+          }
+          {
+            echo ''
+            echo '---'
+            echo ''
+            echo "#### Debug artifacts (${{ matrix.os }})"
+            link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 step-summary.md"
+            link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 parity/flags breakdown JSON"
+            link_or_missing "${DEBUG_BUNDLE_ARTIFACT_ID:-}" "📦 debug-bundle (all of the above + raw logs)"
+          } >> reports/_ci/step-summary.md
+          tail -n 10 reports/_ci/step-summary.md >> "$GITHUB_STEP_SUMMARY" || true
       - if: failure() && (steps.cli_parity.outcome == 'failure' || steps.cli_flags.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
