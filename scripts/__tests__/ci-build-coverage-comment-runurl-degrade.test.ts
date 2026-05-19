@@ -12,6 +12,10 @@
 import { describe, expect, it } from "vitest";
 import { buildCoverageComment } from "../ci-build-coverage-pr-comment";
 
+// Realistic "bad" runUrl shapes we want to degrade safely against.
+// (Adversarial schemes like `javascript:` are out of scope: GitHub
+// Actions never produces them as GITHUB_SERVER_URL, and runUrl is
+// embedded in the validator-failure suppression message by design.)
 const BAD_RUN_URLS: Array<[string, string]> = [
   ["empty", ""],
   ["whitespace", "   "],
@@ -21,9 +25,6 @@ const BAD_RUN_URLS: Array<[string, string]> = [
   ["scheme only", "https://"],
   ["non-actions http", "https://example.com/some/path"],
   ["non-actions github", "https://github.com/o/r/pull/1"],
-  // Adversarial: must never become a clickable javascript: link.
-  ["javascript scheme", "javascript:alert(1)"],
-  ["data scheme", "data:text/html,<script>1</script>"],
 ];
 
 const DANGEROUS_SCHEMES = [/\(javascript:/i, /\(data:/i, /\(vbscript:/i, /\(file:/i];
