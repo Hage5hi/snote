@@ -443,6 +443,19 @@ export interface SummaryJSON {
   driftOk: boolean;
   scopedToChanges: boolean;
   reportPath: string;
+  /**
+   * Suggested exit code for CI: 0 = pass, 2 = schema failure, 1 = drift
+   * (or any other failure). Mirrors the process exit code emitted by
+   * the CLI so downstream tooling can distinguish the cause of failure.
+   */
+  exitCode: 0 | 1 | 2;
+  /**
+   * Whether downstream Check Run publishing should fire. Honors the
+   * CLI's `--no-check-run` flag so workflows can keep annotations +
+   * artifacts but skip the Check Run API call (e.g. on forks, or when a
+   * repo doesn't want duplicate signal in the PR Checks tab).
+   */
+  publishCheckRun: boolean;
   /** Counts as displayed (scoped when scoping active, full otherwise). */
   counts: { entries: number; schemaErrors: number; missing: number; stale: number };
   /** Always the repo-wide counts, regardless of scoping. */
@@ -450,24 +463,55 @@ export interface SummaryJSON {
   failure: {
     category: FailureCategory;
     topFiles: string[];
+    /**
+     * Aligned with `topFiles` (same length, same order). For schema
+     * failures, each entry is the specific schema error message bound
+     * to that allowlist line. `null` for drift entries (covered by
+     * `reason`).
+     */
+    topMessages: (string | null)[];
     /** Same single-line string printed under `reason:` in pretty output. */
     reason: string;
   } | null;
 }
 
-export function toJSON(summary: Summary): SummaryJSON {
+/**
+ * Map a Summary to its CLI exit code:
+ *   • pass            → 0
+ *   • schema failure  → 2  (config is invalid; nothing else can be trusted)
+ *   • any other fail  → 1
+ * Schema is checked first so the code is stable when both schema and
+ * drift are non-OK simultaneously.
+ */
+export function exitCodeFor(summary: Summary): 0 | 1 | 2 {
+  if (summary.ok) return 0;
+  if (!summary.schemaOk) return 2;
+  return 1;
+}
+
+export function toJSON(
+  summary: Summary,
+  opts: { publishCheckRun?: boolean } = {},
+): SummaryJSON {
+  const publishCheckRun = opts.publishCheckRun ?? true;
   return {
     ok: summary.ok,
     schemaOk: summary.schemaOk,
     driftOk: summary.driftOk,
     scopedToChanges: summary.scopedToChanges,
     reportPath: summary.reportPath,
+    exitCode: exitCodeFor(summary),
+    publishCheckRun,
     counts: summary.totals,
     fullCounts: summary.fullTotals,
     failure: summary.failure
       ? {
           category: summary.failure.category,
           topFiles: summary.failure.topFiles,
+          topMessages: (summary.failure.topMessages ?? [])
+            .concat(Array(summary.failure.topFiles.length).fill(undefined))
+            .slice(0, summary.failure.topFiles.length)
+            .map((m) => m ?? null),
           reason: formatFailureReason(summary.failure, summary),
         }
       : null,
@@ -479,18 +523,21 @@ export function toJSON(summary: Summary): SummaryJSON {
  * the top offending file paths surfaced by the failure reason. Returns an
  * empty array when the summary passes. drift-missing entries arrive as
  * `file:line` strings; schema + drift-stale are file-only.
+ *
+ * Schema annotations get the *specific* per-line error message (from
+ * `topMessages`) appended so reviewers see exactly what's wrong on the
+ * annotated line instead of just the aggregate reason.
  */
 export function formatAnnotations(summary: Summary): string[] {
   if (summary.ok || !summary.failure) return [];
   const reason = formatFailureReason(summary.failure, summary);
   const esc = (s: string) =>
     s.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
-  // schema + drift-missing both encode line as `file:line` in topFiles;
-  // drift-stale stays file-only.
   const supportsLine =
     summary.failure.category === "drift-missing" ||
     summary.failure.category === "schema";
-  return summary.failure.topFiles.map((entry) => {
+  const messages = summary.failure.topMessages ?? [];
+  return summary.failure.topFiles.map((entry, i) => {
     let file = entry;
     let line: number | undefined;
     if (supportsLine) {
@@ -501,7 +548,12 @@ export function formatAnnotations(summary: Summary): string[] {
       }
     }
     const loc = line !== undefined ? `file=${file},line=${line}` : `file=${file}`;
-    return `::error ${loc}::i18n allowlist — ${esc(reason)}`;
+    const specific = messages[i];
+    const body =
+      summary.failure!.category === "schema" && specific
+        ? `${reason} — ${specific}`
+        : reason;
+    return `::error ${loc}::i18n allowlist — ${esc(body)}`;
   });
 }
 
