@@ -606,7 +606,39 @@ export function parseTopFilesArg(argv: string[], fallback = DEFAULT_TOP_N): numb
   return fallback;
 }
 
+/**
+ * Self-contained `--help` text. Kept short and table-shaped so a
+ * snapshot test (`scripts/__tests__/i18n-allowlist-cli-scoping.test.ts`)
+ * can assert it documents the same flags + exit codes as
+ * `docs/i18n-allowlist-summary.md`.
+ */
+export const HELP_TEXT = [
+  "Usage: bun run i18n:allowlist:summary [flags]",
+  "",
+  "Flags:",
+  "  --changed                 Scope counts to files changed in the working tree.",
+  "  --json                    Emit SummaryJSON to stdout (also written to",
+  "                            reports/i18n-allowlist-summary.json).",
+  "  --annotations             Emit GitHub `::error file=,line=…` commands to stderr.",
+  "  --topFiles N              Cap on top offending paths (default 3, min 1).",
+  "                            Aliases: --top-files N, --topFiles=N, --top-files=N.",
+  "  --no-check-run            Set publishCheckRun:false in the summary JSON so",
+  "                            the workflow's Check Run step skips. Annotations +",
+  "                            artifact uploads still happen. Alias: --no-checkRun.",
+  "  --help, -h                Show this help and exit 0.",
+  "",
+  "Exit codes:",
+  "  0  PASS — schema valid, no drift",
+  "  2  Schema validation failed (.lintrc-i18n-allowlist.json is broken)",
+  "  1  Drift — unallowlisted disables or stale allowlist entries",
+  "Schema is checked first: when both fail the exit code is 2.",
+].join("\n");
+
 if (isMain()) {
+  if (process.argv.includes("--help") || process.argv.includes("-h")) {
+    console.log(HELP_TEXT);
+    process.exit(0);
+  }
   const ROOT = process.cwd();
   const REPORT_PATH = join(ROOT, "reports", "i18n-allowlist-report.json");
   const SUMMARY_JSON_PATH = join(ROOT, "reports", "i18n-allowlist-summary.json");
