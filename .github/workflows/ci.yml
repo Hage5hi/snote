@@ -50,18 +50,26 @@ jobs:
       - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
         name: i18n coverage gate (writes JSON + HTML report)
         run: bun run i18n:check
-      - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
-        name: i18n audit (hardcoded strings, advisory)
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        name: i18n audit + diff (hardcoded strings)
         run: bun run i18n:audit || true
-      - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        name: i18n hardcoded-string allowlist gate
+        run: bun run i18n:allowlist
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
         name: Focused i18n vitest suite
         run: bunx vitest run src/i18n/__tests__/
+      # Upload reports/ even when prior steps failed so the audit diff
+      # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
         uses: actions/upload-artifact@v4
         with:
           name: i18n-report
-          path: reports/
+          path: |
+            reports/
+            .lintrc-i18n-allowlist.json
           retention-days: 14
+          if-no-files-found: warn
 
   e2e:
     # Real-browser Playwright tests across chromium, firefox & webkit.
