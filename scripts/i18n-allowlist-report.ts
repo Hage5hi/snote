@@ -303,6 +303,12 @@ export function formatFailureReason(failure: NonNullable<Summary["failure"]>, su
 export function formatSummary(summary: Summary, opts: { changed: boolean }): string {
   const tick = (b: boolean) => (b ? "✅" : "❌");
   const lines: string[] = [];
+  // When --changed is honored, render `scoped / full` side-by-side so it's
+  // immediately obvious how much of the repo-wide drift the diff touches.
+  const sideBySide = opts.changed && summary.scopedToChanges;
+  const sxs = (scoped: number, full: number) =>
+    sideBySide ? `${scoped} (scoped) / ${full} (full repo)` : `${scoped}`;
+
   lines.push("");
   lines.push(`i18n allowlist report  ${tick(summary.ok)} ${summary.ok ? "PASS" : "FAIL"}`);
   lines.push(`  path:       ${summary.reportPath}`);
@@ -311,15 +317,85 @@ export function formatSummary(summary: Summary, opts: { changed: boolean }): str
     `  schemaOk:   ${tick(summary.schemaOk)} (${summary.totals.schemaErrors} error${summary.totals.schemaErrors === 1 ? "" : "s"})`,
   );
   lines.push(`  driftOk:    ${tick(summary.driftOk)}`);
+  lines.push(`  entries:    ${sxs(summary.totals.entries, summary.fullTotals.entries)}`);
   lines.push(
-    `  entries:    ${summary.totals.entries}${opts.changed && summary.scopedToChanges ? " (scoped)" : ""}`,
+    `  missing:    ${sxs(summary.missingCount, summary.fullTotals.missing)}  (unallowlisted disables)`,
   );
-  lines.push(`  missing:    ${summary.missingCount}  (unallowlisted disables)`);
-  lines.push(`  stale:      ${summary.staleCount}  (entries with no source match)`);
+  lines.push(
+    `  stale:      ${sxs(summary.staleCount, summary.fullTotals.stale)}  (entries with no source match)`,
+  );
   if (!summary.ok && summary.failure) {
     lines.push(`  reason:     ${formatFailureReason(summary.failure, summary)}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * Machine-readable view of the summary — emitted by `--json` so CI tools
+ * can consume the schema/drift/missing/stale verdict + failure breakdown
+ * without parsing the pretty text. Stable, intentionally narrow shape.
+ */
+export interface SummaryJSON {
+  ok: boolean;
+  schemaOk: boolean;
+  driftOk: boolean;
+  scopedToChanges: boolean;
+  reportPath: string;
+  /** Counts as displayed (scoped when scoping active, full otherwise). */
+  counts: { entries: number; schemaErrors: number; missing: number; stale: number };
+  /** Always the repo-wide counts, regardless of scoping. */
+  fullCounts: { entries: number; schemaErrors: number; missing: number; stale: number };
+  failure: {
+    category: FailureCategory;
+    topFiles: string[];
+    /** Same single-line string printed under `reason:` in pretty output. */
+    reason: string;
+  } | null;
+}
+
+export function toJSON(summary: Summary): SummaryJSON {
+  return {
+    ok: summary.ok,
+    schemaOk: summary.schemaOk,
+    driftOk: summary.driftOk,
+    scopedToChanges: summary.scopedToChanges,
+    reportPath: summary.reportPath,
+    counts: summary.totals,
+    fullCounts: summary.fullTotals,
+    failure: summary.failure
+      ? {
+          category: summary.failure.category,
+          topFiles: summary.failure.topFiles,
+          reason: formatFailureReason(summary.failure, summary),
+        }
+      : null,
+  };
+}
+
+/**
+ * Emit GitHub Actions workflow commands (`::error file=…,line=…::msg`) for
+ * the top offending file paths surfaced by the failure reason. Returns an
+ * empty array when the summary passes. drift-missing entries arrive as
+ * `file:line` strings; schema + drift-stale are file-only.
+ */
+export function formatAnnotations(summary: Summary): string[] {
+  if (summary.ok || !summary.failure) return [];
+  const reason = formatFailureReason(summary.failure, summary);
+  const esc = (s: string) =>
+    s.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+  return summary.failure.topFiles.map((entry) => {
+    let file = entry;
+    let line: number | undefined;
+    if (summary.failure!.category === "drift-missing") {
+      const m = entry.match(/^(.*):(\d+)$/);
+      if (m) {
+        file = m[1];
+        line = Number(m[2]);
+      }
+    }
+    const loc = line !== undefined ? `file=${file},line=${line}` : `file=${file}`;
+    return `::error ${loc}::i18n allowlist — ${esc(reason)}`;
+  });
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -327,7 +403,6 @@ export function formatSummary(summary: Summary, opts: { changed: boolean }): str
 // helpers above can be imported by tests without side effects.
 // ────────────────────────────────────────────────────────────────────────────
 function isMain(): boolean {
-  // `import.meta.url` resolves to the actual script even under bun/tsx.
   try {
     const here = fileURLToPath(import.meta.url);
     const entry = process.argv[1] ? resolve(process.argv[1]) : "";
@@ -341,19 +416,40 @@ if (isMain()) {
   const ROOT = process.cwd();
   const REPORT_PATH = join(ROOT, "reports", "i18n-allowlist-report.json");
   const CHANGED = process.argv.includes("--changed");
+  const JSON_OUT = process.argv.includes("--json");
+  const ANNOTATIONS = process.argv.includes("--annotations");
 
   runAllowlistCheck({ silent: true });
 
   const reportRel = relative(ROOT, REPORT_PATH) || REPORT_PATH;
 
   if (!existsSync(REPORT_PATH)) {
-    console.log("");
-    console.log("i18n allowlist report  ❌ FAIL");
-    console.log(`  path:       ${reportRel}`);
-    console.log(
-      "  reason:     report file was not written (allowlist script crashed before emitting JSON)",
-    );
-    console.log("");
+    if (JSON_OUT) {
+      const empty: SummaryJSON = {
+        ok: false,
+        schemaOk: false,
+        driftOk: false,
+        scopedToChanges: false,
+        reportPath: reportRel,
+        counts: { entries: 0, schemaErrors: 0, missing: 0, stale: 0 },
+        fullCounts: { entries: 0, schemaErrors: 0, missing: 0, stale: 0 },
+        failure: {
+          category: "unknown",
+          topFiles: [],
+          reason:
+            "report file was not written (allowlist script crashed before emitting JSON)",
+        },
+      };
+      console.log(JSON.stringify(empty, null, 2));
+    } else {
+      console.log("");
+      console.log("i18n allowlist report  ❌ FAIL");
+      console.log(`  path:       ${reportRel}`);
+      console.log(
+        "  reason:     report file was not written (allowlist script crashed before emitting JSON)",
+      );
+      console.log("");
+    }
     process.exit(1);
   }
 
@@ -362,7 +458,17 @@ if (isMain()) {
     changed: CHANGED ? getChangedFiles() : undefined,
   });
 
-  console.log(formatSummary(summary, { changed: CHANGED }));
-  console.log("");
+  if (JSON_OUT) {
+    console.log(JSON.stringify(toJSON(summary), null, 2));
+  } else {
+    console.log(formatSummary(summary, { changed: CHANGED }));
+    console.log("");
+  }
+
+  if (ANNOTATIONS) {
+    // Annotations go to stderr so `--json` stdout consumers stay clean.
+    for (const a of formatAnnotations(summary)) console.error(a);
+  }
+
   if (!summary.ok) process.exit(1);
 }
