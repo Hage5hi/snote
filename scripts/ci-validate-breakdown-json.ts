@@ -20,8 +20,8 @@
 // Exits non-zero on the first invalid file unless --allow-missing is
 // passed (in which case a missing file is logged + skipped, but a file
 // that exists and is malformed still fails).
-import { existsSync, readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
 
 import { FAILURE_BREAKDOWN_SCHEMA_VERSION } from "./ci-vitest-failure-summary";
 
