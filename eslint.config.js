@@ -7,8 +7,13 @@ import tseslint from "typescript-eslint";
 // Block hardcoded user-facing strings in JSX attrs that should go through t().
 // Selectors error on string literals (both bare and {"..."} forms) for:
 //   placeholder, aria-label, title, and <meta content="...">.
-// Empty strings are allowed (e.g. placeholder=""). Use t("…") or
-// // eslint-disable-next-line no-restricted-syntax for intentional brand text.
+// Empty strings are allowed (e.g. placeholder="").
+//
+// Intentional exceptions MUST:
+//   1. Use `eslint-disable-next-line no-restricted-syntax -- <reason>`
+//   2. Have a matching entry in .lintrc-i18n-allowlist.json
+//   3. Pass `bun run i18n:allowlist` (CI-enforced)
+// See docs/i18n-hardcoded-allowlist.md for the full contract.
 const HARDCODED_STRING_RULES = [
   {
     selector:
