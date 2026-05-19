@@ -135,16 +135,16 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
   if (isEncrypted) {
     return (
       <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Encryption">
-                <Lock className="h-4 w-4 text-success" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Note đã mã hoá</TooltipContent>
-          </Tooltip>
-        </DropdownMenuTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Encryption">
+              <Lock className="h-4 w-4 text-success" />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Note đã mã hoá</TooltipContent>
+      </Tooltip>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={copyKey}>
             <Copy className="h-3.5 w-3.5" />
@@ -162,16 +162,16 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
 
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setPass(""); }}>
-      <DialogTrigger asChild>
-        <Tooltip>
-          <TooltipTrigger asChild>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DialogTrigger asChild>
             <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Mã hoá note">
               <LockOpen className="h-4 w-4" />
             </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">Mã hoá note</TooltipContent>
-        </Tooltip>
-      </DialogTrigger>
+          </DialogTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">Mã hoá note</TooltipContent>
+      </Tooltip>
       <DialogContent>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Mã hoá note</DialogTitle>
