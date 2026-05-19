@@ -151,9 +151,19 @@ export function renderMarkdown(failures: Failure[]): string {
   return out.join("\n");
 }
 
+/**
+ * Schema version for the emitted JSON breakdown payload. Bump on any
+ * breaking change to the shape; additive (backward-compatible) changes
+ * keep the same major version. Consumers should treat unknown fields
+ * as optional and only require:
+ *   { schemaVersion, failureCount, suiteCount, failures: [{suite,test,diff}] }
+ */
+export const FAILURE_BREAKDOWN_SCHEMA_VERSION = 1;
+
 /** Render the JSON breakdown — flat shape, easy to consume from bots. */
 export function renderJson(failures: Failure[]): string {
   const payload = {
+    schemaVersion: FAILURE_BREAKDOWN_SCHEMA_VERSION,
     failureCount: failures.length,
     suiteCount: new Set(failures.map((f) => f.file)).size,
     failures: failures.map((f) => ({
