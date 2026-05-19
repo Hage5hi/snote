@@ -54,34 +54,52 @@ export function ModeMenu({
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuItem onClick={onToggleZen}>
-          <Maximize2 className="h-3.5 w-3.5" />
-          {zen ? "Exit Zen mode" : "Enter Zen mode"}
-          <span className="ml-auto text-[10px] text-muted-foreground">F11</span>
+      <DropdownMenuContent align="end" className="w-72">
+        <DropdownMenuItem onClick={onToggleZen} className="items-start py-2">
+          <Maximize2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span>{zen ? "Exit Zen mode" : "Enter Zen mode"}</span>
+            <span className="text-[11px] text-muted-foreground">Ẩn toolbar/sidebar, chỉ còn vùng soạn thảo</span>
+          </div>
+          <span className="ml-auto self-start text-[10px] text-muted-foreground">F11</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onToggleTypewriter}>
-          <AlignVerticalJustifyCenter className="h-3.5 w-3.5" />
-          {typewriter ? "Exit Typewriter mode" : "Enter Typewriter mode"}
-          <span className="ml-auto text-[10px] text-muted-foreground">F9</span>
+        <DropdownMenuItem onClick={onToggleTypewriter} className="items-start py-2">
+          <AlignVerticalJustifyCenter className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span>{typewriter ? "Exit Typewriter mode" : "Enter Typewriter mode"}</span>
+            <span className="text-[11px] text-muted-foreground">Giữ dòng đang gõ luôn ở giữa màn hình</span>
+          </div>
+          <span className="ml-auto self-start text-[10px] text-muted-foreground">F9</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onToggleFocusLine}>
-          <Highlighter className="h-3.5 w-3.5" />
-          {focusLine ? "Disable Focus line" : "Enable Focus line"}
+        <DropdownMenuItem onClick={onToggleFocusLine} className="items-start py-2">
+          <Highlighter className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span>{focusLine ? "Disable Focus line" : "Enable Focus line"}</span>
+            <span className="text-[11px] text-muted-foreground">Làm mờ các dòng khác, chỉ nổi bật dòng đang gõ</span>
+          </div>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={onTogglePagination}>
-          <BookOpen className="h-3.5 w-3.5" />
-          {paginated ? "Disable Page mode" : "Enable Page mode"}
-          <span className="ml-auto text-[10px] text-muted-foreground">⌘⇧P</span>
+        <DropdownMenuItem onClick={onTogglePagination} className="items-start py-2">
+          <BookOpen className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span>{paginated ? "Disable Page mode" : "Enable Page mode"}</span>
+            <span className="text-[11px] text-muted-foreground">Chia nội dung thành từng trang như sách/A4</span>
+          </div>
+          <span className="ml-auto self-start text-[10px] text-muted-foreground">⌘⇧P</span>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={toggleVim}>
-          <Terminal className="h-3.5 w-3.5" />
-          {vim ? "Disable Vim mode" : "Enable Vim mode"}
+        <DropdownMenuItem onClick={toggleVim} className="items-start py-2">
+          <Terminal className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span>{vim ? "Disable Vim mode" : "Enable Vim mode"}</span>
+            <span className="text-[11px] text-muted-foreground">Phím tắt kiểu Vim (hjkl, i, esc…) trong editor</span>
+          </div>
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel className="flex items-center gap-2 text-xs">
-          <MonitorSmartphone className="h-3.5 w-3.5" />
-          E-ink mode
+        <DropdownMenuLabel className="flex flex-col gap-0.5 text-xs">
+          <span className="flex items-center gap-2">
+            <MonitorSmartphone className="h-3.5 w-3.5" />
+            E-ink mode
+          </span>
+          <span className="pl-5 text-[11px] font-normal text-muted-foreground">Tắt animation, tăng tương phản cho máy đọc sách</span>
         </DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={einkPref}
