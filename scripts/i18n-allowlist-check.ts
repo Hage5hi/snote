@@ -1,8 +1,9 @@
 // Enforces .lintrc-i18n-allowlist.json: every
 // `eslint-disable[-next-line] no-restricted-syntax -- <reason>` comment in
-// src/ must have a matching {file, reason} entry. Fails CI on drift so new
-// hardcoded strings cannot sneak in by copy-pasting an existing disable.
-import { readdirSync, readFileSync, statSync } from "node:fs";
+// src/ must have a matching {file, reason} entry. Also validates the JSON
+// structure itself so malformed/missing fields fail CI before drift checks
+// even run.
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const ROOT = process.cwd();
@@ -18,9 +19,81 @@ interface Allowlist {
   entries: Entry[];
 }
 
-const allowlist: Allowlist = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
+// ---------- 1. Structural schema validation -------------------------------
+// Hand-rolled validator (no extra dep). Reports ALL issues, then exits.
+const schemaErrors: string[] = [];
+let raw: unknown;
+try {
+  raw = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
+} catch (e) {
+  console.error(`❌ .lintrc-i18n-allowlist.json is not valid JSON: ${(e as Error).message}`);
+  process.exit(1);
+}
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+if (!isObject(raw)) {
+  schemaErrors.push("root must be a JSON object");
+} else {
+  if (!Array.isArray((raw as { entries?: unknown }).entries)) {
+    schemaErrors.push("`entries` must be an array");
+  } else {
+    const seenKeys = new Set<string>();
+    const entries = (raw as { entries: unknown[] }).entries;
+    entries.forEach((e, i) => {
+      const where = `entries[${i}]`;
+      if (!isObject(e)) {
+        schemaErrors.push(`${where} must be an object`);
+        return;
+      }
+      const file = e.file;
+      const reason = e.reason;
+      const notes = e.notes;
+      if (typeof file !== "string" || file.trim() === "") {
+        schemaErrors.push(`${where}.file must be a non-empty string`);
+      } else if (!file.startsWith("src/")) {
+        schemaErrors.push(`${where}.file must be under src/ (got "${file}")`);
+      } else if (!existsSync(join(ROOT, file))) {
+        schemaErrors.push(`${where}.file does not exist on disk: ${file}`);
+      }
+      if (typeof reason !== "string" || reason.trim() === "") {
+        schemaErrors.push(`${where}.reason must be a non-empty string`);
+      }
+      if (notes !== undefined && typeof notes !== "string") {
+        schemaErrors.push(`${where}.notes must be a string when present`);
+      }
+      // Disallow unknown keys to keep the file disciplined.
+      for (const k of Object.keys(e)) {
+        if (!["file", "reason", "notes"].includes(k)) {
+          schemaErrors.push(`${where} has unknown key "${k}"`);
+        }
+      }
+      if (typeof file === "string" && typeof reason === "string") {
+        const k = `${file}::${reason.trim()}`;
+        if (seenKeys.has(k)) {
+          schemaErrors.push(`duplicate allowlist entry for ${k} at ${where}`);
+        }
+        seenKeys.add(k);
+      }
+    });
+  }
+}
+
+if (schemaErrors.length) {
+  console.error("\n❌ .lintrc-i18n-allowlist.json schema errors:");
+  for (const e of schemaErrors) console.error(`  - ${e}`);
+  console.error(
+    "\nFix the file structure before drift checks can run. See docs/i18n-hardcoded-allowlist.md.",
+  );
+  process.exit(1);
+}
+
+const allowlist = raw as Allowlist;
 const allowed = new Set(allowlist.entries.map((e) => `${e.file}::${e.reason.trim()}`));
 
+// ---------- 2. Drift detection vs source comments -------------------------
 const DISABLE_RE =
   /eslint-disable(?:-next-line)?\s+no-restricted-syntax\s*--\s*([^\n*/]+)/g;
 
@@ -53,7 +126,6 @@ for (const abs of walk(SRC_DIR)) {
   }
 }
 
-// Detect stale allowlist entries (defined but no longer referenced).
 const stale = [...allowed].filter((k) => !seen.has(k));
 
 let failed = false;
