@@ -26,7 +26,7 @@
 // scripts/__tests__/i18n-allowlist-summary.test.ts. The CLI side effects
 // (running the real allowlist check, writing to stdout, exiting) only fire
 // when the file is executed directly.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join, relative, resolve } from "node:path";
