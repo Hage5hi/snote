@@ -83,6 +83,12 @@ export interface Summary {
     category: FailureCategory;
     /** Up to ~3 file paths most likely to need attention. */
     topFiles: string[];
+    /**
+     * Schema-specific message attached to each file in `topFiles`, by
+     * index. `undefined` when the category isn't `schema` (drift entries
+     * don't carry a per-line message — the reason string covers them).
+     */
+    topMessages?: (string | undefined)[];
   };
 }
 
