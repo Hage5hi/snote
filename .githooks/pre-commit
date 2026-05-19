@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Lovable pre-commit hook — runs the i18n allowlist gate locally so drift
+# (missing or stale eslint-disable entries) is caught BEFORE the CI run.
+#
+# Install once per clone:
+#   bun run hooks:install
+#
+# Skip in an emergency:
+#   git commit --no-verify
+set -euo pipefail
+
+echo "▶ pre-commit: i18n allowlist check"
+if ! bun run i18n:allowlist:report; then
+  echo ""
+  echo "❌ pre-commit: i18n allowlist check FAILED."
+  echo "   See reports/i18n-allowlist-report.md for details, or run:"
+  echo "     bun run i18n:allowlist:report"
+  echo "   To bypass (not recommended): git commit --no-verify"
+  exit 1
+fi
