@@ -130,6 +130,10 @@ jobs:
         env:
           CI: "1"
           PLAYWRIGHT_PROJECT: ${{ matrix.browser }}
+          # Slower CI runners — give toasts more headroom.
+          E2E_TOAST_TIMEOUT_MS: "8000"
+          E2E_TOAST_DISMISS_TIMEOUT_MS: "12000"
+          E2E_TOAST_MIN_VISIBLE_MS: "250"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
