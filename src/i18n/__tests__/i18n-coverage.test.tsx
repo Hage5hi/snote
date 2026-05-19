@@ -143,7 +143,7 @@ describe("Persistence — language survives reload", () => {
     );
     // The toggle renders the lang code in uppercase.
     expect(screen.getByRole("button", { name: /言語/ })).toBeInTheDocument();
-    expect(screen.getByText("JA")).toBeInTheDocument();
+    expect(screen.getByText("ja")).toBeInTheDocument();
   });
 });
 
