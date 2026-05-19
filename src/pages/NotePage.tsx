@@ -65,6 +65,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { goal } = useWordGoal(slug);
+  const { t } = useI18n();
 
   // Mount Y.Doc IMMEDIATELY (synchronously) — no waiting on enc-meta or any
   // fetch. The doc-cache returns the previously-warm doc when navigating
