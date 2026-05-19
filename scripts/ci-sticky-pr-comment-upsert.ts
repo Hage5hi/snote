@@ -148,6 +148,11 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
   if (matches.length === 0) {
     const created = await api.create(stamped);
     log?.(`no existing marker found across ${comments.length} comment(s); created id=${created.id}`);
+    log?.(
+      `summary: action=created id=${created.id} cleaned=0 ` +
+        `(deleted=0 tombstoned=0) ` +
+        `requestedStrategy=${requestedStrategy} effectiveStrategy=${strategy}`,
+    );
     return { action: "created", comment: created, cleaned: [], usedFullScan: false };
   }
 
