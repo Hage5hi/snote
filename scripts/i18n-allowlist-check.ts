@@ -87,7 +87,7 @@ function suggestKey(actual: string): string | undefined {
 
 function formatAjvError(err: ErrorObject): string {
   const e = err as DefinedError;
-  const where = err.instancePath || "(root)";
+  const where = (err.instancePath ?? (err as unknown as {dataPath?: string}).dataPath ?? "") || "(root)";
   switch (e.keyword) {
     case "required":
       return `${where}: missing required field "${e.params.missingProperty}" (expected one of: ${ENTRY_KEYS.join(", ")})`;
@@ -110,7 +110,7 @@ function formatAjvError(err: ErrorObject): string {
 function groupSchemaErrors(errors: ErrorObject[]): GroupedError[] {
   const map = new Map<string, string[]>();
   for (const err of errors) {
-    const m = err.instancePath.match(/^\/entries\/(\d+)/);
+    const m = (err.instancePath ?? (err as unknown as {dataPath?: string}).dataPath ?? "").match(/^\/entries\/(\d+)/);
     const key = m ? `entries[${m[1]}]` : "(root)";
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(formatAjvError(err));
