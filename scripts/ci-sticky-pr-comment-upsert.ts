@@ -63,6 +63,13 @@ export interface UpsertOptions {
   tombstone?: string;
   /** Override the head-scan window. Tests use this to assert bounds. */
   headScanLines?: number;
+  /**
+   * When set, emit human-readable diagnostics describing which sticky
+   * comment was selected as the newest and which older duplicates were
+   * deleted or tombstoned. Pass `true` to log via console.log, or a
+   * custom sink (CI logs, test capture). No-op when unset.
+   */
+  debug?: boolean | ((line: string) => void);
 }
 
 export interface UpsertResult {
@@ -72,6 +79,7 @@ export interface UpsertResult {
   /** True if the matched comment was found via the full-body fallback. */
   usedFullScan: boolean;
 }
+
 
 /**
  * Bounded marker scan. Tolerant of:
