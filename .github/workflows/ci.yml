@@ -151,6 +151,17 @@ jobs:
             /tmp/i18n-cli-suite.log
           retention-days: 14
           if-no-files-found: warn
+      # Verify the rendered step-summary markdown was actually written
+      # so we surface a loud, actionable error if the rendering step
+      # silently no-op'd (e.g. $GITHUB_STEP_SUMMARY unset, cp failed,
+      # disk full). Runs on every CI invocation, not just failures.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        name: Verify rendered step-summary.md exists
+        run: |
+          if [ ! -s reports/_ci/step-summary.md ]; then
+            echo "::error file=reports/_ci/step-summary.md::Expected rendered step-summary.md to exist after CLI suites step on ubuntu-latest, but the file is missing or empty. The failure-breakdown rendering step may have failed silently."
+            exit 1
+          fi
       # Per-OS step-summary artifact so reviewers can download the
       # rendered markdown directly (mirrors what GitHub displays in the
       # job UI). Uploaded on every run, not just failures.
@@ -159,6 +170,17 @@ jobs:
         with:
           name: i18n-cli-step-summary-ubuntu-latest
           path: reports/_ci/step-summary.md
+          retention-days: 14
+          if-no-files-found: warn
+      # Machine-readable failure breakdown JSON — uploaded on every run
+      # (green or red) so PR bots / dashboards can consume the same
+      # parsed shape without having to re-parse the raw vitest log.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: upload_failure_breakdown_json
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-failure-breakdown-json-ubuntu-latest
+          path: reports/_ci/failure-breakdown.json
           retention-days: 14
           if-no-files-found: warn
 
