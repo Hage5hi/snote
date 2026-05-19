@@ -191,7 +191,7 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
       lang={lang}
       className={`markdown-preview prose prose-neutral dark:prose-invert max-w-none px-6 py-6 ${className ?? ""}`}
       dangerouslySetInnerHTML={{
-        __html: html || '<p class="text-muted-foreground">Empty note. Bắt đầu gõ để xem preview.</p>',
+        __html: html || emptyHtml,
       }}
     />
   );
