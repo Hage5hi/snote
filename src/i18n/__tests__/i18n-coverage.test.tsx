@@ -150,6 +150,9 @@ describe("Persistence — language survives reload", () => {
   it("language stored via setLang persists across remounts (simulated reload)", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe("fr");
   });
+});
+
+
 
 describe("Export menu — localized trigger + dict coverage", () => {
   const EXPORT_KEYS = [
