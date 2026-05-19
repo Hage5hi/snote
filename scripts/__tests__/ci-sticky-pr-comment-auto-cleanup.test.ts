@@ -29,9 +29,9 @@ function makeApi(seed: Comment[], strategy: "delete" | "lock" = "delete") {
     comments.push(c);
     return c;
   });
-  const update = vi.fn(async (id: number, body: string) => {
+  const update = vi.fn(async (id: number, body: string, opts?: { raw?: boolean }) => {
     const c = comments.find((x) => x.id === id)!;
-    c.body = body.startsWith(MARKER) ? body : `${MARKER}\n${body}`;
+    c.body = opts?.raw || body.startsWith(MARKER) ? body : `${MARKER}\n${body}`;
     return c;
   });
   const remove = vi.fn(async (id: number) => {
