@@ -96,7 +96,8 @@ function loadReport(): Report | null {
   }
 }
 
-function build(): string {
+export function build(ctx: CIContext): string {
+  const { runUrl, artifactsUrl, bundleUrl } = buildUrls(ctx);
   const r = loadReport();
   const lines: string[] = [];
   lines.push("### 🌐 i18n audit + allowlist artifacts");
@@ -137,14 +138,30 @@ function build(): string {
   return lines.join("\n");
 }
 
-const body = build();
-mkdirSync(dirname(OUT_PATH), { recursive: true });
-writeFileSync(OUT_PATH, body);
-process.stdout.write(body);
-if (ctx.missing.length) {
-  // Soft-fail: don't crash CI when invoked locally, just surface the issue.
-  console.error(
-    `\n⚠️ i18n PR comment: missing CI env var(s): ${ctx.missing.join(", ")}. ` +
-      "Links fall back to placeholders. Set them in the workflow step or run via GitHub Actions.",
-  );
+// CLI entrypoint — only runs when invoked directly so importers (tests)
+// don't trigger file writes or stdout/stderr side effects.
+const invokedDirectly = (() => {
+  try {
+    const argv1 = process.argv[1] ?? "";
+    return (
+      argv1.endsWith("i18n-allowlist-pr-comment.ts") ||
+      argv1.endsWith("i18n-allowlist-pr-comment.js")
+    );
+  } catch {
+    return false;
+  }
+})();
+if (invokedDirectly) {
+  const ctx = resolveCIContext();
+  const body = build(ctx);
+  mkdirSync(dirname(OUT_PATH), { recursive: true });
+  writeFileSync(OUT_PATH, body);
+  process.stdout.write(body);
+  if (ctx.missing.length) {
+    // Soft-fail: don't crash CI when invoked locally, just surface the issue.
+    console.error(
+      `\n⚠️ i18n PR comment: missing CI env var(s): ${ctx.missing.join(", ")}. ` +
+        "Links fall back to placeholders. Set them in the workflow step or run via GitHub Actions.",
+    );
+  }
 }
