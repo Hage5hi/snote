@@ -144,4 +144,59 @@ test.describe("toast lifecycle helper (regression)", () => {
 
     await expectToastLifecycle(ok);
   });
+
+  // ---------- Multiple simultaneous toasts -------------------------------
+
+  test("targets the correct toast when multiple are visible at once", async ({
+    page,
+  }) => {
+    await page.goto("about:blank");
+
+    // Two sibling toasts, each with a distinct title.
+    await mountSonnerToast(page, {
+      text: "Toast A — auto-dismiss",
+      testid: "toast-a",
+      autoDismissAfterMs: TOAST_MIN_VISIBLE_MS + 400,
+    });
+    await mountSonnerToast(page, {
+      text: "Toast B — sticky",
+      testid: "toast-b",
+      // sticky on purpose; we'll clean it up at the end
+    });
+
+    // Both should be mounted as siblings inside the same sonner region.
+    const region = page.locator("[data-sonner-toaster]");
+    await expect(region).toHaveCount(1);
+    const allToasts = region.locator("[data-sonner-toast]");
+    await expect(allToasts).toHaveCount(2);
+
+    // Filter narrows to a single instance — this is the production pattern
+    // (specs filter by exact i18n string).
+    const toastA = allToasts.filter({ hasText: "Toast A" });
+    const toastB = allToasts.filter({ hasText: "Toast B" });
+    await expect(toastA).toHaveCount(1);
+    await expect(toastB).toHaveCount(1);
+
+    // Lifecycle on A should PASS without being confused by B sitting in
+    // the same region.
+    await expectToastLifecycle(toastA);
+
+    // B must still be visible afterwards — proves the helper didn't
+    // accidentally key off "any toast in the region".
+    await expect(toastB).toBeVisible();
+
+    // And the helper correctly fails on B (the stuck one).
+    let helperThrewOnB = false;
+    try {
+      await expectToastLifecycle(toastB);
+    } catch {
+      helperThrewOnB = true;
+    }
+    expect(helperThrewOnB).toBe(true);
+
+    // Cleanup.
+    await page.evaluate(() =>
+      document.querySelector("[data-sonner-toaster]")?.remove(),
+    );
+  });
 });
