@@ -20,17 +20,32 @@ bun run scripts/ci-sticky-pr-comment-upsert.ts \
 
 ### Environment variables (lower precedence than flags)
 
-| Env var                    | Type              | Default  |
-| -------------------------- | ----------------- | -------- |
-| `STICKY_CLEANUP_STRATEGY`  | `delete` \| `lock`| `delete` |
-| `STICKY_HEAD_SCAN_LINES`   | positive integer  | `5`      |
-| `STICKY_DEBUG`             | `1` to enable     | off      |
-| `GITHUB_TOKEN`             | PAT / job token   | required for live mode |
-| `STICKY_REPO`              | `owner/repo`      | required for live mode |
-| `STICKY_PR_NUMBER`         | PR number         | required for live mode |
+| Env var                    | Type              | Default  | Mode |
+| -------------------------- | ----------------- | -------- | ---- |
+| `STICKY_CLEANUP_STRATEGY`  | `delete` \| `lock`| `delete` | both |
+| `STICKY_HEAD_SCAN_LINES`   | positive integer  | `5`      | both |
+| `STICKY_DEBUG`             | `1` to enable     | off      | both |
+| `GITHUB_TOKEN`             | PAT / job token   | —        | **live only** |
+| `STICKY_REPO`              | `owner/repo`      | —        | **live only** |
+| `STICKY_PR_NUMBER`         | PR number         | —        | **live only** |
 
-If the GitHub envs are missing the script prints the resolved config
-and exits `0` — the cleanup pass is best-effort, not a gate.
+#### Live mode vs best-effort mode
+
+- **Live mode** — all three of `GITHUB_TOKEN`, `STICKY_REPO`, and
+  `STICKY_PR_NUMBER` must be set. The script calls the GitHub REST API
+  to list/create/update/delete PR comments and performs the actual
+  sticky upsert + duplicate cleanup. This is the mode used by the CI
+  workflow.
+- **Best-effort mode** — when any of those three live-mode envs is
+  missing, the script prints the resolved config (and which envs were
+  missing) and exits `0` without calling GitHub. Cleanup is best-effort,
+  not a CI gate, so missing creds (e.g. local dry-run, forked PR with
+  no token) must never fail the workflow.
+
+CLI flags (`--cleanup-strategy`, `--head-scan-lines`, `--debug`) always
+override the corresponding `STICKY_*` env vars. Invalid values passed
+via a flag throw (CI should fail loudly); invalid values from env are
+silently ignored and fall back to the default.
 
 ## `cleanupStrategy` — `delete` vs `lock`
 
@@ -93,8 +108,16 @@ With `--debug` (or `STICKY_DEBUG=1`):
 [sticky-upsert] selected newest sticky comment id=987654321 from 3 marker match(es); cleanup strategy=delete
 [sticky-upsert] deleted older duplicate sticky comment id=987654300
 [sticky-upsert] deleted older duplicate sticky comment id=987654289
+[sticky-upsert] summary: action=updated id=987654321 cleaned=2 (deleted=2 tombstoned=0) requestedStrategy=delete effectiveStrategy=delete
 [sticky-upsert] done: action=updated id=987654321 cleaned=2 usedFullScan=false
 ```
+
+The `summary:` line is always emitted (when `--debug` is on) on both
+created and updated paths. It reports the final cleaned count split by
+strategy actually used (`deleted=` vs `tombstoned=`) and shows when the
+requested strategy was downgraded — e.g. `requestedStrategy=delete
+effectiveStrategy=lock` means the API client lacked delete permission
+and the script fell back to tombstoning older duplicates.
 
 ## Exit codes
 

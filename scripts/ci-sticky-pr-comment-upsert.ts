@@ -148,6 +148,11 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
   if (matches.length === 0) {
     const created = await api.create(stamped);
     log?.(`no existing marker found across ${comments.length} comment(s); created id=${created.id}`);
+    log?.(
+      `summary: action=created id=${created.id} cleaned=0 ` +
+        `(deleted=0 tombstoned=0) ` +
+        `requestedStrategy=${requestedStrategy} effectiveStrategy=${strategy}`,
+    );
     return { action: "created", comment: created, cleaned: [], usedFullScan: false };
   }
 
@@ -174,6 +179,14 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
     }
   }
   if (stale.length === 0) log?.(`no older duplicates to clean up`);
+
+  const deletedCount = cleaned.filter((c) => c.via === "delete").length;
+  const lockedCount = cleaned.filter((c) => c.via === "lock").length;
+  log?.(
+    `summary: action=updated id=${updated.id} cleaned=${cleaned.length} ` +
+      `(deleted=${deletedCount} tombstoned=${lockedCount}) ` +
+      `requestedStrategy=${requestedStrategy} effectiveStrategy=${strategy}`,
+  );
 
   return { action: "updated", comment: updated, cleaned, usedFullScan };
 }
