@@ -1,0 +1,172 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome=" success " → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome=" success" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="0" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="1" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="SUCCESS" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="Success" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="action_required" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="cancelled" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="failure" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="neutral" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="null" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="ok" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="skipped" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="succes" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="success " → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="timed_out" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="true" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
+
+exports[`buildCoverageComment — only literal 'success' renders links > validateOutcome="undefined" → suppressed-link snapshot 1`] = `
+"### i18n CLI test coverage
+
+❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads.
+
+See the [\`Validate failure-breakdown.json shape\`](https://github.com/o/r/actions/runs/42) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed.
+"
+`;
