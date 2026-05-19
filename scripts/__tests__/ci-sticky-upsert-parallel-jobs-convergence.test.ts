@@ -106,7 +106,12 @@ describe("parallel CI upserts converge to a single sticky comment", () => {
     expect(survivor.id).toBe(follow.comment.id);
     expect(survivor.body).toContain("final");
     // None of the original stale-marker ids survive with a marker.
+    // None of the original stale ids survive with a marker, EXCEPT
+    // possibly the one that became the newest (it would have been
+    // updated in place with the fresh body, which is the desired
+    // converged state).
     for (const staleId of [100, 200, 300]) {
+      if (staleId === follow.comment.id) continue;
       const c = state.find((x) => x.id === staleId);
       if (c) expect(hasStickyMarker(c.body, MARKER, { fullScan: true })).toBe(false);
     }
