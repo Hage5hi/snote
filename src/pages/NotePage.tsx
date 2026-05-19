@@ -206,8 +206,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const unsubSync = provider.onSyncEvent((ev) => {
       if (ev.type === "recovered") {
         toast({
-          title: "Đã đồng bộ từ thiết bị khác",
-          description: `Hợp nhất ${ev.bytes} byte mới từ cloud.`,
+          title: t("toast.synced_remote"),
+          description: t("toast.synced_remote_desc", { bytes: ev.bytes }),
         });
       }
     });
