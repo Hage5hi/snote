@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lovable.dev/schemas/lintrc-i18n-allowlist.schema.json",
+  "title": "I18n Hardcoded String Allowlist",
+  "description": "Schema for .lintrc-i18n-allowlist.json. Each entry whitelists an intentional `eslint-disable-next-line no-restricted-syntax -- <reason>` site in src/. scripts/i18n-allowlist-check.ts validates this file (structure + drift) on CI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entries"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "description": { "type": "string" },
+    "entries": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/entry" }
+    }
+  },
+  "definitions": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "reason"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^src/.+\\.(t|j)sx?$",
+          "description": "Repo-relative path under src/ (e.g. src/pages/Foo.tsx)."
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Short justification. Must match `-- <reason>` on the corresponding eslint-disable comment."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Optional longer-form context for reviewers."
+        }
+      }
+    }
+  }
+}
