@@ -1,9 +1,10 @@
 // Brand block on the left of the Topbar: home link, slug, copy-URL, sync indicator, tag chips.
 import { Link } from "react-router-dom";
 import * as Y from "yjs";
-import { ArrowLeft, Cloud, Copy } from "lucide-react";
+import { ArrowLeft, Cloud, Copy, List } from "lucide-react";
 import { SyncIndicator } from "../SyncIndicator";
 import { TagChips } from "../TagChips";
+import { OUTLINE_TOGGLE_EVENT } from "../OutlineSidebar";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 
@@ -44,6 +45,16 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider }: TopbarBrandPro
       >
         <Copy className="h-3.5 w-3.5" />
       </button>
+
+      <button
+        onClick={() => window.dispatchEvent(new Event(OUTLINE_TOGGLE_EVENT))}
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+        aria-label="Outline (⌘\\)"
+        title="Outline (⌘\\)"
+      >
+        <List className="h-3.5 w-3.5" />
+      </button>
+
 
       {provider && (
         <div className="ml-2 flex items-center gap-1">

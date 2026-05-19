@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import * as Y from "yjs";
-import { List, X } from "lucide-react";
+import { X } from "lucide-react";
+
+export const OUTLINE_TOGGLE_EVENT = "outline:toggle";
 import { parseOutline, type Heading } from "@/lib/outline";
 import { Button } from "@/components/ui/button";
 
@@ -48,16 +50,21 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
     };
   }, [doc]);
 
-  // Cmd/Ctrl+\ toggle.
+  // Cmd/Ctrl+\ toggle + external trigger via OUTLINE_TOGGLE_EVENT.
   useEffect(() => {
+    const toggle = () => setOpen((v) => !v);
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
         e.preventDefault();
-        setOpen((v) => !v);
+        toggle();
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener(OUTLINE_TOGGLE_EVENT, toggle);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OUTLINE_TOGGLE_EVENT, toggle);
+    };
   }, []);
 
   const handleJump = (line: number) => {
@@ -68,17 +75,6 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
 
   return (
     <>
-      {/* Toggle button — always visible, low-contrast pill on the left edge. */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Đóng Outline" : "Mở Outline (⌘\\)"}
-        title={open ? "Đóng Outline" : "Outline (⌘\\)"}
-        className="zen-hide fixed left-2 top-1/2 z-30 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-accent hover:text-foreground"
-      >
-        <List className="h-4 w-4" />
-      </button>
-
       {/* Backdrop on mobile */}
       {open && (
         <div
