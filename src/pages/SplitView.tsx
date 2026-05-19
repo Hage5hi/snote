@@ -56,23 +56,23 @@ export default function SplitView() {
     <div className="flex h-svh flex-col bg-background">
       <Helmet>
         <title>{`Split view: /${left} + /${right} — Syrin Notes`}</title>
-        <meta name="description" content={`So sánh hai note markdown cạnh nhau (/${left} và /${right}) với chế độ cuộn đồng bộ trên Syrin Notes.`} />
+        <meta name="description" content={`Compare two markdown notes side by side (/${left} and /${right}) with synced scrolling on Syrin Notes.`} />
         <link rel="canonical" href={`https://snote.lovable.app/${left}+${right}`} />
         <meta name="robots" content="noindex, follow" />
         <meta property="og:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
-        <meta property="og:description" content={`So sánh hai note markdown cạnh nhau (/${left} và /${right}) với chế độ cuộn đồng bộ.`} />
+        <meta property="og:description" content={`Compare two markdown notes side by side (/${left} and /${right}) with synced scrolling.`} />
         <meta property="og:url" content={`https://snote.lovable.app/${left}+${right}`} />
         <meta name="twitter:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
-        <meta name="twitter:description" content={`So sánh hai note markdown cạnh nhau (/${left} và /${right}).`} />
+        <meta name="twitter:description" content={`Compare two markdown notes side by side (/${left} and /${right}).`} />
       </Helmet>
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 text-xs">
         <Tooltip>
           <TooltipTrigger asChild>
-            <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Trang chủ">
+            <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Home">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Về trang chủ</TooltipContent>
+          <TooltipContent side="bottom">Back to home</TooltipContent>
         </Tooltip>
         <span className="font-mono">
           /{left} <span className="text-muted-foreground">+</span> /{right}
@@ -91,8 +91,8 @@ export default function SplitView() {
           </TooltipTrigger>
           <TooltipContent side="bottom">
             {syncScroll
-              ? "Đang đồng bộ cuộn 2 panel. Click để tắt."
-              : "Click để bật đồng bộ cuộn giữa 2 note."}
+              ? "Syncing scroll across both panels. Click to disable."
+              : "Click to enable synced scrolling between the two notes."}
           </TooltipContent>
         </Tooltip>
       </header>
