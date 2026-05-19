@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import * as Y from "yjs";
 import { expandWikiLinks } from "@/lib/wiki-link";
@@ -7,6 +7,7 @@ import { renderKatex } from "@/lib/markdown/renderers/katex";
 import { highlightCode } from "@/lib/markdown/renderers/highlight";
 import { getCachedHtml, setCachedHtml } from "@/lib/markdown/render-cache";
 import { renderInWorker } from "@/lib/markdown/preview-worker-client";
+import { useI18n } from "@/i18n";
 
 function escapeHtml(s: string) {
   return s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!);
