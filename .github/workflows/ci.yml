@@ -54,8 +54,12 @@ jobs:
         name: i18n audit + diff (hardcoded strings)
         run: bun run i18n:audit || true
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
-        name: i18n hardcoded-string allowlist gate
-        run: bun run i18n:allowlist
+        name: i18n hardcoded-string allowlist gate (always writes report)
+        # `|| true` so the upload step still runs and surfaces the
+        # generated reports/i18n-allowlist-report.{json,md}. The gate is
+        # re-enforced below after artifacts have been uploaded.
+        id: allowlist_gate
+        run: bun run i18n:allowlist || echo "ALLOWLIST_FAILED=1" >> "$GITHUB_ENV"
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
         name: Focused i18n vitest suite
         run: bunx vitest run src/i18n/__tests__/
