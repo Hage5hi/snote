@@ -73,3 +73,46 @@ the entry's start line, e.g.
 The summary JSON is consumed by the [PR comment builder](./i18n-ci-env-vars.md)
 and a GitHub Check Run step so reviewers see the same one-line failure
 category + top files in every surface.
+
+## Exit codes
+
+`bun run i18n:allowlist:summary` exits with a distinct code per failure
+class so CI can branch on the cause:
+
+| Code | Meaning                                                    |
+|------|------------------------------------------------------------|
+| `0`  | PASS — schema valid, no drift                              |
+| `2`  | Schema validation failed (`.lintrc-i18n-allowlist.json`)   |
+| `1`  | Drift — unallowlisted disables or stale allowlist entries  |
+
+Schema is reported first when both fail simultaneously (a broken config
+invalidates the drift verdict). The same value is mirrored on the JSON
+output as `exitCode`.
+
+## `--no-check-run` (alias `--no-checkRun`)
+
+Disables the downstream GitHub Check Run publish step while keeping
+annotations, the uploaded artifacts, and the PR comment intact. The flag
+flips `publishCheckRun: false` in `i18n-allowlist-summary.json`; the
+workflow's `Publish i18n allowlist Check Run` step honors that field and
+short-circuits via `core.info(...)`.
+
+```bash
+bun run i18n:allowlist:summary --changed --json --annotations --no-check-run
+```
+
+Useful for forked PRs (where the Check Run API is rejected) or repos
+that don't want duplicate signal in the PR Checks tab.
+
+## Schema annotations carry the specific error
+
+For schema failures, each annotation includes the per-entry error
+message (from `entries[i].errors[0]`) appended to the aggregate reason:
+
+```text
+::error file=.lintrc-i18n-allowlist.json,line=42::i18n allowlist — schema validation failed — 1 error in .lintrc-i18n-allowlist.json — must contain property `reason`
+```
+
+The same alignment is exposed on the JSON output via
+`failure.topMessages` (same length and order as `failure.topFiles`;
+`null` for drift entries).
