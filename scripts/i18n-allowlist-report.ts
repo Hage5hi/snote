@@ -2,30 +2,45 @@
 // summary read straight from reports/i18n-allowlist-report.json.
 //
 // Usage:
-//   bun run i18n:allowlist:summary
-//   bun run i18n:allowlist:summary --changed
+//   bun run i18n:allowlist:summary [flags]
 //
-// Flags:
-//   --changed    Only print results scoped to files changed in the working
-//                tree. Combines `git diff --name-only HEAD` (staged +
-//                unstaged tracked changes) with `git ls-files --others
-//                --exclude-standard` so brand-new untracked locale / i18n
-//                files (which are exactly the ones a contributor is about
-//                to add) are also picked up. Falls back to the full report
-//                when git is unavailable or no i18n-relevant file changed.
+// Flags (and aliases):
+//   --changed              Scope counts to files changed in the working
+//                          tree (`git diff` + untracked). Falls back to
+//                          the full report if git is unavailable or no
+//                          i18n-relevant file changed.
+//   --json                 Emit the machine-readable SummaryJSON to
+//                          stdout (always also written to
+//                          reports/i18n-allowlist-summary.json).
+//   --annotations          Emit GitHub Actions `::error file=,line=…`
+//                          workflow commands to stderr for each top
+//                          offending path.
+//   --topFiles N           Cap on top offending paths surfaced (default
+//                          3). Aliases: --top-files, --topFiles=N.
+//   --no-check-run         Set `publishCheckRun: false` in the summary
+//                          JSON so the workflow's Check Run step skips.
+//                          Annotations + artifact uploads still happen.
+//                          Alias: --no-checkRun.
 //
-// Output always includes:
-//   • the absolute / relative path to reports/i18n-allowlist-report.json
-//   • the four counters (schemaOk, driftOk, missing, stale)
-//   • on failure: a single one-line reason that names the failing category
-//     (schema / drift-missing / drift-stale) and the top file path(s)
+// Exit codes (mirrored on `SummaryJSON.exitCode`):
+//   0  PASS — schema valid, no drift
+//   2  Schema validation failed (.lintrc-i18n-allowlist.json is broken)
+//   1  Drift — unallowlisted disables or stale allowlist entries
+//   Schema is checked first: when both fail the exit code is 2.
+//
+// Examples:
+//   bun run i18n:allowlist:summary                            # full repo, pretty text
+//   bun run i18n:allowlist:summary --changed                  # PR-scoped pretty text
+//   bun run i18n:allowlist:summary --json --topFiles 5        # machine-readable, top 5
+//   bun run i18n:allowlist:summary --annotations --no-check-run  # CI: annotate but skip Check Run
 //
 // This file exposes pure helpers (`getChangedFiles`, `buildSummary`,
-// `formatSummary`, `buildFailureReason`) so the scoping + failure-reason
-// logic can be unit tested in isolation — see
-// scripts/__tests__/i18n-allowlist-summary.test.ts. The CLI side effects
-// (running the real allowlist check, writing to stdout, exiting) only fire
-// when the file is executed directly.
+// `formatSummary`, `buildFailureReason`, `exitCodeFor`) so the scoping +
+// failure-reason logic can be unit tested in isolation — see
+// scripts/__tests__/i18n-allowlist-summary.test.ts and
+// scripts/__tests__/i18n-allowlist-exit-codes.test.ts. The CLI side
+// effects (running the real allowlist check, writing to stdout,
+// exiting) only fire when the file is executed directly.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
