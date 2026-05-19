@@ -315,6 +315,32 @@ jobs:
         with:
           header: i18n-cli-coverage
           path: reports/_ci/coverage-pr-comment.md
+      # Duplicate-marker cleanup pass. Runs AFTER the sticky comment has
+      # been posted so any stragglers from previous runs (manual pastes,
+      # races that doubled-up the marker, comments older than the upsert
+      # logic itself) are removed or tombstoned. cleanupStrategy /
+      # head-scan window / debug logging are all configurable via the
+      # workflow_dispatch inputs above, falling back to env defaults.
+      # See docs/ci-sticky-pr-comment.md for the full matrix.
+      - if: always() && github.event_name == 'pull_request' && env.COVERAGE_COMMENT_READY == '1'
+        name: Sticky PR comment — duplicate cleanup
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STICKY_CLEANUP_STRATEGY: ${{ inputs.sticky_cleanup_strategy || 'delete' }}
+          STICKY_HEAD_SCAN_LINES: ${{ inputs.sticky_head_scan_lines || '5' }}
+          STICKY_DEBUG: ${{ inputs.sticky_debug || '0' }}
+          STICKY_MARKER: '<!-- Sticky Pull Request Commenti18n-cli-coverage -->'
+          STICKY_PR_NUMBER: ${{ github.event.pull_request.number }}
+          STICKY_REPO: ${{ github.repository }}
+        continue-on-error: true
+        run: |
+          bun run scripts/ci-sticky-pr-comment-upsert.ts \
+            --marker "$STICKY_MARKER" \
+            --body-file reports/_ci/coverage-pr-comment.md \
+            --cleanup-strategy "$STICKY_CLEANUP_STRATEGY" \
+            --head-scan-lines "$STICKY_HEAD_SCAN_LINES" \
+            $( [ "$STICKY_DEBUG" = "1" ] && echo --debug )
+
 
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
