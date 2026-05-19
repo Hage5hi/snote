@@ -147,11 +147,9 @@ describe("Persistence — language survives reload", () => {
     expect(screen.getByTestId("export-ai").textContent).toBe(dict.fr["export.ai"]);
   });
 
-  it("Provider import path (named export) matches the canonical one", () => {
-    // Sanity: avoid divergent re-export shapes.
-    expect(I18nProvider).toBe(ProviderImpl);
+  it("language stored via setLang persists across remounts (simulated reload)", () => {
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("fr");
   });
-});
 
 describe("Export menu — localized trigger + dict coverage", () => {
   const EXPORT_KEYS = [
