@@ -2,14 +2,38 @@
 # Lovable pre-commit hook — runs the i18n allowlist gate locally so drift
 # (missing or stale eslint-disable entries) is caught BEFORE the CI run.
 #
+# Fast-path: only runs when the staged changeset can actually affect the
+# allowlist outcome — i.e. when it touches source files scanned by the
+# drift checker (src/**/*.{ts,tsx,js,jsx}) or the allowlist config itself
+# (.lintrc-i18n-allowlist.json / .schema.json). On unrelated commits
+# (docs, assets, workflows, …) the hook exits early so large repos don't
+# pay the full scan cost on every commit.
+#
+# Override:
+#   I18N_HOOK_FORCE=1 git commit ...    # always run, even if no i18n files changed
+#   git commit --no-verify              # skip the hook entirely (emergency)
+#
 # Install once per clone:
 #   bun run hooks:install
-#
-# Skip in an emergency:
-#   git commit --no-verify
 set -euo pipefail
 
-echo "▶ pre-commit: i18n allowlist check"
+# Files staged for this commit (added/copied/modified/renamed).
+STAGED=$(git diff --cached --name-only --diff-filter=ACMR || true)
+
+needs_check() {
+  if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
+  if [ -z "$STAGED" ]; then return 1; fi
+  # Match src/**/*.{ts,tsx,js,jsx} OR the allowlist config/schema.
+  echo "$STAGED" | grep -E '^(src/.*\.(t|j)sx?$|\.lintrc-i18n-allowlist(\.schema)?\.json$)' > /dev/null
+}
+
+if ! needs_check; then
+  echo "▶ pre-commit: no i18n-relevant files staged — skipping allowlist check."
+  echo "  (set I18N_HOOK_FORCE=1 to run anyway)"
+  exit 0
+fi
+
+echo "▶ pre-commit: i18n allowlist check (staged i18n-relevant files detected)"
 if ! bun run i18n:allowlist:report; then
   echo ""
   echo "❌ pre-commit: i18n allowlist check FAILED."
