@@ -46,9 +46,11 @@ const DOC_PATH = resolve(PROJECT_ROOT, "docs/i18n-allowlist-summary.md");
 
 // ────────────────────────────────────────────────────────────────────────────
 // Test harness: a tmp dir wired up so `runAllowlistCheck` finds a schema
-// + a deliberately invalid allowlist (entry missing `reason`) → schema
-// failure → exit code 2. Empty src/ means there's no drift, so the only
-// failure surfaced is schema.
+// + a schema-valid allowlist whose entry has no matching disable in
+// src/ → drift-stale → exit code 1. Stale entries populate
+// `report.stale` (and therefore `failure.topFiles`) so we can assert
+// annotations are actually emitted, unlike a structural schema failure
+// where entries arrive empty.
 // ────────────────────────────────────────────────────────────────────────────
 function makeFailingFixture(): string {
   const dir = mkdtempSync(join(tmpdir(), "i18n-allowlist-cli-"));
@@ -59,7 +61,7 @@ function makeFailingFixture(): string {
     JSON.stringify(
       {
         $schema: "./.lintrc-i18n-allowlist.schema.json",
-        entries: [{ file: "src/missing-reason.tsx" }],
+        entries: [{ file: "src/ghost.tsx", reason: "no longer present" }],
       },
       null,
       2,
