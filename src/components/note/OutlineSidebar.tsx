@@ -75,17 +75,6 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
 
   return (
     <>
-      {/* Toggle button — always visible, low-contrast pill on the left edge. */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        aria-label={open ? "Đóng Outline" : "Mở Outline (⌘\\)"}
-        title={open ? "Đóng Outline" : "Outline (⌘\\)"}
-        className="zen-hide fixed left-2 top-1/2 z-30 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background/80 text-muted-foreground shadow-sm backdrop-blur hover:bg-accent hover:text-foreground"
-      >
-        <List className="h-4 w-4" />
-      </button>
-
       {/* Backdrop on mobile */}
       {open && (
         <div
