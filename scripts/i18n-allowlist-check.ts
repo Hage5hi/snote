@@ -7,58 +7,74 @@
 //   2. Drift detection — every
 //      `eslint-disable[-next-line] no-restricted-syntax -- <reason>` comment
 //      in src/ must match a {file, reason} entry, and vice versa.
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+//
+// Always emits reports/i18n-allowlist-report.{json,md} so CI artifacts are
+// useful even when validation fails. Exported `runAllowlistCheck` is used
+// from scripts/__tests__/ so we can unit-test the schema + grouping logic
+// without spawning a subprocess.
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, relative } from "node:path";
 import Ajv, { type DefinedError, type ErrorObject } from "ajv";
 
-const ROOT = process.cwd();
-const ALLOWLIST_PATH = join(ROOT, ".lintrc-i18n-allowlist.json");
-const SCHEMA_PATH = join(ROOT, ".lintrc-i18n-allowlist.schema.json");
-const SRC_DIR = join(ROOT, "src");
+const ENTRY_KEYS = ["file", "reason", "notes"] as const;
 
-interface Entry {
+export interface RunOptions {
+  root?: string;
+  allowlistPath?: string;
+  schemaPath?: string;
+  srcDir?: string;
+  reportDir?: string;
+  /** Throw instead of process.exit, for tests. */
+  throwOnFail?: boolean;
+  /** Silence console output, for tests. */
+  silent?: boolean;
+}
+
+export interface GroupedError {
+  group: string; // "(root)" | "entries[i]"
+  messages: string[];
+}
+
+export interface EntryReport {
+  index: number;
   file: string;
   reason: string;
-  notes?: string;
-}
-interface Allowlist {
-  entries: Entry[];
-}
-
-// ---------- 1. Load + JSON Schema validation -----------------------------
-let raw: unknown;
-try {
-  raw = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8"));
-} catch (e) {
-  console.error(`❌ .lintrc-i18n-allowlist.json is not valid JSON: ${(e as Error).message}`);
-  process.exit(1);
+  schemaOk: boolean;
+  fileExists: boolean;
+  duplicate: boolean;
+  matchedInSource: boolean;
+  matchedSites: { file: string; line: number }[];
+  errors: string[];
 }
 
-let schema: object;
-try {
-  schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8"));
-} catch (e) {
-  console.error(`❌ Cannot load schema ${SCHEMA_PATH}: ${(e as Error).message}`);
-  process.exit(1);
+export interface RunReport {
+  ok: boolean;
+  schemaOk: boolean;
+  driftOk: boolean;
+  totals: { entries: number; schemaErrors: number; missing: number; stale: number };
+  groupedSchemaErrors: GroupedError[];
+  entries: EntryReport[];
+  missing: { file: string; reason: string; line: number }[];
+  stale: string[];
 }
 
-const ajv = new Ajv({ allErrors: true, verbose: true, strict: false });
-const validate = ajv.compile(schema);
-const ok = validate(raw);
-
-const ENTRY_KEYS = ["file", "reason", "notes"] as const;
+// --- helpers --------------------------------------------------------------
 
 function suggestKey(actual: string): string | undefined {
   const a = actual.toLowerCase();
   for (const k of ENTRY_KEYS) if (k.startsWith(a) || a.startsWith(k)) return k;
-  // tiny levenshtein for typos
   const dist = (x: string, y: string) => {
-    const dp: number[][] = Array.from({ length: x.length + 1 }, () => new Array(y.length + 1).fill(0));
+    const dp: number[][] = Array.from({ length: x.length + 1 }, () =>
+      new Array(y.length + 1).fill(0),
+    );
     for (let i = 0; i <= x.length; i++) dp[i][0] = i;
     for (let j = 0; j <= y.length; j++) dp[0][j] = j;
     for (let i = 1; i <= x.length; i++)
       for (let j = 1; j <= y.length; j++)
-        dp[i][j] = x[i - 1] === y[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
+        dp[i][j] =
+          x[i - 1] === y[j - 1]
+            ? dp[i - 1][j - 1]
+            : 1 + Math.min(dp[i - 1][j - 1], dp[i - 1][j], dp[i][j - 1]);
     return dp[x.length][y.length];
   };
   let best: { k: string; d: number } | undefined;
@@ -69,9 +85,18 @@ function suggestKey(actual: string): string | undefined {
   return best?.k;
 }
 
+function pathOf(err: ErrorObject): string {
+  return (err.instancePath ?? (err as unknown as { dataPath?: string }).dataPath ?? "") || "";
+}
+
+function entryIndexOf(p: string): number | null {
+  const m = p.match(/^\/entries\/(\d+)/) ?? p.match(/^\.entries\[(\d+)\]/);
+  return m ? Number(m[1]) : null;
+}
+
 function formatAjvError(err: ErrorObject): string {
   const e = err as DefinedError;
-  const where = err.instancePath || "(root)";
+  const where = pathOf(err) || "(root)";
   switch (e.keyword) {
     case "required":
       return `${where}: missing required field "${e.params.missingProperty}" (expected one of: ${ENTRY_KEYS.join(", ")})`;
@@ -91,61 +116,22 @@ function formatAjvError(err: ErrorObject): string {
   }
 }
 
-if (!ok) {
-  const errors = (validate.errors ?? []) as ErrorObject[];
-  // Group by entries[i] or "(root)"
-  const groups = new Map<string, string[]>();
+function groupSchemaErrors(errors: ErrorObject[]): GroupedError[] {
+  const map = new Map<string, string[]>();
   for (const err of errors) {
-    const m = err.instancePath.match(/^\/entries\/(\d+)/);
-    const key = m ? `entries[${m[1]}]` : "(root)";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(formatAjvError(err));
+    const idx = entryIndexOf(pathOf(err));
+    const key = idx !== null ? `entries[${idx}]` : "(root)";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(formatAjvError(err));
   }
-
-  console.error("\n❌ .lintrc-i18n-allowlist.json schema errors:\n");
-  const keys = [...groups.keys()].sort((a, b) => {
-    if (a === "(root)") return -1;
-    if (b === "(root)") return 1;
-    const ai = Number(a.match(/\d+/)?.[0] ?? 0);
-    const bi = Number(b.match(/\d+/)?.[0] ?? 0);
-    return ai - bi;
-  });
-  for (const k of keys) {
-    console.error(`  ${k}:`);
-    for (const msg of groups.get(k)!) console.error(`    - ${msg}`);
-  }
-  console.error(
-    `\nSummary: ${errors.length} error(s) across ${groups.size} location(s). Expected entry shape: { ${ENTRY_KEYS.join(", ")} }.`,
-  );
-  console.error("See docs/i18n-hardcoded-allowlist.md and .lintrc-i18n-allowlist.schema.json.");
-  process.exit(1);
+  return [...map.entries()]
+    .sort(([a], [b]) => {
+      if (a === "(root)") return -1;
+      if (b === "(root)") return 1;
+      return Number(a.match(/\d+/)?.[0] ?? 0) - Number(b.match(/\d+/)?.[0] ?? 0);
+    })
+    .map(([group, messages]) => ({ group, messages }));
 }
-
-const allowlist = raw as Allowlist;
-
-// ---------- 2. Cross-entry sanity (post-schema) --------------------------
-// Schema cannot encode "file must exist on disk" or "no duplicate (file, reason)".
-const fsErrors: string[] = [];
-const seenKeys = new Set<string>();
-allowlist.entries.forEach((e, i) => {
-  if (!existsSync(join(ROOT, e.file))) {
-    fsErrors.push(`entries[${i}].file does not exist on disk: ${e.file}`);
-  }
-  const k = `${e.file}::${e.reason.trim()}`;
-  if (seenKeys.has(k)) fsErrors.push(`entries[${i}] is a duplicate of an earlier entry (${k})`);
-  seenKeys.add(k);
-});
-if (fsErrors.length) {
-  console.error("\n❌ .lintrc-i18n-allowlist.json post-schema errors:");
-  for (const e of fsErrors) console.error(`  - ${e}`);
-  process.exit(1);
-}
-
-const allowed = new Set(allowlist.entries.map((e) => `${e.file}::${e.reason.trim()}`));
-
-// ---------- 3. Drift detection vs source comments ------------------------
-const DISABLE_RE =
-  /eslint-disable(?:-next-line)?\s+no-restricted-syntax\s*--\s*([^\n*/]+)/g;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -157,42 +143,222 @@ function walk(dir: string, out: string[] = []): string[] {
   return out;
 }
 
-const missing: { file: string; reason: string; line: number }[] = [];
-const seen = new Set<string>();
+const DISABLE_RE =
+  /eslint-disable(?:-next-line)?\s+no-restricted-syntax\s*--\s*([^\n*/]+)/g;
 
-for (const abs of walk(SRC_DIR)) {
-  const rel = relative(ROOT, abs).replaceAll("\\", "/");
-  const src = readFileSync(abs, "utf8");
-  const lines = src.split("\n");
-  for (let i = 0; i < lines.length; i++) {
-    DISABLE_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = DISABLE_RE.exec(lines[i]))) {
-      const reason = m[1].trim().replace(/\s*\*\/\s*$/, "").trim();
-      const key = `${rel}::${reason}`;
-      seen.add(key);
-      if (!allowed.has(key)) missing.push({ file: rel, reason, line: i + 1 });
+interface Entry { file: string; reason: string; notes?: string }
+
+// --- main -----------------------------------------------------------------
+
+export function runAllowlistCheck(opts: RunOptions = {}): RunReport {
+  const ROOT = opts.root ?? process.cwd();
+  const ALLOWLIST_PATH = opts.allowlistPath ?? join(ROOT, ".lintrc-i18n-allowlist.json");
+  const SCHEMA_PATH = opts.schemaPath ?? join(ROOT, ".lintrc-i18n-allowlist.schema.json");
+  const SRC_DIR = opts.srcDir ?? join(ROOT, "src");
+  const REPORT_DIR = opts.reportDir ?? join(ROOT, "reports");
+  const log = (s: string) => { if (!opts.silent) console.error(s); };
+
+  const report: RunReport = {
+    ok: true, schemaOk: true, driftOk: true,
+    totals: { entries: 0, schemaErrors: 0, missing: 0, stale: 0 },
+    groupedSchemaErrors: [], entries: [], missing: [], stale: [],
+  };
+
+  // 1. Load
+  let raw: unknown;
+  try { raw = JSON.parse(readFileSync(ALLOWLIST_PATH, "utf8")); }
+  catch (e) {
+    report.ok = false; report.schemaOk = false;
+    report.groupedSchemaErrors = [{ group: "(root)", messages: [`Invalid JSON: ${(e as Error).message}`] }];
+    report.totals.schemaErrors = 1;
+    writeReport(REPORT_DIR, report);
+    return report;
+  }
+  const schema = JSON.parse(readFileSync(SCHEMA_PATH, "utf8")) as object;
+
+  // 2. Schema validation
+  const ajv = new Ajv({ allErrors: true, verbose: true });
+  const validate = ajv.compile(schema);
+  const ok = validate(raw);
+
+  if (!ok) {
+    const errors = (validate.errors ?? []) as ErrorObject[];
+    report.ok = false; report.schemaOk = false;
+    report.groupedSchemaErrors = groupSchemaErrors(errors);
+    report.totals.schemaErrors = errors.length;
+    log("\n❌ .lintrc-i18n-allowlist.json schema errors:\n");
+    for (const g of report.groupedSchemaErrors) {
+      log(`  ${g.group}:`);
+      for (const m of g.messages) log(`    - ${m}`);
     }
+    log(
+      `\nSummary: ${errors.length} error(s) across ${report.groupedSchemaErrors.length} location(s). ` +
+      `Expected entry shape: { ${ENTRY_KEYS.join(", ")} }.`,
+    );
+    writeReport(REPORT_DIR, report);
+    if (opts.throwOnFail) throw new Error("schema");
+    return report;
+  }
+
+  const allowlist = raw as { entries: Entry[] };
+  report.totals.entries = allowlist.entries.length;
+
+  // 3. Post-schema sanity
+  const fsErrors: string[] = [];
+  const dupKeys = new Set<string>();
+  const seenKeys = new Set<string>();
+  const fileExistsMap = new Map<number, boolean>();
+  allowlist.entries.forEach((e, i) => {
+    const exists = existsSync(join(ROOT, e.file));
+    fileExistsMap.set(i, exists);
+    if (!exists) fsErrors.push(`entries[${i}].file does not exist on disk: ${e.file}`);
+    const k = `${e.file}::${e.reason.trim()}`;
+    if (seenKeys.has(k)) { fsErrors.push(`entries[${i}] is a duplicate of an earlier entry (${k})`); dupKeys.add(k); }
+    seenKeys.add(k);
+  });
+
+  // 4. Drift detection
+  const allowed = new Set(allowlist.entries.map((e) => `${e.file}::${e.reason.trim()}`));
+  const siteMap = new Map<string, { file: string; line: number }[]>();
+  const seen = new Set<string>();
+  for (const abs of walk(SRC_DIR)) {
+    const rel = relative(ROOT, abs).replaceAll("\\", "/");
+    const src = readFileSync(abs, "utf8");
+    const lines = src.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      DISABLE_RE.lastIndex = 0;
+      let m: RegExpExecArray | null;
+      while ((m = DISABLE_RE.exec(lines[i]))) {
+        const reason = m[1].trim().replace(/\s*\*\/\s*$/, "").trim();
+        const key = `${rel}::${reason}`;
+        seen.add(key);
+        if (!siteMap.has(key)) siteMap.set(key, []);
+        siteMap.get(key)!.push({ file: rel, line: i + 1 });
+        if (!allowed.has(key)) report.missing.push({ file: rel, reason, line: i + 1 });
+      }
+    }
+  }
+  report.stale = [...allowed].filter((k) => !seen.has(k));
+  report.totals.missing = report.missing.length;
+  report.totals.stale = report.stale.length;
+
+  // 5. Per-entry rows
+  report.entries = allowlist.entries.map((e, i) => {
+    const k = `${e.file}::${e.reason.trim()}`;
+    const sites = siteMap.get(k) ?? [];
+    const errors: string[] = [];
+    const exists = fileExistsMap.get(i) ?? false;
+    if (!exists) errors.push("file does not exist");
+    if (dupKeys.has(k)) errors.push("duplicate entry");
+    if (sites.length === 0) errors.push("no matching eslint-disable comment in source (stale)");
+    return {
+      index: i, file: e.file, reason: e.reason,
+      schemaOk: true, fileExists: exists,
+      duplicate: dupKeys.has(k),
+      matchedInSource: sites.length > 0,
+      matchedSites: sites, errors,
+    };
+  });
+
+  if (fsErrors.length) {
+    report.ok = false; report.driftOk = false;
+    log("\n❌ .lintrc-i18n-allowlist.json post-schema errors:");
+    for (const e of fsErrors) log(`  - ${e}`);
+  }
+  if (report.missing.length) {
+    report.ok = false; report.driftOk = false;
+    log("\n❌ Unallowlisted no-restricted-syntax disables:");
+    for (const r of report.missing) log(`  ${r.file}:${r.line}  --  reason: "${r.reason}"`);
+    log("\nAdd matching {file, reason} entries to .lintrc-i18n-allowlist.json (or wrap the string in t()).");
+  }
+  if (report.stale.length) {
+    report.ok = false; report.driftOk = false;
+    log("\n❌ Stale allowlist entries (no matching disable comment):");
+    for (const k of report.stale) log(`  ${k}`);
+    log("\nRemove them from .lintrc-i18n-allowlist.json.");
+  }
+
+  writeReport(REPORT_DIR, report);
+
+  if (report.ok && !opts.silent) {
+    console.log(
+      `✅ i18n allowlist OK — schema valid, ${allowed.size} entries, ${seen.size} matched in source.`,
+    );
+  }
+  if (!report.ok && opts.throwOnFail) throw new Error("drift");
+  return report;
+}
+
+function writeReport(dir: string, r: RunReport): void {
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "i18n-allowlist-report.json"), JSON.stringify(r, null, 2));
+    writeFileSync(join(dir, "i18n-allowlist-report.md"), renderMarkdown(r));
+  } catch {
+    /* best-effort */
   }
 }
 
-const stale = [...allowed].filter((k) => !seen.has(k));
+function renderMarkdown(r: RunReport): string {
+  const lines: string[] = [];
+  lines.push("# i18n Allowlist Validation Report");
+  lines.push("");
+  lines.push(`**Status:** ${r.ok ? "✅ PASS" : "❌ FAIL"}  ·  Schema: ${r.schemaOk ? "✅" : "❌"}  ·  Drift: ${r.driftOk ? "✅" : "❌"}`);
+  lines.push("");
+  lines.push(`- Entries: **${r.totals.entries}**`);
+  lines.push(`- Schema errors: **${r.totals.schemaErrors}**`);
+  lines.push(`- Missing (unallowlisted disables): **${r.totals.missing}**`);
+  lines.push(`- Stale (no source match): **${r.totals.stale}**`);
+  lines.push("");
 
-let failed = false;
-if (missing.length) {
-  failed = true;
-  console.error("\n❌ Unallowlisted no-restricted-syntax disables:");
-  for (const r of missing) console.error(`  ${r.file}:${r.line}  --  reason: "${r.reason}"`);
-  console.error(
-    "\nAdd matching {file, reason} entries to .lintrc-i18n-allowlist.json (or wrap the string in t()).",
-  );
-}
-if (stale.length) {
-  failed = true;
-  console.error("\n❌ Stale allowlist entries (no matching disable comment):");
-  for (const k of stale) console.error(`  ${k}`);
-  console.error("\nRemove them from .lintrc-i18n-allowlist.json.");
+  if (r.groupedSchemaErrors.length) {
+    lines.push("## Schema errors");
+    for (const g of r.groupedSchemaErrors) {
+      lines.push(`### ${g.group}`);
+      for (const m of g.messages) lines.push(`- ${m}`);
+    }
+    lines.push("");
+  }
+
+  if (r.entries.length) {
+    lines.push("## Per-entry results");
+    lines.push("");
+    lines.push("| # | File | Reason | Status | Matched sites |");
+    lines.push("|---|------|--------|--------|---------------|");
+    for (const e of r.entries) {
+      const status = e.errors.length ? `❌ ${e.errors.join("; ")}` : "✅";
+      const sites = e.matchedSites.length
+        ? e.matchedSites.map((s) => `\`${s.file}:${s.line}\``).join("<br>")
+        : "_none_";
+      lines.push(`| ${e.index} | \`${e.file}\` | ${e.reason} | ${status} | ${sites} |`);
+    }
+    lines.push("");
+  }
+
+  if (r.missing.length) {
+    lines.push("## Unallowlisted disables (drift)");
+    for (const m of r.missing) lines.push(`- \`${m.file}:${m.line}\` — reason: \`${m.reason}\``);
+    lines.push("");
+  }
+  if (r.stale.length) {
+    lines.push("## Stale entries");
+    for (const s of r.stale) lines.push(`- \`${s}\``);
+    lines.push("");
+  }
+  return lines.join("\n");
 }
 
-if (failed) process.exit(1);
-console.log(`✅ i18n allowlist OK — schema valid, ${allowed.size} entries, ${seen.size} matched in source.`);
+// CLI entrypoint
+const invokedDirectly = (() => {
+  try {
+    const argv1 = process.argv[1] ?? "";
+    return argv1.endsWith("i18n-allowlist-check.ts") || argv1.endsWith("i18n-allowlist-check.js");
+  } catch { return false; }
+})();
+if (invokedDirectly) {
+  const r = runAllowlistCheck();
+  if (!r.ok) process.exit(1);
+}
+
+// Silence unused import warning in some bundlers
+void dirname;

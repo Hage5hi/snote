@@ -54,11 +54,15 @@ jobs:
         name: i18n audit + diff (hardcoded strings)
         run: bun run i18n:audit || true
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
-        name: i18n hardcoded-string allowlist gate
-        run: bun run i18n:allowlist
+        name: i18n hardcoded-string allowlist gate (always writes report)
+        # `|| true` so the upload step still runs and surfaces the
+        # generated reports/i18n-allowlist-report.{json,md}. The gate is
+        # re-enforced below after artifacts have been uploaded.
+        id: allowlist_gate
+        run: bun run i18n:allowlist || echo "ALLOWLIST_FAILED=1" >> "$GITHUB_ENV"
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
-        name: Focused i18n vitest suite
-        run: bunx vitest run src/i18n/__tests__/
+        name: Focused i18n + allowlist-script vitest suites
+        run: bunx vitest run src/i18n/__tests__/ scripts/__tests__/
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
@@ -81,13 +85,25 @@ jobs:
           message: |
             ### 🌐 i18n audit + allowlist artifacts
 
-            Artifact: **`i18n-report`** — contains `reports/i18n-audit-diff.json`, `reports/i18n-audit-diff.md`, `reports/i18n-report.json`, `reports/i18n-report.html`, and `.lintrc-i18n-allowlist.json`.
+            Artifact: **`i18n-report`** — contains `reports/i18n-audit-diff.{json,md}`, `reports/i18n-report.{json,html}`, `reports/i18n-allowlist-report.{json,md}`, and `.lintrc-i18n-allowlist.json`.
 
             - 📦 [Download artifact bundle](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_i18n_report.outputs.artifact-id }})
             - 🧾 [All artifacts for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)
             - 🔎 [Job logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
             _Posted automatically — updates in place on each push._
+      # Final gate — runs AFTER artifacts are uploaded and the PR comment is
+      # posted, so reviewers still get the reports even when the gate fails.
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        name: Enforce allowlist gate
+        run: |
+          if [ "${ALLOWLIST_FAILED:-0}" = "1" ]; then
+            echo "::error::i18n allowlist validation failed — see reports/i18n-allowlist-report.md"
+            exit 1
+          fi
+
+
+
 
 
   e2e:
@@ -114,6 +130,10 @@ jobs:
         env:
           CI: "1"
           PLAYWRIGHT_PROJECT: ${{ matrix.browser }}
+          # Slower CI runners — give toasts more headroom.
+          E2E_TOAST_TIMEOUT_MS: "8000"
+          E2E_TOAST_DISMISS_TIMEOUT_MS: "12000"
+          E2E_TOAST_MIN_VISIBLE_MS: "250"
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
