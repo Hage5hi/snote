@@ -226,17 +226,30 @@ jobs:
               echo "- _${label}: artifact not uploaded_"
             fi
           }
+          # Idempotent: strip any prior debug-links block (delimited by
+          # the HTML-comment markers below) before appending the fresh
+          # one, so reruns of this step don't accumulate duplicates.
+          if [ -f reports/_ci/step-summary.md ]; then
+            awk '
+              /<!-- ci-debug-links:begin -->/ {skip=1}
+              !skip {print}
+              /<!-- ci-debug-links:end -->/ {skip=0; next}
+            ' reports/_ci/step-summary.md > reports/_ci/step-summary.md.tmp \
+              && mv reports/_ci/step-summary.md.tmp reports/_ci/step-summary.md
+          fi
           {
             echo ''
+            echo '<!-- ci-debug-links:begin -->'
             echo '---'
             echo ''
             echo '#### Debug artifacts'
             link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 step-summary.md"
             link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 failure-breakdown.json"
             link_or_missing "${DEBUG_BUNDLE_ARTIFACT_ID:-}" "📦 debug-bundle (all of the above + raw log)"
+            echo '<!-- ci-debug-links:end -->'
           } >> reports/_ci/step-summary.md
           # Also surface the same links in the live GitHub step summary.
-          tail -n 10 reports/_ci/step-summary.md >> "$GITHUB_STEP_SUMMARY" || true
+          tail -n 12 reports/_ci/step-summary.md >> "$GITHUB_STEP_SUMMARY" || true
 
       # Coverage artifacts for the CLI suites, only on PRs.
       #   • lcov + text → tooling / inline review
