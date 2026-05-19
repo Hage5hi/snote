@@ -488,16 +488,53 @@ function isMain(): boolean {
   }
 }
 
+/**
+ * Parse `--topFiles N` (or `--topFiles=N`) out of an argv. Exported for
+ * tests; clamps invalid / missing values to the documented default.
+ */
+export function parseTopFilesArg(argv: string[], fallback = DEFAULT_TOP_N): number {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    let raw: string | undefined;
+    if (a === "--topFiles" || a === "--top-files") raw = argv[i + 1];
+    else if (a.startsWith("--topFiles=")) raw = a.slice("--topFiles=".length);
+    else if (a.startsWith("--top-files=")) raw = a.slice("--top-files=".length);
+    if (raw !== undefined) {
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n) && n >= 1) return n;
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 if (isMain()) {
   const ROOT = process.cwd();
   const REPORT_PATH = join(ROOT, "reports", "i18n-allowlist-report.json");
+  const SUMMARY_JSON_PATH = join(ROOT, "reports", "i18n-allowlist-summary.json");
+  const ALLOWLIST_JSON_PATH = join(ROOT, ALLOWLIST_CONFIG);
   const CHANGED = process.argv.includes("--changed");
   const JSON_OUT = process.argv.includes("--json");
   const ANNOTATIONS = process.argv.includes("--annotations");
+  const TOP_N = parseTopFilesArg(process.argv);
 
   runAllowlistCheck({ silent: true });
 
   const reportRel = relative(ROOT, REPORT_PATH) || REPORT_PATH;
+
+  // Lookup used by buildFailureReason to attach the allowlist JSON line
+  // to each schema-failing entry. Best-effort; missing/invalid JSON just
+  // degrades to a file-only annotation.
+  const entryLineLookup = (() => {
+    if (!existsSync(ALLOWLIST_JSON_PATH)) return undefined;
+    try {
+      const src = readFileSync(ALLOWLIST_JSON_PATH, "utf8");
+      const lines = findAllowlistEntryLines(src);
+      return (idx: number) => lines[idx];
+    } catch {
+      return undefined;
+    }
+  })();
 
   if (!existsSync(REPORT_PATH)) {
     if (JSON_OUT) {
@@ -516,7 +553,13 @@ if (isMain()) {
             "report file was not written (allowlist script crashed before emitting JSON)",
         },
       };
-      console.log(JSON.stringify(empty, null, 2));
+      const body = JSON.stringify(empty, null, 2);
+      console.log(body);
+      try {
+        writeFileSync(SUMMARY_JSON_PATH, body);
+      } catch {
+        /* artifact write is best-effort */
+      }
     } else {
       console.log("");
       console.log("i18n allowlist report  ❌ FAIL");
@@ -532,7 +575,18 @@ if (isMain()) {
   const report = JSON.parse(readFileSync(REPORT_PATH, "utf8")) as AllowlistReport;
   const summary = buildSummary(report, reportRel, {
     changed: CHANGED ? getChangedFiles() : undefined,
+    topN: TOP_N,
+    entryLineLookup,
   });
+
+  // Always persist the machine-readable summary so other CI tooling
+  // (check runs, dashboards, downstream jobs) can fetch it as an artifact
+  // regardless of whether --json was requested on stdout.
+  try {
+    writeFileSync(SUMMARY_JSON_PATH, JSON.stringify(toJSON(summary), null, 2));
+  } catch {
+    /* best-effort */
+  }
 
   if (JSON_OUT) {
     console.log(JSON.stringify(toJSON(summary), null, 2));
@@ -542,7 +596,6 @@ if (isMain()) {
   }
 
   if (ANNOTATIONS) {
-    // Annotations go to stderr so `--json` stdout consumers stay clean.
     for (const a of formatAnnotations(summary)) console.error(a);
   }
 
