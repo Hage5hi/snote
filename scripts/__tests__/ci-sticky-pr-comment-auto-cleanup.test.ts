@@ -51,7 +51,7 @@ function makeApi(seed: Comment[], strategy: "delete" | "lock" = "delete") {
         await remove(stale.id);
       } else {
         // lock: rewrite body so it no longer carries the marker.
-        await update(stale.id, `${TOMBSTONE}\n_This sticky comment was superseded; see the latest run._`);
+        await update(stale.id, `${TOMBSTONE}\n_This sticky comment was superseded; see the latest run._`, { raw: true });
       }
     }
     return newest;
