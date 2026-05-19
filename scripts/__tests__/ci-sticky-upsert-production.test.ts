@@ -58,7 +58,7 @@ describe("upsertStickyComment — duplicate cleanup (production code)", () => {
     expect(res.action).toBe("updated");
     expect(res.comment.id).toBe(21);
     expect(t.create).not.toHaveBeenCalled();
-    expect(t.update).toHaveBeenCalledWith(21, "fresh body v1");
+    expect(t.update).toHaveBeenCalledWith(21, `${MARKER}\nfresh body v1`);
     expect(t.remove).toHaveBeenCalledTimes(2);
     expect(t.remove).toHaveBeenCalledWith(3);
     expect(t.remove).toHaveBeenCalledWith(7);
