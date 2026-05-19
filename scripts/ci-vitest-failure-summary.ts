@@ -1,61 +1,38 @@
 // Parse a vitest text-reporter log and emit a concise GitHub-flavoured
 // markdown breakdown of failing tests (suite → test name → main diff)
-// suitable for piping into $GITHUB_STEP_SUMMARY.
+// suitable for piping into $GITHUB_STEP_SUMMARY. Optionally also emits
+// a machine-readable JSON version of the same breakdown so downstream
+// tooling (PR bots, dashboards, debug bundles) can consume it directly.
 //
 // Tolerant to reporter / verbosity variations:
 //   • Default reporter:    " FAIL  path/to/foo.test.ts > suite > name"
 //   • Verbose reporter:    " × path/to/foo.test.ts > suite > name 12ms"
 //   • Unicode marker:      " ✖ path/to/foo.test.ts > suite > name"
-//   • Failed-tests summary:" ⎯⎯⎯ Failed Tests N ⎯⎯⎯" block with
-//                            " FAIL ... > ..." entries (newer vitest)
+//   • Two-line form:       " ❯ path/to/foo.test.ts (...)" then
+//                            "   × test name 12ms" indented underneath
+//   • CRLF logs:           Windows runners' captured stdout
 //   • CI mode prefixes:    leading " ❯ ", " - ", " > " on continuation
 //
+// Usage:
+//   bun run scripts/ci-vitest-failure-summary.ts <log-file> [--json <out>]
+//
 // Always exits 0 — this is a reporting helper, not a gate.
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 
-const path = process.argv[2];
-if (!path) {
-  console.error("usage: ci-vitest-failure-summary <log-file>");
-  process.exit(0);
-}
-
-let raw = "";
-try {
-  raw = readFileSync(path, "utf8");
-} catch (e) {
-  console.log(`_failure-summary: unable to read ${path} (${(e as Error).message})_`);
-  process.exit(0);
-}
-
-// Strip ANSI colour codes + normalize line endings so regexes match cleanly.
-const text = raw
-  .replace(/\x1b\[[0-9;]*m/g, "")
-  .replace(/\r\n/g, "\n")
-  .replace(/\r/g, "\n");
-const lines = text.split("\n");
-
-interface Failure {
+export interface Failure {
   file: string;
   test: string;
   diff: string[];
 }
 
-// Two-shape support:
-//   (A) one-liner with the path:  "FAIL path/foo.test.ts > suite > name"
-//   (B) two-line: a "❯ path/foo.test.ts (... failed)" header followed by
-//       indented "× test name 12ms" rows. We remember the most-recent
-//       file path so the per-test row resolves against it.
 const HEADER_WITH_PATH: RegExp[] = [
   /^\s*(?:(?:×|✖|❯|FAIL|✗)\s+)?(\S+\.(?:test|spec)\.[cm]?[jt]sx?)\s*>\s*(.+?)\s*(?:\d+ms)?\s*$/,
   /^\s*FAIL\s+(\S+\.(?:test|spec)\.[cm]?[jt]sx?)\s*>\s*(.+?)\s*$/,
 ];
 const FILE_HEADER = /^\s*(?:❯|FAIL)\s+(\S+\.(?:test|spec)\.[cm]?[jt]sx?)\b/;
 const FAILED_TEST_ROW = /^\s*(?:×|✖|✗)\s+(.+?)(?:\s+\d+ms)?\s*$/;
-
-// Lines that mean "end of this failure's diff context".
 const TERMINATORS =
   /^(?:\s*(?:✓|PASS|RUN|Test Files|Tests|Errors|Snapshots|Duration|Start at|Coverage report)\b|⎯{3,}|={3,})/;
-
 const MAX_DIFF_LINES = 25;
 
 function matchHeaderWithPath(line: string): { file: string; test: string } | null {
@@ -66,90 +43,167 @@ function matchHeaderWithPath(line: string): { file: string; test: string } | nul
   return null;
 }
 
-const failures: Failure[] = [];
-const seen = new Set<string>();
-let current: Failure | null = null;
+/** Strip ANSI colour codes + normalize line endings so regexes match cleanly. */
+export function normalizeLog(raw: string): string {
+  return raw
+    // eslint-disable-next-line no-control-regex
+    .replace(/\x1b\[[0-9;]*m/g, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
+}
 
-const pushCurrent = () => {
-  if (!current) return;
-  const key = `${current.file}::${current.test}`;
-  if (!seen.has(key)) {
-    seen.add(key);
-    failures.push(current);
-  }
-  current = null;
-};
+/**
+ * Parse a (already-read) vitest log into a list of failures. Exported for
+ * unit tests against synthetic reporter outputs.
+ */
+export function parseVitestLog(raw: string): Failure[] {
+  const text = normalizeLog(raw);
+  const lines = text.split("\n");
 
-let currentFile: string | null = null;
+  const failures: Failure[] = [];
+  const seen = new Set<string>();
+  let current: Failure | null = null;
+  let currentFile: string | null = null;
 
-for (const line of lines) {
-  // Track the most-recent file-level header so two-line failure rows
-  // (e.g. "× test name 12ms" indented under "❯ path/foo.test.ts") can
-  // attribute themselves.
-  const fileHeader = FILE_HEADER.exec(line);
-  if (fileHeader) currentFile = fileHeader[1];
+  const pushCurrent = () => {
+    if (!current) return;
+    const key = `${current.file}::${current.test}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      failures.push(current);
+    }
+    current = null;
+  };
 
-  const header = matchHeaderWithPath(line);
-  if (header) {
-    pushCurrent();
-    current = { file: header.file, test: header.test, diff: [] };
-    continue;
-  }
+  for (const line of lines) {
+    const fileHeader = FILE_HEADER.exec(line);
+    if (fileHeader) currentFile = fileHeader[1];
 
-  // Two-line form: "× test name" under a prior "❯ path/foo.test.ts" header.
-  const row = FAILED_TEST_ROW.exec(line);
-  if (row && currentFile && !matchHeaderWithPath(line)) {
-    pushCurrent();
-    current = { file: currentFile, test: row[1].trim(), diff: [] };
-    continue;
-  }
-
-  if (current) {
-    if (TERMINATORS.test(line)) {
+    const header = matchHeaderWithPath(line);
+    if (header) {
       pushCurrent();
+      current = { file: header.file, test: header.test, diff: [] };
       continue;
     }
-    if (current.diff.length < MAX_DIFF_LINES) current.diff.push(line);
-  }
-}
-pushCurrent();
 
-if (failures.length === 0) {
-  console.log("_No failing tests detected in vitest output._");
-  process.exit(0);
-}
+    const row = FAILED_TEST_ROW.exec(line);
+    if (row && currentFile && !matchHeaderWithPath(line)) {
+      pushCurrent();
+      current = { file: currentFile, test: row[1].trim(), diff: [] };
+      continue;
+    }
 
-// Group by suite file so reviewers see "which suite" at a glance.
-const bySuite = new Map<string, Failure[]>();
-for (const f of failures) {
-  const arr = bySuite.get(f.file) ?? [];
-  arr.push(f);
-  bySuite.set(f.file, arr);
-}
-
-const out: string[] = [];
-out.push(
-  `**${failures.length} failing test${failures.length === 1 ? "" : "s"} across ${bySuite.size} suite${bySuite.size === 1 ? "" : "s"}**`,
-);
-out.push("");
-for (const [suite, fs] of bySuite) {
-  out.push(`### \`${suite}\``);
-  for (const f of fs) {
-    out.push(`- **${f.test}**`);
-    // Trim leading/trailing blank lines from the diff, collapse runs of
-    // blank lines, and keep only the meaningful chunk.
-    const diff = f.diff
-      .map((l) => l.replace(/\s+$/, ""))
-      .join("\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-    if (diff) {
-      out.push("");
-      out.push("```diff");
-      out.push(diff);
-      out.push("```");
+    if (current) {
+      if (TERMINATORS.test(line)) {
+        pushCurrent();
+        continue;
+      }
+      if (current.diff.length < MAX_DIFF_LINES) current.diff.push(line);
     }
   }
-  out.push("");
+  pushCurrent();
+  return failures;
 }
-console.log(out.join("\n"));
+
+/** Trim/collapse a failure's captured diff lines into a single block. */
+export function formatDiff(diff: string[]): string {
+  return diff
+    .map((l) => l.replace(/\s+$/, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Group failures by suite file. */
+export function groupBySuite(failures: Failure[]): Map<string, Failure[]> {
+  const bySuite = new Map<string, Failure[]>();
+  for (const f of failures) {
+    const arr = bySuite.get(f.file) ?? [];
+    arr.push(f);
+    bySuite.set(f.file, arr);
+  }
+  return bySuite;
+}
+
+/** Render the markdown breakdown. */
+export function renderMarkdown(failures: Failure[]): string {
+  if (failures.length === 0) return "_No failing tests detected in vitest output._";
+  const bySuite = groupBySuite(failures);
+  const out: string[] = [];
+  out.push(
+    `**${failures.length} failing test${failures.length === 1 ? "" : "s"} across ${bySuite.size} suite${bySuite.size === 1 ? "" : "s"}**`,
+  );
+  out.push("");
+  for (const [suite, fs] of bySuite) {
+    out.push(`### \`${suite}\``);
+    for (const f of fs) {
+      out.push(`- **${f.test}**`);
+      const diff = formatDiff(f.diff);
+      if (diff) {
+        out.push("");
+        out.push("```diff");
+        out.push(diff);
+        out.push("```");
+      }
+    }
+    out.push("");
+  }
+  return out.join("\n");
+}
+
+/** Render the JSON breakdown — flat shape, easy to consume from bots. */
+export function renderJson(failures: Failure[]): string {
+  const payload = {
+    failureCount: failures.length,
+    suiteCount: new Set(failures.map((f) => f.file)).size,
+    failures: failures.map((f) => ({
+      suite: f.file,
+      test: f.test,
+      diff: formatDiff(f.diff),
+    })),
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// CLI entry — only runs when invoked directly, so unit tests can import the
+// helpers above without triggering process.exit / file IO.
+// ────────────────────────────────────────────────────────────────────────────
+const invokedDirectly = (() => {
+  try {
+    const arg = process.argv[1] ?? "";
+    return arg.endsWith("ci-vitest-failure-summary.ts") || arg.endsWith("ci-vitest-failure-summary.js");
+  } catch {
+    return false;
+  }
+})();
+
+if (invokedDirectly) {
+  const args = process.argv.slice(2);
+  const logPath = args.find((a) => !a.startsWith("--"));
+  const jsonIdx = args.indexOf("--json");
+  const jsonOut = jsonIdx >= 0 ? args[jsonIdx + 1] : undefined;
+
+  if (!logPath) {
+    console.error("usage: ci-vitest-failure-summary <log-file> [--json <out>]");
+    process.exit(0);
+  }
+
+  let raw = "";
+  try {
+    raw = readFileSync(logPath, "utf8");
+  } catch (e) {
+    console.log(`_failure-summary: unable to read ${logPath} (${(e as Error).message})_`);
+    process.exit(0);
+  }
+
+  const failures = parseVitestLog(raw);
+  console.log(renderMarkdown(failures));
+  if (jsonOut) {
+    try {
+      writeFileSync(jsonOut, renderJson(failures));
+    } catch (e) {
+      console.error(`_failure-summary: unable to write JSON to ${jsonOut} (${(e as Error).message})_`);
+    }
+  }
+}

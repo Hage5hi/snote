@@ -103,9 +103,11 @@ jobs:
           # Concise per-failure breakdown (suite → test → main diff) parsed
           # from the raw vitest log. On green runs this prints a single
           # "no failing tests" line; on red runs it emits a markdown
-          # section per failing suite so reviewers don't have to scroll
-          # through the full reporter output.
+          # section per failing suite. `--json` writes a machine-readable
+          # mirror so downstream tooling / PR bots can consume the same
+          # parsed shape without re-parsing the log.
           bun run scripts/ci-vitest-failure-summary.ts /tmp/i18n-cli-suite.log \
+            --json reports/_ci/failure-breakdown.json \
             > reports/_ci/failure-breakdown.md || true
           {
             echo '### i18n allowlist CLI suites — failure breakdown'
@@ -120,27 +122,46 @@ jobs:
             echo '</details>'
           } >> "$GITHUB_STEP_SUMMARY"
           cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
+          # Record whether the help-snapshot test actually produced a diff
+          # so the artifact-bundle step can include the file only when
+          # real and otherwise log a clear reason for its absence.
+          if [ -f reports/_ci/help-snapshot.diff ]; then
+            echo "HELP_SNAPSHOT_DIFF_PRESENT=1" >> "$GITHUB_ENV"
+            echo "help-snapshot diff present (snapshot drift detected)" \
+              > reports/_ci/help-snapshot.reason.txt
+          else
+            echo "HELP_SNAPSHOT_DIFF_PRESENT=0" >> "$GITHUB_ENV"
+            echo "help-snapshot diff not produced — --help output matched the committed snapshot, or the snapshot test did not run / failed before writing the diff." \
+              > reports/_ci/help-snapshot.reason.txt
+          fi
           exit $status
       # When the CLI suites fail, ship the full raw log, the parsed
-      # breakdown, the step summary, the help-snapshot diff (if the
-      # snapshot test emitted one), and the generated report JSON so
-      # reviewers can diagnose without re-running locally.
+      # breakdown (markdown + JSON), the step summary, the help-snapshot
+      # diff (only when actually produced — see HELP_SNAPSHOT_DIFF_PRESENT
+      # gate below), the absence-reason file, and the generated report
+      # JSON so reviewers can diagnose without re-running locally.
       - if: failure() && steps.cli_suites.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-failure-bundle
-          # `reports/_ci/help-snapshot.diff` is written only by the
-          # snapshot test when --help drifts; listed explicitly so the
-          # bundle ships it when present and `if-no-files-found: warn`
-          # tolerates its absence on non-snapshot failures.
           path: |
             reports/i18n-allowlist-report.json
             reports/i18n-allowlist-summary.json
             reports/_ci/
-            reports/_ci/help-snapshot.diff
             /tmp/i18n-cli-suite.log
           retention-days: 14
           if-no-files-found: warn
+      # Per-OS step-summary artifact so reviewers can download the
+      # rendered markdown directly (mirrors what GitHub displays in the
+      # job UI). Uploaded on every run, not just failures.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-step-summary-ubuntu-latest
+          path: reports/_ci/step-summary.md
+          retention-days: 14
+          if-no-files-found: warn
+
       # Coverage artifacts for the CLI suites, only on PRs.
       #   • lcov + text → tooling / inline review
       #   • html        → standalone browsable report for reviewers
@@ -160,8 +181,13 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       # Sticky PR comment with a one-click link to the HTML coverage
-      # artifact so reviewers don't have to dig through the run UI.
+      # artifact — only posted/updated when the upload step actually
+      # produced an artifact-id. When the upload was skipped or failed
+      # (e.g. coverage dir empty), the comment is updated in-place with
+      # a clear "report missing" message so reviewers aren't left with a
+      # stale link from a previous run.
       - if: always() && github.event_name == 'pull_request'
+        id: build_cli_coverage_comment
         name: Build CLI coverage PR comment
         env:
           COVERAGE_ARTIFACT_ID: ${{ steps.upload_cli_coverage_html.outputs.artifact-id }}
@@ -170,19 +196,26 @@ jobs:
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
             ARTIFACT_URL="${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}"
+            {
+              echo "### i18n CLI test coverage"
+              echo ""
+              echo "[📊 Download HTML coverage report](${ARTIFACT_URL}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
+            } > reports/_ci/coverage-pr-comment.md
+            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
           else
-            ARTIFACT_URL="${RUN_URL}#artifacts"
+            {
+              echo "### i18n CLI test coverage"
+              echo ""
+              echo "_⚠️ HTML coverage artifact was not uploaded for this run_ — the coverage step may have been skipped, or \`coverage/i18n-cli/\` was empty. Check the [run logs](${RUN_URL}) for details."
+            } > reports/_ci/coverage-pr-comment.md
+            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
           fi
-          {
-            echo "### i18n CLI test coverage"
-            echo ""
-            echo "[📊 Download HTML coverage report](${ARTIFACT_URL}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
-          } > reports/_ci/coverage-pr-comment.md
-      - if: always() && github.event_name == 'pull_request'
+      - if: always() && github.event_name == 'pull_request' && env.COVERAGE_COMMENT_READY == '1'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: i18n-cli-coverage
           path: reports/_ci/coverage-pr-comment.md
+
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
@@ -426,6 +459,7 @@ jobs:
           mkdir -p reports/_ci
           cp /tmp/i18n-cli-parity.log reports/_ci/i18n-cli-parity.log || true
           bun run scripts/ci-vitest-failure-summary.ts /tmp/i18n-cli-parity.log \
+            --json reports/_ci/parity-breakdown.json \
             > reports/_ci/parity-breakdown.md || true
           {
             echo "### i18n CLI parity (${{ matrix.os }}) — failure breakdown"
@@ -446,6 +480,7 @@ jobs:
           mkdir -p reports/_ci
           cp /tmp/i18n-cli-flags.log reports/_ci/i18n-cli-flags.log || true
           bun run scripts/ci-vitest-failure-summary.ts /tmp/i18n-cli-flags.log \
+            --json reports/_ci/flags-breakdown.json \
             > reports/_ci/flags-breakdown.md || true
           {
             echo "### i18n CLI flags (${{ matrix.os }}) — failure breakdown"
@@ -453,19 +488,44 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
           exit $status
+      # Record whether the help-snapshot test actually produced a diff
+      # file so the failure-bundle step can include it conditionally and
+      # log a clear reason when it's missing instead of silently warning.
+      - name: Record help-snapshot diff presence
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports/_ci
+          if [ -f reports/_ci/help-snapshot.diff ]; then
+            echo "help-snapshot diff present on ${{ matrix.os }} (snapshot drift detected)" \
+              > reports/_ci/help-snapshot.reason.txt
+          else
+            echo "help-snapshot diff not produced on ${{ matrix.os }} — --help output matched the committed snapshot, or the snapshot test did not run / failed before writing the diff." \
+              > reports/_ci/help-snapshot.reason.txt
+          fi
+      # Per-OS step-summary artifact: lets reviewers download the
+      # rendered markdown directly (mirrors the GitHub job UI view).
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-step-summary-${{ matrix.os }}
+          path: reports/_ci/step-summary.md
+          retention-days: 14
+          if-no-files-found: warn
       - if: failure() && (steps.cli_parity.outcome == 'failure' || steps.cli_flags.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-failure-bundle-${{ matrix.os }}
-          # `reports/_ci/help-snapshot.diff` is written only by the
-          # snapshot test when --help drifts; listed explicitly so the
-          # bundle ships it when present and `if-no-files-found: warn`
-          # tolerates its absence on non-snapshot failures.
+          # `reports/_ci/help-snapshot.diff` is only written by the
+          # snapshot test when --help drifts. The whole `reports/_ci/`
+          # directory upload picks it up when present; the absence is
+          # always documented in `help-snapshot.reason.txt` written by
+          # the preceding step, so reviewers always know *why* the diff
+          # is or isn't in the bundle.
           path: |
             reports/i18n-allowlist-report.json
             reports/i18n-allowlist-summary.json
             reports/_ci/
-            reports/_ci/help-snapshot.diff
             /tmp/i18n-cli-parity.log
             /tmp/i18n-cli-flags.log
           retention-days: 14
