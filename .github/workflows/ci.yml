@@ -92,6 +92,18 @@ jobs:
             - 🔎 [Job logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
 
             _Posted automatically — updates in place on each push._
+      # Final gate — runs AFTER artifacts are uploaded and the PR comment is
+      # posted, so reviewers still get the reports even when the gate fails.
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        name: Enforce allowlist gate
+        run: |
+          if [ "${ALLOWLIST_FAILED:-0}" = "1" ]; then
+            echo "::error::i18n allowlist validation failed — see reports/i18n-allowlist-report.md"
+            exit 1
+          fi
+
+
+
 
 
   e2e:
