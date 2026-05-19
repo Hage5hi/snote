@@ -41,7 +41,7 @@ const cases: Case[] = [
     exportItem: /Tải \.md/,
     copyUrlItem: /Copy URL note/i,
     copyUrlToast: /Đã copy URL/,
-    splitHint: /Chế độ split/i,
+    splitHint: /Xem chia đôi/i,
   },
   {
     lang: "fr",
@@ -49,15 +49,15 @@ const cases: Case[] = [
     exportItem: /Télécharger \.md/i,
     copyUrlItem: /Copier l['']URL/i,
     copyUrlToast: /URL copiée|copié/i,
-    splitHint: /Vue divisée|fractionnée/i,
+    splitHint: /Vue partagée/i,
   },
   {
     lang: "ja",
     helpTrigger: /ヘルプ/,
-    exportItem: /\.md.*ダウンロード|ダウンロード.*\.md/,
-    copyUrlItem: /URL.*コピー/,
+    exportItem: /\.md をダウンロード/,
+    copyUrlItem: /URL をコピー/,
     copyUrlToast: /URL.*コピー/,
-    splitHint: /分割/,
+    splitHint: /分割表示/,
   },
 ];
 
