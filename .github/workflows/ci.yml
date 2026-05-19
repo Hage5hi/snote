@@ -97,6 +97,18 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
           exit 0  # never block here; final gate below enforces failure
+      # GitHub annotations — surface the top offending file paths from the
+      # concise failure reason as inline check annotations so reviewers
+      # see the same one-liner attached to the exact file (and line, when
+      # available) directly in the PR "Files changed" view.
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        name: i18n allowlist GitHub annotations
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bun run i18n:allowlist:summary --changed --annotations --json > /dev/null || true
+          else
+            bun run i18n:allowlist:summary --annotations --json > /dev/null || true
+          fi
       # PR comment with direct links to the uploaded artifact + a short
       # pass/fail summary of the allowlist report so reviewers can grab the
       # audit diff / allowlist even on failed jobs.
