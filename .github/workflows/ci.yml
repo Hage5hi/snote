@@ -75,6 +75,28 @@ jobs:
             .lintrc-i18n-allowlist.json
           retention-days: 14
           if-no-files-found: warn
+      # Concise PASS/FAIL summary printed to the job log AND the GitHub
+      # step summary so reviewers / hooks see exactly what `bun run
+      # i18n:allowlist:summary` would print locally. Uses --changed on
+      # PRs (scoped to the diff) and the full report on push to main.
+      - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        name: i18n allowlist concise summary (PASS/FAIL)
+        id: allowlist_summary
+        run: |
+          set +e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            bun run i18n:allowlist:summary --changed | tee /tmp/i18n-summary.txt
+          else
+            bun run i18n:allowlist:summary | tee /tmp/i18n-summary.txt
+          fi
+          status=$?
+          {
+            echo '### i18n allowlist summary'
+            echo '```'
+            cat /tmp/i18n-summary.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0  # never block here; final gate below enforces failure
       # PR comment with direct links to the uploaded artifact + a short
       # pass/fail summary of the allowlist report so reviewers can grab the
       # audit diff / allowlist even on failed jobs.
@@ -83,6 +105,21 @@ jobs:
         env:
           I18N_ARTIFACT_ID: ${{ steps.upload_i18n_report.outputs.artifact-id }}
         run: bun run i18n:allowlist:pr-comment > /dev/null
+      - if: always() && github.event_name == 'pull_request' && steps.changes.outputs.i18n == 'true'
+        name: Append concise summary to PR comment body
+        run: |
+          {
+            echo ''
+            echo '---'
+            echo ''
+            echo '<details><summary><b>Concise PASS/FAIL summary</b> (from <code>i18n:allowlist:summary --changed</code>)</summary>'
+            echo ''
+            echo '```'
+            cat /tmp/i18n-summary.txt
+            echo '```'
+            echo ''
+            echo '</details>'
+          } >> reports/_i18n-allowlist-pr-comment.md
       - if: always() && github.event_name == 'pull_request' && steps.changes.outputs.i18n == 'true'
         name: Comment PR with i18n artifact links + summary
         uses: marocchino/sticky-pull-request-comment@v2
