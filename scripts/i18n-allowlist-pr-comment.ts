@@ -11,6 +11,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   buildSummary,
+  formatFailureReason,
   type AllowlistReport,
   type Summary,
 } from "./i18n-allowlist-report";
