@@ -320,3 +320,140 @@ function parsePositiveInt(raw: string | undefined, fallback: number, strict = fa
   }
   return n;
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// main() — runs when invoked as a script (bun/node).
+//
+// Resolves config, builds a GitHub REST client from STICKY_REPO /
+// STICKY_PR_NUMBER / GITHUB_TOKEN, then calls upsertStickyComment with
+// debug logging when requested. If the GitHub envs are missing it
+// prints the resolved config and exits 0 — the workflow step is best-
+// effort cleanup, not a gate, so missing creds shouldn't fail CI.
+// ──────────────────────────────────────────────────────────────────────
+
+async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<number> {
+  let cfg: ParsedCliConfig;
+  try {
+    cfg = parseCliConfig(argv, env as Record<string, string | undefined>);
+  } catch (e) {
+    console.error(`[sticky-upsert] ${(e as Error).message}`);
+    console.error(HELP_TEXT);
+    return 1;
+  }
+  if (cfg.help) {
+    console.log(HELP_TEXT);
+    return 0;
+  }
+  if (!cfg.marker || !cfg.bodyFile) {
+    console.error("[sticky-upsert] --marker and --body-file are required");
+    console.error(HELP_TEXT);
+    return 1;
+  }
+
+  const log = (l: string) => console.log(`[sticky-upsert] ${l}`);
+  if (cfg.debug) {
+    log(
+      `config: cleanupStrategy=${cfg.cleanupStrategy} headScanLines=${cfg.headScanLines} ` +
+        `marker=${JSON.stringify(cfg.marker)} bodyFile=${cfg.bodyFile}`,
+    );
+  }
+
+  const token = env.GITHUB_TOKEN;
+  const repo = env.STICKY_REPO;
+  const prNumber = env.STICKY_PR_NUMBER;
+  if (!token || !repo || !prNumber) {
+    log(
+      `skipping live upsert — missing ${[
+        !token && "GITHUB_TOKEN",
+        !repo && "STICKY_REPO",
+        !prNumber && "STICKY_PR_NUMBER",
+      ]
+        .filter(Boolean)
+        .join(", ")}; resolved config printed above.`,
+    );
+    return 0;
+  }
+
+  const fs = await import("node:fs/promises");
+  const body = await fs.readFile(cfg.bodyFile, "utf8");
+
+  const base = `https://api.github.com/repos/${repo}/issues/${prNumber}/comments`;
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const commentUrl = (id: number) =>
+    `https://api.github.com/repos/${repo}/issues/comments/${id}`;
+
+  const api: StickyApi = {
+    list: async () => {
+      const out: StickyComment[] = [];
+      for (let page = 1; page < 50; page++) {
+        const r = await fetch(`${base}?per_page=100&page=${page}`, { headers });
+        if (!r.ok) throw new Error(`list failed: ${r.status} ${await r.text()}`);
+        const batch = (await r.json()) as Array<{ id: number; body: string }>;
+        out.push(...batch.map((c) => ({ id: c.id, body: c.body ?? "" })));
+        if (batch.length < 100) break;
+      }
+      return out;
+    },
+    create: async (b) => {
+      const r = await fetch(base, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: b }),
+      });
+      if (!r.ok) throw new Error(`create failed: ${r.status} ${await r.text()}`);
+      const j = (await r.json()) as { id: number; body: string };
+      return { id: j.id, body: j.body };
+    },
+    update: async (id, b) => {
+      const r = await fetch(commentUrl(id), {
+        method: "PATCH",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ body: b }),
+      });
+      if (!r.ok) throw new Error(`update failed: ${r.status} ${await r.text()}`);
+      const j = (await r.json()) as { id: number; body: string };
+      return { id: j.id, body: j.body };
+    },
+    remove: async (id) => {
+      const r = await fetch(commentUrl(id), { method: "DELETE", headers });
+      if (!r.ok && r.status !== 404)
+        throw new Error(`delete failed: ${r.status} ${await r.text()}`);
+    },
+  };
+
+  try {
+    const res = await upsertStickyComment({
+      api,
+      marker: cfg.marker,
+      body,
+      cleanupStrategy: cfg.cleanupStrategy,
+      headScanLines: cfg.headScanLines,
+      debug: cfg.debug ? log : false,
+    });
+    log(
+      `done: action=${res.action} id=${res.comment.id} cleaned=${res.cleaned.length} ` +
+        `usedFullScan=${res.usedFullScan}`,
+    );
+    return 0;
+  } catch (e) {
+    console.error(`[sticky-upsert] GitHub API error: ${(e as Error).message}`);
+    return 2;
+  }
+}
+
+// Auto-run when this file is the entrypoint. Guarded so vitest imports
+// don't trigger network calls.
+const isEntrypoint =
+  typeof process !== "undefined" &&
+  typeof import.meta !== "undefined" &&
+  // @ts-expect-error import.meta.main is Bun-specific; falsy elsewhere.
+  (import.meta.main === true ||
+    (process.argv[1] && process.argv[1].endsWith("ci-sticky-pr-comment-upsert.ts")));
+
+if (isEntrypoint) {
+  main(process.argv.slice(2), process.env).then((code) => process.exit(code));
+}
