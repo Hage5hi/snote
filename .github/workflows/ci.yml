@@ -692,15 +692,9 @@ jobs:
           }
           # Idempotent: strip any prior debug-links block (delimited by
           # the HTML-comment markers below) before appending the fresh
-          # one, so reruns don't accumulate duplicates in step-summary.md.
-          if [ -f reports/_ci/step-summary.md ]; then
-            awk '
-              /<!-- ci-debug-links:begin -->/ {skip=1}
-              !skip {print}
-              /<!-- ci-debug-links:end -->/ {skip=0; next}
-            ' reports/_ci/step-summary.md > reports/_ci/step-summary.md.tmp \
-              && mv reports/_ci/step-summary.md.tmp reports/_ci/step-summary.md
-          fi
+          # one, so reruns don't accumulate duplicates. Logic + markers
+          # are unit-tested in scripts/__tests__/ci-strip-debug-links.test.ts.
+          bun run scripts/ci-strip-debug-links.ts reports/_ci/step-summary.md
           {
             echo ''
             echo '<!-- ci-debug-links:begin -->'
