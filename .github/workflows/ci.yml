@@ -61,8 +61,8 @@ jobs:
         id: allowlist_gate
         run: bun run i18n:allowlist || echo "ALLOWLIST_FAILED=1" >> "$GITHUB_ENV"
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
-        name: Focused i18n vitest suite
-        run: bunx vitest run src/i18n/__tests__/
+        name: Focused i18n + allowlist-script vitest suites
+        run: bunx vitest run src/i18n/__tests__/ scripts/__tests__/
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
