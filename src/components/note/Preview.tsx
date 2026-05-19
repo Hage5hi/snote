@@ -38,6 +38,11 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
   const hostRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
+  const { t } = useI18n();
+  const emptyHtml = useMemo(
+    () => `<p class="text-muted-foreground">${t("preview.empty").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!)}</p>`,
+    [t],
+  );
 
   useEffect(() => {
     const ytext = doc.getText("content");
