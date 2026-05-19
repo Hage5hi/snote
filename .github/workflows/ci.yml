@@ -385,7 +385,7 @@ jobs:
       # the other can be re-run independently. Each step appends its own
       # log slice and breakdown to the bundle.
       - name: Run CLI parity suite
-        id: cli_parity_win
+        id: cli_parity
         shell: bash
         run: |
           set +e
@@ -403,7 +403,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           exit $status
       - name: Run CLI flags suite
-        id: cli_flags_win
+        id: cli_flags
         shell: bash
         # Run regardless of parity outcome so we get both reports in one CI run.
         if: always()
@@ -423,14 +423,19 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
           exit $status
-      - if: failure() && (steps.cli_parity_win.outcome == 'failure' || steps.cli_flags_win.outcome == 'failure')
+      - if: failure() && (steps.cli_parity.outcome == 'failure' || steps.cli_flags.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-failure-bundle-${{ matrix.os }}
+          # `reports/_ci/help-snapshot.diff` is written only by the
+          # snapshot test when --help drifts; listed explicitly so the
+          # bundle ships it when present and `if-no-files-found: warn`
+          # tolerates its absence on non-snapshot failures.
           path: |
             reports/i18n-allowlist-report.json
             reports/i18n-allowlist-summary.json
             reports/_ci/
+            reports/_ci/help-snapshot.diff
             /tmp/i18n-cli-parity.log
             /tmp/i18n-cli-flags.log
           retention-days: 14
