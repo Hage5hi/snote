@@ -295,7 +295,7 @@ export function buildFailureReason(
   summary: Pick<Summary, "schemaOk" | "missingCount" | "staleCount" | "totals">,
   report: AllowlistReport,
   opts: { topN?: number; entryLineLookup?: (i: number) => number | undefined } = {},
-): { category: FailureCategory; topFiles: string[] } {
+): { category: FailureCategory; topFiles: string[]; topMessages?: (string | undefined)[] } {
   const topN = Math.max(1, opts.topN ?? DEFAULT_TOP_N);
   const lookup = opts.entryLineLookup;
 
@@ -304,16 +304,19 @@ export function buildFailureReason(
     // .lintrc-i18n-allowlist.json with the entry's start line (when we can
     // resolve it) instead of at entry.file, which is just the path the
     // broken entry was trying to reference.
-    const topFiles = report.entries
+    const failing = report.entries
       .filter((e) => e.errors.length > 0)
-      .slice(0, topN)
-      .map((e) => {
-        const line = lookup?.(e.index);
-        return line !== undefined
-          ? `${ALLOWLIST_CONFIG}:${line}`
-          : ALLOWLIST_CONFIG;
-      });
-    return { category: "schema", topFiles: uniq(topFiles) };
+      .slice(0, topN);
+    const topFiles = failing.map((e) => {
+      const line = lookup?.(e.index);
+      return line !== undefined
+        ? `${ALLOWLIST_CONFIG}:${line}`
+        : ALLOWLIST_CONFIG;
+    });
+    // Preserve the first concrete schema error message per entry so
+    // annotations can show *what* is wrong (not just where).
+    const topMessages = failing.map((e) => e.errors[0]);
+    return uniqWithMessages(topFiles, topMessages, "schema");
   }
   if (summary.missingCount > 0) {
     const topFiles = uniq(report.missing.map((m) => `${m.file}:${m.line}`)).slice(0, topN);
@@ -324,6 +327,28 @@ export function buildFailureReason(
     return { category: "drift-stale", topFiles };
   }
   return { category: "unknown", topFiles: [] };
+}
+
+/**
+ * De-dupes parallel `files` + `messages` arrays by file path, keeping
+ * the first message seen for each unique file. Used by the schema branch
+ * of buildFailureReason so we don't double-annotate the same JSON line.
+ */
+function uniqWithMessages(
+  files: string[],
+  messages: (string | undefined)[],
+  category: FailureCategory,
+): { category: FailureCategory; topFiles: string[]; topMessages: (string | undefined)[] } {
+  const seen = new Set<string>();
+  const f: string[] = [];
+  const m: (string | undefined)[] = [];
+  for (let i = 0; i < files.length; i++) {
+    if (seen.has(files[i])) continue;
+    seen.add(files[i]);
+    f.push(files[i]);
+    m.push(messages[i]);
+  }
+  return { category, topFiles: f, topMessages: m };
 }
 
 function uniq<T>(xs: T[]): T[] {
