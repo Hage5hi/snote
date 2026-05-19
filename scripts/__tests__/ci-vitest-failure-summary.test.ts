@@ -119,7 +119,12 @@ describe("ci-vitest-failure-summary parser", () => {
     expect(f).toHaveLength(0);
     expect(renderMarkdown(f)).toMatch(/No failing tests/i);
     const json = JSON.parse(renderJson(f));
-    expect(json).toEqual({ failureCount: 0, suiteCount: 0, failures: [] });
+    expect(json).toMatchObject({
+      schemaVersion: FAILURE_BREAKDOWN_SCHEMA_VERSION,
+      failureCount: 0,
+      suiteCount: 0,
+      failures: [],
+    });
   });
 
   it("renders markdown grouped by suite with diff fences", () => {
