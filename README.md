@@ -71,3 +71,46 @@ Yes, you can!
 To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
 
 Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+
+## i18n allowlist — local pre-commit hook
+
+This repo ships a Git pre-commit hook that runs the i18n hardcoded-string
+allowlist gate locally so drift (missing or stale `eslint-disable`
+entries) is caught before it reaches CI. See
+[`docs/i18n-allowlist-report.md`](docs/i18n-allowlist-report.md) for what
+the report fields mean.
+
+### Install
+
+Run once per clone (also runs automatically via `prepare` after
+`bun install` / `npm install`):
+
+```sh
+bun run hooks:install
+# or, manually:
+git config core.hooksPath .githooks
+```
+
+### Verify
+
+Confirm the hook is wired and the gate currently passes:
+
+```sh
+git config --get core.hooksPath          # → .githooks
+bun run i18n:allowlist:report            # prints schemaOk / driftOk / missing / stale
+```
+
+The hook script lives at [`.githooks/pre-commit`](.githooks/pre-commit)
+and shells out to `bun run i18n:allowlist:report`.
+
+### Bypass (emergency only)
+
+If you genuinely need to commit while the gate is failing (e.g. WIP),
+skip the hook with:
+
+```sh
+git commit --no-verify -m "wip: …"
+```
+
+CI will still run the same check on the PR, so don't ship code that
+relies on bypassing.
