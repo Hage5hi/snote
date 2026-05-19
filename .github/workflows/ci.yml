@@ -282,6 +282,7 @@ jobs:
           COVERAGE_ARTIFACT_ID: ${{ steps.upload_cli_coverage_html.outputs.artifact-id }}
           STEP_SUMMARY_ARTIFACT_ID: ${{ steps.upload_step_summary_md.outputs.artifact-id }}
           FAILURE_BREAKDOWN_ARTIFACT_ID: ${{ steps.upload_failure_breakdown_json.outputs.artifact-id }}
+          DEBUG_BUNDLE_ARTIFACT_ID: ${{ steps.upload_debug_bundle.outputs.artifact-id }}
         run: |
           mkdir -p reports/_ci
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -303,8 +304,11 @@ jobs:
             fi
             echo ""
             echo "#### Debugging artifacts"
+            link_or_missing "${DEBUG_BUNDLE_ARTIFACT_ID:-}" "📦 debug-bundle" "all of the below + raw vitest log in one zip"
             link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 Rendered step-summary.md" "same markdown GitHub shows in the job UI"
             link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 failure-breakdown.json" "machine-readable suite/test/diff payload (schemaVersion ≥ 1)"
+            echo ""
+            echo "_Per-OS parity & flags breakdown JSON artifacts (\`i18n-cli-failure-breakdown-json-<os>\`) are uploaded by the matrix job — see the [run page](${RUN_URL}#artifacts) for direct downloads._"
           } > reports/_ci/coverage-pr-comment.md
           echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
       - if: always() && github.event_name == 'pull_request' && env.COVERAGE_COMMENT_READY == '1'
