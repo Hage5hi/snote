@@ -171,7 +171,7 @@ describe("CLI flag aliases — identical SummaryJSON + exit code", () => {
   it("all variants honor publishCheckRun=false + topFiles=5", () => {
     for (const { json } of results.values()) {
       expect(json.publishCheckRun).toBe(false);
-      expect(json.failure?.category).toBe("schema");
+      expect(json.failure?.category).toBe("drift-stale");
       // topFiles is capped at 5, but our fixture only has 1 failing entry
       // — assertion here is that the cap doesn't truncate below the real
       // count and that all variants agree on the length.
