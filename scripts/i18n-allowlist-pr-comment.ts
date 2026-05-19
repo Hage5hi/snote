@@ -14,15 +14,40 @@ const ROOT = process.cwd();
 const REPORT_PATH = join(ROOT, "reports", "i18n-allowlist-report.json");
 const OUT_PATH = join(ROOT, "reports", "_i18n-allowlist-pr-comment.md");
 
-const SERVER = process.env.GITHUB_SERVER_URL ?? "https://github.com";
-const REPO = process.env.GITHUB_REPOSITORY ?? "<owner>/<repo>";
-const RUN_ID = process.env.GITHUB_RUN_ID ?? "0";
-const ARTIFACT_ID = process.env.I18N_ARTIFACT_ID ?? "";
+interface CIContext {
+  serverUrl: string;
+  repo: string;
+  runId: string;
+  artifactId: string;
+  missing: string[];
+}
 
-const runUrl = `${SERVER}/${REPO}/actions/runs/${RUN_ID}`;
+function resolveCIContext(): CIContext {
+  const missing: string[] = [];
+  const get = (name: string, fallback: string): string => {
+    const v = process.env[name];
+    if (!v || v.trim() === "") {
+      missing.push(name);
+      return fallback;
+    }
+    return v;
+  };
+  return {
+    serverUrl: get("GITHUB_SERVER_URL", "https://github.com"),
+    repo: get("GITHUB_REPOSITORY", "<owner>/<repo>"),
+    runId: get("GITHUB_RUN_ID", "0"),
+    // I18N_ARTIFACT_ID is wired from the upload-artifact step. Missing it
+    // just means we degrade to a run-level artifacts link (still useful).
+    artifactId: process.env.I18N_ARTIFACT_ID?.trim() ?? "",
+    missing,
+  };
+}
+
+const ctx = resolveCIContext();
+const runUrl = `${ctx.serverUrl}/${ctx.repo}/actions/runs/${ctx.runId}`;
 const artifactsUrl = `${runUrl}#artifacts`;
-const bundleUrl = ARTIFACT_ID
-  ? `${runUrl}/artifacts/${ARTIFACT_ID}`
+const bundleUrl = ctx.artifactId
+  ? `${runUrl}/artifacts/${ctx.artifactId}`
   : artifactsUrl;
 
 interface Report {
