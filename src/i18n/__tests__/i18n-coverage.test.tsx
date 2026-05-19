@@ -57,38 +57,33 @@ function ProbeAll() {
 
 describe("E2E — cross-tab language sync via storage event", () => {
   it("switching language in one tab updates another tab's labels immediately", async () => {
-    // Tab A renders LanguageToggle, Tab B mirrors via storage events.
     const { unmount: unmountA } = render(
-      <I18nProvider>
+      <Wrap>
         <LanguageToggle />
-      </I18nProvider>,
+      </Wrap>,
     );
     render(
-      <I18nProvider>
+      <Wrap>
         <ProbeAll />
-      </I18nProvider>,
+      </Wrap>,
       { container: document.body.appendChild(document.createElement("div")) },
     );
 
     expect(screen.getByTestId("lang").textContent).toBe("en");
     expect(screen.getByTestId("menu-export").textContent).toBe(dict.en["menu.export"]);
 
-    // Simulate Tab A picking Vietnamese: provider writes to localStorage, then
-    // browsers dispatch a `storage` event in OTHER tabs only. We fire it
-    // manually so Tab B observes the change.
+    // Browsers dispatch `storage` only in OTHER tabs — simulate that here.
     await act(async () => {
       localStorage.setItem(STORAGE_KEY, "vi");
       window.dispatchEvent(
         new StorageEvent("storage", { key: STORAGE_KEY, newValue: "vi" }),
       );
     });
-
     expect(screen.getByTestId("lang").textContent).toBe("vi");
     expect(screen.getByTestId("menu-export").textContent).toBe(dict.vi["menu.export"]);
     expect(screen.getByTestId("menu-help").textContent).toBe(dict.vi["menu.help"]);
     expect(screen.getByTestId("toast-empty").textContent).toBe(dict.vi["toast.note_empty"]);
 
-    // And again to Spanish.
     await act(async () => {
       localStorage.setItem(STORAGE_KEY, "es");
       window.dispatchEvent(
@@ -102,64 +97,56 @@ describe("E2E — cross-tab language sync via storage event", () => {
   });
 });
 
+function Picker() {
+  const { setLang } = useI18n();
+  return (
+    <button data-testid="pick-fr" onClick={() => setLang("fr")}>
+      fr
+    </button>
+  );
+}
+
 describe("Persistence — language survives reload", () => {
-  it("LanguageToggle writes to localStorage and a remount picks it up", async () => {
+  it("setLang writes to localStorage and a fresh mount picks it up", async () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
 
     const { unmount } = render(
-      <I18nProvider>
-        <LanguageToggle />
-        <ProbeAll />
-      </I18nProvider>,
-    );
-
-    // Simulate user picking French via the toggle's onClick path (setLang).
-    // We can't easily open the Radix dropdown in jsdom, so call setLang directly
-    // through a Probe — but the contract under test is the persistence side
-    // effect, which lives in provider.setLang().
-    await act(async () => {
-      // Reuse the toggle's setLang by writing through the provider:
-      // dispatch a synthetic click on a hidden Probe button.
-    });
-
-    // Use a focused probe that exposes setLang.
-    function Picker() {
-      const { setLang } = useI18n();
-      return (
-        <button data-testid="pick-fr" onClick={() => setLang("fr")}>
-          fr
-        </button>
-      );
-    }
-    unmount();
-    const { unmount: unmount2 } = render(
-      <I18nProvider>
+      <Wrap>
         <Picker />
         <ProbeAll />
-      </I18nProvider>,
+      </Wrap>,
     );
     await act(async () => {
       fireEvent.click(screen.getByTestId("pick-fr"));
     });
     expect(localStorage.getItem(STORAGE_KEY)).toBe("fr");
     expect(screen.getByTestId("menu-export").textContent).toBe(dict.fr["menu.export"]);
-    unmount2();
+    unmount();
 
-    // "Reload": fresh provider mount reads from localStorage.
+    // Simulated reload: brand new provider tree reads localStorage on init.
     render(
-      <I18nProvider>
+      <Wrap>
         <ProbeAll />
-      </I18nProvider>,
+      </Wrap>,
     );
     expect(screen.getByTestId("lang").textContent).toBe("fr");
     expect(screen.getByTestId("menu-help").textContent).toBe(dict.fr["menu.help"]);
     expect(screen.getByTestId("export-ai").textContent).toBe(dict.fr["export.ai"]);
   });
 
-  it("language stored via setLang persists across remounts (simulated reload)", () => {
-    expect(localStorage.getItem(STORAGE_KEY)).toBe("fr");
+  it("LanguageToggle button shows current language code", () => {
+    localStorage.setItem(STORAGE_KEY, "ja");
+    render(
+      <Wrap>
+        <LanguageToggle />
+      </Wrap>,
+    );
+    // The toggle renders the lang code in uppercase.
+    expect(screen.getByRole("button", { name: /言語/ })).toBeInTheDocument();
+    expect(screen.getByText("JA")).toBeInTheDocument();
   });
 });
+
 
 
 
