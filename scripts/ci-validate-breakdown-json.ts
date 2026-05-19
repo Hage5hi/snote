@@ -5,40 +5,73 @@
 // regressions (empty file, wrong shape, future schema bump) loudly
 // instead of letting reviewers click into a broken artifact.
 //
+// Kinds: the same parser emits "failure", "parity", and "flags"
+// breakdown payloads. Each kind has its own expected schemaVersion
+// constant exported below — today they all share the v1 parser shape,
+// but keeping them per-kind lets a future bump to (e.g.) flags JSON
+// happen independently without silently invalidating the others.
+//
 // Usage:
 //   bun run scripts/ci-validate-breakdown-json.ts <file> [<file> ...]
-//     [--schema-version <n>] [--allow-missing]
+//     [--schema-version <n>]          # override expected version for all files
+//     [--kind failure|parity|flags|auto]  # default: auto (infer per file)
+//     [--allow-missing]
 //
 // Exits non-zero on the first invalid file unless --allow-missing is
 // passed (in which case a missing file is logged + skipped, but a file
 // that exists and is malformed still fails).
 import { existsSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
 
 import { FAILURE_BREAKDOWN_SCHEMA_VERSION } from "./ci-vitest-failure-summary";
+
+/**
+ * Per-kind expected schemaVersion constants. All currently track the
+ * shared parser version, but are split so a future change can bump one
+ * without silently invalidating the others.
+ */
+export const EXPECTED_SCHEMA_VERSIONS = {
+  failure: FAILURE_BREAKDOWN_SCHEMA_VERSION,
+  parity: FAILURE_BREAKDOWN_SCHEMA_VERSION,
+  flags: FAILURE_BREAKDOWN_SCHEMA_VERSION,
+} as const;
+
+export type BreakdownKind = keyof typeof EXPECTED_SCHEMA_VERSIONS;
 
 const REQUIRED_TOP_LEVEL = ["schemaVersion", "failureCount", "suiteCount", "failures"] as const;
 const REQUIRED_FAILURE_KEYS = ["suite", "test", "diff"] as const;
 
 export interface ValidationResult {
   file: string;
+  kind: BreakdownKind | "unknown";
   ok: boolean;
   errors: string[];
+}
+
+/** Infer breakdown kind from a file path (e.g. parity-breakdown.json → parity). */
+export function inferKind(file: string): BreakdownKind | "unknown" {
+  const name = basename(file).toLowerCase();
+  if (name.includes("parity")) return "parity";
+  if (name.includes("flags")) return "flags";
+  if (name.includes("failure")) return "failure";
+  return "unknown";
 }
 
 export function validateBreakdown(
   file: string,
   raw: string,
   expectedSchemaVersion: number,
+  kind: BreakdownKind | "unknown" = "unknown",
 ): ValidationResult {
   const errors: string[] = [];
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
-    return { file, ok: false, errors: [`invalid JSON: ${(e as Error).message}`] };
+    return { file, kind, ok: false, errors: [`invalid JSON: ${(e as Error).message}`] };
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { file, ok: false, errors: ["payload is not a JSON object"] };
+    return { file, kind, ok: false, errors: ["payload is not a JSON object"] };
   }
   const p = parsed as Record<string, unknown>;
   for (const key of REQUIRED_TOP_LEVEL) {
@@ -51,23 +84,29 @@ export function validateBreakdown(
   } else if ("schemaVersion" in p && typeof p.schemaVersion !== "number") {
     errors.push(`schemaVersion must be a number, got ${typeof p.schemaVersion}`);
   }
-  if (typeof p.failureCount !== "number") errors.push("failureCount must be a number");
-  if (typeof p.suiteCount !== "number") errors.push("suiteCount must be a number");
-  if (!Array.isArray(p.failures)) {
-    errors.push("failures must be an array");
-  } else {
-    p.failures.forEach((f, i) => {
-      if (!f || typeof f !== "object") {
-        errors.push(`failures[${i}]: not an object`);
-        return;
-      }
-      const fr = f as Record<string, unknown>;
-      for (const key of REQUIRED_FAILURE_KEYS) {
-        if (!(key in fr)) errors.push(`failures[${i}]: missing key ${key}`);
-      }
-    });
+  if ("failureCount" in p && typeof p.failureCount !== "number") {
+    errors.push("failureCount must be a number");
   }
-  return { file, ok: errors.length === 0, errors };
+  if ("suiteCount" in p && typeof p.suiteCount !== "number") {
+    errors.push("suiteCount must be a number");
+  }
+  if ("failures" in p) {
+    if (!Array.isArray(p.failures)) {
+      errors.push("failures must be an array");
+    } else {
+      p.failures.forEach((f, i) => {
+        if (!f || typeof f !== "object" || Array.isArray(f)) {
+          errors.push(`failures[${i}]: not an object`);
+          return;
+        }
+        const fr = f as Record<string, unknown>;
+        for (const key of REQUIRED_FAILURE_KEYS) {
+          if (!(key in fr)) errors.push(`failures[${i}]: missing key ${key}`);
+        }
+      });
+    }
+  }
+  return { file, kind, ok: errors.length === 0, errors };
 }
 
 const invokedDirectly = (() => {
@@ -83,20 +122,36 @@ if (invokedDirectly) {
   const args = process.argv.slice(2);
   const allowMissing = args.includes("--allow-missing");
   const schemaIdx = args.indexOf("--schema-version");
-  const expected =
-    schemaIdx >= 0 ? Number(args[schemaIdx + 1]) : FAILURE_BREAKDOWN_SCHEMA_VERSION;
+  const schemaOverride = schemaIdx >= 0 ? Number(args[schemaIdx + 1]) : undefined;
+  const kindIdx = args.indexOf("--kind");
+  const kindArg = kindIdx >= 0 ? args[kindIdx + 1] : "auto";
   const files = args.filter(
     (a, i) =>
-      !a.startsWith("--") && args[i - 1] !== "--schema-version",
+      !a.startsWith("--") &&
+      args[i - 1] !== "--schema-version" &&
+      args[i - 1] !== "--kind",
   );
 
   if (files.length === 0) {
-    console.error("usage: ci-validate-breakdown-json <file> [<file> ...] [--schema-version N] [--allow-missing]");
+    console.error(
+      "usage: ci-validate-breakdown-json <file> [<file> ...] [--schema-version N] [--kind failure|parity|flags|auto] [--allow-missing]",
+    );
     process.exit(2);
   }
 
   let hadError = false;
   for (const file of files) {
+    const kind: BreakdownKind | "unknown" =
+      kindArg === "auto" || !kindArg
+        ? inferKind(file)
+        : (kindArg as BreakdownKind);
+    const expected =
+      schemaOverride !== undefined
+        ? schemaOverride
+        : kind !== "unknown"
+          ? EXPECTED_SCHEMA_VERSIONS[kind]
+          : FAILURE_BREAKDOWN_SCHEMA_VERSION;
+
     if (!existsSync(file)) {
       if (allowMissing) {
         console.log(`✓ ${file} — missing (allowed)`);
@@ -107,13 +162,13 @@ if (invokedDirectly) {
       continue;
     }
     const raw = readFileSync(file, "utf8");
-    const result = validateBreakdown(file, raw, expected);
+    const result = validateBreakdown(file, raw, expected, kind);
     if (result.ok) {
-      console.log(`✓ ${file} — schemaVersion=${expected}, shape OK`);
+      console.log(`✓ ${file} — kind=${kind}, schemaVersion=${expected}, shape OK`);
     } else {
       hadError = true;
       for (const err of result.errors) {
-        console.error(`::error file=${file}::breakdown validation failed — ${err}`);
+        console.error(`::error file=${file}::breakdown validation failed (kind=${kind}) — ${err}`);
       }
     }
   }
