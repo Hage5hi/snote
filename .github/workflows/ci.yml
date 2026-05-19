@@ -112,6 +112,7 @@ jobs:
       # Standalone artifact upload so downstream tooling can fetch the
       # concise summary JSON without pulling the full i18n-report bundle.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        id: upload_i18n_summary
         uses: actions/upload-artifact@v4
         with:
           name: i18n-allowlist-summary
@@ -121,6 +122,9 @@ jobs:
       # GitHub Check Run — re-uses the same annotations + links to the
       # uploaded allowlist report JSON artifact so the PR Checks tab shows
       # the identical one-line failure category and top file paths.
+      # Skipped when the summary JSON's `publishCheckRun` field is false
+      # (set via `--no-check-run` in earlier steps) — annotations and the
+      # uploaded artifacts still ship in that case.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
         name: Publish i18n allowlist Check Run
         uses: actions/github-script@v7
@@ -136,20 +140,33 @@ jobs:
               core.warning(`Skipping Check Run: ${e.message}`);
               return;
             }
+            if (summary.publishCheckRun === false) {
+              core.info('Skipping Check Run: summary.publishCheckRun=false (--no-check-run)');
+              return;
+            }
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`;
             const artifactUrl = process.env.I18N_ARTIFACT_ID
               ? `${runUrl}/artifacts/${process.env.I18N_ARTIFACT_ID}`
               : `${runUrl}#artifacts`;
-            const annotations = (summary.failure?.topFiles ?? []).map((entry) => {
+            const topFiles = summary.failure?.topFiles ?? [];
+            const topMessages = summary.failure?.topMessages ?? [];
+            const annotations = topFiles.map((entry, i) => {
               const m = entry.match(/^(.*):(\d+)$/);
               const path = m ? m[1] : entry;
               const line = m ? Number(m[2]) : 1;
+              // Schema annotations carry the specific schema error
+              // message; drift falls back to the aggregate reason.
+              const specific = topMessages[i];
+              const message =
+                summary.failure.category === 'schema' && specific
+                  ? `${summary.failure.reason} — ${specific}`
+                  : summary.failure.reason;
               return {
                 path,
                 start_line: line,
                 end_line: line,
                 annotation_level: 'failure',
-                message: summary.failure.reason,
+                message,
                 title: `i18n allowlist — ${summary.failure.category}`,
               };
             });
@@ -182,6 +199,7 @@ jobs:
         name: Build i18n PR comment body
         env:
           I18N_ARTIFACT_ID: ${{ steps.upload_i18n_report.outputs.artifact-id }}
+          I18N_SUMMARY_ARTIFACT_ID: ${{ steps.upload_i18n_summary.outputs.artifact-id }}
         run: bun run i18n:allowlist:pr-comment > /dev/null
       - if: always() && github.event_name == 'pull_request' && steps.changes.outputs.i18n == 'true'
         name: Append concise summary to PR comment body
