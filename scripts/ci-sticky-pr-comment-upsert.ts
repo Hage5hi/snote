@@ -266,6 +266,7 @@ export function parseCliConfig(
   const out: ParsedCliConfig = {
     cleanupStrategy: parseStrategy(env.STICKY_CLEANUP_STRATEGY, DEFAULT_CLEANUP_STRATEGY),
     headScanLines: parsePositiveInt(env.STICKY_HEAD_SCAN_LINES, MARKER_HEAD_SCAN_LINES),
+    debug: env.STICKY_DEBUG === "1" || env.STICKY_DEBUG === "true",
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -276,6 +277,10 @@ export function parseCliConfig(
       case "--help":
         out.help = true;
         break;
+      case "--debug":
+        out.debug = true;
+        break;
+
       case "--marker":
         out.marker = take();
         break;
