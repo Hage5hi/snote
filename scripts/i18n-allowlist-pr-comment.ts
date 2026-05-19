@@ -111,3 +111,10 @@ const body = build();
 mkdirSync(dirname(OUT_PATH), { recursive: true });
 writeFileSync(OUT_PATH, body);
 process.stdout.write(body);
+if (ctx.missing.length) {
+  // Soft-fail: don't crash CI when invoked locally, just surface the issue.
+  console.error(
+    `\n⚠️ i18n PR comment: missing CI env var(s): ${ctx.missing.join(", ")}. ` +
+      "Links fall back to placeholders. Set them in the workflow step or run via GitHub Actions.",
+  );
+}
