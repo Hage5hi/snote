@@ -15,6 +15,7 @@
 // later doesn't churn this file.
 import { describe, expect, it } from "vitest";
 import {
+  FAILURE_BREAKDOWN_SCHEMA_VERSION,
   parseVitestLog,
   renderJson,
   renderMarkdown,
