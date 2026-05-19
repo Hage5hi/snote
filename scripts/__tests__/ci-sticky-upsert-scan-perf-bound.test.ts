@@ -77,7 +77,7 @@ describe("marker scanning is bounded by headScanLines + 1 full-scan fallback", (
       expect(res.action).toBe("updated");
       expect(res.comment.id).toBe(300);
       expect(res.cleaned).toHaveLength(2);
-      expect(res.usedFullScan).toBe(true);
+      expect(res.usedFullScan).toBe(depth >= 5);
 
       // Bound pins — INDEPENDENT of depth:
       //   list   : exactly 1 (single page)
