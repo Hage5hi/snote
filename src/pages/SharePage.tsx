@@ -83,7 +83,7 @@ export default function SharePage() {
       }
 
       if (!data.enc_salt || !data.enc_check) {
-        setState({ kind: "error", message: "Note đã mã hoá nhưng thiếu salt/check." });
+        setState({ kind: "error", message: t("share.missing_salt") });
         return;
       }
 
@@ -130,21 +130,21 @@ export default function SharePage() {
       setState({ kind: "ready", doc });
     } catch (e) {
       console.error("share: manual decrypt failed", e);
-      setState({ kind: "error", message: "Giải mã lỗi." });
+      setState({ kind: "error", message: t("share.decrypt_failed") });
     }
   };
 
   const head = (
     <Helmet>
       <title>Shared note — Syrin Notes</title>
-      <meta name="description" content="Xem note markdown được chia sẻ ở chế độ chỉ đọc trên Syrin Notes. Link riêng tư, có thể thu hồi bất cứ lúc nào." />
+      <meta name="description" content="View a shared markdown note in read-only mode on Syrin Notes. Private link, revocable anytime." />
       <link rel="canonical" href={`https://snote.lovable.app/s/${token}`} />
       <meta name="robots" content="noindex, nofollow" />
       <meta property="og:title" content="Shared note — Syrin Notes" />
-      <meta property="og:description" content="Note markdown được chia sẻ ở chế độ chỉ đọc. Link riêng tư, có thể thu hồi." />
+      <meta property="og:description" content="A markdown note shared in read-only mode. Private link, revocable." />
       <meta property="og:url" content={`https://snote.lovable.app/s/${token}`} />
       <meta name="twitter:title" content="Shared note — Syrin Notes" />
-      <meta name="twitter:description" content="Note markdown được chia sẻ ở chế độ chỉ đọc." />
+      <meta name="twitter:description" content="A markdown note shared in read-only mode." />
     </Helmet>
   );
 
@@ -155,8 +155,8 @@ export default function SharePage() {
       <>
         {head}
         <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-          <p className="text-sm text-muted-foreground">Link không tồn tại hoặc đã bị thu hồi.</p>
-          <Link to="/" className="text-sm text-primary hover:underline">← Về trang chủ</Link>
+          <p className="text-sm text-muted-foreground">{t("share.notfound")}</p>
+          <Link to="/" className="text-sm text-primary hover:underline">{t("share.back_home")}</Link>
         </div>
       </>
     );
@@ -168,7 +168,7 @@ export default function SharePage() {
         {head}
         <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
           <p className="text-sm text-destructive">{state.message}</p>
-          <Link to="/" className="text-sm text-primary hover:underline">← Về trang chủ</Link>
+          <Link to="/" className="text-sm text-primary hover:underline">{t("share.back_home")}</Link>
         </div>
       </>
     );
@@ -179,7 +179,7 @@ export default function SharePage() {
       <>
         {head}
         <UnlockForm
-          slug="(chia sẻ)"
+          slug={t("share.slug_label")}
           salt={state.salt}
           check={state.check}
           iterations={state.iterations}
@@ -194,11 +194,11 @@ export default function SharePage() {
       {head}
       <div className="flex min-h-svh flex-col bg-background">
         <header className="sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 text-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
-          <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Về trang chủ">
+          <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label={t("share.back_home_aria")}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
           <Eye className="h-4 w-4 text-muted-foreground" />
-          <span className="font-mono text-xs text-muted-foreground">Chế độ chỉ đọc</span>
+          <span className="font-mono text-xs text-muted-foreground">{t("share.read_only")}</span>
         </header>
         <div className="flex-1 overflow-auto bg-muted/30">
           <Preview doc={state.doc} />
