@@ -135,7 +135,7 @@ describe("CLI --no-check-run", () => {
 // ────────────────────────────────────────────────────────────────────────────
 describe("CLI flag aliases — identical SummaryJSON + exit code", () => {
   // Each variant uses a different spelling for --topFiles + --no-check-run.
-  // All five must produce byte-identical SummaryJSON and exit 2.
+  // All variants must produce byte-identical SummaryJSON and exit 1.
   const variants: { label: string; args: string[] }[] = [
     { label: "canonical",            args: ["--topFiles", "5", "--no-check-run", "--json"] },
     { label: "kebab + canonical no", args: ["--top-files", "5", "--no-check-run", "--json"] },
