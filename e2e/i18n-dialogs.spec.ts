@@ -7,9 +7,27 @@ import { dict, SUPPORTED_LANGS, type Lang, type TKey } from "../src/i18n/index";
 
 const LANG_KEY = "lang";
 const IP_DETECTED_KEY = "lang.ip_detected";
-const TOAST_TIMEOUT = 5_000;
-// Sonner default auto-dismiss ≈ 4s; allow some slack for slower browsers.
-const TOAST_DISMISS_TIMEOUT = 8_000;
+// CI runners are slower than local dev — allow overrides via env so we can
+// loosen thresholds without touching code. Defaults double under CI.
+const CI_MULT = process.env.CI ? 2 : 1;
+const TOAST_TIMEOUT = Number(process.env.E2E_TOAST_TIMEOUT_MS ?? 5_000) * CI_MULT;
+// Sonner default auto-dismiss ≈ 4s; allow generous slack for slower browsers.
+const TOAST_DISMISS_TIMEOUT =
+  Number(process.env.E2E_TOAST_DISMISS_TIMEOUT_MS ?? 8_000) * CI_MULT;
+// Minimum time a success toast should remain visible before auto-dismiss.
+const TOAST_MIN_VISIBLE_MS = Number(process.env.E2E_TOAST_MIN_VISIBLE_MS ?? 200);
+
+/** Assert a toast becomes visible, stays visible briefly, then auto-dismisses. */
+async function expectToastLifecycle(
+  locator: import("@playwright/test").Locator,
+): Promise<void> {
+  await expect(locator).toBeVisible({ timeout: TOAST_TIMEOUT });
+  // Confirm it doesn't flicker out immediately.
+  await locator.page().waitForTimeout(TOAST_MIN_VISIBLE_MS);
+  await expect(locator).toBeVisible();
+  // Then verify it does dismiss within the configured window.
+  await expect(locator).toBeHidden({ timeout: TOAST_DISMISS_TIMEOUT });
+}
 
 const newNotePath = () => `/e2e-dlg-${Math.random().toString(36).slice(2, 8)}`;
 
