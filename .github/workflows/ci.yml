@@ -361,17 +361,19 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  i18n-cli-windows:
-    # Cross-platform sanity for the CLI truncation/parity tests: confirms
-    # real Windows path behavior matches the buildSummary cross-platform
-    # expectations (backslash normalization, ordering, --topFiles edge
-    # values). Combos that need a POSIX `git` shim are skipped at
-    # runtime via `it.skipIf(process.platform === 'win32')`.
+  i18n-cli-matrix:
+    # Cross-platform sanity for the CLI truncation/parity tests across
+    # Linux, macOS, and Windows runners. Confirms real path behavior
+    # matches the buildSummary cross-platform expectations (backslash
+    # normalization, ordering, --topFiles edge values) on every host.
+    # Combos that need a POSIX `git` shim are skipped at runtime via
+    # `it.skipIf(process.platform === 'win32')` so the Windows leg still
+    # runs everything that doesn't depend on the shell shim.
     name: i18n CLI parity (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
