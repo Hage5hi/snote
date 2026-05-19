@@ -51,13 +51,14 @@ export default function SharePage() {
   const { token = "" } = useParams();
   const valid = TOKEN_RE.test(token);
   const [state, setState] = useState<ViewState>({ kind: "loading" });
+  const { t } = useI18n();
 
   useEffect(() => {
-    document.title = "Syrin Notes — chia sẻ";
+    document.title = `Syrin Notes — ${t("share.title_suffix")}`;
     return () => {
       document.title = "Syrin Notes";
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!valid) {
