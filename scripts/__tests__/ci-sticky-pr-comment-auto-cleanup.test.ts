@@ -84,7 +84,7 @@ describe("sticky upsert — auto-cleanup of duplicate marker comments", () => {
     await api.upsert(build("v1"));
 
     // Newest marker updated, two older markers removed.
-    expect(api.update).toHaveBeenCalledWith(21, expect.stringContaining("cov-v1"));
+    expect(api.update).toHaveBeenCalledWith(21, expect.stringContaining("/artifacts/v1"));
     expect(api.remove).toHaveBeenCalledTimes(2);
     expect(api.remove).toHaveBeenCalledWith(3);
     expect(api.remove).toHaveBeenCalledWith(7);
@@ -145,8 +145,8 @@ describe("sticky upsert — auto-cleanup of duplicate marker comments", () => {
     expect(api.comments).toHaveLength(1);
     expect(api.comments[0].id).toBe(12);
     // Final body reflects the SECOND rerun, not the first.
-    expect(api.comments[0].body).toContain(`${RUN}/artifacts/cov-run-B`);
-    expect(api.comments[0].body).not.toContain("cov-run-A");
+    expect(api.comments[0].body).toContain(`${RUN}/artifacts/run-B`);
+    expect(api.comments[0].body).not.toContain("run-A");
   });
 
   it("idempotent: after cleanup, a third rerun with no duplicates just updates in place", async () => {
@@ -164,6 +164,6 @@ describe("sticky upsert — auto-cleanup of duplicate marker comments", () => {
     expect(api.create).not.toHaveBeenCalled();
     expect(api.remove).toHaveBeenCalledTimes(1); // only the first rerun had duplicates
     expect(api.comments).toHaveLength(1);
-    expect(api.comments[0].body).toContain("cov-r3");
+    expect(api.comments[0].body).toContain("/artifacts/r3");
   });
 });
