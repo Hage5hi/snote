@@ -95,7 +95,18 @@ function loadReport(): AllowlistReport | null {
   }
 }
 
-export function build(ctx: CIContext, report: AllowlistReport | null = loadReport()): string {
+export interface BuildPRCommentOpts {
+  /** Forwarded to buildSummary; default = DEFAULT_TOP_N. */
+  topN?: number;
+  /** Schema-line resolver (see buildSummary docs). */
+  entryLineLookup?: (entryIndex: number) => number | undefined;
+}
+
+export function build(
+  ctx: CIContext,
+  report: AllowlistReport | null = loadReport(),
+  opts: BuildPRCommentOpts = {},
+): string {
   const { runUrl, artifactsUrl, bundleUrl } = buildUrls(ctx);
   const lines: string[] = [];
   lines.push("### 🌐 i18n audit + allowlist artifacts");
@@ -122,7 +133,11 @@ export function build(ctx: CIContext, report: AllowlistReport | null = loadRepor
     // prints locally + the GitHub step summary shows. Reviewers see the
     // same actionable signal in every surface.
     if (!report.ok) {
-      const summary: Summary = buildSummary(report, "reports/i18n-allowlist-report.json");
+      const summary: Summary = buildSummary(
+        report,
+        "reports/i18n-allowlist-report.json",
+        { topN: opts.topN, entryLineLookup: opts.entryLineLookup },
+      );
       lines.push(...renderFailureSection(summary));
     }
     lines.push(
