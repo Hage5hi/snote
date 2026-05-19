@@ -174,7 +174,20 @@ jobs:
         # workflow before reviewers see the artifacts. The gate below
         # still fails the job at the end if validation didn't pass.
         continue-on-error: true
-        run: bun run scripts/ci-validate-breakdown-json.ts reports/_ci/failure-breakdown.json
+        run: |
+          bun run scripts/ci-validate-breakdown-json.ts reports/_ci/failure-breakdown.json \
+            --summary-json reports/_ci/validate-summary.json
+      # Upload the machine-readable validator summary JSON — only when
+      # validation actually succeeded, so downstream consumers (PR bots,
+      # dashboards) never ingest a summary describing a malformed payload.
+      - if: steps.validate_breakdown.outcome == 'success' && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: upload_validate_summary_json
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-validate-summary-ubuntu-latest
+          path: reports/_ci/validate-summary.json
+          retention-days: 14
+          if-no-files-found: warn
       # Per-OS step-summary artifact so reviewers can download the
       # rendered markdown directly (mirrors what GitHub displays in the
       # job UI). Uploaded on every run, not just failures.
