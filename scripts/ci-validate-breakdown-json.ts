@@ -20,8 +20,8 @@
 // Exits non-zero on the first invalid file unless --allow-missing is
 // passed (in which case a missing file is logged + skipped, but a file
 // that exists and is malformed still fails).
-import { existsSync, readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, dirname } from "node:path";
 
 import { FAILURE_BREAKDOWN_SCHEMA_VERSION } from "./ci-vitest-failure-summary";
 
@@ -125,16 +125,20 @@ if (invokedDirectly) {
   const schemaOverride = schemaIdx >= 0 ? Number(args[schemaIdx + 1]) : undefined;
   const kindIdx = args.indexOf("--kind");
   const kindArg = kindIdx >= 0 ? args[kindIdx + 1] : "auto";
+  const summaryJsonIdx = args.indexOf("--summary-json");
+  const summaryJsonPath =
+    summaryJsonIdx >= 0 ? args[summaryJsonIdx + 1] : undefined;
   const files = args.filter(
     (a, i) =>
       !a.startsWith("--") &&
       args[i - 1] !== "--schema-version" &&
-      args[i - 1] !== "--kind",
+      args[i - 1] !== "--kind" &&
+      args[i - 1] !== "--summary-json",
   );
 
   if (files.length === 0) {
     console.error(
-      "usage: ci-validate-breakdown-json <file> [<file> ...] [--schema-version N] [--kind failure|parity|flags|auto] [--allow-missing]",
+      "usage: ci-validate-breakdown-json <file> [<file> ...] [--schema-version N] [--kind failure|parity|flags|auto] [--summary-json <path>] [--allow-missing]",
     );
     process.exit(2);
   }
@@ -192,6 +196,29 @@ if (invokedDirectly) {
   console.log("--- ci-validate-breakdown-json summary ---");
   for (const [kind, t] of Object.entries(tallies)) {
     console.log(`kind=${kind} ok=${t.ok} failed=${t.failed} missing=${t.missing}`);
+  }
+
+  // Machine-parsable summary: same per-kind counts plus an overall
+  // ok/failed/missing rollup. Emitted on a marker-prefixed stdout line
+  // (grep-friendly) and, when --summary-json <path> is passed, also
+  // written to disk for downstream tooling (PR bots, dashboards, the
+  // debug-bundle artifact).
+  const totals = { ok: 0, failed: 0, missing: 0 };
+  for (const t of Object.values(tallies)) {
+    totals.ok += t.ok;
+    totals.failed += t.failed;
+    totals.missing += t.missing;
+  }
+  const summaryPayload = {
+    schemaVersion: 1 as const,
+    ok: !hadError,
+    totals,
+    perKind: tallies,
+  };
+  console.log(`SUMMARY_JSON=${JSON.stringify(summaryPayload)}`);
+  if (summaryJsonPath) {
+    mkdirSync(dirname(summaryJsonPath), { recursive: true });
+    writeFileSync(summaryJsonPath, JSON.stringify(summaryPayload, null, 2));
   }
 
   process.exit(hadError ? 1 : 0);
