@@ -4,6 +4,25 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      sticky_cleanup_strategy:
+        description: 'Sticky PR comment duplicate-cleanup strategy: delete (default) or lock'
+        required: false
+        default: 'delete'
+        type: choice
+        options:
+          - delete
+          - lock
+      sticky_head_scan_lines:
+        description: 'Lines per comment to scan for the sticky marker (fast path). Default 5.'
+        required: false
+        default: '5'
+      sticky_debug:
+        description: 'Print which sticky comment was selected and cleanup actions taken (1=on).'
+        required: false
+        default: '0'
+
 
 jobs:
   check:
