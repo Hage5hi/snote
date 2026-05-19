@@ -534,6 +534,18 @@ jobs:
             echo "help-snapshot diff not produced on ${{ matrix.os }} — --help output matched the committed snapshot, or the snapshot test did not run / failed before writing the diff." \
               > reports/_ci/help-snapshot.reason.txt
           fi
+      # Verify the rendered step-summary markdown was actually written
+      # on this OS, and fail loudly if not — catches silent rendering
+      # regressions (e.g. $GITHUB_STEP_SUMMARY unset under a future
+      # shell change) before they hide test failures.
+      - if: always()
+        name: Verify rendered step-summary.md exists
+        shell: bash
+        run: |
+          if [ ! -s reports/_ci/step-summary.md ]; then
+            echo "::error file=reports/_ci/step-summary.md::Expected rendered step-summary.md to exist on ${{ matrix.os }} after CLI flags step, but the file is missing or empty. The failure-breakdown rendering step may have failed silently."
+            exit 1
+          fi
       # Per-OS step-summary artifact: lets reviewers download the
       # rendered markdown directly (mirrors the GitHub job UI view).
       - if: always()
@@ -541,6 +553,18 @@ jobs:
         with:
           name: i18n-cli-step-summary-${{ matrix.os }}
           path: reports/_ci/step-summary.md
+          retention-days: 14
+          if-no-files-found: warn
+      # Machine-readable parity + flags breakdown JSONs — uploaded on
+      # every run (green or red) so dashboards / PR bots can consume the
+      # parsed shape without re-parsing the raw vitest logs.
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-failure-breakdown-json-${{ matrix.os }}
+          path: |
+            reports/_ci/parity-breakdown.json
+            reports/_ci/flags-breakdown.json
           retention-days: 14
           if-no-files-found: warn
       - if: failure() && (steps.cli_parity.outcome == 'failure' || steps.cli_flags.outcome == 'failure')
