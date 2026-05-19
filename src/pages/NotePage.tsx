@@ -434,8 +434,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           onNext={() => flip(1)}
         />
       )}
-
-      <WordCountPill words={counts.words} chars={counts.chars} goal={goal} />
     </div>
   );
 }
