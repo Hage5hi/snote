@@ -338,3 +338,52 @@ jobs:
           name: playwright-report-${{ matrix.browser }}
           path: playwright-report/
           retention-days: 7
+
+  i18n-cli-windows:
+    # Cross-platform sanity for the CLI truncation/parity tests: confirms
+    # real Windows path behavior matches the buildSummary cross-platform
+    # expectations (backslash normalization, ordering, --topFiles edge
+    # values). Combos that need a POSIX `git` shim are skipped at
+    # runtime via `it.skipIf(process.platform === 'win32')`.
+    name: i18n CLI parity (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Run CLI truncation/parity + snapshot suites
+        id: cli_suites_win
+        shell: bash
+        run: |
+          set +e
+          bunx vitest run \
+            scripts/__tests__/i18n-allowlist-cli-parity.test.ts \
+            scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
+            2>&1 | tee /tmp/i18n-cli-suite.log
+          status=${PIPESTATUS[0]}
+          {
+            echo "### i18n allowlist CLI suites (${{ matrix.os }})"
+            echo '```'
+            tail -200 /tmp/i18n-cli-suite.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          mkdir -p reports/_ci
+          cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
+          cp /tmp/i18n-cli-suite.log reports/_ci/i18n-cli-suite.log || true
+          exit $status
+      - if: failure() && steps.cli_suites_win.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-failure-bundle-${{ matrix.os }}
+          path: |
+            reports/i18n-allowlist-report.json
+            reports/i18n-allowlist-summary.json
+            reports/_ci/
+          retention-days: 14
+          if-no-files-found: warn
