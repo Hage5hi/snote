@@ -101,6 +101,48 @@ describe("ci-validate-breakdown-json CLI", () => {
       expect(r.status).toBe(0);
       expect(r.stdout).toMatch(/kind=parity ok=1 failed=0 missing=0/);
       expect(r.stdout).toMatch(/kind=flags ok=0 failed=0 missing=1/);
+  });
+
+  describe("machine-parsable summary (SUMMARY_JSON + --summary-json)", () => {
+    it("always prints a SUMMARY_JSON=<json> line on stdout with per-kind tallies", () => {
+      const failureFile = join(dir, "failure-breakdown.json");
+      const parityFile = join(dir, "parity-breakdown.json");
+      writeFileSync(failureFile, goodPayload());
+      writeFileSync(parityFile, goodPayload({ schemaVersion: 999 })); // bad
+      const r = runCli([failureFile, parityFile]);
+      expect(r.status).toBe(1);
+      const match = r.stdout.match(/^SUMMARY_JSON=(.+)$/m);
+      expect(match, `expected SUMMARY_JSON= line in stdout, got: ${r.stdout}`).not.toBeNull();
+      const parsed = JSON.parse(match![1]);
+      expect(parsed).toMatchObject({
+        schemaVersion: 1,
+        ok: false,
+        totals: { ok: 1, failed: 1, missing: 0 },
+        perKind: {
+          failure: { ok: 1, failed: 0, missing: 0 },
+          parity: { ok: 0, failed: 1, missing: 0 },
+        },
+      });
+    });
+
+    it("writes the same payload to disk when --summary-json <path> is passed", () => {
+      const failureFile = join(dir, "failure-breakdown.json");
+      const summaryOut = join(dir, "nested", "validator-summary.json");
+      writeFileSync(failureFile, goodPayload());
+      const r = runCli([failureFile, "--summary-json", summaryOut]);
+      expect(r.status).toBe(0);
+      const onDisk = JSON.parse(
+        (readFileSync as typeof readFileSync)(summaryOut, "utf8"),
+      );
+      expect(onDisk).toMatchObject({
+        schemaVersion: 1,
+        ok: true,
+        totals: { ok: 1, failed: 0, missing: 0 },
+        perKind: { failure: { ok: 1, failed: 0, missing: 0 } },
+      });
+      // And the stdout SUMMARY_JSON line matches the on-disk file.
+      const stdoutPayload = JSON.parse(r.stdout.match(/^SUMMARY_JSON=(.+)$/m)![1]);
+      expect(stdoutPayload).toEqual(onDisk);
     });
   });
 });
