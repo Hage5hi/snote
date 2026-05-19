@@ -174,3 +174,152 @@ describe("formatSummary side-by-side scoped/full counts", () => {
     expect(text).toContain("missing:    2  (unallowlisted disables)");
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// New surface contracts: exit codes, --no-check-run flag, schema messages,
+// PR comment summary-artifact link. Pinned here so any regression in the
+// shared report helpers fails fast.
+// ────────────────────────────────────────────────────────────────────────────
+import { exitCodeFor } from "../i18n-allowlist-report";
+
+function schemaFailingReport(): AllowlistReport {
+  return {
+    ok: false,
+    schemaOk: false,
+    driftOk: true,
+    totals: { entries: 2, schemaErrors: 2, missing: 0, stale: 0 },
+    entries: [
+      {
+        index: 0,
+        file: "src/a.tsx",
+        reason: "x",
+        errors: ["must contain property `reason`"],
+        matchedSites: [],
+      },
+      {
+        index: 1,
+        file: "src/b.tsx",
+        reason: "y",
+        errors: ["unknown key `whoops`"],
+        matchedSites: [],
+      },
+    ],
+    missing: [],
+    stale: [],
+  };
+}
+
+describe("exit codes distinguish schema vs drift", () => {
+  it("pass → 0", () => {
+    const s = buildSummary(
+      {
+        ok: true,
+        schemaOk: true,
+        driftOk: true,
+        totals: { entries: 0, schemaErrors: 0, missing: 0, stale: 0 },
+        entries: [],
+        missing: [],
+        stale: [],
+      },
+      REPORT_PATH,
+    );
+    expect(exitCodeFor(s)).toBe(0);
+    expect(toJSON(s).exitCode).toBe(0);
+  });
+
+  it("schema failure → 2 (even when drift would also fail)", () => {
+    const r = schemaFailingReport();
+    r.driftOk = false;
+    r.missing = [{ file: "src/x.tsx", reason: "r", line: 1 }];
+    r.totals.missing = 1;
+    const s = buildSummary(r, REPORT_PATH);
+    expect(exitCodeFor(s)).toBe(2);
+    expect(toJSON(s).exitCode).toBe(2);
+  });
+
+  it("drift-only failure → 1", () => {
+    const s = buildSummary(failingReport(), REPORT_PATH);
+    expect(exitCodeFor(s)).toBe(1);
+    expect(toJSON(s).exitCode).toBe(1);
+  });
+});
+
+describe("--no-check-run flag", () => {
+  it("toJSON defaults publishCheckRun=true", () => {
+    expect(toJSON(buildSummary(failingReport(), REPORT_PATH)).publishCheckRun).toBe(true);
+  });
+  it("propagates publishCheckRun=false when requested", () => {
+    const j = toJSON(buildSummary(failingReport(), REPORT_PATH), {
+      publishCheckRun: false,
+    });
+    expect(j.publishCheckRun).toBe(false);
+  });
+});
+
+describe("schema annotations carry per-line error messages", () => {
+  it("formatAnnotations appends the entry-specific schema error", () => {
+    const s = buildSummary(schemaFailingReport(), REPORT_PATH, {
+      entryLineLookup: (i) => (i === 0 ? 10 : 25),
+    });
+    const anns = formatAnnotations(s);
+    expect(anns).toHaveLength(2);
+    expect(anns[0]).toContain("file=.lintrc-i18n-allowlist.json,line=10");
+    expect(anns[0]).toContain("must contain property `reason`");
+    expect(anns[1]).toContain("line=25");
+    expect(anns[1]).toContain("unknown key `whoops`");
+  });
+
+  it("toJSON.failure.topMessages aligns with topFiles for schema", () => {
+    const s = buildSummary(schemaFailingReport(), REPORT_PATH, {
+      entryLineLookup: (i) => (i === 0 ? 10 : 25),
+    });
+    const j = toJSON(s);
+    expect(j.failure?.topFiles).toEqual([
+      ".lintrc-i18n-allowlist.json:10",
+      ".lintrc-i18n-allowlist.json:25",
+    ]);
+    expect(j.failure?.topMessages).toEqual([
+      "must contain property `reason`",
+      "unknown key `whoops`",
+    ]);
+  });
+
+  it("drift failures still emit topMessages array (null per entry)", () => {
+    const j = toJSON(buildSummary(failingReport(), REPORT_PATH));
+    expect(j.failure?.topMessages.every((m) => m === null)).toBe(true);
+    expect(j.failure?.topMessages.length).toBe(j.failure?.topFiles.length);
+  });
+});
+
+describe("PR comment links both artifact bundle AND summary JSON", () => {
+  it("renders distinct links for full bundle and summary JSON when ids provided", () => {
+    const ctx = resolveCIContext({
+      GITHUB_SERVER_URL: "https://github.com",
+      GITHUB_REPOSITORY: "acme/widgets",
+      GITHUB_RUN_ID: "999",
+      I18N_ARTIFACT_ID: "111",
+      I18N_SUMMARY_ARTIFACT_ID: "222",
+    } as NodeJS.ProcessEnv);
+    const body = buildPRComment(ctx, failingReport());
+    expect(body).toContain(
+      "https://github.com/acme/widgets/actions/runs/999/artifacts/111",
+    );
+    expect(body).toContain(
+      "https://github.com/acme/widgets/actions/runs/999/artifacts/222",
+    );
+    expect(body).toContain("i18n-allowlist-summary.json");
+  });
+
+  it("falls back to run-level artifacts URL when summary id is missing", () => {
+    const ctx = resolveCIContext({
+      GITHUB_SERVER_URL: "https://github.com",
+      GITHUB_REPOSITORY: "acme/widgets",
+      GITHUB_RUN_ID: "999",
+      I18N_ARTIFACT_ID: "111",
+    } as NodeJS.ProcessEnv);
+    const body = buildPRComment(ctx, failingReport());
+    expect(body).toContain("i18n-allowlist-summary.json");
+    // Summary link degrades to the #artifacts anchor, not a stale id.
+    expect(body).toMatch(/Download concise summary JSON.*runs\/999#artifacts\)/);
+  });
+});
