@@ -8,10 +8,14 @@
 //   I18N_MIN_COVERAGE=95 bun run scripts/i18n-coverage.ts
 //   I18N_ALLOW_PLACEHOLDER_MISMATCH=1 ...
 import { dict, SUPPORTED_LANGS } from "../src/i18n";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 
 const MIN_COVERAGE_PCT = Number(process.env.I18N_MIN_COVERAGE ?? "100");
 const ALLOW_PLACEHOLDER_MISMATCH = process.env.I18N_ALLOW_PLACEHOLDER_MISMATCH === "1";
 const VERBOSE = process.env.I18N_VERBOSE === "1" || process.argv.includes("--verbose");
+const REPORT_JSON = process.env.I18N_REPORT_JSON ?? "reports/i18n-report.json";
+const REPORT_HTML = process.env.I18N_REPORT_HTML ?? "reports/i18n-report.html";
 
 const PLACEHOLDER_RE = /\{(\w+)\}/g;
 
