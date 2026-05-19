@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -135,9 +136,14 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Encryption" title="Note đã mã hoá">
-            <Lock className="h-4 w-4 text-success" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Encryption">
+                <Lock className="h-4 w-4 text-success" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Note đã mã hoá</TooltipContent>
+          </Tooltip>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={copyKey}>
@@ -157,9 +163,14 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setPass(""); }}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Mã hoá note" title="Mã hoá note">
-          <LockOpen className="h-4 w-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Mã hoá note">
+              <LockOpen className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Mã hoá note</TooltipContent>
+        </Tooltip>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
