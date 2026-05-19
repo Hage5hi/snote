@@ -129,10 +129,15 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-failure-bundle
+          # `reports/_ci/help-snapshot.diff` is written only by the
+          # snapshot test when --help drifts; listed explicitly so the
+          # bundle ships it when present and `if-no-files-found: warn`
+          # tolerates its absence on non-snapshot failures.
           path: |
             reports/i18n-allowlist-report.json
             reports/i18n-allowlist-summary.json
             reports/_ci/
+            reports/_ci/help-snapshot.diff
             /tmp/i18n-cli-suite.log
           retention-days: 14
           if-no-files-found: warn
@@ -147,12 +152,37 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
       - if: always() && github.event_name == 'pull_request'
+        id: upload_cli_coverage_html
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-coverage-html
           path: coverage/i18n-cli/
           retention-days: 14
           if-no-files-found: warn
+      # Sticky PR comment with a one-click link to the HTML coverage
+      # artifact so reviewers don't have to dig through the run UI.
+      - if: always() && github.event_name == 'pull_request'
+        name: Build CLI coverage PR comment
+        env:
+          COVERAGE_ARTIFACT_ID: ${{ steps.upload_cli_coverage_html.outputs.artifact-id }}
+        run: |
+          mkdir -p reports/_ci
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
+            ARTIFACT_URL="${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}"
+          else
+            ARTIFACT_URL="${RUN_URL}#artifacts"
+          fi
+          {
+            echo "### i18n CLI test coverage"
+            echo ""
+            echo "[📊 Download HTML coverage report](${ARTIFACT_URL}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
+          } > reports/_ci/coverage-pr-comment.md
+      - if: always() && github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: i18n-cli-coverage
+          path: reports/_ci/coverage-pr-comment.md
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
