@@ -56,7 +56,7 @@ describe("final debug summary line is gated by the debug option", () => {
       });
       const summary = lines.filter((l) => l.startsWith("summary:"));
       expect(summary).toHaveLength(1);
-      expect(summary[0]).toMatch(/action=created cleaned=0 \(deleted=0 tombstoned=0\)/);
+      expect(summary[0]).toMatch(/action=created id=\d+ cleaned=0 \(deleted=0 tombstoned=0\)/);
     });
 
     it("debug=undefined → no summary line, no console output at all", async () => {
