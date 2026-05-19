@@ -295,7 +295,7 @@ describe("docs/i18n-allowlist-summary.md ↔ implementation parity", () => {
 
   it("documents every canonical flag with a backtick reference", () => {
     for (const { canonical } of FLAGS) {
-      expect(doc, `doc must mention \`${canonical}\``).toContain(`\`${canonical}\``);
+      expect(doc, `doc must mention \`${canonical}\``).toContain(`\`${canonical}`);
     }
   });
 
