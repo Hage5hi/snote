@@ -55,11 +55,13 @@ describe("ci-strip-debug-links", () => {
   });
 
   it("handles CRLF line endings without corrupting them", () => {
-    const md = `# summary\r\n\r\n${block("- [a](u)").replace(/\n/g, "\r\n")}\r\n`;
+    const crlfBlock = block("- [a](u)").replace(/\n/g, "\r\n");
+    const md = `# summary\r\n\r\n## body\r\nline\r\n\r\n${crlfBlock}\r\n`;
     const out = stripDebugLinksBlocks(md);
     expect(out).not.toContain(BEGIN_MARKER);
     expect(out).toContain("\r\n");
     expect(out).toContain("# summary");
+    expect(out).toContain("## body");
   });
 
   it("strip + append on rerun produces the SAME output as the first append (idempotent)", () => {
