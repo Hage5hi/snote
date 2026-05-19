@@ -108,8 +108,16 @@ With `--debug` (or `STICKY_DEBUG=1`):
 [sticky-upsert] selected newest sticky comment id=987654321 from 3 marker match(es); cleanup strategy=delete
 [sticky-upsert] deleted older duplicate sticky comment id=987654300
 [sticky-upsert] deleted older duplicate sticky comment id=987654289
+[sticky-upsert] summary: action=updated id=987654321 cleaned=2 (deleted=2 tombstoned=0) requestedStrategy=delete effectiveStrategy=delete
 [sticky-upsert] done: action=updated id=987654321 cleaned=2 usedFullScan=false
 ```
+
+The `summary:` line is always emitted (when `--debug` is on) on both
+created and updated paths. It reports the final cleaned count split by
+strategy actually used (`deleted=` vs `tombstoned=`) and shows when the
+requested strategy was downgraded — e.g. `requestedStrategy=delete
+effectiveStrategy=lock` means the API client lacked delete permission
+and the script fell back to tombstoning older duplicates.
 
 ## Exit codes
 
