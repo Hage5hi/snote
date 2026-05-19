@@ -124,11 +124,13 @@ describe("formatAnnotations — schema messages", () => {
       missing: [{ file: "src/widget.tsx", reason: "ad-hoc", line: 42 }],
       stale: [],
     };
-    const [ann] = formatAnnotations(buildSummary(r, REPORT_PATH));
+    const s = buildSummary(r, REPORT_PATH);
+    const [ann] = formatAnnotations(s);
     expect(ann).toContain("file=src/widget.tsx,line=42");
     expect(ann).toContain("drift (missing)");
-    // No `— <specific>` suffix because topMessages is null for drift.
-    expect(ann).not.toMatch(/— [^—]+ — /);
+    // Drift entries don't get a per-line specific message attached —
+    // topMessages stays empty (only the schema branch populates it).
+    expect(s.failure?.topMessages ?? []).toEqual([]);
   });
 });
 
