@@ -152,11 +152,26 @@ export function isI18nRelevant(path: string): boolean {
  *                     was unavailable — also falls back, with a different
  *                     note. When undefined, no scoping is applied.
  */
+export interface BuildSummaryOpts {
+  changed?: string[] | null;
+  /** Max top-files surfaced. Default 3. Clamped to ≥1. */
+  topN?: number;
+  /**
+   * Optional resolver mapping an entry's index → line in
+   * `.lintrc-i18n-allowlist.json`. Used so schema failures surface as
+   * `.lintrc-i18n-allowlist.json:42` instead of pointing at entry.file.
+   */
+  entryLineLookup?: (entryIndex: number) => number | undefined;
+}
+
 export function buildSummary(
   report: AllowlistReport,
   reportPath: string,
-  opts: { changed?: string[] | null } = {},
+  opts: BuildSummaryOpts = {},
 ): Summary {
+  const topN = Math.max(1, opts.topN ?? DEFAULT_TOP_N);
+  const failureOpts: FailureOpts = { topN, entryLineLookup: opts.entryLineLookup };
+
   const base: Summary = {
     ok: report.ok,
     schemaOk: report.schemaOk,
@@ -171,7 +186,7 @@ export function buildSummary(
   };
 
   if (opts.changed === undefined) {
-    return withFailure(base, report);
+    return withFailure(base, report, failureOpts);
   }
 
   if (opts.changed === null) {
@@ -182,6 +197,7 @@ export function buildSummary(
           "  scope:      --changed requested, but `git diff` failed — falling back to FULL report",
       },
       report,
+      failureOpts,
     );
   }
 
@@ -197,6 +213,7 @@ export function buildSummary(
         scopeNote: `  scope:      --changed (${changed.length} file(s) changed, none i18n-relevant) — falling back to FULL report`,
       },
       report,
+      failureOpts,
     );
   }
 
@@ -206,7 +223,6 @@ export function buildSummary(
     (e) => isRelevant(e.file) || e.matchedSites.some((s) => isRelevant(s.file)),
   );
 
-  // Schema is repo-wide and must always be valid; drift is scoped.
   const scopedSchemaOk = report.schemaOk;
   const scopedDriftOk = scopedMissing.length === 0 && scopedStale.length === 0;
   const scopedOk = scopedSchemaOk && scopedDriftOk;
@@ -241,12 +257,25 @@ export function buildSummary(
       scopedToChanges: true,
     },
     scoped,
+    failureOpts,
   );
 }
 
-function withFailure(summary: Summary, report: AllowlistReport): Summary {
+/** Default cap on top offending paths surfaced in the failure reason. */
+export const DEFAULT_TOP_N = 3;
+
+interface FailureOpts {
+  topN: number;
+  entryLineLookup?: (entryIndex: number) => number | undefined;
+}
+
+function withFailure(
+  summary: Summary,
+  report: AllowlistReport,
+  opts: FailureOpts,
+): Summary {
   if (summary.ok) return summary;
-  return { ...summary, failure: buildFailureReason(summary, report) };
+  return { ...summary, failure: buildFailureReason(summary, report, opts) };
 }
 
 /**
