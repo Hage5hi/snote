@@ -43,15 +43,23 @@ describe("hasStickyMarker — bounded head scan", () => {
     expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(true);
   });
 
-  it("head scan is O(headScanLines): a 1MB body without the marker returns fast", () => {
-    const huge = "x".repeat(1_000_000) + "\n" + MARKER;
+  it("head scan is O(headScanLines): a 1MB single-line body returns fast", () => {
+    // Single huge line means the head-scan still only inspects 1 line
+    // total (no \n to split on past the head window). Without bounding
+    // by lines we'd be safe; the perf bound is really about a body
+    // with MANY lines — covered below.
+    const huge = "x".repeat(1_000_000);
     const t0 = performance.now();
-    const result = hasStickyMarker(huge, MARKER); // head scan only
+    const result = hasStickyMarker(huge, MARKER);
     const elapsed = performance.now() - t0;
-    expect(result).toBe(false); // marker is past the head window
-    // Generous bound; head scan alone should be sub-millisecond, but
-    // CI machines are noisy. The point is "not O(body)".
+    expect(result).toBe(false);
     expect(elapsed).toBeLessThan(250);
+  });
+
+  it("head scan ignores lines past the window even in a many-line body", () => {
+    const body = `${"noise\n".repeat(5_000)}${MARKER}\nrest`;
+    expect(hasStickyMarker(body, MARKER)).toBe(false);
+    expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(true);
   });
 
   it("custom headScanLines is respected", () => {
