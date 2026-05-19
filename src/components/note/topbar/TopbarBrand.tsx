@@ -1,9 +1,10 @@
 // Brand block on the left of the Topbar: home link, slug, copy-URL, sync indicator, tag chips.
 import { Link } from "react-router-dom";
 import * as Y from "yjs";
-import { ArrowLeft, Cloud, Copy } from "lucide-react";
+import { ArrowLeft, Cloud, Copy, List } from "lucide-react";
 import { SyncIndicator } from "../SyncIndicator";
 import { TagChips } from "../TagChips";
+import { OUTLINE_TOGGLE_EVENT } from "../OutlineSidebar";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 
