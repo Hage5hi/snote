@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import * as Y from "yjs";
 import { expandWikiLinks } from "@/lib/wiki-link";
@@ -7,6 +7,7 @@ import { renderKatex } from "@/lib/markdown/renderers/katex";
 import { highlightCode } from "@/lib/markdown/renderers/highlight";
 import { getCachedHtml, setCachedHtml } from "@/lib/markdown/render-cache";
 import { renderInWorker } from "@/lib/markdown/preview-worker-client";
+import { useI18n } from "@/i18n";
 
 function escapeHtml(s: string) {
   return s.replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!);
@@ -37,6 +38,11 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
   const hostRef = useRef<HTMLDivElement>(null);
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
+  const { t } = useI18n();
+  const emptyHtml = useMemo(
+    () => `<p class="text-muted-foreground">${t("preview.empty").replace(/[<>&]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" })[c]!)}</p>`,
+    [t],
+  );
 
   useEffect(() => {
     const ytext = doc.getText("content");
@@ -185,7 +191,7 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
       lang={lang}
       className={`markdown-preview prose prose-neutral dark:prose-invert max-w-none px-6 py-6 ${className ?? ""}`}
       dangerouslySetInnerHTML={{
-        __html: html || '<p class="text-muted-foreground">Empty note. Bắt đầu gõ để xem preview.</p>',
+        __html: html || emptyHtml,
       }}
     />
   );
