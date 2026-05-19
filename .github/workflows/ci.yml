@@ -62,6 +62,7 @@ jobs:
       # Upload reports/ even when prior steps failed so the audit diff
       # (JSON + MD) is always available for inspection.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
+        id: upload_i18n_report
         uses: actions/upload-artifact@v4
         with:
           name: i18n-report
@@ -70,6 +71,24 @@ jobs:
             .lintrc-i18n-allowlist.json
           retention-days: 14
           if-no-files-found: warn
+      # PR comment with direct links to the uploaded artifact + run summary
+      # so reviewers can grab the audit diff / allowlist even on failed jobs.
+      - if: always() && github.event_name == 'pull_request' && steps.changes.outputs.i18n == 'true'
+        name: Comment PR with i18n artifact links
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: i18n-report
+          message: |
+            ### 🌐 i18n audit + allowlist artifacts
+
+            Artifact: **`i18n-report`** — contains `reports/i18n-audit-diff.json`, `reports/i18n-audit-diff.md`, `reports/i18n-report.json`, `reports/i18n-report.html`, and `.lintrc-i18n-allowlist.json`.
+
+            - 📦 [Download artifact bundle](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_i18n_report.outputs.artifact-id }})
+            - 🧾 [All artifacts for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)
+            - 🔎 [Job logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            _Posted automatically — updates in place on each push._
+
 
   e2e:
     # Real-browser Playwright tests across chromium, firefox & webkit.
