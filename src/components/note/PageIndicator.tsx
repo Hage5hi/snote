@@ -1,4 +1,5 @@
 import { ChevronUp, ChevronDown } from "lucide-react";
+import { useI18n } from "@/i18n/index";
 
 interface PageIndicatorProps {
   page: number;
@@ -7,35 +8,32 @@ interface PageIndicatorProps {
   onNext: () => void;
 }
 
-/**
- * Small floating "Trang X / Y" pill shown only when pagination mode is on.
- * Positioned bottom-right, above any system gesture bar.
- */
 export function PageIndicator({ page, totalPages, onPrev, onNext }: PageIndicatorProps) {
+  const { t } = useI18n();
   return (
     <div
       className="pointer-events-auto fixed bottom-4 right-4 z-40 flex items-center gap-1 rounded-full border border-border bg-background/90 px-2 py-1 text-[11px] font-medium text-muted-foreground shadow-sm backdrop-blur tabular-nums"
       role="status"
       aria-live="polite"
-      aria-label={`Trang ${page} trên ${totalPages}`}
+      aria-label={t("page.aria", { page, total: totalPages })}
     >
       <button
         type="button"
         onClick={onPrev}
         disabled={page <= 1}
-        aria-label="Trang trước"
+        aria-label={t("page.prev")}
         className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronUp className="h-3 w-3" />
       </button>
       <span className="px-1">
-        Trang {page} / {totalPages}
+        {t("page.label")} {page} / {totalPages}
       </span>
       <button
         type="button"
         onClick={onNext}
         disabled={page >= totalPages}
-        aria-label="Trang sau"
+        aria-label={t("page.next")}
         className="flex h-5 w-5 items-center justify-center rounded-full hover:bg-accent hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
       >
         <ChevronDown className="h-3 w-3" />

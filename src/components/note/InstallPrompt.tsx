@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useState } from "react";
 import { Download, Share, Smartphone, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n/index";
 
 const DISMISS_KEY = "notes:install-dismissed";
 
@@ -13,7 +14,6 @@ function isStandalone() {
   if (typeof window === "undefined") return false;
   return (
     window.matchMedia?.("(display-mode: standalone)").matches ||
-    // iOS legacy
     (window.navigator as unknown as { standalone?: boolean }).standalone === true
   );
 }
@@ -27,6 +27,7 @@ function detectPlatform(): "ios" | "android" | "desktop" {
 }
 
 export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
+  const { t } = useI18n();
   const [dismissed, setDismissed] = useState(true);
   const [bipEvent, setBipEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [platform] = useState(() => detectPlatform());
@@ -47,7 +48,6 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
   }, []);
 
   if (dismissed || isStandalone()) return null;
-  // On desktop without a bip event, no point showing the prompt.
   if (platform === "desktop" && !bipEvent) return null;
 
   const dismiss = () => {
@@ -68,36 +68,35 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
         <Smartphone className="h-4 w-4" />
       </div>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">Cài đặt như một app</p>
+        <p className="text-sm font-medium">{t("install.title")}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {platform === "ios" && (
             <>
-              Bấm <Share className="inline h-3 w-3 align-[-2px]" /> Share, sau đó chọn{" "}
-              <span className="font-medium">"Add to Home Screen"</span>.
+              {t("install.ios_hint_prefix")}{" "}
+              <Share className="inline h-3 w-3 align-[-2px]" /> {t("install.ios_hint_suffix")}{" "}
+              <span className="font-medium">"{t("install.ios_add")}"</span>.
             </>
           )}
-          {platform === "android" && bipEvent && (
-            <>Cài Notes vào màn hình chính, mở nhanh không cần thanh URL.</>
-          )}
+          {platform === "android" && bipEvent && <>{t("install.android_with_bip")}</>}
           {platform === "android" && !bipEvent && (
             <>
-              Mở menu trình duyệt, chọn <span className="font-medium">"Add to Home Screen"</span> hoặc{" "}
-              <span className="font-medium">"Install app"</span>.
+              {t("install.android_no_bip_prefix")}{" "}
+              <span className="font-medium">"{t("install.ios_add")}"</span>{" "}
+              {t("install.android_no_bip_or")}{" "}
+              <span className="font-medium">"{t("install.android_no_bip_install")}"</span>.
             </>
           )}
-          {platform === "desktop" && bipEvent && (
-            <>Cài Notes thành ứng dụng độc lập trên máy tính.</>
-          )}
+          {platform === "desktop" && bipEvent && <>{t("install.desktop_with_bip")}</>}
         </p>
         {bipEvent && (
           <Button size="sm" className="mt-2 h-7" onClick={install}>
             <Download className="h-3.5 w-3.5" />
-            Cài đặt
+            {t("install.btn")}
           </Button>
         )}
       </div>
       <button
-        aria-label="Đóng"
+        aria-label={t("install.close")}
         onClick={dismiss}
         className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
       >

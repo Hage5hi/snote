@@ -31,6 +31,7 @@ import {
   PBKDF2_ITERATIONS,
 } from "@/lib/crypto";
 import { bytesToBase64 } from "@/lib/yjs/base64";
+import { useI18n } from "@/i18n/index";
 
 interface LockButtonProps {
   slug: string;
@@ -38,16 +39,8 @@ interface LockButtonProps {
   isEncrypted: boolean;
 }
 
-/**
- * LockButton handles three operations:
- *  - Lock an unencrypted note (generate or accept a key, encrypt + upload, redirect with #key)
- *  - Copy the current key from the URL hash
- *  - Unlock (decrypt + upload plaintext, strip the hash)
- *
- * The destroy/recreate of the provider is handled by reloading the page after upload —
- * simpler and bullet-proof vs trying to mutate a live provider's encryption hooks.
- */
 export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [pass, setPass] = useState("");
   const [busy, setBusy] = useState(false);
@@ -59,11 +52,11 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
 
   const copyKey = async () => {
     if (!currentKey) {
-      toast({ title: "Chưa có khoá trong URL" });
+      toast({ title: t("lock.no_key_in_url") });
       return;
     }
     await navigator.clipboard.writeText(`${window.location.origin}/${slug}#${currentKey}`);
-    toast({ title: "Đã copy URL kèm khoá" });
+    toast({ title: t("lock.copied_url_key") });
   };
 
   const lockNote = async (passphrase: string) => {
@@ -88,16 +81,19 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
             content: "",
             char_count: 0,
           },
-          { onConflict: "slug" }
+          { onConflict: "slug" },
         );
       if (error) throw error;
 
-      toast({ title: "Đã mã hoá note" });
-      // Reload with the key in hash so the provider re-mounts with encryption.
+      toast({ title: t("lock.encrypted_ok") });
       window.location.replace(`/${slug}#${encodeURIComponent(passphrase)}`);
     } catch (e) {
       console.error(e);
-      toast({ title: "Mã hoá thất bại", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
+      toast({
+        title: t("lock.encrypt_failed"),
+        description: String((e as Error | undefined)?.message ?? e),
+        variant: "destructive",
+      });
       setBusy(false);
     }
   };
@@ -119,15 +115,19 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
             content: text,
             char_count: text.length,
           },
-          { onConflict: "slug" }
+          { onConflict: "slug" },
         );
       if (error) throw error;
 
-      toast({ title: "Đã bỏ mã hoá" });
+      toast({ title: t("lock.decrypted_ok") });
       window.location.replace(`/${slug}`);
     } catch (e) {
       console.error(e);
-      toast({ title: "Bỏ mã hoá thất bại", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
+      toast({
+        title: t("lock.decrypt_failed"),
+        description: String((e as Error | undefined)?.message ?? e),
+        variant: "destructive",
+      });
       setBusy(false);
     }
   };
@@ -135,25 +135,25 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
   if (isEncrypted) {
     return (
       <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Encryption">
-              <Lock className="h-4 w-4 text-success" />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">Note đã mã hoá</TooltipContent>
-      </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("lock.aria_encryption")}>
+                <Lock className="h-4 w-4 text-success" />
+              </Button>
+            </DropdownMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t("lock.encrypted_tooltip")}</TooltipContent>
+        </Tooltip>
         <DropdownMenuContent align="end">
           <DropdownMenuItem onClick={copyKey}>
             <Copy className="h-3.5 w-3.5" />
-            Copy URL kèm khoá
+            {t("lock.copy_url_key")}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={unlockNote} disabled={busy}>
             <LockOpen className="h-3.5 w-3.5" />
-            Bỏ mã hoá
+            {t("lock.unlock")}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -161,29 +161,35 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) setPass(""); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setPass("");
+      }}
+    >
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label="Mã hoá note">
+            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("lock.aria_encrypt")}>
               <LockOpen className="h-4 w-4" />
             </Button>
           </DialogTrigger>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Mã hoá note</TooltipContent>
+        <TooltipContent side="bottom">{t("lock.tooltip_encrypt")}</TooltipContent>
       </Tooltip>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><KeyRound className="h-4 w-4" /> Mã hoá note</DialogTitle>
-          <DialogDescription>
-            Note sẽ được mã hoá AES-256 ngay tại trình duyệt. Chia sẻ URL kèm <code>#khoá</code> để người khác đọc được.
-          </DialogDescription>
+          <DialogTitle className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4" /> {t("lock.dialog_title")}
+          </DialogTitle>
+          <DialogDescription>{t("lock.dialog_desc")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <Input
             value={pass}
             onChange={(e) => setPass(e.target.value)}
-            placeholder="Khoá (passphrase)"
+            placeholder={t("lock.placeholder")}
             type="text"
           />
           <Button
@@ -193,16 +199,16 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
             onClick={() => setPass(generatePassphrase(24))}
           >
             <RotateCw className="h-3.5 w-3.5" />
-            Sinh khoá ngẫu nhiên
+            {t("lock.generate")}
           </Button>
-          <p className="text-[11px] text-muted-foreground">
-            ⚠️ Lưu khoá ở nơi an toàn. Mất khoá = mất nội dung vĩnh viễn (server không có cách khôi phục).
-          </p>
+          <p className="text-[11px] text-muted-foreground">{t("lock.warning")}</p>
         </div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Huỷ</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>
+            {t("lock.cancel")}
+          </Button>
           <Button onClick={() => lockNote(pass)} disabled={busy || pass.length < 4}>
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Mã hoá"}
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("lock.encrypt_btn")}
           </Button>
         </DialogFooter>
       </DialogContent>

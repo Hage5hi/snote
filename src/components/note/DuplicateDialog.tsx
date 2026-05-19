@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { duplicateNote, SLUG_RE } from "@/lib/rename";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/i18n/index";
 
 interface DuplicateDialogProps {
   open: boolean;
@@ -23,12 +24,8 @@ interface DuplicateDialogProps {
 
 type Status = "idle" | "checking" | "available" | "taken" | "invalid" | "same";
 
-/**
- * Duplicate the current note to a new slug. Source note stays intact.
- * For encrypted notes, the same password unlocks the duplicate (salt + check
- * are copied verbatim).
- */
 export function DuplicateDialog({ open, onOpenChange, currentSlug }: DuplicateDialogProps) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
@@ -58,7 +55,7 @@ export function DuplicateDialog({ open, onOpenChange, currentSlug }: DuplicateDi
     }
     setStatus("checking");
     const ctrl = new AbortController();
-    const t = window.setTimeout(async () => {
+    const tm = window.setTimeout(async () => {
       const { data, error } = await supabase
         .from("notes")
         .select("slug, char_count")
@@ -75,7 +72,7 @@ export function DuplicateDialog({ open, onOpenChange, currentSlug }: DuplicateDi
     }, 350);
     return () => {
       ctrl.abort();
-      window.clearTimeout(t);
+      window.clearTimeout(tm);
     };
   }, [value, currentSlug]);
 
@@ -88,14 +85,14 @@ export function DuplicateDialog({ open, onOpenChange, currentSlug }: DuplicateDi
     try {
       await duplicateNote(currentSlug, newSlug);
       toast({
-        title: "Đã duplicate note",
+        title: t("dup.toast_done"),
         description: `/${currentSlug} → /${newSlug}`,
       });
       onOpenChange(false);
       navigate(`/${newSlug}`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Có lỗi xảy ra";
-      toast({ title: "Duplicate thất bại", description: msg, variant: "destructive" });
+      const msg = err instanceof Error ? err.message : t("rename.generic_error");
+      toast({ title: t("dup.toast_failed"), description: msg, variant: "destructive" });
       setSubmitting(false);
     }
   };
@@ -111,10 +108,10 @@ export function DuplicateDialog({ open, onOpenChange, currentSlug }: DuplicateDi
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Duplicate note</DialogTitle>
+          <DialogTitle>{t("dup.dialog_title")}</DialogTitle>
           <DialogDescription>
-            Copy nội dung từ <code className="font-mono">/{currentSlug}</code> sang slug mới. Note
-            gốc giữ nguyên.
+            {t("dup.dialog_desc_prefix")} <code className="font-mono">/{currentSlug}</code>{" "}
+            {t("dup.dialog_desc_suffix")}
           </DialogDescription>
         </DialogHeader>
 
@@ -128,13 +125,15 @@ export function DuplicateDialog({ open, onOpenChange, currentSlug }: DuplicateDi
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={onKey}
-              placeholder="slug-moi"
+              placeholder={t("dup.placeholder")}
               className="pl-6 pr-9 font-mono"
               disabled={submitting}
               maxLength={64}
             />
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
-              {status === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              {status === "checking" && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
               {status === "available" && <Check className="h-4 w-4 text-primary" />}
               {(status === "taken" || status === "invalid" || status === "same") && (
                 <X className="h-4 w-4 text-destructive" />
@@ -143,34 +142,28 @@ export function DuplicateDialog({ open, onOpenChange, currentSlug }: DuplicateDi
           </div>
 
           <div className="min-h-[1.25rem] text-xs">
-            {status === "invalid" && (
-              <span className="text-destructive">
-                Chỉ dùng chữ, số, gạch ngang/dưới (1–64 ký tự).
-              </span>
-            )}
-            {status === "taken" && <span className="text-destructive">Slug này đã được dùng.</span>}
-            {status === "same" && <span className="text-muted-foreground">Trùng với slug nguồn.</span>}
-            {status === "available" && <span className="text-primary">Slug khả dụng.</span>}
+            {status === "invalid" && <span className="text-destructive">{t("dup.invalid")}</span>}
+            {status === "taken" && <span className="text-destructive">{t("dup.taken")}</span>}
+            {status === "same" && <span className="text-muted-foreground">{t("dup.same")}</span>}
+            {status === "available" && <span className="text-primary">{t("dup.available")}</span>}
           </div>
 
           <div className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
             <Copy className="h-4 w-4 shrink-0 text-foreground/70" />
             <div className="space-y-1">
-              <p>Bản sao kế thừa cả tags và trạng thái mã hoá.</p>
-              <p>
-                Note đã encrypt sẽ unlock được bằng cùng password ở slug mới.
-              </p>
+              <p>{t("dup.note_tags")}</p>
+              <p>{t("dup.note_pw")}</p>
             </div>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Huỷ
+            {t("dup.cancel")}
           </Button>
           <Button onClick={onSubmit} disabled={!canSubmit}>
             {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-            Duplicate
+            {t("dup.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

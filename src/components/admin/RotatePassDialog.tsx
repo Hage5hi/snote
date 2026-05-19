@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/i18n/index";
 
 interface RotatePassDialogProps {
   open: boolean;
@@ -27,6 +28,7 @@ export function RotatePassDialog({
   currentPass,
   onSuccess,
 }: RotatePassDialogProps) {
+  const { t } = useI18n();
   const [newPass, setNewPass] = useState("");
   const [confirm, setConfirm] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,15 +41,15 @@ export function RotatePassDialog({
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newPass.length < 12) {
-      toast({ title: "Khoá mới phải ≥ 12 ký tự.", variant: "destructive" });
+      toast({ title: t("admin.rotate.too_short"), variant: "destructive" });
       return;
     }
     if (newPass !== confirm) {
-      toast({ title: "Xác nhận không khớp.", variant: "destructive" });
+      toast({ title: t("admin.rotate.mismatch"), variant: "destructive" });
       return;
     }
     if (newPass === currentPass) {
-      toast({ title: "Khoá mới phải khác khoá cũ.", variant: "destructive" });
+      toast({ title: t("admin.rotate.must_differ"), variant: "destructive" });
       return;
     }
 
@@ -58,13 +60,13 @@ export function RotatePassDialog({
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast({ title: "Đã đổi khoá admin." });
+      toast({ title: t("admin.rotate.success") });
       onSuccess(newPass);
       reset();
       onOpenChange(false);
     } catch (e) {
       toast({
-        title: "Đổi khoá thất bại",
+        title: t("admin.rotate.failed"),
         description: String((e as Error | undefined)?.message ?? e),
         variant: "destructive",
       });
@@ -83,27 +85,25 @@ export function RotatePassDialog({
     >
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Đổi khoá admin</DialogTitle>
-          <DialogDescription>
-            Khoá mới sẽ được lưu hash bcrypt trên server. Tối thiểu 12 ký tự.
-          </DialogDescription>
+          <DialogTitle>{t("admin.rotate.title")}</DialogTitle>
+          <DialogDescription>{t("admin.rotate.desc")}</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="newPass">Khoá mới</Label>
+            <Label htmlFor="newPass">{t("admin.rotate.new_label")}</Label>
             <Input
               id="newPass"
               type="password"
               autoComplete="new-password"
               value={newPass}
               onChange={(e) => setNewPass(e.target.value)}
-              placeholder="≥ 12 ký tự"
+              placeholder={t("admin.rotate.new_placeholder")}
               minLength={12}
               required
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="confirm">Xác nhận khoá mới</Label>
+            <Label htmlFor="confirm">{t("admin.rotate.confirm_label")}</Label>
             <Input
               id="confirm"
               type="password"
@@ -120,11 +120,11 @@ export function RotatePassDialog({
               onClick={() => onOpenChange(false)}
               disabled={loading}
             >
-              Huỷ
+              {t("admin.rotate.cancel")}
             </Button>
             <Button type="submit" disabled={loading}>
               {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              Đổi khoá
+              {t("admin.rotate.submit")}
             </Button>
           </DialogFooter>
         </form>

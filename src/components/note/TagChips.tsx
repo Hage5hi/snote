@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import * as Y from "yjs";
 import { extractTags } from "@/lib/tags";
+import { useI18n } from "@/i18n/index";
+
 
 interface TagChipsProps {
   doc: Y.Doc;
@@ -16,6 +18,7 @@ interface TagChipsProps {
  * Clicking a chip jumps to the admin panel filtered by that tag.
  */
 export function TagChips({ doc, isEncrypted }: TagChipsProps) {
+  const { t } = useI18n();
   const [tags, setTags] = useState<string[]>([]);
 
   useEffect(() => {
@@ -42,14 +45,14 @@ export function TagChips({ doc, isEncrypted }: TagChipsProps) {
 
   return (
     <div className="hidden md:flex items-center gap-1 overflow-hidden">
-      {tags.slice(0, 5).map((t) => (
+      {tags.slice(0, 5).map((tag) => (
         <Link
-          key={t}
-          to={`/note#tag=${encodeURIComponent(t)}`}
-          title={`Mở admin filter theo #${t}`}
+          key={tag}
+          to={`/note#tag=${encodeURIComponent(tag)}`}
+          title={t("tag.open_filter", { tag })}
           className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          #{t}
+          #{tag}
         </Link>
       ))}
       {tags.length > 5 && (

@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { renameNote, SLUG_RE } from "@/lib/rename";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/i18n/index";
 
 interface RenameDialogProps {
   open: boolean;
@@ -23,18 +24,13 @@ interface RenameDialogProps {
 
 type Status = "idle" | "checking" | "available" | "taken" | "invalid" | "same";
 
-/**
- * Rename the current note's slug. Validates availability with a debounced
- * Supabase query before allowing submit. Warns the user that the old URL
- * stops working and any other tabs editing the note will lose their sync.
- */
 export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogProps) {
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [submitting, setSubmitting] = useState(false);
 
-  // Reset when reopened.
   useEffect(() => {
     if (open) {
       setValue("");
@@ -43,7 +39,6 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
     }
   }, [open]);
 
-  // Debounced availability check, mirrors Home.tsx logic.
   useEffect(() => {
     const trimmed = value.trim();
     if (!trimmed) {
@@ -60,7 +55,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
     }
     setStatus("checking");
     const ctrl = new AbortController();
-    const t = window.setTimeout(async () => {
+    const tm = window.setTimeout(async () => {
       const { data, error } = await supabase
         .from("notes")
         .select("slug, char_count")
@@ -77,7 +72,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
     }, 350);
     return () => {
       ctrl.abort();
-      window.clearTimeout(t);
+      window.clearTimeout(tm);
     };
   }, [value, currentSlug]);
 
@@ -90,16 +85,14 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
     try {
       await renameNote(currentSlug, newSlug);
       toast({
-        title: "Đã đổi tên slug",
+        title: t("rename.toast_renamed"),
         description: `/${currentSlug} → /${newSlug}`,
       });
       onOpenChange(false);
-      // Navigate after closing so the dialog unmount doesn't block the
-      // route change. Provider will unmount/remount cleanly.
       navigate(`/${newSlug}`);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Có lỗi xảy ra";
-      toast({ title: "Đổi tên thất bại", description: msg, variant: "destructive" });
+      const msg = err instanceof Error ? err.message : t("rename.generic_error");
+      toast({ title: t("rename.toast_failed"), description: msg, variant: "destructive" });
       setSubmitting(false);
     }
   };
@@ -115,9 +108,9 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Đổi tên slug</DialogTitle>
+          <DialogTitle>{t("rename.dialog_title")}</DialogTitle>
           <DialogDescription>
-            Slug hiện tại: <code className="font-mono">/{currentSlug}</code>
+            {t("rename.dialog_desc_prefix")} <code className="font-mono">/{currentSlug}</code>
           </DialogDescription>
         </DialogHeader>
 
@@ -131,13 +124,15 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
               value={value}
               onChange={(e) => setValue(e.target.value)}
               onKeyDown={onKey}
-              placeholder="slug-moi"
+              placeholder={t("rename.placeholder")}
               className="pl-6 pr-9 font-mono"
               disabled={submitting}
               maxLength={64}
             />
             <div className="absolute right-3 top-1/2 -translate-y-1/2">
-              {status === "checking" && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
+              {status === "checking" && (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
               {status === "available" && <Check className="h-4 w-4 text-primary" />}
               {(status === "taken" || status === "invalid" || status === "same") && (
                 <X className="h-4 w-4 text-destructive" />
@@ -146,35 +141,28 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
           </div>
 
           <div className="min-h-[1.25rem] text-xs">
-            {status === "invalid" && (
-              <span className="text-destructive">
-                Chỉ dùng chữ, số, gạch ngang/dưới (1–64 ký tự).
-              </span>
-            )}
-            {status === "taken" && <span className="text-destructive">Slug này đã được dùng.</span>}
-            {status === "same" && <span className="text-muted-foreground">Trùng với slug hiện tại.</span>}
-            {status === "available" && <span className="text-primary">Slug khả dụng.</span>}
+            {status === "invalid" && <span className="text-destructive">{t("rename.invalid")}</span>}
+            {status === "taken" && <span className="text-destructive">{t("rename.taken")}</span>}
+            {status === "same" && <span className="text-muted-foreground">{t("rename.same")}</span>}
+            {status === "available" && <span className="text-primary">{t("rename.available")}</span>}
           </div>
 
           <div className="flex gap-2 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
             <AlertTriangle className="h-4 w-4 shrink-0 text-foreground/70" />
             <div className="space-y-1">
-              <p>
-                URL cũ <code className="font-mono">/{currentSlug}</code> sẽ trống và có thể bị người
-                khác dùng lại.
-              </p>
-              <p>Tab khác đang mở note này sẽ mất đồng bộ.</p>
+              <p>{t("rename.warn_old_url", { slug: currentSlug })}</p>
+              <p>{t("rename.warn_other_tabs")}</p>
             </div>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={submitting}>
-            Huỷ
+            {t("rename.cancel")}
           </Button>
           <Button onClick={onSubmit} disabled={!canSubmit}>
             {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-            Đổi tên
+            {t("rename.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -3,6 +3,7 @@
 import { Target } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useWordGoal } from "@/hooks/use-word-goal";
+import { useI18n } from "@/i18n/index";
 
 interface WordCountTriggerProps {
   slug: string;
@@ -12,7 +13,9 @@ interface WordCountTriggerProps {
 }
 
 export function WordCountTrigger({ slug, words, chars, onOpen }: WordCountTriggerProps) {
+  const { t } = useI18n();
   const { goal } = useWordGoal(slug);
+
   const goalPct = goal && goal > 0 ? Math.min(100, Math.round((words / goal) * 100)) : 0;
   const goalReached = goal != null && words >= goal;
 
@@ -53,7 +56,7 @@ export function WordCountTrigger({ slug, words, chars, onOpen }: WordCountTrigge
         </button>
       </TooltipTrigger>
       <TooltipContent side="bottom">
-        {goal ? `Mục tiêu: ${goal.toLocaleString()} từ — ${goalPct}%` : "Đặt mục tiêu số từ"}
+        {goal ? t("wc.tooltip_goal", { n: goal.toLocaleString(), pct: goalPct }) : t("wc.tooltip_set")}
       </TooltipContent>
     </Tooltip>
   );

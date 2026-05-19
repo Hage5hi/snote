@@ -14,6 +14,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getShareToken, setShareToken, clearShareToken } from "@/lib/share-tokens";
+import { useI18n } from "@/i18n/index";
 
 interface ShareDialogProps {
   slug: string;
@@ -21,6 +22,7 @@ interface ShareDialogProps {
 }
 
 export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [dataUrl, setDataUrl] = useState<string>("");
   const [url, setUrl] = useState<string>("");
@@ -42,14 +44,14 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
       .then(setDataUrl)
       .catch((e) => {
         console.warn("QR generation failed", e);
-        toast({ title: "Không tạo được QR", description: String(e) });
+        toast({ title: t("share.qr_failed"), description: String(e) });
       });
     setToken(getShareToken(slug));
-  }, [open, slug]);
+  }, [open, slug, t]);
 
   const copyUrl = async () => {
     await navigator.clipboard.writeText(url);
-    toast({ title: "Đã copy URL" });
+    toast({ title: t("share.copied_url") });
   };
 
   const hasKey = url.includes("#");
@@ -66,17 +68,16 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
   const createLink = async () => {
     setBusy("create");
     try {
-      const { data, error } = await supabase.functions.invoke<{ token: string }>(
-        "share-create",
-        { body: { slug } },
-      );
+      const { data, error } = await supabase.functions.invoke<{ token: string }>("share-create", {
+        body: { slug },
+      });
       if (error || !data?.token) throw error ?? new Error("no token");
       setShareToken(slug, data.token);
       setToken(data.token);
-      toast({ title: "Đã tạo link chỉ đọc" });
+      toast({ title: t("share.created_link") });
     } catch (e) {
       console.error(e);
-      toast({ title: "Tạo link thất bại", description: String(e) });
+      toast({ title: t("share.create_failed"), description: String(e) });
     } finally {
       setBusy(null);
     }
@@ -86,16 +87,14 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
     if (!shareToken) return;
     setBusy("revoke");
     try {
-      const { error } = await supabase.functions.invoke("share-revoke", {
-        body: { token: shareToken },
-      });
+      const { error } = await supabase.functions.invoke("share-revoke", { body: { token: shareToken } });
       if (error) throw error;
       clearShareToken(slug);
       setToken(null);
-      toast({ title: "Đã thu hồi link" });
+      toast({ title: t("share.revoked") });
     } catch (e) {
       console.error(e);
-      toast({ title: "Thu hồi thất bại", description: String(e) });
+      toast({ title: t("share.revoke_failed"), description: String(e) });
     } finally {
       setBusy(null);
     }
@@ -104,7 +103,7 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
   const copyShareUrl = async () => {
     if (!shareUrl) return;
     await navigator.clipboard.writeText(shareUrl);
-    toast({ title: "Đã copy link chỉ đọc" });
+    toast({ title: t("share.copied_readonly_link") });
   };
 
   return (
@@ -112,33 +111,26 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
       <Tooltip>
         <TooltipTrigger asChild>
           <DialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              aria-label="Share QR"
-            >
+            <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("share.aria")}>
               <Share2 className="h-4 w-4" />
             </Button>
           </DialogTrigger>
         </TooltipTrigger>
-        <TooltipContent side="bottom">Share QR code</TooltipContent>
+        <TooltipContent side="bottom">{t("share.tooltip")}</TooltipContent>
       </Tooltip>
       <DialogContent className="min-w-0 max-h-[calc(100vh-2rem)] !w-[min(28rem,calc(100vw-2rem))] overflow-y-auto overflow-x-hidden p-4 sm:p-6">
         <DialogHeader className="min-w-0 pr-6">
-          <DialogTitle>Share note</DialogTitle>
+          <DialogTitle>{t("share.dialog_title")}</DialogTitle>
           <DialogDescription className="min-w-0 leading-relaxed">
-            Quét QR bằng điện thoại để mở note nhanh, hoặc tạo link chỉ đọc bên dưới.
+            {t("share.dialog_desc")}
             {isEncrypted && hasKey && (
               <span className="mt-1 flex items-center gap-1 text-warning">
                 <Lock className="h-3 w-3" />
-                URL có chứa key giải mã (#) — chỉ chia sẻ với người bạn tin tưởng.
+                {t("share.warn_key_in_url")}
               </span>
             )}
             {isEncrypted && !hasKey && (
-              <span className="mt-1 block text-muted-foreground">
-                URL không chứa key — người nhận cần biết key để mở.
-              </span>
+              <span className="mt-1 block text-muted-foreground">{t("share.no_key")}</span>
             )}
           </DialogDescription>
         </DialogHeader>
@@ -153,10 +145,19 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
           )}
 
           <div className="mt-3 flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
-            <code className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
+            <code
+              className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs"
+              dir="ltr"
+            >
               {url}
             </code>
-            <Button variant="outline" size="icon" onClick={copyUrl} className="h-9 w-9 shrink-0" aria-label="Copy URL">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={copyUrl}
+              className="h-9 w-9 shrink-0"
+              aria-label={t("brand.copy_url")}
+            >
               <Copy className="h-3.5 w-3.5" />
             </Button>
           </div>
@@ -165,13 +166,11 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
         <div className="mt-2 min-w-0 border-t border-border pt-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
             <Eye className="h-3.5 w-3.5" />
-            Link chỉ đọc
+            {t("share.readonly_heading")}
           </div>
           {!shareToken ? (
             <>
-              <p className="mb-2 text-xs text-muted-foreground">
-                Người nhận chỉ xem được nội dung, không sửa hoặc biết slug gốc.
-              </p>
+              <p className="mb-2 text-xs text-muted-foreground">{t("share.readonly_desc")}</p>
               <Button
                 size="sm"
                 variant="outline"
@@ -184,16 +183,25 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
                 ) : (
                   <Eye className="h-3.5 w-3.5" />
                 )}
-                Tạo link chỉ đọc
+                {t("share.create_btn")}
               </Button>
             </>
           ) : (
             <>
               <div className="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
-                <code className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs" dir="ltr">
+                <code
+                  className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs"
+                  dir="ltr"
+                >
                   {shareUrl}
                 </code>
-                <Button variant="outline" size="icon" onClick={copyShareUrl} className="h-9 w-9 shrink-0" aria-label="Copy read-only link">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={copyShareUrl}
+                  className="h-9 w-9 shrink-0"
+                  aria-label={t("share.copied_readonly_link")}
+                >
                   <Copy className="h-3.5 w-3.5" />
                 </Button>
               </div>
@@ -204,7 +212,7 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
                     checked={includeKey}
                     onChange={(e) => setIncludeKey(e.target.checked)}
                   />
-                  Gắn khoá giải mã vào link (người nhận không cần nhập)
+                  {t("share.include_key")}
                 </label>
               )}
               <Button
@@ -219,7 +227,7 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
                 ) : (
                   <Link2Off className="h-3.5 w-3.5" />
                 )}
-                Thu hồi link
+                {t("share.revoke_btn")}
               </Button>
             </>
           )}

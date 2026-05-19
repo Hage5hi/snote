@@ -5,6 +5,8 @@ import { X } from "lucide-react";
 export const OUTLINE_TOGGLE_EVENT = "outline:toggle";
 import { parseOutline, type Heading } from "@/lib/outline";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n/index";
+
 
 interface OutlineSidebarProps {
   doc: Y.Doc;
@@ -19,6 +21,7 @@ interface OutlineSidebarProps {
  *  - Re-parses on every Y.Text change (debounced via observe coalescing).
  */
 export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [headings, setHeadings] = useState<Heading[]>([]);
 
@@ -100,7 +103,7 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
             size="icon"
             className="h-7 w-7"
             onClick={() => setOpen(false)}
-            aria-label="Đóng"
+            aria-label={t("outline.close")}
           >
             <X className="h-4 w-4" />
           </Button>
@@ -109,7 +112,9 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
         <div className="h-[calc(100%-2.5rem)] overflow-y-auto px-2 py-2">
           {headings.length === 0 ? (
             <p className="px-2 py-4 text-xs text-muted-foreground">
-              Chưa có heading. Dùng <code className="font-mono">#</code>, <code className="font-mono">##</code>, <code className="font-mono">###</code> để tạo.
+              {t("outline.empty_prefix")} <code className="font-mono">#</code>,{" "}
+              <code className="font-mono">##</code>, <code className="font-mono">###</code>{" "}
+              {t("outline.empty_suffix")}
             </p>
           ) : (
             <ul className="flex flex-col gap-0.5">
