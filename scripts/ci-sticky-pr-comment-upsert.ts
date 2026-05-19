@@ -119,6 +119,12 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
 
   const comments = await api.list();
 
+  // Ensure the body we write ALWAYS carries the marker on its own
+  // first line — so subsequent reruns can find it via the head scan.
+  const stamped = hasStickyMarker(body, marker, { headScanLines: 1 })
+    ? body
+    : `${marker}\n${body}`;
+
   // Phase 1: bounded head scan.
   let matches = comments.filter((c) => hasStickyMarker(c.body, marker, { headScanLines }));
   let usedFullScan = false;
@@ -127,6 +133,11 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
   if (matches.length === 0) {
     matches = comments.filter((c) => hasStickyMarker(c.body, marker, { fullScan: true }));
     usedFullScan = matches.length > 0;
+  }
+
+  if (matches.length === 0) {
+    const created = await api.create(stamped);
+    return { action: "created", comment: created, cleaned: [], usedFullScan: false };
   }
 
   if (matches.length === 0) {
