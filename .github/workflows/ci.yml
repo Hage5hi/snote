@@ -75,23 +75,20 @@ jobs:
             .lintrc-i18n-allowlist.json
           retention-days: 14
           if-no-files-found: warn
-      # PR comment with direct links to the uploaded artifact + run summary
-      # so reviewers can grab the audit diff / allowlist even on failed jobs.
+      # PR comment with direct links to the uploaded artifact + a short
+      # pass/fail summary of the allowlist report so reviewers can grab the
+      # audit diff / allowlist even on failed jobs.
       - if: always() && github.event_name == 'pull_request' && steps.changes.outputs.i18n == 'true'
-        name: Comment PR with i18n artifact links
+        name: Build i18n PR comment body
+        env:
+          I18N_ARTIFACT_ID: ${{ steps.upload_i18n_report.outputs.artifact-id }}
+        run: bun run i18n:allowlist:pr-comment > /dev/null
+      - if: always() && github.event_name == 'pull_request' && steps.changes.outputs.i18n == 'true'
+        name: Comment PR with i18n artifact links + summary
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: i18n-report
-          message: |
-            ### 🌐 i18n audit + allowlist artifacts
-
-            Artifact: **`i18n-report`** — contains `reports/i18n-audit-diff.{json,md}`, `reports/i18n-report.{json,html}`, `reports/i18n-allowlist-report.{json,md}`, and `.lintrc-i18n-allowlist.json`.
-
-            - 📦 [Download artifact bundle](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_i18n_report.outputs.artifact-id }})
-            - 🧾 [All artifacts for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)
-            - 🔎 [Job logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-
-            _Posted automatically — updates in place on each push._
+          path: reports/_i18n-allowlist-pr-comment.md
       # Final gate — runs AFTER artifacts are uploaded and the PR comment is
       # posted, so reviewers still get the reports even when the gate fails.
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
