@@ -1,18 +1,15 @@
+import { useI18n } from "@/i18n/index";
+
 interface WordCountPillProps {
   words: number;
   chars: number;
   goal?: number | null;
 }
 
-/**
- * Floating bottom-left pill: word count, char count, and reading-time estimate.
- * Hidden on small screens to save space (Topbar already shows the same on sm+).
- * When `goal` is set, shows progress (e.g. "320 / 500 words · 64%").
- */
 export function WordCountPill({ words, chars, goal }: WordCountPillProps) {
-  // 200 wpm reading speed — common average for prose. Round up to nearest minute.
+  const { t } = useI18n();
   const minutes = Math.max(1, Math.ceil(words / 200));
-  const readLabel = words === 0 ? "—" : `${minutes} phút đọc`;
+  const readLabel = words === 0 ? t("wc.dash") : t("wc.reading_min", { n: minutes });
   const hasGoal = goal && goal > 0;
   const pct = hasGoal ? Math.min(100, Math.round((words / goal) * 100)) : 0;
   const reached = hasGoal && words >= goal;

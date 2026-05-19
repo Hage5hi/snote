@@ -45,14 +45,14 @@ export function TagChips({ doc, isEncrypted }: TagChipsProps) {
 
   return (
     <div className="hidden md:flex items-center gap-1 overflow-hidden">
-      {tags.slice(0, 5).map((t) => (
+      {tags.slice(0, 5).map((tag) => (
         <Link
-          key={t}
-          to={`/note#tag=${encodeURIComponent(t)}`}
-          title={t("tag.open_filter", { tag: t })}
+          key={tag}
+          to={`/note#tag=${encodeURIComponent(tag)}`}
+          title={t("tag.open_filter", { tag })}
           className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
         >
-          #{t}
+          #{tag}
         </Link>
       ))}
       {tags.length > 5 && (
