@@ -40,14 +40,17 @@ interface Failure {
   diff: string[];
 }
 
-// One regex per known reporter dialect. All capture (file, test-path).
-// The leading marker is optional so verbose/CI variants still match.
-const HEADER_PATTERNS: RegExp[] = [
-  // Default + verbose reporters: optional marker, then path > suite > name
+// Two-shape support:
+//   (A) one-liner with the path:  "FAIL path/foo.test.ts > suite > name"
+//   (B) two-line: a "❯ path/foo.test.ts (... failed)" header followed by
+//       indented "× test name 12ms" rows. We remember the most-recent
+//       file path so the per-test row resolves against it.
+const HEADER_WITH_PATH: RegExp[] = [
   /^\s*(?:(?:×|✖|❯|FAIL|✗)\s+)?(\S+\.(?:test|spec)\.[cm]?[jt]sx?)\s*>\s*(.+?)\s*(?:\d+ms)?\s*$/,
-  // "Failed Tests" summary block — entries are indented under a banner
   /^\s*FAIL\s+(\S+\.(?:test|spec)\.[cm]?[jt]sx?)\s*>\s*(.+?)\s*$/,
 ];
+const FILE_HEADER = /^\s*(?:❯|FAIL)\s+(\S+\.(?:test|spec)\.[cm]?[jt]sx?)\b/;
+const FAILED_TEST_ROW = /^\s*(?:×|✖|✗)\s+(.+?)(?:\s+\d+ms)?\s*$/;
 
 // Lines that mean "end of this failure's diff context".
 const TERMINATORS =
@@ -55,8 +58,8 @@ const TERMINATORS =
 
 const MAX_DIFF_LINES = 25;
 
-function matchHeader(line: string): { file: string; test: string } | null {
-  for (const re of HEADER_PATTERNS) {
+function matchHeaderWithPath(line: string): { file: string; test: string } | null {
+  for (const re of HEADER_WITH_PATH) {
     const m = re.exec(line);
     if (m) return { file: m[1], test: m[2].trim() };
   }
