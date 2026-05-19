@@ -288,20 +288,33 @@ function withFailure(
 export function buildFailureReason(
   summary: Pick<Summary, "schemaOk" | "missingCount" | "staleCount" | "totals">,
   report: AllowlistReport,
+  opts: { topN?: number; entryLineLookup?: (i: number) => number | undefined } = {},
 ): { category: FailureCategory; topFiles: string[] } {
+  const topN = Math.max(1, opts.topN ?? DEFAULT_TOP_N);
+  const lookup = opts.entryLineLookup;
+
   if (!summary.schemaOk) {
+    // Schema errors live in the allowlist JSON itself — point reviewers at
+    // .lintrc-i18n-allowlist.json with the entry's start line (when we can
+    // resolve it) instead of at entry.file, which is just the path the
+    // broken entry was trying to reference.
     const topFiles = report.entries
       .filter((e) => e.errors.length > 0)
-      .slice(0, 3)
-      .map((e) => e.file);
-    return { category: "schema", topFiles };
+      .slice(0, topN)
+      .map((e) => {
+        const line = lookup?.(e.index);
+        return line !== undefined
+          ? `${ALLOWLIST_CONFIG}:${line}`
+          : ALLOWLIST_CONFIG;
+      });
+    return { category: "schema", topFiles: uniq(topFiles) };
   }
   if (summary.missingCount > 0) {
-    const topFiles = uniq(report.missing.map((m) => `${m.file}:${m.line}`)).slice(0, 3);
+    const topFiles = uniq(report.missing.map((m) => `${m.file}:${m.line}`)).slice(0, topN);
     return { category: "drift-missing", topFiles };
   }
   if (summary.staleCount > 0) {
-    const topFiles = uniq(report.stale.map((s) => s.split("::")[0])).slice(0, 3);
+    const topFiles = uniq(report.stale.map((s) => s.split("::")[0])).slice(0, topN);
     return { category: "drift-stale", topFiles };
   }
   return { category: "unknown", topFiles: [] };
@@ -309,6 +322,35 @@ export function buildFailureReason(
 
 function uniq<T>(xs: T[]): T[] {
   return Array.from(new Set(xs));
+}
+
+/**
+ * Best-effort: given the raw text of `.lintrc-i18n-allowlist.json`,
+ * return the 1-based start line of each top-level object inside the
+ * `entries` array, in order. Used by `buildFailureReason` to attach line
+ * numbers to schema-error annotations.
+ *
+ * We scan character-by-character tracking brace/bracket depth so we don't
+ * need a JSON CST dependency. Returns `[]` when the array can't be
+ * located (e.g. malformed JSON the schema check is about to flag anyway).
+ */
+export function findAllowlistEntryLines(src: string): number[] {
+  const m = src.match(/"entries"\s*:\s*\[/);
+  if (!m) return [];
+  let pos = m.index! + m[0].length;
+  let depth = 1; // we're now inside the entries `[`
+  let line = src.slice(0, pos).split("\n").length;
+  const lines: number[] = [];
+  for (; pos < src.length && depth > 0; pos++) {
+    const ch = src[pos];
+    if (ch === "\n") line++;
+    else if (ch === "{") {
+      if (depth === 1) lines.push(line);
+      depth++;
+    } else if (ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+  }
+  return lines;
 }
 
 /** Build the one-line reason string shown after the counters on failure. */
@@ -412,10 +454,15 @@ export function formatAnnotations(summary: Summary): string[] {
   const reason = formatFailureReason(summary.failure, summary);
   const esc = (s: string) =>
     s.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+  // schema + drift-missing both encode line as `file:line` in topFiles;
+  // drift-stale stays file-only.
+  const supportsLine =
+    summary.failure.category === "drift-missing" ||
+    summary.failure.category === "schema";
   return summary.failure.topFiles.map((entry) => {
     let file = entry;
     let line: number | undefined;
-    if (summary.failure!.category === "drift-missing") {
+    if (supportsLine) {
       const m = entry.match(/^(.*):(\d+)$/);
       if (m) {
         file = m[1];
