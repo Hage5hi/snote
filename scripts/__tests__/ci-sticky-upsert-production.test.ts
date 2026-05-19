@@ -92,7 +92,7 @@ describe("upsertStickyComment — duplicate cleanup (production code)", () => {
     ]);
     expect(t.comments.find((c) => c.id === 1)!.body).toBe(DEFAULT_TOMBSTONE);
     expect(t.comments.find((c) => c.id === 2)!.body).toBe(DEFAULT_TOMBSTONE);
-    expect(t.comments.find((c) => c.id === 9)!.body).toBe("fresh body");
+    expect(t.comments.find((c) => c.id === 9)!.body).toBe(`${MARKER}\nfresh body`);
   });
 
   it("falls back to lock automatically when api.remove is not provided", async () => {
