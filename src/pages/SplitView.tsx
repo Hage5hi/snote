@@ -68,6 +68,7 @@ export default function SplitView() {
       <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 text-xs">
         <Tooltip>
           <TooltipTrigger asChild>
+            {/* eslint-disable-next-line no-restricted-syntax -- universal nav icon */}
             <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Home">
               <ArrowLeft className="h-4 w-4" />
             </Link>
