@@ -129,6 +129,8 @@ describe("--json output shape", () => {
         "driftOk",
         "scopedToChanges",
         "reportPath",
+        "exitCode",
+        "publishCheckRun",
         "counts",
         "fullCounts",
         "failure",
