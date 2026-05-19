@@ -28,6 +28,7 @@ import { useEink } from "@/hooks/use-eink";
 import { useVimMode } from "@/hooks/use-vim-mode";
 import { usePagination } from "@/hooks/use-pagination";
 import { supabase } from "@/integrations/supabase/client";
+import { useI18n } from "@/i18n";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 
