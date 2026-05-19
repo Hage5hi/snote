@@ -11,7 +11,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   buildSummary,
+  findAllowlistEntryLines,
   formatFailureReason,
+  parseTopFilesArg,
   type AllowlistReport,
   type Summary,
 } from "./i18n-allowlist-report";
@@ -206,7 +208,22 @@ const invokedDirectly = (() => {
 })();
 if (invokedDirectly) {
   const ctx = resolveCIContext();
-  const body = build(ctx);
+  // Best-effort schema-line lookup so the failure section can show the
+  // exact `.lintrc-i18n-allowlist.json:<line>` reviewers should jump to.
+  const allowlistPath = join(ROOT, ".lintrc-i18n-allowlist.json");
+  let entryLineLookup: ((i: number) => number | undefined) | undefined;
+  if (existsSync(allowlistPath)) {
+    try {
+      const src = readFileSync(allowlistPath, "utf8");
+      const lines = findAllowlistEntryLines(src);
+      entryLineLookup = (i) => lines[i];
+    } catch {
+      /* best-effort */
+    }
+  }
+  // Honor --topFiles N when the action runner forwards it.
+  const topN = parseTopFilesArg(process.argv);
+  const body = build(ctx, loadReport(), { topN, entryLineLookup });
   mkdirSync(dirname(OUT_PATH), { recursive: true });
   writeFileSync(OUT_PATH, body);
   process.stdout.write(body);
