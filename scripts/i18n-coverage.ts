@@ -11,6 +11,7 @@ import { dict, SUPPORTED_LANGS } from "../src/i18n";
 
 const MIN_COVERAGE_PCT = Number(process.env.I18N_MIN_COVERAGE ?? "100");
 const ALLOW_PLACEHOLDER_MISMATCH = process.env.I18N_ALLOW_PLACEHOLDER_MISMATCH === "1";
+const VERBOSE = process.env.I18N_VERBOSE === "1" || process.argv.includes("--verbose");
 
 const PLACEHOLDER_RE = /\{(\w+)\}/g;
 
@@ -97,7 +98,32 @@ for (const r of reports) {
 }
 console.log("=".repeat(72));
 console.log(`Baseline: en (${enKeys.length} keys)`);
-console.log(`Threshold: ${MIN_COVERAGE_PCT}% coverage, 0 placeholder mismatches`);
+
+// Verbose per-language breakdown (always shown for non-perfect langs, or all
+// langs when I18N_VERBOSE=1 / --verbose). Helps CI logs explain what to fix.
+for (const r of reports) {
+  const hasIssues =
+    r.missing.length > 0 || r.empty.length > 0 || r.placeholderMismatch.length > 0;
+  if (!hasIssues && !VERBOSE) continue;
+  console.log(`\n--- ${r.lang} ---`);
+  console.log(`  coverage: ${r.coverage.toFixed(2)}% (${r.present}/${r.total})`);
+  if (r.missing.length) {
+    console.log(`  missing (${r.missing.length}):`);
+    for (const k of r.missing) console.log(`    - ${k}`);
+  }
+  if (r.empty.length) {
+    console.log(`  empty (${r.empty.length}):`);
+    for (const k of r.empty) console.log(`    - ${k}`);
+  }
+  if (r.placeholderMismatch.length) {
+    console.log(`  placeholder mismatches (${r.placeholderMismatch.length}):`);
+    for (const m of r.placeholderMismatch) {
+      console.log(
+        `    - ${m.key}: expected {${m.expected.join(",")}}, got {${m.got.join(",")}}`,
+      );
+    }
+  }
+}
 
 let failed = false;
 for (const r of reports) {

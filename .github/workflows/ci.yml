@@ -55,26 +55,32 @@ jobs:
         run: bunx vitest run src/i18n/__tests__/
 
   e2e:
-    # Real-browser Playwright tests: cross-tab storage sync, persistence
-    # across reload, localized Export/Help menus & toasts.
-    name: Playwright E2E (i18n)
+    # Real-browser Playwright tests across chromium, firefox & webkit.
+    # Covers cross-tab storage sync, reload persistence, localized
+    # Export/Help/Mode menus, shortcut hints, and toasts.
+    name: Playwright E2E (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - name: Install Playwright browsers
-        run: bunx playwright install --with-deps chromium
-      - name: Run E2E
-        run: bun run test:e2e
+      - name: Install Playwright browser (${{ matrix.browser }})
+        run: bunx playwright install --with-deps ${{ matrix.browser }}
+      - name: Run E2E on ${{ matrix.browser }}
+        run: bunx playwright test --project=${{ matrix.browser }}
         env:
           CI: "1"
+          PLAYWRIGHT_PROJECT: ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}
           path: playwright-report/
           retention-days: 7
