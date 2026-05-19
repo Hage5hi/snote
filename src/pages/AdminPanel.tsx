@@ -400,7 +400,7 @@ export default function AdminPanel() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmOpen === "all" ? "Xoá TẤT CẢ note?" : `Xoá ${selected.size} note?`}
+              {confirmOpen === "all" ? "Delete ALL notes?" : `Delete ${selected.size} note(s)?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
               Hành động này không thể hoàn tác. Nội dung sẽ bị xoá vĩnh viễn khỏi server.
