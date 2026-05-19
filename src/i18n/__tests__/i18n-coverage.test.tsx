@@ -2,9 +2,8 @@
 // and Export/Help label rendering per language including toast strings.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { dict, STORAGE_KEY, SUPPORTED_LANGS, type Lang } from "@/i18n";
-import { I18nProvider, useI18n } from "@/i18n";
-import { I18nProvider as ProviderImpl } from "@/i18n/provider";
+import { dict, STORAGE_KEY, SUPPORTED_LANGS, useI18n, type Lang } from "@/i18n";
+import { I18nProvider } from "@/i18n/provider";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ExportMenu } from "@/components/note/topbar/ExportMenu";
 import { HelpMenu } from "@/components/note/topbar/HelpMenu";
