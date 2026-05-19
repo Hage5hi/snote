@@ -85,7 +85,7 @@ jobs:
           message: |
             ### 🌐 i18n audit + allowlist artifacts
 
-            Artifact: **`i18n-report`** — contains `reports/i18n-audit-diff.json`, `reports/i18n-audit-diff.md`, `reports/i18n-report.json`, `reports/i18n-report.html`, and `.lintrc-i18n-allowlist.json`.
+            Artifact: **`i18n-report`** — contains `reports/i18n-audit-diff.{json,md}`, `reports/i18n-report.{json,html}`, `reports/i18n-allowlist-report.{json,md}`, and `.lintrc-i18n-allowlist.json`.
 
             - 📦 [Download artifact bundle](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_i18n_report.outputs.artifact-id }})
             - 🧾 [All artifacts for this run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts)
