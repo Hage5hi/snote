@@ -128,7 +128,7 @@ describe("upsertStickyComment — duplicate cleanup (production code)", () => {
     expect(updatedIds).toEqual([12, 12]);
     expect(t.comments).toHaveLength(1);
     expect(t.comments[0].id).toBe(12);
-    expect(t.comments[0].body).toBe("run-B body");
+    expect(t.comments[0].body).toBe(`${MARKER}\nrun-B body`);
   });
 
   it("creates a fresh comment when no marker comments exist", async () => {
