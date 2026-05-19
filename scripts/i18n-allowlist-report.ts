@@ -26,7 +26,7 @@
 // scripts/__tests__/i18n-allowlist-summary.test.ts. The CLI side effects
 // (running the real allowlist check, writing to stdout, exiting) only fire
 // when the file is executed directly.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { join, relative, resolve } from "node:path";
@@ -152,11 +152,26 @@ export function isI18nRelevant(path: string): boolean {
  *                     was unavailable — also falls back, with a different
  *                     note. When undefined, no scoping is applied.
  */
+export interface BuildSummaryOpts {
+  changed?: string[] | null;
+  /** Max top-files surfaced. Default 3. Clamped to ≥1. */
+  topN?: number;
+  /**
+   * Optional resolver mapping an entry's index → line in
+   * `.lintrc-i18n-allowlist.json`. Used so schema failures surface as
+   * `.lintrc-i18n-allowlist.json:42` instead of pointing at entry.file.
+   */
+  entryLineLookup?: (entryIndex: number) => number | undefined;
+}
+
 export function buildSummary(
   report: AllowlistReport,
   reportPath: string,
-  opts: { changed?: string[] | null } = {},
+  opts: BuildSummaryOpts = {},
 ): Summary {
+  const topN = Math.max(1, opts.topN ?? DEFAULT_TOP_N);
+  const failureOpts: FailureOpts = { topN, entryLineLookup: opts.entryLineLookup };
+
   const base: Summary = {
     ok: report.ok,
     schemaOk: report.schemaOk,
@@ -171,7 +186,7 @@ export function buildSummary(
   };
 
   if (opts.changed === undefined) {
-    return withFailure(base, report);
+    return withFailure(base, report, failureOpts);
   }
 
   if (opts.changed === null) {
@@ -182,6 +197,7 @@ export function buildSummary(
           "  scope:      --changed requested, but `git diff` failed — falling back to FULL report",
       },
       report,
+      failureOpts,
     );
   }
 
@@ -197,6 +213,7 @@ export function buildSummary(
         scopeNote: `  scope:      --changed (${changed.length} file(s) changed, none i18n-relevant) — falling back to FULL report`,
       },
       report,
+      failureOpts,
     );
   }
 
@@ -206,7 +223,6 @@ export function buildSummary(
     (e) => isRelevant(e.file) || e.matchedSites.some((s) => isRelevant(s.file)),
   );
 
-  // Schema is repo-wide and must always be valid; drift is scoped.
   const scopedSchemaOk = report.schemaOk;
   const scopedDriftOk = scopedMissing.length === 0 && scopedStale.length === 0;
   const scopedOk = scopedSchemaOk && scopedDriftOk;
@@ -241,12 +257,25 @@ export function buildSummary(
       scopedToChanges: true,
     },
     scoped,
+    failureOpts,
   );
 }
 
-function withFailure(summary: Summary, report: AllowlistReport): Summary {
+/** Default cap on top offending paths surfaced in the failure reason. */
+export const DEFAULT_TOP_N = 3;
+
+interface FailureOpts {
+  topN: number;
+  entryLineLookup?: (entryIndex: number) => number | undefined;
+}
+
+function withFailure(
+  summary: Summary,
+  report: AllowlistReport,
+  opts: FailureOpts,
+): Summary {
   if (summary.ok) return summary;
-  return { ...summary, failure: buildFailureReason(summary, report) };
+  return { ...summary, failure: buildFailureReason(summary, report, opts) };
 }
 
 /**
@@ -259,20 +288,33 @@ function withFailure(summary: Summary, report: AllowlistReport): Summary {
 export function buildFailureReason(
   summary: Pick<Summary, "schemaOk" | "missingCount" | "staleCount" | "totals">,
   report: AllowlistReport,
+  opts: { topN?: number; entryLineLookup?: (i: number) => number | undefined } = {},
 ): { category: FailureCategory; topFiles: string[] } {
+  const topN = Math.max(1, opts.topN ?? DEFAULT_TOP_N);
+  const lookup = opts.entryLineLookup;
+
   if (!summary.schemaOk) {
+    // Schema errors live in the allowlist JSON itself — point reviewers at
+    // .lintrc-i18n-allowlist.json with the entry's start line (when we can
+    // resolve it) instead of at entry.file, which is just the path the
+    // broken entry was trying to reference.
     const topFiles = report.entries
       .filter((e) => e.errors.length > 0)
-      .slice(0, 3)
-      .map((e) => e.file);
-    return { category: "schema", topFiles };
+      .slice(0, topN)
+      .map((e) => {
+        const line = lookup?.(e.index);
+        return line !== undefined
+          ? `${ALLOWLIST_CONFIG}:${line}`
+          : ALLOWLIST_CONFIG;
+      });
+    return { category: "schema", topFiles: uniq(topFiles) };
   }
   if (summary.missingCount > 0) {
-    const topFiles = uniq(report.missing.map((m) => `${m.file}:${m.line}`)).slice(0, 3);
+    const topFiles = uniq(report.missing.map((m) => `${m.file}:${m.line}`)).slice(0, topN);
     return { category: "drift-missing", topFiles };
   }
   if (summary.staleCount > 0) {
-    const topFiles = uniq(report.stale.map((s) => s.split("::")[0])).slice(0, 3);
+    const topFiles = uniq(report.stale.map((s) => s.split("::")[0])).slice(0, topN);
     return { category: "drift-stale", topFiles };
   }
   return { category: "unknown", topFiles: [] };
@@ -280,6 +322,35 @@ export function buildFailureReason(
 
 function uniq<T>(xs: T[]): T[] {
   return Array.from(new Set(xs));
+}
+
+/**
+ * Best-effort: given the raw text of `.lintrc-i18n-allowlist.json`,
+ * return the 1-based start line of each top-level object inside the
+ * `entries` array, in order. Used by `buildFailureReason` to attach line
+ * numbers to schema-error annotations.
+ *
+ * We scan character-by-character tracking brace/bracket depth so we don't
+ * need a JSON CST dependency. Returns `[]` when the array can't be
+ * located (e.g. malformed JSON the schema check is about to flag anyway).
+ */
+export function findAllowlistEntryLines(src: string): number[] {
+  const m = src.match(/"entries"\s*:\s*\[/);
+  if (!m) return [];
+  let pos = m.index! + m[0].length;
+  let depth = 1; // we're now inside the entries `[`
+  let line = src.slice(0, pos).split("\n").length;
+  const lines: number[] = [];
+  for (; pos < src.length && depth > 0; pos++) {
+    const ch = src[pos];
+    if (ch === "\n") line++;
+    else if (ch === "{") {
+      if (depth === 1) lines.push(line);
+      depth++;
+    } else if (ch === "[") depth++;
+    else if (ch === "}" || ch === "]") depth--;
+  }
+  return lines;
 }
 
 /** Build the one-line reason string shown after the counters on failure. */
@@ -383,10 +454,15 @@ export function formatAnnotations(summary: Summary): string[] {
   const reason = formatFailureReason(summary.failure, summary);
   const esc = (s: string) =>
     s.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A");
+  // schema + drift-missing both encode line as `file:line` in topFiles;
+  // drift-stale stays file-only.
+  const supportsLine =
+    summary.failure.category === "drift-missing" ||
+    summary.failure.category === "schema";
   return summary.failure.topFiles.map((entry) => {
     let file = entry;
     let line: number | undefined;
-    if (summary.failure!.category === "drift-missing") {
+    if (supportsLine) {
       const m = entry.match(/^(.*):(\d+)$/);
       if (m) {
         file = m[1];
@@ -412,16 +488,53 @@ function isMain(): boolean {
   }
 }
 
+/**
+ * Parse `--topFiles N` (or `--topFiles=N`) out of an argv. Exported for
+ * tests; clamps invalid / missing values to the documented default.
+ */
+export function parseTopFilesArg(argv: string[], fallback = DEFAULT_TOP_N): number {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    let raw: string | undefined;
+    if (a === "--topFiles" || a === "--top-files") raw = argv[i + 1];
+    else if (a.startsWith("--topFiles=")) raw = a.slice("--topFiles=".length);
+    else if (a.startsWith("--top-files=")) raw = a.slice("--top-files=".length);
+    if (raw !== undefined) {
+      const n = Number.parseInt(raw, 10);
+      if (Number.isFinite(n) && n >= 1) return n;
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 if (isMain()) {
   const ROOT = process.cwd();
   const REPORT_PATH = join(ROOT, "reports", "i18n-allowlist-report.json");
+  const SUMMARY_JSON_PATH = join(ROOT, "reports", "i18n-allowlist-summary.json");
+  const ALLOWLIST_JSON_PATH = join(ROOT, ALLOWLIST_CONFIG);
   const CHANGED = process.argv.includes("--changed");
   const JSON_OUT = process.argv.includes("--json");
   const ANNOTATIONS = process.argv.includes("--annotations");
+  const TOP_N = parseTopFilesArg(process.argv);
 
   runAllowlistCheck({ silent: true });
 
   const reportRel = relative(ROOT, REPORT_PATH) || REPORT_PATH;
+
+  // Lookup used by buildFailureReason to attach the allowlist JSON line
+  // to each schema-failing entry. Best-effort; missing/invalid JSON just
+  // degrades to a file-only annotation.
+  const entryLineLookup = (() => {
+    if (!existsSync(ALLOWLIST_JSON_PATH)) return undefined;
+    try {
+      const src = readFileSync(ALLOWLIST_JSON_PATH, "utf8");
+      const lines = findAllowlistEntryLines(src);
+      return (idx: number) => lines[idx];
+    } catch {
+      return undefined;
+    }
+  })();
 
   if (!existsSync(REPORT_PATH)) {
     if (JSON_OUT) {
@@ -440,7 +553,13 @@ if (isMain()) {
             "report file was not written (allowlist script crashed before emitting JSON)",
         },
       };
-      console.log(JSON.stringify(empty, null, 2));
+      const body = JSON.stringify(empty, null, 2);
+      console.log(body);
+      try {
+        writeFileSync(SUMMARY_JSON_PATH, body);
+      } catch {
+        /* artifact write is best-effort */
+      }
     } else {
       console.log("");
       console.log("i18n allowlist report  ❌ FAIL");
@@ -456,7 +575,18 @@ if (isMain()) {
   const report = JSON.parse(readFileSync(REPORT_PATH, "utf8")) as AllowlistReport;
   const summary = buildSummary(report, reportRel, {
     changed: CHANGED ? getChangedFiles() : undefined,
+    topN: TOP_N,
+    entryLineLookup,
   });
+
+  // Always persist the machine-readable summary so other CI tooling
+  // (check runs, dashboards, downstream jobs) can fetch it as an artifact
+  // regardless of whether --json was requested on stdout.
+  try {
+    writeFileSync(SUMMARY_JSON_PATH, JSON.stringify(toJSON(summary), null, 2));
+  } catch {
+    /* best-effort */
+  }
 
   if (JSON_OUT) {
     console.log(JSON.stringify(toJSON(summary), null, 2));
@@ -466,7 +596,6 @@ if (isMain()) {
   }
 
   if (ANNOTATIONS) {
-    // Annotations go to stderr so `--json` stdout consumers stay clean.
     for (const a of formatAnnotations(summary)) console.error(a);
   }
 

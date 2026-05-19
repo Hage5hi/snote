@@ -164,7 +164,7 @@ describe("buildSummary — --changed scoping", () => {
 });
 
 describe("buildFailureReason", () => {
-  it("schema failure surfaces the top entries[i] file paths", () => {
+  it("schema failure points at the allowlist config (with line) per failing entry", () => {
     const r = makeReport({
       entries: [
         { index: 0, file: "src/a.tsx", reason: "x", errors: ["bad"], matchedSites: [] },
@@ -174,10 +174,31 @@ describe("buildFailureReason", () => {
     });
     r.schemaOk = false;
     r.ok = false;
-    const s = buildSummary(r, REPORT_PATH);
+    // Stub line lookup: index 0 → line 10, index 1 → line 25.
+    const s = buildSummary(r, REPORT_PATH, {
+      entryLineLookup: (i) => (i === 0 ? 10 : 25),
+    });
     expect(s.failure?.category).toBe("schema");
-    expect(s.failure?.topFiles).toEqual(["src/a.tsx", "src/b.tsx"]);
-    expect(formatFailureReason(s.failure!, s)).toMatch(/schema validation failed.*src\/a\.tsx, src\/b\.tsx/);
+    expect(s.failure?.topFiles).toEqual([
+      ".lintrc-i18n-allowlist.json:10",
+      ".lintrc-i18n-allowlist.json:25",
+    ]);
+    expect(formatFailureReason(s.failure!, s)).toMatch(
+      /schema validation failed.*\.lintrc-i18n-allowlist\.json:10, \.lintrc-i18n-allowlist\.json:25/,
+    );
+  });
+
+  it("schema failure falls back to file-only when no line lookup is provided", () => {
+    const r = makeReport({
+      entries: [
+        { index: 0, file: "src/a.tsx", reason: "x", errors: ["bad"], matchedSites: [] },
+      ],
+      totals: { entries: 1, schemaErrors: 1, missing: 0, stale: 0 },
+    });
+    r.schemaOk = false;
+    r.ok = false;
+    const s = buildSummary(r, REPORT_PATH);
+    expect(s.failure?.topFiles).toEqual([".lintrc-i18n-allowlist.json"]);
   });
 
   it("missing drift takes priority over stale and lists file:line", () => {
@@ -206,5 +227,69 @@ describe("buildFailureReason", () => {
     );
     expect(f.category).toBe("drift-stale");
     expect(f.topFiles).toEqual(["src/a.tsx", "src/b.tsx"]);
+  });
+
+  it("honors topN to clamp/expand surfaced top files", () => {
+    const r = makeReport({
+      missing: Array.from({ length: 5 }, (_, i) => ({
+        file: `src/f${i}.tsx`,
+        reason: "r",
+        line: i,
+      })),
+    });
+    const f1 = buildFailureReason(
+      { schemaOk: true, missingCount: 5, staleCount: 0, totals: r.totals },
+      r,
+      { topN: 1 },
+    );
+    expect(f1.topFiles).toEqual(["src/f0.tsx:0"]);
+    const f5 = buildFailureReason(
+      { schemaOk: true, missingCount: 5, staleCount: 0, totals: r.totals },
+      r,
+      { topN: 5 },
+    );
+    expect(f5.topFiles).toHaveLength(5);
+  });
+});
+
+describe("findAllowlistEntryLines", () => {
+  it("returns 1-based start line of each top-level entry object", async () => {
+    const { findAllowlistEntryLines } = await import("../i18n-allowlist-report");
+    const src = [
+      "{",
+      '  "version": 1,',
+      '  "entries": [',
+      "    {",
+      '      "file": "src/a.tsx",',
+      '      "reason": "x"',
+      "    },",
+      "    {",
+      '      "file": "src/b.tsx",',
+      '      "reason": "y"',
+      "    }",
+      "  ]",
+      "}",
+    ].join("\n");
+    expect(findAllowlistEntryLines(src)).toEqual([4, 8]);
+  });
+
+  it("returns [] when the entries array can't be located", async () => {
+    const { findAllowlistEntryLines } = await import("../i18n-allowlist-report");
+    expect(findAllowlistEntryLines("{}")).toEqual([]);
+  });
+});
+
+describe("parseTopFilesArg", () => {
+  it.each<[string[], number]>([
+    [["--topFiles", "5"], 5],
+    [["--topFiles=7"], 7],
+    [["--top-files", "2"], 2],
+    [["--top-files=4"], 4],
+    [["--changed"], 3],
+    [["--topFiles", "0"], 3],
+    [["--topFiles", "abc"], 3],
+  ])("parses %j → %i", async (argv, expected) => {
+    const { parseTopFilesArg } = await import("../i18n-allowlist-report");
+    expect(parseTopFilesArg(argv)).toBe(expected);
   });
 });

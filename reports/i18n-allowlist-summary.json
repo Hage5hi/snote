@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "schemaOk": true,
+  "driftOk": true,
+  "scopedToChanges": false,
+  "reportPath": "reports/i18n-allowlist-report.json",
+  "counts": {
+    "entries": 8,
+    "schemaErrors": 0,
+    "missing": 0,
+    "stale": 0
+  },
+  "fullCounts": {
+    "entries": 8,
+    "schemaErrors": 0,
+    "missing": 0,
+    "stale": 0
+  },
+  "failure": null
+}

@@ -11,7 +11,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   buildSummary,
+  findAllowlistEntryLines,
   formatFailureReason,
+  parseTopFilesArg,
   type AllowlistReport,
   type Summary,
 } from "./i18n-allowlist-report";
@@ -95,7 +97,18 @@ function loadReport(): AllowlistReport | null {
   }
 }
 
-export function build(ctx: CIContext, report: AllowlistReport | null = loadReport()): string {
+export interface BuildPRCommentOpts {
+  /** Forwarded to buildSummary; default = DEFAULT_TOP_N. */
+  topN?: number;
+  /** Schema-line resolver (see buildSummary docs). */
+  entryLineLookup?: (entryIndex: number) => number | undefined;
+}
+
+export function build(
+  ctx: CIContext,
+  report: AllowlistReport | null = loadReport(),
+  opts: BuildPRCommentOpts = {},
+): string {
   const { runUrl, artifactsUrl, bundleUrl } = buildUrls(ctx);
   const lines: string[] = [];
   lines.push("### 🌐 i18n audit + allowlist artifacts");
@@ -122,7 +135,11 @@ export function build(ctx: CIContext, report: AllowlistReport | null = loadRepor
     // prints locally + the GitHub step summary shows. Reviewers see the
     // same actionable signal in every surface.
     if (!report.ok) {
-      const summary: Summary = buildSummary(report, "reports/i18n-allowlist-report.json");
+      const summary: Summary = buildSummary(
+        report,
+        "reports/i18n-allowlist-report.json",
+        { topN: opts.topN, entryLineLookup: opts.entryLineLookup },
+      );
       lines.push(...renderFailureSection(summary));
     }
     lines.push(
@@ -191,7 +208,22 @@ const invokedDirectly = (() => {
 })();
 if (invokedDirectly) {
   const ctx = resolveCIContext();
-  const body = build(ctx);
+  // Best-effort schema-line lookup so the failure section can show the
+  // exact `.lintrc-i18n-allowlist.json:<line>` reviewers should jump to.
+  const allowlistPath = join(ROOT, ".lintrc-i18n-allowlist.json");
+  let entryLineLookup: ((i: number) => number | undefined) | undefined;
+  if (existsSync(allowlistPath)) {
+    try {
+      const src = readFileSync(allowlistPath, "utf8");
+      const lines = findAllowlistEntryLines(src);
+      entryLineLookup = (i) => lines[i];
+    } catch {
+      /* best-effort */
+    }
+  }
+  // Honor --topFiles N when the action runner forwards it.
+  const topN = parseTopFilesArg(process.argv);
+  const body = build(ctx, loadReport(), { topN, entryLineLookup });
   mkdirSync(dirname(OUT_PATH), { recursive: true });
   writeFileSync(OUT_PATH, body);
   process.stdout.write(body);
