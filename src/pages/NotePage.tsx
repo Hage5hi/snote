@@ -208,8 +208,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const unsubSync = provider.onSyncEvent((ev) => {
       if (ev.type === "recovered") {
         toast({
-          title: t("toast.synced_remote"),
-          description: t("toast.synced_remote_desc", { bytes: ev.bytes }),
+          title: tRef.current("toast.synced_remote"),
+          description: tRef.current("toast.synced_remote_desc", { bytes: ev.bytes }),
         });
       }
     });
