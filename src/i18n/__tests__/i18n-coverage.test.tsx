@@ -7,6 +7,15 @@ import { I18nProvider } from "@/i18n/provider";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ExportMenu } from "@/components/note/topbar/ExportMenu";
 import { HelpMenu } from "@/components/note/topbar/HelpMenu";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+function Wrap({ children }: { children: React.ReactNode }) {
+  return (
+    <TooltipProvider>
+      <I18nProvider>{children}</I18nProvider>
+    </TooltipProvider>
+  );
+}
 
 const IP_DETECTED_KEY = "lang.ip_detected";
 
