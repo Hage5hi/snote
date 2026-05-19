@@ -167,7 +167,13 @@ jobs:
       # posting links in the PR comment, so reviewers never get a
       # malformed payload from a silently-broken renderer.
       - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: validate_breakdown
         name: Validate failure-breakdown.json shape
+        # `continue-on-error: true` so we can gate the downstream PR
+        # comment on this step's outcome instead of failing the whole
+        # workflow before reviewers see the artifacts. The gate below
+        # still fails the job at the end if validation didn't pass.
+        continue-on-error: true
         run: bun run scripts/ci-validate-breakdown-json.ts reports/_ci/failure-breakdown.json
       # Per-OS step-summary artifact so reviewers can download the
       # rendered markdown directly (mirrors what GitHub displays in the
