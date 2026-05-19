@@ -3,6 +3,7 @@
 import { Eye, EyeOff, Link2, Link2Off } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useI18n } from "@/i18n/index";
 
 interface ViewControlsProps {
   showPreview: boolean;
@@ -17,6 +18,7 @@ export function ViewControls({
   scrollSync,
   onToggleScrollSync,
 }: ViewControlsProps) {
+  const { t } = useI18n();
   return (
     <>
       <Tooltip>
@@ -26,13 +28,13 @@ export function ViewControls({
             size="icon"
             className="h-7 w-7"
             onClick={onTogglePreview}
-            aria-label={showPreview ? "Ẩn preview" : "Hiện preview"}
+            aria-label={showPreview ? t("view.aria_hide_preview") : t("view.aria_show_preview")}
           >
             {showPreview ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </Button>
         </TooltipTrigger>
         <TooltipContent side="bottom">
-          {showPreview ? "Ẩn preview Markdown" : "Hiện preview Markdown"} (⌘⇧V)
+          {showPreview ? t("view.tooltip_hide_preview") : t("view.tooltip_show_preview")} (⌘⇧V)
         </TooltipContent>
       </Tooltip>
 
@@ -44,7 +46,7 @@ export function ViewControls({
               size="icon"
               className="h-7 w-7"
               onClick={onToggleScrollSync}
-              aria-label={scrollSync ? "Tắt scroll sync" : "Bật scroll sync"}
+              aria-label={scrollSync ? t("view.aria_scroll_off") : t("view.aria_scroll_on")}
               aria-pressed={scrollSync}
             >
               {scrollSync ? (
@@ -55,9 +57,7 @@ export function ViewControls({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
-            {scrollSync
-              ? "Tắt đồng bộ cuộn editor ↔ preview"
-              : "Bật đồng bộ cuộn editor ↔ preview"}
+            {scrollSync ? t("view.tooltip_scroll_off") : t("view.tooltip_scroll_on")}
           </TooltipContent>
         </Tooltip>
       )}

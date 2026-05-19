@@ -13,9 +13,8 @@ import { FileText, Home as HomeIcon, Keyboard, Pin, PinOff, Plus, Shuffle } from
 import { getRecents, getPinned, togglePin } from "@/lib/recent-notes";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { supabase } from "@/integrations/supabase/client";
+import { useI18n } from "@/i18n/index";
 
-// Prefetch a slug's payload (snapshot + enc-meta) so the editor opens with
-// no network waterfall. Idempotent per session.
 function prefetchSlug(s: string) {
   const key = `note-prefetch:${s}`;
   if (sessionStorage.getItem(key)) return;
@@ -29,7 +28,9 @@ function prefetchSlug(s: string) {
       if (data?.ydoc_state && !data?.is_encrypted) {
         try {
           sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
-        } catch { /* quota */ }
+        } catch {
+          /* quota */
+        }
       }
     });
 }
@@ -49,13 +50,8 @@ function randomSlug() {
   return s;
 }
 
-/**
- * Global Cmd/Ctrl+K palette + ? shortcut help. Mounted once at App level.
- *  - Search slug → if exact + valid, "Open /{slug}" appears at top.
- *  - Pinned slugs are shown above recents and persisted in localStorage.
- *  - Quick actions: random, home, show shortcuts.
- */
 export function CommandPalette() {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -72,12 +68,11 @@ export function CommandPalette() {
         setOpen((v) => !v);
         return;
       }
-      // "?" → open shortcut help, but ignore when typing in any input/editor.
       if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        const t = e.target as HTMLElement | null;
-        if (t) {
-          const tag = t.tagName;
-          if (tag === "INPUT" || tag === "TEXTAREA" || t.isContentEditable) return;
+        const target = e.target as HTMLElement | null;
+        if (target) {
+          const tag = target.tagName;
+          if (tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable) return;
         }
         e.preventDefault();
         setHelpOpen(true);
@@ -87,7 +82,6 @@ export function CommandPalette() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Refresh recents/pinned whenever the palette opens.
   useEffect(() => {
     if (open) {
       setRecents(getRecents());
@@ -118,19 +112,19 @@ export function CommandPalette() {
     <>
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandInput
-          placeholder="Tìm note hoặc gõ slug để mở…"
+          placeholder={t("cmdk.placeholder")}
           value={query}
           onValueChange={setQuery}
         />
         <CommandList>
-          <CommandEmpty>Không tìm thấy. Gõ slug hợp lệ để tạo mới.</CommandEmpty>
+          <CommandEmpty>{t("cmdk.empty")}</CommandEmpty>
 
           {isValidNew && (
             <>
-              <CommandGroup heading="Mở / Tạo">
+              <CommandGroup heading={t("cmdk.group_open")}>
                 <CommandItem value={`open-${trimmed}`} onSelect={() => go(trimmed)}>
                   <Plus className="h-4 w-4" />
-                  Mở <span className="font-mono">/{trimmed}</span>
+                  {t("cmdk.item_open")} <span className="font-mono">/{trimmed}</span>
                 </CommandItem>
               </CommandGroup>
               <CommandSeparator />
@@ -139,7 +133,7 @@ export function CommandPalette() {
 
           {pinnedItems.length > 0 && (
             <>
-              <CommandGroup heading="Đã ghim">
+              <CommandGroup heading={t("cmdk.group_pinned")}>
                 {pinnedItems.map((r) => (
                   <CommandItem
                     key={r.slug}
@@ -153,8 +147,8 @@ export function CommandPalette() {
                       type="button"
                       onClick={(e) => handleTogglePin(r.slug, e)}
                       className="ml-auto rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-                      aria-label={`Bỏ ghim /${r.slug}`}
-                      title="Bỏ ghim"
+                      aria-label={t("cmdk.unpin_aria", { slug: r.slug })}
+                      title={t("cmdk.unpin_title")}
                     >
                       <PinOff className="h-3.5 w-3.5" />
                     </button>
@@ -167,7 +161,7 @@ export function CommandPalette() {
 
           {unpinnedRecents.length > 0 && (
             <>
-              <CommandGroup heading="Note gần đây">
+              <CommandGroup heading={t("cmdk.group_recents")}>
                 {unpinnedRecents.slice(0, 20).map((r) => (
                   <CommandItem
                     key={r.slug}
@@ -181,8 +175,8 @@ export function CommandPalette() {
                       type="button"
                       onClick={(e) => handleTogglePin(r.slug, e)}
                       className="ml-auto rounded p-1 text-muted-foreground opacity-0 hover:bg-accent hover:text-foreground group-hover:opacity-100 data-[selected=true]:opacity-100"
-                      aria-label={`Ghim /${r.slug}`}
-                      title="Ghim note"
+                      aria-label={t("cmdk.pin_aria", { slug: r.slug })}
+                      title={t("cmdk.pin_title")}
                     >
                       <Pin className="h-3.5 w-3.5" />
                     </button>
@@ -193,10 +187,10 @@ export function CommandPalette() {
             </>
           )}
 
-          <CommandGroup heading="Hành động">
+          <CommandGroup heading={t("cmdk.group_actions")}>
             <CommandItem value="action-random" onSelect={() => go(randomSlug())}>
               <Shuffle className="h-4 w-4" />
-              Note ngẫu nhiên
+              {t("cmdk.random")}
             </CommandItem>
             <CommandItem
               value="action-home"
@@ -206,7 +200,7 @@ export function CommandPalette() {
               }}
             >
               <HomeIcon className="h-4 w-4" />
-              Về trang chủ
+              {t("cmdk.home")}
             </CommandItem>
             <CommandItem
               value="action-shortcuts"
@@ -216,7 +210,7 @@ export function CommandPalette() {
               }}
             >
               <Keyboard className="h-4 w-4" />
-              Xem phím tắt
+              {t("cmdk.shortcuts")}
             </CommandItem>
           </CommandGroup>
         </CommandList>

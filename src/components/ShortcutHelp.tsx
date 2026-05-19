@@ -6,6 +6,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useI18n } from "@/i18n/index";
 
 interface ShortcutHelpProps {
   open: boolean;
@@ -16,60 +17,6 @@ const isMac =
   typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const Mod = isMac ? "⌘" : "Ctrl";
 
-const SECTIONS: { title: string; items: { keys: string[]; label: string }[] }[] = [
-  {
-    title: "Điều hướng",
-    items: [
-      { keys: [Mod, "K"], label: "Mở Command Palette" },
-      { keys: ["?"], label: "Mở bảng phím tắt này" },
-      { keys: [Mod, "\\"], label: "Toggle Outline sidebar" },
-      { keys: ["F11"], label: "Toggle Zen mode" },
-      { keys: ["F9"], label: "Toggle Typewriter mode (line giữ ở giữa màn hình)" },
-    ],
-  },
-  {
-    title: "Editor",
-    items: [
-      { keys: [Mod, "F"], label: "Tìm trong note" },
-      { keys: [Mod, "Shift", "V"], label: "Toggle Markdown preview" },
-      { keys: [Mod, "Shift", "C"], label: "Copy toàn bộ note" },
-      { keys: [Mod, "Shift", "P"], label: "Toggle Lật trang" },
-      { keys: ["/"], label: "Mở slash commands (đầu dòng)" },
-      { keys: ["#"], label: "Tag autocomplete" },
-    ],
-  },
-  {
-    title: "Soạn thảo",
-    items: [
-      { keys: [Mod, "Z"], label: "Hoàn tác" },
-      { keys: [Mod, "Shift", "Z"], label: "Làm lại" },
-    ],
-  },
-];
-
-const TIPS: { title: string; body: string }[] = [
-  {
-    title: "Mở note nhanh",
-    body: "Gõ slug bất kỳ vào URL (ví dụ /todo) — note tự tạo nếu chưa tồn tại.",
-  },
-  {
-    title: "Pin note quan trọng",
-    body: "Bấm Star trên Topbar (hoặc trong Cmd+K) để pin note lên đầu palette.",
-  },
-  {
-    title: "Tag để gom note",
-    body: "Gõ #tag bất kỳ trong nội dung — chip tag hiện trên Topbar, click để xem note cùng tag.",
-  },
-  {
-    title: "Split view",
-    body: "Mở /a+b để xem 2 note cạnh nhau, lý tưởng để so sánh hoặc copy giữa 2 note.",
-  },
-  {
-    title: "Chia sẻ qua QR",
-    body: "Bấm Share trên Topbar → quét QR từ điện thoại để mở cùng note.",
-  },
-];
-
 function Kbd({ children }: { children: React.ReactNode }) {
   return (
     <kbd className="inline-flex h-6 min-w-6 items-center justify-center rounded border border-border bg-muted px-1.5 font-mono text-[11px] font-medium text-foreground shadow-sm">
@@ -79,27 +26,64 @@ function Kbd({ children }: { children: React.ReactNode }) {
 }
 
 export function ShortcutHelp({ open, onOpenChange }: ShortcutHelpProps) {
+  const { t } = useI18n();
+  const sections: { title: string; items: { keys: string[]; label: string }[] }[] = [
+    {
+      title: t("shortcuts.section.nav"),
+      items: [
+        { keys: [Mod, "K"], label: t("shortcuts.label.cmdk") },
+        { keys: ["?"], label: t("shortcuts.label.help") },
+        { keys: [Mod, "\\"], label: t("shortcuts.label.outline_toggle") },
+        { keys: ["F11"], label: t("shortcuts.label.zen_toggle") },
+        { keys: ["F9"], label: t("shortcuts.label.typewriter_toggle") },
+      ],
+    },
+    {
+      title: t("shortcuts.section.editor"),
+      items: [
+        { keys: [Mod, "F"], label: t("shortcuts.label.find") },
+        { keys: [Mod, "Shift", "V"], label: t("shortcuts.label.preview_toggle") },
+        { keys: [Mod, "Shift", "C"], label: t("shortcuts.label.copy_all") },
+        { keys: [Mod, "Shift", "P"], label: t("shortcuts.label.page_toggle") },
+        { keys: ["/"], label: t("shortcuts.label.slash") },
+        { keys: ["#"], label: t("shortcuts.label.tag_autocomplete") },
+      ],
+    },
+    {
+      title: t("shortcuts.section.edit"),
+      items: [
+        { keys: [Mod, "Z"], label: t("shortcuts.label.undo") },
+        { keys: [Mod, "Shift", "Z"], label: t("shortcuts.label.redo") },
+      ],
+    },
+  ];
+
+  const tips: { title: string; body: string }[] = [
+    { title: t("shortcuts.tip.open_title"), body: t("shortcuts.tip.open_body") },
+    { title: t("shortcuts.tip.pin_title"), body: t("shortcuts.tip.pin_body") },
+    { title: t("shortcuts.tip.tag_title"), body: t("shortcuts.tip.tag_body") },
+    { title: t("shortcuts.tip.split_title"), body: t("shortcuts.tip.split_body") },
+    { title: t("shortcuts.tip.qr_title"), body: t("shortcuts.tip.qr_body") },
+  ];
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] max-w-md overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Phím tắt & Mẹo</DialogTitle>
+          <DialogTitle>{t("shortcuts.title")}</DialogTitle>
           <DialogDescription>
-            Nhấn <Kbd>?</Kbd> bất kỳ lúc nào để mở lại bảng này.
+            {t("shortcuts.subtitle_press")} <Kbd>?</Kbd> {t("shortcuts.subtitle_reopen")}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-5">
-          {SECTIONS.map((section) => (
+          {sections.map((section) => (
             <div key={section.title}>
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {section.title}
               </h3>
               <ul className="space-y-1.5">
                 {section.items.map((item) => (
-                  <li
-                    key={item.label}
-                    className="flex items-center justify-between gap-3 text-sm"
-                  >
+                  <li key={item.label} className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-foreground">{item.label}</span>
                     <span className="flex items-center gap-1">
                       {item.keys.map((k, i) => (
@@ -115,10 +99,10 @@ export function ShortcutHelp({ open, onOpenChange }: ShortcutHelpProps) {
           <div>
             <h3 className="mb-2 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               <Lightbulb className="h-3 w-3" />
-              Mẹo dùng
+              {t("shortcuts.section.tips")}
             </h3>
             <ul className="space-y-2.5">
-              {TIPS.map((tip) => (
+              {tips.map((tip) => (
                 <li key={tip.title} className="text-sm">
                   <div className="font-medium text-foreground">{tip.title}</div>
                   <div className="text-xs text-muted-foreground">{tip.body}</div>

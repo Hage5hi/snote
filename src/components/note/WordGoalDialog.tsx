@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useWordGoal } from "@/hooks/use-word-goal";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/i18n/index";
 
 interface WordGoalDialogProps {
   open: boolean;
@@ -22,11 +23,8 @@ interface WordGoalDialogProps {
 
 const PRESETS = [250, 500, 1000, 2000];
 
-/**
- * Set/clear a word count goal for the current note. Stored in localStorage
- * per slug so each note can track a different target (essay vs journal etc.).
- */
 export function WordGoalDialog({ open, onOpenChange, slug, currentWords }: WordGoalDialogProps) {
+  const { t } = useI18n();
   const { goal, setGoal } = useWordGoal(slug);
   const [value, setValue] = useState("");
 
@@ -41,15 +39,15 @@ export function WordGoalDialog({ open, onOpenChange, slug, currentWords }: WordG
     if (!valid) return;
     setGoal(parsed);
     toast({
-      title: "Đã đặt mục tiêu",
-      description: `${parsed.toLocaleString()} từ cho /${slug}`,
+      title: t("goal.set_toast"),
+      description: t("goal.set_toast_desc", { n: parsed.toLocaleString(), slug }),
     });
     onOpenChange(false);
   };
 
   const onClear = () => {
     setGoal(null);
-    toast({ title: "Đã xoá mục tiêu" });
+    toast({ title: t("goal.cleared_toast") });
     onOpenChange(false);
   };
 
@@ -59,12 +57,9 @@ export function WordGoalDialog({ open, onOpenChange, slug, currentWords }: WordG
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Target className="h-4 w-4" />
-            Mục tiêu số từ
+            {t("goal.title")}
           </DialogTitle>
-          <DialogDescription>
-            Đặt số từ mục tiêu cho <code className="font-mono">/{slug}</code>. Hiển thị progress
-            bar trên Topbar và toast chúc mừng khi đạt mốc.
-          </DialogDescription>
+          <DialogDescription>{t("goal.desc", { slug })}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
@@ -81,7 +76,7 @@ export function WordGoalDialog({ open, onOpenChange, slug, currentWords }: WordG
                 onSave();
               }
             }}
-            placeholder="vd: 500"
+            placeholder={t("goal.placeholder")}
             className="font-mono"
           />
 
@@ -100,11 +95,13 @@ export function WordGoalDialog({ open, onOpenChange, slug, currentWords }: WordG
           </div>
 
           <p className="text-xs text-muted-foreground">
-            Hiện tại: <span className="tabular-nums text-foreground">{currentWords}</span> từ
+            {t("goal.current_prefix")}{" "}
+            <span className="tabular-nums text-foreground">{currentWords}</span>{" "}
+            {t("goal.current_suffix")}
             {goal && (
               <>
                 {" · "}
-                Mục tiêu cũ:{" "}
+                {t("goal.old_goal")}{" "}
                 <span className="tabular-nums text-foreground">{goal.toLocaleString()}</span>
               </>
             )}
@@ -119,14 +116,14 @@ export function WordGoalDialog({ open, onOpenChange, slug, currentWords }: WordG
             className="text-muted-foreground hover:text-destructive"
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Xoá mục tiêu
+            {t("goal.clear")}
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Huỷ
+              {t("goal.cancel")}
             </Button>
             <Button onClick={onSave} disabled={!valid}>
-              Lưu
+              {t("goal.save")}
             </Button>
           </div>
         </DialogFooter>

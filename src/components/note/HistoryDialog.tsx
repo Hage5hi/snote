@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listSnapshots, type Snapshot } from "@/lib/snapshots";
 import { toast } from "@/hooks/use-toast";
 import { SnapshotDiff } from "./SnapshotDiff";
+import { useI18n } from "@/i18n/index";
 
 interface HistoryDialogProps {
   slug: string;
@@ -29,17 +30,6 @@ function formatTs(ts: number) {
   return new Date(ts).toLocaleString();
 }
 
-function timeAgo(ts: number) {
-  const diff = Date.now() - ts;
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return "vừa xong";
-  if (m < 60) return `${m} phút trước`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} giờ trước`;
-  const d = Math.floor(h / 24);
-  return `${d} ngày trước`;
-}
-
 export function HistoryDialog({
   slug,
   doc,
@@ -47,11 +37,23 @@ export function HistoryDialog({
   onOpenChange,
   trigger = true,
 }: HistoryDialogProps) {
+  const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
   const open = openProp ?? openInternal;
   const setOpen = (v: boolean) => {
     setOpenInternal(v);
     onOpenChange?.(v);
+  };
+
+  const timeAgo = (ts: number) => {
+    const diff = Date.now() - ts;
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return t("time.just_now");
+    if (m < 60) return t("time.minutes_ago", { n: m });
+    const h = Math.floor(m / 60);
+    if (h < 24) return t("time.hours_ago", { n: h });
+    const d = Math.floor(h / 24);
+    return t("time.days_ago", { n: d });
   };
 
   const [items, setItems] = useState<Snapshot[]>([]);
@@ -64,7 +66,6 @@ export function HistoryDialog({
     if (!open) return;
     listSnapshots(slug).then((list) => {
       setItems(list);
-      // Default: compare latest snapshot vs current document.
       if (list.length > 0) {
         setDiffA(String(list[0].id ?? ""));
         setDiffB("__current__");
@@ -74,7 +75,7 @@ export function HistoryDialog({
 
   const restore = (snap: Snapshot) => {
     const ok = window.confirm(
-      `Khôi phục bản ${formatTs(snap.ts)} (${snap.charCount} ký tự)?\n\nThao tác này sẽ thay thế nội dung hiện tại trên TẤT CẢ thiết bị đang mở note.`,
+      t("history.confirm_restore", { ts: formatTs(snap.ts), chars: snap.charCount }),
     );
     if (!ok) return;
     const ytext = doc.getText("content");
@@ -82,14 +83,14 @@ export function HistoryDialog({
       ytext.delete(0, ytext.length);
       ytext.insert(0, snap.content);
     });
-    toast({ title: "Đã khôi phục", description: `${snap.charCount} ký tự` });
+    toast({ title: t("history.toast_restored"), description: t("history.toast_restored_desc", { chars: snap.charCount }) });
     setOpen(false);
     setViewing(null);
   };
 
   const getContentFor = (id: string): { text: string; label: string } => {
     if (id === "__current__") {
-      return { text: doc.getText("content").toString(), label: "hiện tại" };
+      return { text: doc.getText("content").toString(), label: t("history.label_current") };
     }
     const snap = items.find((s) => String(s.id) === id);
     if (!snap) return { text: "", label: "?" };
@@ -98,6 +99,7 @@ export function HistoryDialog({
 
   const a = getContentFor(diffA);
   const b = getContentFor(diffB);
+  const chars = t("history.chars_short");
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -105,36 +107,28 @@ export function HistoryDialog({
         <Tooltip>
           <TooltipTrigger asChild>
             <DialogTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                aria-label="Lịch sử (Khôi phục)"
-              >
+              <Button variant="ghost" size="icon" className="h-7 w-7" aria-label={t("history.aria")}>
                 <Clock className="h-4 w-4" />
               </Button>
             </DialogTrigger>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Lịch sử & Khôi phục</TooltipContent>
+          <TooltipContent side="bottom">{t("history.tooltip")}</TooltipContent>
         </Tooltip>
       )}
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Lịch sử cục bộ</DialogTitle>
-          <DialogDescription>
-            App tự động lưu một bản chụp mỗi 10 phút (tối đa 10 bản, chỉ trên thiết bị này).
-            Dùng để khôi phục nếu lỡ tay xoá hoặc so sánh diff.
-          </DialogDescription>
+          <DialogTitle>{t("history.title")}</DialogTitle>
+          <DialogDescription>{t("history.desc")}</DialogDescription>
         </DialogHeader>
 
         {viewing ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>
-                {formatTs(viewing.ts)} • {viewing.charCount} ký tự
+                {formatTs(viewing.ts)} • {viewing.charCount} {chars}
               </span>
               <Button variant="ghost" size="sm" onClick={() => setViewing(null)}>
-                ← Quay lại
+                {t("history.back")}
               </Button>
             </div>
             <ScrollArea className="h-[50vh] rounded-md border border-border bg-muted/30 p-3">
@@ -145,22 +139,20 @@ export function HistoryDialog({
             <div className="flex justify-end">
               <Button onClick={() => restore(viewing)}>
                 <RotateCcw className="h-4 w-4" />
-                Khôi phục bản này
+                {t("history.restore_btn")}
               </Button>
             </div>
           </div>
         ) : items.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">
-            Chưa có bản chụp nào. Bản đầu tiên sẽ được tạo sau ~10 phút.
-          </p>
+          <p className="py-8 text-center text-sm text-muted-foreground">{t("history.empty")}</p>
         ) : (
           <Tabs value={tab} onValueChange={(v) => setTab(v as "list" | "diff")}>
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="list">
-                <Clock className="h-3.5 w-3.5" /> Snapshots
+                <Clock className="h-3.5 w-3.5" /> {t("history.tab.list")}
               </TabsTrigger>
               <TabsTrigger value="diff">
-                <GitCompare className="h-3.5 w-3.5" /> Diff
+                <GitCompare className="h-3.5 w-3.5" /> {t("history.tab.diff")}
               </TabsTrigger>
             </TabsList>
 
@@ -173,21 +165,21 @@ export function HistoryDialog({
                         <div className="flex items-baseline gap-2">
                           <span className="text-sm font-medium">{timeAgo(snap.ts)}</span>
                           <span className="text-[11px] text-muted-foreground">
-                            {formatTs(snap.ts)} • {snap.charCount} ký tự
+                            {formatTs(snap.ts)} • {snap.charCount} {chars}
                           </span>
                         </div>
                         <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                          {snap.preview || <em>(trống)</em>}
+                          {snap.preview || <em>{t("history.preview_empty")}</em>}
                         </p>
                       </div>
                       <div className="flex shrink-0 gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setViewing(snap)}>
                           <Eye className="h-3.5 w-3.5" />
-                          Xem
+                          {t("history.view")}
                         </Button>
                         <Button variant="outline" size="sm" onClick={() => restore(snap)}>
                           <RotateCcw className="h-3.5 w-3.5" />
-                          Khôi phục
+                          {t("history.restore")}
                         </Button>
                       </div>
                     </li>
@@ -199,7 +191,7 @@ export function HistoryDialog({
             <TabsContent value="diff" className="space-y-3">
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <label className="space-y-1">
-                  <span className="text-muted-foreground">Bản cũ</span>
+                  <span className="text-muted-foreground">{t("history.label_old")}</span>
                   <select
                     value={diffA}
                     onChange={(e) => setDiffA(e.target.value)}
@@ -207,33 +199,28 @@ export function HistoryDialog({
                   >
                     {items.map((s) => (
                       <option key={s.id} value={String(s.id)}>
-                        {timeAgo(s.ts)} ({s.charCount} kt)
+                        {timeAgo(s.ts)} ({s.charCount} {chars})
                       </option>
                     ))}
                   </select>
                 </label>
                 <label className="space-y-1">
-                  <span className="text-muted-foreground">Bản mới</span>
+                  <span className="text-muted-foreground">{t("history.label_new")}</span>
                   <select
                     value={diffB}
                     onChange={(e) => setDiffB(e.target.value)}
                     className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
                   >
-                    <option value="__current__">Phiên bản hiện tại (live)</option>
+                    <option value="__current__">{t("history.option_current")}</option>
                     {items.map((s) => (
                       <option key={s.id} value={String(s.id)}>
-                        {timeAgo(s.ts)} ({s.charCount} kt)
+                        {timeAgo(s.ts)} ({s.charCount} {chars})
                       </option>
                     ))}
                   </select>
                 </label>
               </div>
-              <SnapshotDiff
-                oldText={a.text}
-                newText={b.text}
-                oldLabel={a.label}
-                newLabel={b.label}
-              />
+              <SnapshotDiff oldText={a.text} newText={b.text} oldLabel={a.label} newLabel={b.label} />
             </TabsContent>
           </Tabs>
         )}
