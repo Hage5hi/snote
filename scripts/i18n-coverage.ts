@@ -11,6 +11,7 @@ import { dict, SUPPORTED_LANGS } from "../src/i18n";
 
 const MIN_COVERAGE_PCT = Number(process.env.I18N_MIN_COVERAGE ?? "100");
 const ALLOW_PLACEHOLDER_MISMATCH = process.env.I18N_ALLOW_PLACEHOLDER_MISMATCH === "1";
+const VERBOSE = process.env.I18N_VERBOSE === "1" || process.argv.includes("--verbose");
 
 const PLACEHOLDER_RE = /\{(\w+)\}/g;
 
