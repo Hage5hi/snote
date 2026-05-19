@@ -118,7 +118,7 @@ export function build(
   report: AllowlistReport | null = loadReport(),
   opts: BuildPRCommentOpts = {},
 ): string {
-  const { runUrl, artifactsUrl, bundleUrl } = buildUrls(ctx);
+  const { runUrl, artifactsUrl, bundleUrl, summaryUrl } = buildUrls(ctx);
   const lines: string[] = [];
   lines.push("### 🌐 i18n audit + allowlist artifacts");
   lines.push("");
@@ -161,7 +161,13 @@ export function build(
     "**Artifact:** `i18n-report` — contains `reports/i18n-audit-diff.{json,md}`, `reports/i18n-report.{json,html}`, `reports/i18n-allowlist-report.{json,md}`, `.lintrc-i18n-allowlist.json`.",
   );
   lines.push("");
-  lines.push(`- 📦 [Download artifact bundle](${bundleUrl})`);
+  // Always render BOTH artifact links so reviewers can grab either the
+  // machine-readable summary JSON (for downstream tooling) or the full
+  // report bundle (for in-depth diffing) directly from the comment.
+  lines.push(`- 📦 [Download full report bundle (\`i18n-report\`)](${bundleUrl})`);
+  lines.push(
+    `- 📄 [Download concise summary JSON (\`i18n-allowlist-summary.json\`)](${summaryUrl})`,
+  );
   lines.push(`- 🧾 [All artifacts for this run](${artifactsUrl})`);
   lines.push(`- 🔎 [Job logs](${runUrl})`);
 
