@@ -28,6 +28,7 @@ import { useEink } from "@/hooks/use-eink";
 import { useVimMode } from "@/hooks/use-vim-mode";
 import { usePagination } from "@/hooks/use-pagination";
 import { supabase } from "@/integrations/supabase/client";
+import { useI18n } from "@/i18n";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 
@@ -64,6 +65,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { goal } = useWordGoal(slug);
+  const { t } = useI18n();
+  const tRef = useRef(t);
+  useEffect(() => { tRef.current = t; }, [t]);
 
   // Mount Y.Doc IMMEDIATELY (synchronously) — no waiting on enc-meta or any
   // fetch. The doc-cache returns the previously-warm doc when navigating
@@ -82,11 +86,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   useEffect(() => {
     if (consumeGoalReached(slug, counts.words, goal)) {
       toast({
-        title: "🎯 Đạt mục tiêu!",
-        description: `${counts.words.toLocaleString()} / ${goal!.toLocaleString()} từ`,
+        title: t("note.goal_reached"),
+        description: `${counts.words.toLocaleString()} / ${goal!.toLocaleString()}`,
       });
     }
-  }, [slug, counts.words, goal]);
+  }, [slug, counts.words, goal, t]);
 
   const editorRef = useRef<EditorHandle>(null);
   const { zen, toggle: toggleZen } = useZenMode();
@@ -204,8 +208,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const unsubSync = provider.onSyncEvent((ev) => {
       if (ev.type === "recovered") {
         toast({
-          title: "Đã đồng bộ từ thiết bị khác",
-          description: `Hợp nhất ${ev.bytes} byte mới từ cloud.`,
+          title: tRef.current("toast.synced_remote"),
+          description: tRef.current("toast.synced_remote_desc", { bytes: ev.bytes }),
         });
       }
     });
@@ -346,7 +350,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   const noteUrl = `https://syrin.online/${slug}`;
   const noteTitle = `${slug} — Syrin Notes`;
-  const noteDesc = `Note "${slug}" trên Syrin Notes — markdown realtime, tự động lưu, đồng bộ giữa các thiết bị.`;
+  const noteDesc = `Note "${slug}" on Syrin Notes — realtime markdown, autosave, synced across devices.`;
 
   return (
     <div className="flex h-svh flex-col bg-background">

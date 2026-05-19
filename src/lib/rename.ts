@@ -1,6 +1,9 @@
 // Rename or duplicate a note's slug. Both operations copy the full row
 // (including encryption metadata so the same password unlocks the new URL).
 // Rename additionally deletes the source and migrates localStorage.
+//
+// Error messages are kept in English here; UI callers translate via i18n
+// before showing them in toasts.
 import { supabase } from "@/integrations/supabase/client";
 import { renamePinned, renameRecent } from "@/lib/recent-notes";
 import { renameShareToken } from "@/lib/share-tokens";
@@ -30,7 +33,7 @@ async function copyNoteRow(sourceSlug: string, targetSlug: string) {
     .eq("slug", sourceSlug)
     .maybeSingle();
   if (fetchErr) throw fetchErr;
-  if (!src) throw new Error("Không tìm thấy note nguồn");
+  if (!src) throw new Error("Source note not found");
 
   const { error: insertErr } = await supabase.from("notes").upsert(
     {
@@ -51,7 +54,7 @@ async function copyNoteRow(sourceSlug: string, targetSlug: string) {
 
 export async function renameNote(oldSlug: string, newSlug: string): Promise<void> {
   if (oldSlug === newSlug) return;
-  if (!SLUG_RE.test(newSlug)) throw new Error("Slug không hợp lệ");
+  if (!SLUG_RE.test(newSlug)) throw new Error("Invalid slug");
 
   await copyNoteRow(oldSlug, newSlug);
 
@@ -79,7 +82,7 @@ export async function renameNote(oldSlug: string, newSlug: string): Promise<void
  * Caller is responsible for navigating to `/<newSlug>` afterwards.
  */
 export async function duplicateNote(sourceSlug: string, newSlug: string): Promise<void> {
-  if (sourceSlug === newSlug) throw new Error("Slug mới phải khác slug nguồn");
-  if (!SLUG_RE.test(newSlug)) throw new Error("Slug không hợp lệ");
+  if (sourceSlug === newSlug) throw new Error("New slug must differ from source");
+  if (!SLUG_RE.test(newSlug)) throw new Error("Invalid slug");
   await copyNoteRow(sourceSlug, newSlug);
 }

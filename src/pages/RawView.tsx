@@ -32,7 +32,7 @@ export default function RawView() {
     let cancelled = false;
     (async () => {
       if (!SLUG_RE.test(slug)) {
-        setError("Slug không hợp lệ.");
+        setError("Invalid slug.");
         return;
       }
       const { data, error: dbError } = await supabase
@@ -46,7 +46,7 @@ export default function RawView() {
         return;
       }
       if (!data) {
-        setError(`Note /${slug} không tồn tại.`);
+        setError(`Note /${slug} does not exist.`);
         return;
       }
       if (!data.is_encrypted) {
@@ -76,18 +76,18 @@ export default function RawView() {
       }
       const key = hashKey;
       if (!key) {
-        setError("Note này được mã hoá. Thêm `#<khoá>` vào URL để xem.");
+        setError("This note is encrypted. Append `#<key>` to the URL to view.");
         return;
       }
       if (!data.enc_salt || !data.enc_check || !data.ydoc_state) {
-        setError("Thiếu metadata mã hoá.");
+        setError("Missing encryption metadata.");
         return;
       }
       try {
         const cryptoKey = await deriveKey(key, data.enc_salt, iterationsFor(data.enc_iterations));
         const ok = await verifyCheck(cryptoKey, data.enc_check);
         if (!ok) {
-          setError("Khoá không đúng.");
+          setError("Wrong key.");
           return;
         }
         // ydoc_state is encrypted Y.update, but for raw plaintext output we
@@ -104,7 +104,7 @@ export default function RawView() {
         tmp.destroy();
       } catch (e) {
         console.error(e);
-        setError("Giải mã thất bại.");
+        setError("Decryption failed.");
       }
     })();
     return () => {
@@ -115,14 +115,14 @@ export default function RawView() {
   const head = (
     <Helmet>
       <title>{`Raw markdown: /${slug}.md — Syrin Notes`}</title>
-      <meta name="description" content={`Xem nội dung markdown thuần (plaintext) của note /${slug} trên Syrin Notes — không render, không UI.`} />
+      <meta name="description" content={`View plain markdown (plaintext) of note /${slug} on Syrin Notes — no rendering, no UI.`} />
       <link rel="canonical" href={`https://snote.lovable.app/${slug}.md`} />
       <meta name="robots" content="noindex, follow" />
       <meta property="og:title" content={`Raw markdown: /${slug}.md — Syrin Notes`} />
-      <meta property="og:description" content={`Plaintext markdown của note /${slug} trên Syrin Notes.`} />
+      <meta property="og:description" content={`Plaintext markdown of note /${slug} on Syrin Notes.`} />
       <meta property="og:url" content={`https://snote.lovable.app/${slug}.md`} />
       <meta name="twitter:title" content={`Raw markdown: /${slug}.md — Syrin Notes`} />
-      <meta name="twitter:description" content={`Plaintext markdown của note /${slug}.`} />
+      <meta name="twitter:description" content={`Plaintext markdown of note /${slug}.`} />
     </Helmet>
   );
   if (error) {

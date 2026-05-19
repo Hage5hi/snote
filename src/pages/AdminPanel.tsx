@@ -151,8 +151,8 @@ export default function AdminPanel() {
     } catch (e) {
       const msg = String((e as Error | undefined)?.message ?? e);
       toast({
-        title: "Không tải được danh sách",
-        description: msg.includes("unauthorized") ? "Khoá admin sai." : msg,
+        title: "Failed to load list",
+        description: msg.includes("unauthorized") ? "Wrong admin key." : msg,
         variant: "destructive",
       });
       return false;
@@ -194,11 +194,11 @@ export default function AdminPanel() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast({ title: `Đã xoá ${data.deleted} note` });
+      toast({ title: `Deleted ${data.deleted} note(s)` });
       await fetchList(pass, search, tagFilter);
     } catch (e) {
       toast({
-        title: "Xoá thất bại",
+        title: "Delete failed",
         description: String((e as Error | undefined)?.message ?? e),
         variant: "destructive",
       });
@@ -216,10 +216,10 @@ export default function AdminPanel() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      toast({ title: `Đã dọn ${data.deleted} note rỗng` });
+      toast({ title: `Cleaned ${data.deleted} empty note(s)` });
       await fetchList(pass, search, tagFilter);
     } catch (e) {
-      toast({ title: "Cleanup lỗi", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
+      toast({ title: "Cleanup error", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -248,11 +248,11 @@ export default function AdminPanel() {
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={runCleanup} disabled={loading}>
             <Sparkles className="h-3.5 w-3.5" />
-            Dọn note rỗng
+            Clean empty notes
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setRotateOpen(true)} disabled={loading}>
             <KeyRound className="h-3.5 w-3.5" />
-            Đổi khoá
+            Rotate key
           </Button>
           <Button size="sm" variant="ghost" onClick={() => fetchList(pass, search, tagFilter)} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" />
@@ -280,12 +280,12 @@ export default function AdminPanel() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Tìm theo slug hoặc nội dung…"
+              placeholder="Search by slug or content…"
               className="border-0 focus-visible:ring-0"
             />
           </div>
           <Button type="submit" variant="outline" disabled={loading}>
-            Tìm
+            Search
           </Button>
         </form>
 
@@ -322,7 +322,7 @@ export default function AdminPanel() {
             onCheckedChange={toggleAll}
           />
           <span className="text-muted-foreground">
-            {selected.size} đang chọn / {items.length} hiển thị
+            {selected.size} selected / {items.length} shown
           </span>
           <div className="ml-auto flex gap-2">
             <Button
@@ -332,7 +332,7 @@ export default function AdminPanel() {
               onClick={() => setConfirmOpen("selected")}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Xoá đã chọn
+              Delete selected
             </Button>
             <Button
               size="sm"
@@ -340,7 +340,7 @@ export default function AdminPanel() {
               disabled={loading || items.length === 0}
               onClick={() => setConfirmOpen("all")}
             >
-              Xoá TẤT CẢ
+              Delete ALL
             </Button>
           </div>
         </div>
@@ -370,7 +370,7 @@ export default function AdminPanel() {
                   </span>
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {n.preview || "(rỗng)"}
+                  {n.preview || "(empty)"}
                 </p>
                 {n.tags && n.tags.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
@@ -390,7 +390,7 @@ export default function AdminPanel() {
           ))}
           {items.length === 0 && !loading && (
             <li className="px-3 py-6 text-center text-sm text-muted-foreground">
-              Không có note nào.
+              No notes.
             </li>
           )}
         </ul>
@@ -400,19 +400,19 @@ export default function AdminPanel() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirmOpen === "all" ? "Xoá TẤT CẢ note?" : `Xoá ${selected.size} note?`}
+              {confirmOpen === "all" ? "Delete ALL notes?" : `Delete ${selected.size} note(s)?`}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              Hành động này không thể hoàn tác. Nội dung sẽ bị xoá vĩnh viễn khỏi server.
+              This action cannot be undone. Content will be permanently deleted from the server.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Huỷ</AlertDialogCancel>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
               onClick={() => confirmOpen && doDelete(confirmOpen)}
             >
-              Xoá
+              Delete
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
