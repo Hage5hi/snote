@@ -139,6 +139,16 @@ if (invokedDirectly) {
     process.exit(2);
   }
 
+  // Per-kind tallies so reviewers see "parity: 1 ok / 0 failed,
+  // flags: 0 ok / 1 failed, failure: missing(allowed)" at a glance
+  // instead of having to count log lines.
+  type Tally = { ok: number; failed: number; missing: number };
+  const tallies: Record<string, Tally> = {};
+  const bump = (kind: string, key: keyof Tally) => {
+    tallies[kind] = tallies[kind] ?? { ok: 0, failed: 0, missing: 0 };
+    tallies[kind][key] += 1;
+  };
+
   let hadError = false;
   for (const file of files) {
     const kind: BreakdownKind | "unknown" =
@@ -155,22 +165,34 @@ if (invokedDirectly) {
     if (!existsSync(file)) {
       if (allowMissing) {
         console.log(`✓ ${file} — missing (allowed)`);
+        bump(kind, "missing");
         continue;
       }
       console.error(`::error file=${file}::breakdown JSON missing`);
       hadError = true;
+      bump(kind, "failed");
       continue;
     }
     const raw = readFileSync(file, "utf8");
     const result = validateBreakdown(file, raw, expected, kind);
     if (result.ok) {
       console.log(`✓ ${file} — kind=${kind}, schemaVersion=${expected}, shape OK`);
+      bump(kind, "ok");
     } else {
       hadError = true;
+      bump(kind, "failed");
       for (const err of result.errors) {
         console.error(`::error file=${file}::breakdown validation failed (kind=${kind}) — ${err}`);
       }
     }
   }
+
+  // Per-kind summary line — printed even on success so dashboards can
+  // grep `kind=parity ok=` deterministically.
+  console.log("--- ci-validate-breakdown-json summary ---");
+  for (const [kind, t] of Object.entries(tallies)) {
+    console.log(`kind=${kind} ok=${t.ok} failed=${t.failed} missing=${t.missing}`);
+  }
+
   process.exit(hadError ? 1 : 0);
 }

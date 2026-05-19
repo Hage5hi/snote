@@ -167,7 +167,13 @@ jobs:
       # posting links in the PR comment, so reviewers never get a
       # malformed payload from a silently-broken renderer.
       - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        id: validate_breakdown
         name: Validate failure-breakdown.json shape
+        # `continue-on-error: true` so we can gate the downstream PR
+        # comment on this step's outcome instead of failing the whole
+        # workflow before reviewers see the artifacts. The gate below
+        # still fails the job at the end if validation didn't pass.
+        continue-on-error: true
         run: bun run scripts/ci-validate-breakdown-json.ts reports/_ci/failure-breakdown.json
       # Per-OS step-summary artifact so reviewers can download the
       # rendered markdown directly (mirrors what GitHub displays in the
@@ -229,14 +235,9 @@ jobs:
           # Idempotent: strip any prior debug-links block (delimited by
           # the HTML-comment markers below) before appending the fresh
           # one, so reruns of this step don't accumulate duplicates.
-          if [ -f reports/_ci/step-summary.md ]; then
-            awk '
-              /<!-- ci-debug-links:begin -->/ {skip=1}
-              !skip {print}
-              /<!-- ci-debug-links:end -->/ {skip=0; next}
-            ' reports/_ci/step-summary.md > reports/_ci/step-summary.md.tmp \
-              && mv reports/_ci/step-summary.md.tmp reports/_ci/step-summary.md
-          fi
+          # Logic + markers are unit-tested in scripts/__tests__/
+          # ci-strip-debug-links.test.ts.
+          bun run scripts/ci-strip-debug-links.ts reports/_ci/step-summary.md
           {
             echo ''
             echo '<!-- ci-debug-links:begin -->'
@@ -283,6 +284,7 @@ jobs:
           STEP_SUMMARY_ARTIFACT_ID: ${{ steps.upload_step_summary_md.outputs.artifact-id }}
           FAILURE_BREAKDOWN_ARTIFACT_ID: ${{ steps.upload_failure_breakdown_json.outputs.artifact-id }}
           DEBUG_BUNDLE_ARTIFACT_ID: ${{ steps.upload_debug_bundle.outputs.artifact-id }}
+          VALIDATE_OUTCOME: ${{ steps.validate_breakdown.outcome }}
         run: |
           mkdir -p reports/_ci
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
@@ -291,24 +293,41 @@ jobs:
             if [ -n "$id" ]; then
               echo "- [${label}](${RUN_URL}/artifacts/${id}) — ${hint}"
             else
-              echo "- _${label}: artifact not uploaded for this run_"
+              echo "- _${label}: artifact not uploaded for this run_ — ${hint}"
             fi
           }
+          # Hard gate: if the breakdown-JSON validator failed, do NOT post
+          # links to potentially-malformed artifacts. The sticky comment is
+          # still updated in-place with a clear "validation failed" note
+          # so reviewers aren't left staring at a stale link from earlier.
+          if [ "${VALIDATE_OUTCOME}" != "success" ]; then
+            {
+              echo "### i18n CLI test coverage"
+              echo ""
+              echo "❌ **Breakdown JSON validation failed** — artifact links are suppressed to avoid pointing reviewers at malformed payloads."
+              echo ""
+              echo "See the [\`Validate failure-breakdown.json shape\`](${RUN_URL}) step in the run logs for the specific schema / shape error, then re-run the job once it's fixed."
+            } > reports/_ci/coverage-pr-comment.md
+            echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
+            exit 0
+          fi
           {
             echo "### i18n CLI test coverage"
             echo ""
-            if [ -n "${COVERAGE_ARTIFACT_ID:-}" ]; then
-              echo "[📊 Download HTML coverage report](${RUN_URL}/artifacts/${COVERAGE_ARTIFACT_ID}) — open \`index.html\` locally for a browsable view of \`scripts/i18n-allowlist-*.ts\`."
-            else
-              echo "_⚠️ HTML coverage artifact was not uploaded for this run_ — the coverage step may have been skipped, or \`coverage/i18n-cli/\` was empty. Check the [run logs](${RUN_URL}) for details."
-            fi
+            link_or_missing "${COVERAGE_ARTIFACT_ID:-}" "📊 HTML coverage report" "browsable view of \`scripts/i18n-allowlist-*.ts\`; open \`index.html\` after download"
             echo ""
             echo "#### Debugging artifacts"
             link_or_missing "${DEBUG_BUNDLE_ARTIFACT_ID:-}" "📦 debug-bundle" "all of the below + raw vitest log in one zip"
-            link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 Rendered step-summary.md" "same markdown GitHub shows in the job UI"
+            link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 step-summary.md" "rendered markdown GitHub shows in the job UI"
             link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 failure-breakdown.json" "machine-readable suite/test/diff payload (schemaVersion ≥ 1)"
             echo ""
-            echo "_Per-OS parity & flags breakdown JSON artifacts (\`i18n-cli-failure-breakdown-json-<os>\`) are uploaded by the matrix job — see the [run page](${RUN_URL}#artifacts) for direct downloads._"
+            echo "#### Per-OS matrix artifacts"
+            echo "Uploaded by the i18n CLI matrix job — one zip per OS, each containing parity + flags breakdown JSON, the per-OS step summary, and the raw vitest log:"
+            echo "- \`i18n-cli-debug-bundle-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📦 debug-bundle per OS"
+            echo "- \`i18n-cli-failure-breakdown-json-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 🧩 parity + flags breakdown JSON per OS"
+            echo "- \`i18n-cli-step-summary-ubuntu-latest\` / \`-macos-latest\` / \`-windows-latest\` — 📝 step-summary.md per OS"
+            echo ""
+            echo "Direct downloads: [run artifacts page](${RUN_URL}#artifacts)."
           } > reports/_ci/coverage-pr-comment.md
           echo "COVERAGE_COMMENT_READY=1" >> "$GITHUB_ENV"
       - if: always() && github.event_name == 'pull_request' && env.COVERAGE_COMMENT_READY == '1'
@@ -476,8 +495,15 @@ jobs:
         with:
           header: i18n-report
           path: reports/_i18n-allowlist-pr-comment.md
-      # Final gate — runs AFTER artifacts are uploaded and the PR comment is
-      # posted, so reviewers still get the reports even when the gate fails.
+      # Final gates — run AFTER artifacts are uploaded and the PR comment
+      # is posted so reviewers still get the reports even when a gate fails.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        name: Enforce breakdown-JSON validation gate
+        run: |
+          if [ "${{ steps.validate_breakdown.outcome }}" != "success" ]; then
+            echo "::error::failure-breakdown.json validation failed — see the 'Validate failure-breakdown.json shape' step above. PR comment links were suppressed for this run."
+            exit 1
+          fi
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
         name: Enforce allowlist gate
         run: |
@@ -691,15 +717,9 @@ jobs:
           }
           # Idempotent: strip any prior debug-links block (delimited by
           # the HTML-comment markers below) before appending the fresh
-          # one, so reruns don't accumulate duplicates in step-summary.md.
-          if [ -f reports/_ci/step-summary.md ]; then
-            awk '
-              /<!-- ci-debug-links:begin -->/ {skip=1}
-              !skip {print}
-              /<!-- ci-debug-links:end -->/ {skip=0; next}
-            ' reports/_ci/step-summary.md > reports/_ci/step-summary.md.tmp \
-              && mv reports/_ci/step-summary.md.tmp reports/_ci/step-summary.md
-          fi
+          # one, so reruns don't accumulate duplicates. Logic + markers
+          # are unit-tested in scripts/__tests__/ci-strip-debug-links.test.ts.
+          bun run scripts/ci-strip-debug-links.ts reports/_ci/step-summary.md
           {
             echo ''
             echo '<!-- ci-debug-links:begin -->'
