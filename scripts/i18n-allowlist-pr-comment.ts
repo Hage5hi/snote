@@ -93,6 +93,15 @@ function build(): string {
   lines.push(`- 📦 [Download artifact bundle](${bundleUrl})`);
   lines.push(`- 🧾 [All artifacts for this run](${artifactsUrl})`);
   lines.push(`- 🔎 [Job logs](${runUrl})`);
+
+  if (ctx.missing.length) {
+    lines.push("");
+    lines.push(
+      `> ℹ️ Some CI env vars were missing — links may be incomplete: \`${ctx.missing.join("`, `")}\`. ` +
+        "This usually means the script was run outside of GitHub Actions.",
+    );
+  }
+
   lines.push("");
   lines.push("_Posted automatically — updates in place on each push._");
   return lines.join("\n");
