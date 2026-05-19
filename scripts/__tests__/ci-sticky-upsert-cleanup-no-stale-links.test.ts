@@ -89,8 +89,8 @@ describe("E2E: sticky upsert across reruns with pre-existing duplicates", () => 
     expect(t.comments.find((c) => c.id === 15)!.body).toBe("unrelated reviewer comment");
 
     const finalSticky = t.comments.find((c) => c.id === 14)!;
-    // Final body == rerun B's body, nothing from rerun A or the seeds.
-    expect(finalSticky.body).toBe(bodyB);
+    // Final body == marker + rerun B's body, nothing from rerun A or seeds.
+    expect(finalSticky.body).toBe(`${MARKER}\n${bodyB}`);
     void sticky;
   });
 
