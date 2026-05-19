@@ -222,35 +222,17 @@ jobs:
           STEP_SUMMARY_ARTIFACT_ID: ${{ steps.upload_step_summary_md.outputs.artifact-id }}
           FAILURE_BREAKDOWN_ARTIFACT_ID: ${{ steps.upload_failure_breakdown_json.outputs.artifact-id }}
           DEBUG_BUNDLE_ARTIFACT_ID: ${{ steps.upload_debug_bundle.outputs.artifact-id }}
+        # Idempotent + marker-pinned: the helper script renders the
+        # EXACT begin/end markers that ci-strip-debug-links removes,
+        # so reruns replace (never stack) the debug-links block.
+        # Logic + markers are unit-tested in scripts/__tests__/
+        # ci-append-debug-links.test.ts.
         run: |
-          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          link_or_missing() {
-            local id="$1" label="$2"
-            if [ -n "$id" ]; then
-              echo "- [${label}](${RUN_URL}/artifacts/${id})"
-            else
-              echo "- _${label}: artifact not uploaded_"
-            fi
-          }
-          # Idempotent: strip any prior debug-links block (delimited by
-          # the HTML-comment markers below) before appending the fresh
-          # one, so reruns of this step don't accumulate duplicates.
-          # Logic + markers are unit-tested in scripts/__tests__/
-          # ci-strip-debug-links.test.ts.
-          bun run scripts/ci-strip-debug-links.ts reports/_ci/step-summary.md
-          {
-            echo ''
-            echo '<!-- ci-debug-links:begin -->'
-            echo '---'
-            echo ''
-            echo '#### Debug artifacts'
-            link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 step-summary.md"
-            link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 failure-breakdown.json"
-            link_or_missing "${DEBUG_BUNDLE_ARTIFACT_ID:-}" "📦 debug-bundle (all of the above + raw log)"
-            echo '<!-- ci-debug-links:end -->'
-          } >> reports/_ci/step-summary.md
-          # Also surface the same links in the live GitHub step summary.
-          tail -n 12 reports/_ci/step-summary.md >> "$GITHUB_STEP_SUMMARY" || true
+          bun run scripts/ci-append-debug-links.ts reports/_ci/step-summary.md \
+            --header "Debug artifacts" \
+            --link id="${STEP_SUMMARY_ARTIFACT_ID:-}" label="📝 step-summary.md" \
+            --link id="${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" label="🧩 failure-breakdown.json" \
+            --link id="${DEBUG_BUNDLE_ARTIFACT_ID:-}" label="📦 debug-bundle (all of the above + raw log)"
 
       # Coverage artifacts for the CLI suites, only on PRs.
       #   • lcov + text → tooling / inline review
