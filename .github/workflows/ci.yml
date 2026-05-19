@@ -654,32 +654,11 @@ jobs:
           FAILURE_BREAKDOWN_ARTIFACT_ID: ${{ steps.upload_failure_breakdown_json_matrix.outputs.artifact-id }}
           DEBUG_BUNDLE_ARTIFACT_ID: ${{ steps.upload_debug_bundle_matrix.outputs.artifact-id }}
         run: |
-          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-          link_or_missing() {
-            local id="$1" label="$2"
-            if [ -n "$id" ]; then
-              echo "- [${label}](${RUN_URL}/artifacts/${id})"
-            else
-              echo "- _${label}: artifact not uploaded_"
-            fi
-          }
-          # Idempotent: strip any prior debug-links block (delimited by
-          # the HTML-comment markers below) before appending the fresh
-          # one, so reruns don't accumulate duplicates. Logic + markers
-          # are unit-tested in scripts/__tests__/ci-strip-debug-links.test.ts.
-          bun run scripts/ci-strip-debug-links.ts reports/_ci/step-summary.md
-          {
-            echo ''
-            echo '<!-- ci-debug-links:begin -->'
-            echo '---'
-            echo ''
-            echo "#### Debug artifacts (${{ matrix.os }})"
-            link_or_missing "${STEP_SUMMARY_ARTIFACT_ID:-}" "📝 step-summary.md"
-            link_or_missing "${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" "🧩 parity/flags breakdown JSON"
-            link_or_missing "${DEBUG_BUNDLE_ARTIFACT_ID:-}" "📦 debug-bundle (all of the above + raw logs)"
-            echo '<!-- ci-debug-links:end -->'
-          } >> reports/_ci/step-summary.md
-          tail -n 12 reports/_ci/step-summary.md >> "$GITHUB_STEP_SUMMARY" || true
+          bun run scripts/ci-append-debug-links.ts reports/_ci/step-summary.md \
+            --header "Debug artifacts (${{ matrix.os }})" \
+            --link id="${STEP_SUMMARY_ARTIFACT_ID:-}" label="📝 step-summary.md" \
+            --link id="${FAILURE_BREAKDOWN_ARTIFACT_ID:-}" label="🧩 parity/flags breakdown JSON" \
+            --link id="${DEBUG_BUNDLE_ARTIFACT_ID:-}" label="📦 debug-bundle (all of the above + raw logs)"
       - if: failure() && (steps.cli_parity.outcome == 'failure' || steps.cli_flags.outcome == 'failure')
         uses: actions/upload-artifact@v4
         with:
