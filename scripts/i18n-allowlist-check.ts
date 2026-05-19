@@ -85,9 +85,18 @@ function suggestKey(actual: string): string | undefined {
   return best?.k;
 }
 
+function pathOf(err: ErrorObject): string {
+  return (err.instancePath ?? (err as unknown as { dataPath?: string }).dataPath ?? "") || "";
+}
+
+function entryIndexOf(p: string): number | null {
+  const m = p.match(/^\/entries\/(\d+)/) ?? p.match(/^\.entries\[(\d+)\]/);
+  return m ? Number(m[1]) : null;
+}
+
 function formatAjvError(err: ErrorObject): string {
   const e = err as DefinedError;
-  const where = (err.instancePath ?? (err as unknown as {dataPath?: string}).dataPath ?? "") || "(root)";
+  const where = pathOf(err) || "(root)";
   switch (e.keyword) {
     case "required":
       return `${where}: missing required field "${e.params.missingProperty}" (expected one of: ${ENTRY_KEYS.join(", ")})`;
@@ -110,8 +119,8 @@ function formatAjvError(err: ErrorObject): string {
 function groupSchemaErrors(errors: ErrorObject[]): GroupedError[] {
   const map = new Map<string, string[]>();
   for (const err of errors) {
-    const m = (err.instancePath ?? (err as unknown as {dataPath?: string}).dataPath ?? "").match(/^\/entries\/(\d+)/);
-    const key = m ? `entries[${m[1]}]` : "(root)";
+    const idx = entryIndexOf(pathOf(err));
+    const key = idx !== null ? `entries[${idx}]` : "(root)";
     if (!map.has(key)) map.set(key, []);
     map.get(key)!.push(formatAjvError(err));
   }
