@@ -12,7 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 function Wrap({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider>
-      <Wrap>{children}</Wrap>
+      <I18nProvider>{children}</I18nProvider>
     </TooltipProvider>
   );
 }
