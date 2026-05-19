@@ -7,6 +7,7 @@ on:
 
 jobs:
   check:
+    name: Lint · typecheck · test · build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,3 +19,32 @@ jobs:
       - run: bunx tsc --noEmit
       - run: bun run test
       - run: bun run build:check
+
+  i18n-focused:
+    # Runs the i18n suite (dict coverage, IP fallback, cross-tab storage sync,
+    # Export/Help/Toast localization) on every PR that touches translations or
+    # UI components. Mirrors `check` but is fast and scoped — easy to require
+    # as a status check on i18n-sensitive changes.
+    name: i18n · IP fallback · storage sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            i18n:
+              - 'src/i18n/**'
+              - 'src/components/LanguageToggle.tsx'
+              - 'src/components/note/topbar/**'
+              - 'src/components/note/*.tsx'
+              - 'src/pages/Home.tsx'
+              - 'src/App.tsx'
+      - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
+        run: bun install --frozen-lockfile
+      - if: steps.changes.outputs.i18n == 'true' || github.event_name == 'push'
+        run: bunx vitest run src/i18n/__tests__/
