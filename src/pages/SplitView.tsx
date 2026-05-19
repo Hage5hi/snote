@@ -58,6 +58,7 @@ export default function SplitView() {
         <title>{`Split view: /${left} + /${right} — Syrin Notes`}</title>
         <meta name="description" content={`Compare two markdown notes side by side (/${left} and /${right}) with synced scrolling on Syrin Notes.`} />
         <link rel="canonical" href={`https://snote.lovable.app/${left}+${right}`} />
+        {/* eslint-disable-next-line no-restricted-syntax -- SEO control value */}
         <meta name="robots" content="noindex, follow" />
         <meta property="og:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
         <meta property="og:description" content={`Compare two markdown notes side by side (/${left} and /${right}) with synced scrolling.`} />
