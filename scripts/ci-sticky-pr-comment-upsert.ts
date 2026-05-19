@@ -124,20 +124,22 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
   const requestedStrategy = opts.cleanupStrategy ?? DEFAULT_CLEANUP_STRATEGY;
   const strategy: CleanupStrategy =
     requestedStrategy === "delete" && typeof api.remove !== "function" ? "lock" : requestedStrategy;
+  const log =
+    opts.debug === true
+      ? (l: string) => console.log(`[sticky-upsert] ${l}`)
+      : typeof opts.debug === "function"
+        ? opts.debug
+        : null;
 
   const comments = await api.list();
 
-  // Ensure the body we write ALWAYS carries the marker on its own
-  // first line — so subsequent reruns can find it via the head scan.
   const stamped = hasStickyMarker(body, marker, { headScanLines: 1 })
     ? body
     : `${marker}\n${body}`;
 
-  // Phase 1: bounded head scan.
   let matches = comments.filter((c) => hasStickyMarker(c.body, marker, { headScanLines }));
   let usedFullScan = false;
 
-  // Phase 2: full-scan fallback only if head scan found nothing.
   if (matches.length === 0) {
     matches = comments.filter((c) => hasStickyMarker(c.body, marker, { fullScan: true }));
     usedFullScan = matches.length > 0;
@@ -145,12 +147,18 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
 
   if (matches.length === 0) {
     const created = await api.create(stamped);
+    log?.(`no existing marker found across ${comments.length} comment(s); created id=${created.id}`);
     return { action: "created", comment: created, cleaned: [], usedFullScan: false };
   }
 
-  // Newest = highest id (GitHub comment ids are monotonic).
   const newest = matches.reduce((a, b) => (a.id > b.id ? a : b));
   const updated = await api.update(newest.id, stamped);
+  log?.(
+    `selected newest sticky comment id=${newest.id} from ${matches.length} marker match(es)` +
+      (usedFullScan ? " (via full-body fallback scan)" : "") +
+      `; cleanup strategy=${strategy}` +
+      (strategy !== requestedStrategy ? ` (requested ${requestedStrategy}, fell back to lock)` : ""),
+  );
 
   const cleaned: UpsertResult["cleaned"] = [];
   const stale = matches.filter((c) => c.id !== newest.id);
@@ -158,14 +166,18 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
     if (strategy === "delete" && api.remove) {
       await api.remove(old.id);
       cleaned.push({ id: old.id, via: "delete" });
+      log?.(`deleted older duplicate sticky comment id=${old.id}`);
     } else {
       await api.update(old.id, tombstone);
       cleaned.push({ id: old.id, via: "lock" });
+      log?.(`tombstoned older duplicate sticky comment id=${old.id}`);
     }
   }
+  if (stale.length === 0) log?.(`no older duplicates to clean up`);
 
   return { action: "updated", comment: updated, cleaned, usedFullScan };
 }
+
 
 // ──────────────────────────────────────────────────────────────────────
 // CLI surface
