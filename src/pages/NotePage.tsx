@@ -348,7 +348,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   const noteUrl = `https://syrin.online/${slug}`;
   const noteTitle = `${slug} — Syrin Notes`;
-  const noteDesc = `Note "${slug}" trên Syrin Notes — markdown realtime, tự động lưu, đồng bộ giữa các thiết bị.`;
+  const noteDesc = `Note "${slug}" on Syrin Notes — realtime markdown, autosave, synced across devices.`;
 
   return (
     <div className="flex h-svh flex-col bg-background">
