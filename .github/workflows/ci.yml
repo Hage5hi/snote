@@ -82,37 +82,49 @@ jobs:
               --coverage.include='scripts/i18n-allowlist-*.ts' \
               --coverage.reporter=text \
               --coverage.reporter=lcov \
+              --coverage.reporter=html \
               --coverage.reportsDirectory=coverage/i18n-cli \
               scripts/__tests__/i18n-allowlist-cli-integration.test.ts \
               scripts/__tests__/i18n-allowlist-cli-scoping.test.ts \
               scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
               scripts/__tests__/i18n-allowlist-cli-parity.test.ts \
-              | tee /tmp/i18n-cli-suite.log
+              2>&1 | tee /tmp/i18n-cli-suite.log
           else
             bunx vitest run \
               scripts/__tests__/i18n-allowlist-cli-integration.test.ts \
               scripts/__tests__/i18n-allowlist-cli-scoping.test.ts \
               scripts/__tests__/i18n-allowlist-cli-flags.test.ts \
               scripts/__tests__/i18n-allowlist-cli-parity.test.ts \
-              | tee /tmp/i18n-cli-suite.log
+              2>&1 | tee /tmp/i18n-cli-suite.log
           fi
           status=${PIPESTATUS[0]}
-          # Mirror suite output into the step summary so failures are
-          # scannable without opening the raw job log.
+          mkdir -p reports/_ci
+          cp /tmp/i18n-cli-suite.log reports/_ci/i18n-cli-suite.log || true
+          # Concise per-failure breakdown (suite → test → main diff) parsed
+          # from the raw vitest log. On green runs this prints a single
+          # "no failing tests" line; on red runs it emits a markdown
+          # section per failing suite so reviewers don't have to scroll
+          # through the full reporter output.
+          bun run scripts/ci-vitest-failure-summary.ts /tmp/i18n-cli-suite.log \
+            > reports/_ci/failure-breakdown.md || true
           {
-            echo '### i18n allowlist CLI suites'
+            echo '### i18n allowlist CLI suites — failure breakdown'
+            cat reports/_ci/failure-breakdown.md
+            echo ''
+            echo '<details><summary>Raw vitest tail (last 200 lines)</summary>'
+            echo ''
             echo '```'
             tail -200 /tmp/i18n-cli-suite.log
             echo '```'
+            echo ''
+            echo '</details>'
           } >> "$GITHUB_STEP_SUMMARY"
-          # Persist copies so the failure-artifact upload below can ship
-          # them alongside the generated report JSON.
-          mkdir -p reports/_ci
           cp "$GITHUB_STEP_SUMMARY" reports/_ci/step-summary.md || true
-          cp /tmp/i18n-cli-suite.log reports/_ci/i18n-cli-suite.log || true
           exit $status
-      # When the CLI suites fail, upload the report JSON + captured step
-      # summary so reviewers can diagnose without re-running locally.
+      # When the CLI suites fail, ship the full raw log, the parsed
+      # breakdown, the step summary, the help-snapshot diff (if the
+      # snapshot test emitted one), and the generated report JSON so
+      # reviewers can diagnose without re-running locally.
       - if: failure() && steps.cli_suites.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
@@ -121,13 +133,23 @@ jobs:
             reports/i18n-allowlist-report.json
             reports/i18n-allowlist-summary.json
             reports/_ci/
+            /tmp/i18n-cli-suite.log
           retention-days: 14
           if-no-files-found: warn
-      # Coverage artifact (lcov + text) for the CLI suites, only on PRs.
+      # Coverage artifacts for the CLI suites, only on PRs.
+      #   • lcov + text → tooling / inline review
+      #   • html        → standalone browsable report for reviewers
       - if: always() && github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: i18n-cli-coverage
+          path: coverage/i18n-cli/
+          retention-days: 14
+          if-no-files-found: warn
+      - if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: i18n-cli-coverage-html
           path: coverage/i18n-cli/
           retention-days: 14
           if-no-files-found: warn
