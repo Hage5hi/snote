@@ -5,7 +5,7 @@
 //
 // These tests spawn `bun run scripts/ci-validate-breakdown-json.ts`
 // against temp files so the harness reflects exactly what CI runs.
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
