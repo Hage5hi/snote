@@ -72,7 +72,7 @@ const App = () => (
             given refs" warning. */}
         <Toaster />
         <Sonner />
-        <TooltipProvider delayDuration={250}>
+        <TooltipProvider delayDuration={200} skipDelayDuration={0}>
           <BrowserRouter
             future={{
               v7_startTransition: true,
