@@ -116,3 +116,38 @@ message (from `entries[i].errors[0]`) appended to the aggregate reason:
 The same alignment is exposed on the JSON output via
 `failure.topMessages` (same length and order as `failure.topFiles`;
 `null` for drift entries).
+
+## Flag reference (aliases + behavior)
+
+| Flag | Aliases | Default | Behavior |
+|------|---------|---------|----------|
+| `--changed` | — | off | Scope counts to files in `git diff` + untracked. Falls back to full report when git is unavailable. |
+| `--json` | — | off | Emit `SummaryJSON` to stdout. Always also written to `reports/i18n-allowlist-summary.json`. |
+| `--annotations` | — | off | Emit `::error file=,line=…` workflow commands to stderr. |
+| `--topFiles N` | `--top-files N`, `--topFiles=N`, `--top-files=N` | `3` | Cap on top offending paths surfaced in CLI / JSON / annotations / PR comment. Clamps to ≥1. |
+| `--no-check-run` | `--no-checkRun` | check run enabled | Set `publishCheckRun: false` in the summary JSON so the workflow's Check Run step skips. Annotations + artifact uploads still happen. |
+
+### Expected exit codes
+
+| Command | Exit code | Why |
+|---------|-----------|-----|
+| `bun run i18n:allowlist:summary` (passing) | `0` | Schema valid, no drift. |
+| `bun run i18n:allowlist:summary` (schema invalid) | `2` | `.lintrc-i18n-allowlist.json` failed schema validation — surfaced before drift since the config is unreliable. |
+| `bun run i18n:allowlist:summary` (drift only) | `1` | Unallowlisted disables or stale allowlist entries. |
+| `bun run i18n:allowlist:summary` (schema + drift) | `2` | Schema wins when both fail simultaneously. |
+| `bun run i18n:allowlist:summary --changed` (scope hides schema) | `2` | Schema validity is global to the config — scoping never downgrades the exit code. |
+
+The same value is mirrored on `SummaryJSON.exitCode`.
+
+### `--no-check-run` example
+
+```bash
+# Locally: produce the artifact + annotations but skip Check Run publishing
+bun run i18n:allowlist:summary --changed --json --annotations --no-check-run
+```
+
+In CI, the workflow's `Publish i18n allowlist Check Run` step reads
+`publishCheckRun` from `reports/i18n-allowlist-summary.json` and
+short-circuits via `core.info('Skipping Check Run: …')` when it is
+`false`. Useful for forked PRs (where the Check Run API rejects the
+write) or repos that don't want duplicate signal in the Checks tab.
