@@ -92,6 +92,7 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
         className={`zen-hide fixed left-0 top-11 bottom-0 z-40 w-72 max-w-[85vw] border-r border-border bg-background shadow-lg transition-transform duration-200 ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
+        // eslint-disable-next-line no-restricted-syntax -- static landmark label
         aria-label="Outline"
       >
         <div className="flex h-10 items-center justify-between border-b border-border px-3">
