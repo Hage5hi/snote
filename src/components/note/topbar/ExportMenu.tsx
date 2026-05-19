@@ -11,6 +11,7 @@ import {
 import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/export";
 import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
+import { useI18n } from "@/i18n";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
 
@@ -21,63 +22,68 @@ interface ExportMenuProps {
 }
 
 export function ExportMenu({ slug, getContent, isEncrypted }: ExportMenuProps) {
+  const { t } = useI18n();
+
   const copyNoteUrl = async () => {
     await navigator.clipboard.writeText(window.location.href);
-    toast({ title: "Đã copy URL note" });
+    toast({ title: t("toast.copied_url") });
   };
 
   const copyAsAI = async () => {
     const text = getContent();
     if (!text) {
-      toast({ title: "Note đang trống" });
+      toast({ title: t("toast.note_empty") });
       return;
     }
     const formatted = formatForAI(slug, text);
     await navigator.clipboard.writeText(formatted);
-    toast({ title: "Đã copy cho AI", description: `~${approxTokens(formatted)} tokens` });
+    toast({
+      title: t("toast.copied_ai"),
+      description: t("toast.copied_ai_desc", { n: approxTokens(formatted) }),
+    });
   };
 
   const copyRawUrl = async () => {
     const url = `${SUPABASE_URL}/functions/v1/raw/${slug}`;
     await navigator.clipboard.writeText(url);
-    toast({ title: "Đã copy raw URL", description: "Dùng cho cURL / wget / Python" });
+    toast({ title: t("toast.copied_raw"), description: t("toast.copied_raw_desc") });
   };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-sm font-normal">
-          Export
+          {t("menu.export")}
           <ChevronDown className="h-3 w-3 opacity-60" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuItem onClick={copyNoteUrl}>
-          <Copy className="h-3.5 w-3.5" /> Copy note URL
+          <Copy className="h-3.5 w-3.5" /> {t("export.copy_url")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={() => exportMarkdown(slug, getContent())}>
-          <Download className="h-3.5 w-3.5" /> Download .md
+          <Download className="h-3.5 w-3.5" /> {t("export.md")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => exportHtml(slug, getContent())}>
-          <FileCode className="h-3.5 w-3.5" /> Download .html
+          <FileCode className="h-3.5 w-3.5" /> {t("export.html")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => exportPdf(slug, getContent())}>
-          <FileType className="h-3.5 w-3.5" /> Print to PDF
+          <FileType className="h-3.5 w-3.5" /> {t("export.pdf")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={() => exportPlainText(slug, getContent())}>
-          <Download className="h-3.5 w-3.5" /> Download .txt
+          <Download className="h-3.5 w-3.5" /> {t("export.txt")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={copyAsAI}>
-          <Sparkles className="h-3.5 w-3.5" /> Copy as AI context
+          <Sparkles className="h-3.5 w-3.5" /> {t("export.ai")}
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={copyRawUrl}
           disabled={isEncrypted}
-          title="URL trỏ thẳng edge function — cURL/wget nhận text/plain ngay"
+          title={t("export.raw_tooltip")}
         >
-          <Terminal className="h-3.5 w-3.5" /> Copy raw URL (cURL)
+          <Terminal className="h-3.5 w-3.5" /> {t("export.raw")}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

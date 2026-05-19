@@ -23,6 +23,7 @@ import { ExportMenu } from "./ExportMenu";
 import { NoteMenu } from "./NoteMenu";
 import { ModeMenu } from "./ModeMenu";
 import { HelpMenu } from "./HelpMenu";
+import { useI18n } from "@/i18n";
 
 
 interface TopbarProps {
@@ -80,15 +81,16 @@ export function Topbar({
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const { t } = useI18n();
 
   const copyAll = async () => {
     const text = getContent();
     if (!text) {
-      toast({ title: "Note đang trống" });
+      toast({ title: t("toast.note_empty") });
       return;
     }
     await navigator.clipboard.writeText(text);
-    toast({ title: "Đã copy toàn bộ note", description: `${text.length} ký tự` });
+    toast({ title: t("toast.copied_note"), description: t("toast.copied_chars", { n: text.length }) });
   };
 
   // Cmd/Ctrl + Shift + C to copy all. Cmd/Ctrl + Shift + V to toggle preview.
