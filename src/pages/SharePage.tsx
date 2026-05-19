@@ -9,6 +9,7 @@ import { UnlockForm } from "@/components/note/UnlockForm";
 import { EditorSkeleton } from "@/components/note/EditorSkeleton";
 import { deriveKey, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { base64ToBytes } from "@/lib/yjs/base64";
+import { useI18n } from "@/i18n";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
