@@ -12,7 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 function Wrap({ children }: { children: React.ReactNode }) {
   return (
     <TooltipProvider>
-      <I18nProvider>{children}</I18nProvider>
+      <Wrap>{children}</Wrap>
     </TooltipProvider>
   );
 }
@@ -166,9 +166,9 @@ describe("Export menu — localized trigger + dict coverage", () => {
   it.each(SUPPORTED_LANGS)("renders ExportMenu trigger in %s", (lang: Lang) => {
     localStorage.setItem(STORAGE_KEY, lang);
     render(
-      <I18nProvider>
+      <Wrap>
         <ExportMenu slug="demo" getContent={() => "hello"} isEncrypted={false} />
-      </I18nProvider>,
+      </Wrap>,
     );
     const expected = (dict[lang] as Record<string, string>)["menu.export"];
     expect(screen.getByRole("button", { name: new RegExp(expected) })).toBeInTheDocument();
@@ -196,9 +196,9 @@ describe("Help menu — localized trigger + split-view hint placeholder", () => 
   it.each(SUPPORTED_LANGS)("renders HelpMenu trigger in %s", (lang: Lang) => {
     localStorage.setItem(STORAGE_KEY, lang);
     render(
-      <I18nProvider>
+      <Wrap>
         <HelpMenu onOpenShortcuts={() => {}} />
-      </I18nProvider>,
+      </Wrap>,
     );
     const expected = (dict[lang] as Record<string, string>)["menu.help"];
     expect(screen.getByRole("button", { name: new RegExp(expected) })).toBeInTheDocument();
@@ -226,9 +226,9 @@ describe("Toast strings — localized and parameter substitution works", () => {
   it.each(SUPPORTED_LANGS)("substitutes {n} in toast strings — %s", (lang: Lang) => {
     localStorage.setItem(STORAGE_KEY, lang);
     render(
-      <I18nProvider>
+      <Wrap>
         <T />
-      </I18nProvider>,
+      </Wrap>,
     );
     expect(screen.getByTestId("ai").textContent).toContain("42");
     expect(screen.getByTestId("chars").textContent).toContain("7");
