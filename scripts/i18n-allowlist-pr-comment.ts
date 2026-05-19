@@ -26,8 +26,11 @@ export interface CIContext {
   serverUrl: string;
   repo: string;
   runId: string;
+  /** Artifact id for the full i18n-report bundle (uploaded earlier). */
   artifactId: string;
-  /** GitHub env vars (excluding the optional I18N_ARTIFACT_ID) that were unset/empty. */
+  /** Artifact id for the standalone i18n-allowlist-summary.json upload. */
+  summaryArtifactId: string;
+  /** GitHub env vars (excluding the optional *_ARTIFACT_ID) that were unset/empty. */
   missing: string[];
 }
 
@@ -67,10 +70,11 @@ export function resolveCIContext(
     serverUrl: get("GITHUB_SERVER_URL"),
     repo: get("GITHUB_REPOSITORY"),
     runId: get("GITHUB_RUN_ID"),
-    // I18N_ARTIFACT_ID is wired from the upload-artifact step. Missing it
-    // just means we degrade to a run-level artifacts link (still useful),
-    // so it isn't tracked in `missing[]`.
+    // *_ARTIFACT_ID vars are wired from upload-artifact step outputs.
+    // Missing them just means we degrade to a run-level artifacts link
+    // (still useful), so they aren't tracked in `missing[]`.
     artifactId: env.I18N_ARTIFACT_ID?.trim() ?? "",
+    summaryArtifactId: env.I18N_SUMMARY_ARTIFACT_ID?.trim() ?? "",
     missing,
   };
 }
@@ -79,13 +83,18 @@ export function buildUrls(ctx: CIContext): {
   runUrl: string;
   artifactsUrl: string;
   bundleUrl: string;
+  /** Direct link to the standalone i18n-allowlist-summary.json artifact. */
+  summaryUrl: string;
 } {
   const runUrl = `${ctx.serverUrl}/${ctx.repo}/actions/runs/${ctx.runId}`;
   const artifactsUrl = `${runUrl}#artifacts`;
   const bundleUrl = ctx.artifactId
     ? `${runUrl}/artifacts/${ctx.artifactId}`
     : artifactsUrl;
-  return { runUrl, artifactsUrl, bundleUrl };
+  const summaryUrl = ctx.summaryArtifactId
+    ? `${runUrl}/artifacts/${ctx.summaryArtifactId}`
+    : artifactsUrl;
+  return { runUrl, artifactsUrl, bundleUrl, summaryUrl };
 }
 
 function loadReport(): AllowlistReport | null {
