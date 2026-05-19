@@ -228,11 +228,15 @@ FLAGS
   --head-scan-lines <n>         Optional. Lines per comment to scan for the marker on the fast
                                   path. Default: ${MARKER_HEAD_SCAN_LINES}. A full-body fallback
                                   runs only if the head scan finds zero matches across the thread.
+  --debug                       Optional. Print which sticky comment was selected as newest, and
+                                  whether older duplicates were deleted or tombstoned. Also enabled
+                                  by STICKY_DEBUG=1.
   -h, --help                    Show this help.
 
 ENVIRONMENT VARIABLES (lower precedence than flags)
   STICKY_CLEANUP_STRATEGY   delete | lock
   STICKY_HEAD_SCAN_LINES    positive integer
+  STICKY_DEBUG              1 to enable selection / cleanup diagnostics
 
 EXIT CODES
   0  upserted (created or updated); cleanup completed
@@ -245,8 +249,10 @@ export interface ParsedCliConfig {
   bodyFile?: string;
   cleanupStrategy: CleanupStrategy;
   headScanLines: number;
+  debug: boolean;
   help: boolean;
 }
+
 
 /**
  * Parse argv + env into a config. Flags win over env. Invalid values
