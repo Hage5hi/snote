@@ -495,8 +495,15 @@ jobs:
         with:
           header: i18n-report
           path: reports/_i18n-allowlist-pr-comment.md
-      # Final gate — runs AFTER artifacts are uploaded and the PR comment is
-      # posted, so reviewers still get the reports even when the gate fails.
+      # Final gates — run AFTER artifacts are uploaded and the PR comment
+      # is posted so reviewers still get the reports even when a gate fails.
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push')
+        name: Enforce breakdown-JSON validation gate
+        run: |
+          if [ "${{ steps.validate_breakdown.outcome }}" != "success" ]; then
+            echo "::error::failure-breakdown.json validation failed — see the 'Validate failure-breakdown.json shape' step above. PR comment links were suppressed for this run."
+            exit 1
+          fi
       - if: always() && (steps.changes.outputs.i18n == 'true' || github.event_name == 'push')
         name: Enforce allowlist gate
         run: |
