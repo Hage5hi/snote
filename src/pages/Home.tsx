@@ -184,7 +184,7 @@ export default function Home() {
         )}
       >
         <div className="flex items-center gap-2">
-          <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" fetchPriority="high" decoding="async" className="h-6 w-6 rounded-md object-contain" />
+          <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" decoding="async" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Syrin Notes</span>
         </div>
         <div className="flex items-center gap-1">
@@ -242,7 +242,7 @@ export default function Home() {
               key={slugStatus}
               className="shrink-0 whitespace-nowrap pr-2 text-muted-foreground motion-safe:animate-slug-status-pop"
             >
-              {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" />}
               {slugStatus === "available" && (
                 <Check className="h-3.5 w-3.5 text-success" aria-label={t("home.status.available")} />
               )}
