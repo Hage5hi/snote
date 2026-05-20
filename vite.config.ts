@@ -97,7 +97,7 @@ export default defineConfig(({ mode }) => ({
       resolveDependencies: (_filename, deps) =>
         deps.filter(
           (dep) =>
-            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley)-/.test(
+            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley|scene-|ogl-vendor)-/.test(
               dep,
             ),
         ),
@@ -131,7 +131,18 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("vite/preload-helper")) {
             return "preload-helper";
           }
+          // Home background scenes — each scene is its own chunk, loaded only
+          // when the user picks it from the ThemeToggle dropdown. Must NOT be
+          // in modulepreload (see resolveDependencies filter above).
+          if (id.includes("/src/components/home/scenes/CyberLinhKhi")) {
+            return "scene-cyber-linh-khi";
+          }
           if (!id.includes("node_modules")) return;
+          // OGL — WebGL micro-lib used only by scenes. Keep as its own vendor
+          // chunk so multiple scenes can share it without duplication.
+          if (id.includes("/ogl/") || id.includes("node_modules/ogl/")) {
+            return "ogl-vendor";
+          }
           if (id.includes("/react-dom/") || id.includes("/react-router") || id.match(/\/react\//)) {
             return "react-vendor";
           }

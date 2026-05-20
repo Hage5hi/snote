@@ -1,0 +1,91 @@
+// Scene Registry — pluggable list of background scenes for the Home route.
+//
+// To add a new scene later:
+//   1. Create src/components/home/scenes/MyScene.tsx with default export of a
+//      React component that takes `SceneProps`.
+//   2. Add a Vite manualChunks rule routing that file to `scene-my-scene`.
+//   3. Flip the registry entry's `enabled` to true and set `load`.
+//
+// That's it — ThemeToggle, SceneHost, and Home.tsx never need to change.
+import type { ComponentType } from "react";
+
+export interface SceneProps {
+  /** True when document.visibilityState !== "visible". Scene should pause rAF. */
+  paused: boolean;
+  /** Active color scheme so the shader can theme itself. */
+  isDark: boolean;
+}
+
+export interface SceneDef {
+  id: string;
+  /** i18n key in dict. Falls back to `id` if key missing. */
+  labelKey: string;
+  /** 2-stop preview swatch for the dropdown menu. */
+  swatch: [string, string];
+  /** Short description shown under the label. */
+  descKey?: string;
+  /** false → render as disabled "Coming soon" row. */
+  enabled: boolean;
+  /** Only present when enabled. Dynamic import the scene module. */
+  load?: () => Promise<{ default: ComponentType<SceneProps> }>;
+}
+
+export const SCENE_NONE = "none";
+
+export const SCENE_REGISTRY: SceneDef[] = [
+  {
+    id: SCENE_NONE,
+    labelKey: "scene.none.label",
+    descKey: "scene.none.desc",
+    swatch: ["hsl(var(--background))", "hsl(var(--muted))"],
+    enabled: true,
+  },
+  {
+    id: "cyber-linh-khi",
+    labelKey: "scene.cyber_linh_khi.label",
+    descKey: "scene.cyber_linh_khi.desc",
+    swatch: ["#0a2a26", "#5eead4"],
+    enabled: true,
+    load: () => import("./CyberLinhKhi"),
+  },
+  // === Roadmap — flip `enabled` + add `load` to ship. ===
+  {
+    id: "ethereal-aurora",
+    labelKey: "scene.ethereal_aurora.label",
+    descKey: "scene.ethereal_aurora.desc",
+    swatch: ["#2d1b4e", "#fbcfe8"],
+    enabled: false,
+  },
+  {
+    id: "digital-constellation",
+    labelKey: "scene.digital_constellation.label",
+    descKey: "scene.digital_constellation.desc",
+    swatch: ["#1e293b", "#cbd5e1"],
+    enabled: false,
+  },
+  {
+    id: "neon-vapor",
+    labelKey: "scene.neon_vapor.label",
+    descKey: "scene.neon_vapor.desc",
+    swatch: ["#1a0a2e", "#ec4899"],
+    enabled: false,
+  },
+  {
+    id: "obsidian-ink",
+    labelKey: "scene.obsidian_ink.label",
+    descKey: "scene.obsidian_ink.desc",
+    swatch: ["#f5f5f4", "#1c1917"],
+    enabled: false,
+  },
+  {
+    id: "terminal-boot",
+    labelKey: "scene.terminal_boot.label",
+    descKey: "scene.terminal_boot.desc",
+    swatch: ["#020202", "#00ff66"],
+    enabled: false,
+  },
+];
+
+export function getSceneDef(id: string): SceneDef | undefined {
+  return SCENE_REGISTRY.find((s) => s.id === id);
+}
