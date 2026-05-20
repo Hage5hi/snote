@@ -62,8 +62,9 @@ function parseArgs(argv: string[]): Args {
   const out: Args = {
     root: null, out: null,
     runUrl: process.env.GITHUB_RUN_URL ?? "",
-    base: null, pretty: false, help: false,
+    base: null, bundles: [], pretty: false, help: false,
   };
+  const known = new Set(BUNDLES.map((b) => b.name));
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") out.help = true;
@@ -71,6 +72,15 @@ function parseArgs(argv: string[]): Args {
     else if (a === "--out") out.out = argv[++i] ?? null;
     else if (a === "--run-url") out.runUrl = argv[++i] ?? "";
     else if (a === "--base") out.base = argv[++i] ?? null;
+    else if (a === "--bundle") {
+      const v = argv[++i] ?? "";
+      if (!known.has(v)) {
+        throw new Error(
+          `unknown --bundle value: ${JSON.stringify(v)} (expected one of ${[...known].map((b) => JSON.stringify(b)).join(", ")})`,
+        );
+      }
+      if (!out.bundles.includes(v)) out.bundles.push(v);
+    }
     else if (a === "--pretty") out.pretty = true;
     else throw new Error(`unknown flag: ${a}`);
   }
