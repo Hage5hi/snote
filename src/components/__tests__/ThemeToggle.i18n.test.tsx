@@ -15,6 +15,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { I18nProvider } from "@/i18n/provider";
 import { STORAGE_KEY as LANG_KEY, dict } from "@/i18n";
 import { SCENE_REGISTRY } from "@/components/home/scenes/registry";
+import { SCENE_STORAGE_KEY } from "@/hooks/use-scene-theme";
 
 function renderToggle() {
   return render(
@@ -65,5 +66,15 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
     await user.click(screen.getByRole("button", { name: dict.en["theme.aria"] }));
     const ariaNone = `${dict.en["scene.none.label"]} — ${dict.en["scene.none.desc"]}`;
     expect(screen.getByRole("menuitemradio", { name: ariaNone })).toBeInTheDocument();
+  });
+
+  it("persists the selected scene when Cyber Linh Khí is clicked", async () => {
+    localStorage.setItem(LANG_KEY, "en");
+    const user = userEvent.setup();
+    renderToggle();
+    await user.click(screen.getByRole("button", { name: dict.en["theme.aria"] }));
+    const ariaCyber = `${dict.en["scene.cyber_linh_khi.label"]} — ${dict.en["scene.cyber_linh_khi.desc"]}`;
+    await user.click(screen.getByRole("menuitemradio", { name: ariaCyber }));
+    expect(localStorage.getItem(SCENE_STORAGE_KEY)).toBe("cyber-linh-khi");
   });
 });
