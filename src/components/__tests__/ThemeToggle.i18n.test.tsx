@@ -59,14 +59,15 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
     });
   }
 
-  it("'none' option also exposes an aria-label from i18n (EN)", async () => {
+  it("does NOT render a 'none' scene row (single-axis menu)", async () => {
     localStorage.setItem(LANG_KEY, "en");
     const user = userEvent.setup();
     renderToggle();
     await user.click(screen.getByRole("button", { name: dict.en["theme.aria"] }));
     const ariaNone = `${dict.en["scene.none.label"]} — ${dict.en["scene.none.desc"]}`;
-    expect(screen.getByRole("menuitemradio", { name: ariaNone })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemradio", { name: ariaNone })).toBeNull();
   });
+
 
   it("persists the selected scene when Cyber Linh Khí is clicked", async () => {
     localStorage.setItem(LANG_KEY, "en");
