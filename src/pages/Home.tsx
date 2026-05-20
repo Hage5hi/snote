@@ -171,7 +171,7 @@ export default function Home() {
   const hasScene = scene !== "none";
 
   return (
-    <div className={`relative min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}>
+    <div className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}>
       {hasScene && (
         <Suspense fallback={null}>
           <SceneHost />
