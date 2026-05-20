@@ -27,7 +27,7 @@
 // not assertions — assertions live in the vitest file.
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import {
   validateOverlapReplayResult,
   formatProblems,
@@ -41,6 +41,46 @@ import {
   EXIT_SCHEMA,
   EXIT_CODE_HELP,
 } from "./_helpers/sticky-replay-exit-codes";
+
+function writeValidateSummary(
+  path: string, target: string, ok: boolean, exitCode: number, problems: string[],
+  fieldsFilter: string[],
+) {
+  try {
+    mkdirSync(dirname(resolve(path)), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify(
+        {
+          schema: "sticky-validate-summary/v1",
+          kind: "sticky-replay",
+          target, ok, exitCode,
+          fieldsFilter,
+          problemCount: problems.length,
+          problems: problems.map((m) => ({ message: m })),
+        },
+        null, 2,
+      ) + "\n",
+      "utf8",
+    );
+  } catch (e) {
+    console.error(`[replay] WARN: failed to write --json-summary ${path}: ${(e as Error).message}`);
+  }
+}
+
+/**
+ * Build a manifest pointer string for GH annotations. Computes the
+ * relative path from the artifact's directory to the manifest file so
+ * the link works correctly when the manifest lives in a different
+ * directory than the artifact. The anchor uses basename matching so
+ * dashboards can resolve the exact entry regardless of order.
+ */
+function buildManifestPointer(manifestPath: string, artifactPath: string): string {
+  const rel = relative(dirname(resolve(artifactPath)), resolve(manifestPath));
+  const safeRel = rel === "" ? manifestPath : rel;
+  const base = artifactPath.split(/[/\\]/).pop();
+  return ` manifest=${safeRel}#entries[bundle=sticky-replay,basename=${base}]`;
+}
 
 
 
@@ -138,6 +178,7 @@ function parseArgs(argv: string[]): {
   pretty: boolean;
   validateOnly: string | null;
   fields: string[];
+  jsonSummary: string | null;
   manifest: string | null;
   help: boolean;
 } {
@@ -150,6 +191,7 @@ function parseArgs(argv: string[]): {
     pretty: false,
     validateOnly: null as string | null,
     fields: [] as string[],
+    jsonSummary: null as string | null,
     manifest: null as string | null,
     help: false,
   };
@@ -168,6 +210,7 @@ function parseArgs(argv: string[]): {
       const v = take() ?? "";
       out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
     } else if (a === "--manifest") out.manifest = take();
+    else if (a === "--json-summary") out.jsonSummary = take();
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
   if (out.validateOnly) return out;
@@ -256,6 +299,7 @@ export async function runReplay(argv: string[]): Promise<number> {
       console.error(
         `[replay] --validate-only: cannot read ${cfg.validateOnly}: ${(e as Error).message}`,
       );
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_IO, [`cannot read: ${(e as Error).message}`], cfg.fields);
       return EXIT_IO;
     }
     let payload: unknown;
@@ -265,6 +309,7 @@ export async function runReplay(argv: string[]): Promise<number> {
       console.error(
         `[replay] --validate-only: ${cfg.validateOnly} is not valid JSON: ${(e as Error).message}`,
       );
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_PARSE, [`not valid JSON: ${(e as Error).message}`], cfg.fields);
       return EXIT_PARSE;
     }
     let probs = validateOverlapReplayResult(payload);
@@ -274,12 +319,14 @@ export async function runReplay(argv: string[]): Promise<number> {
     }
     if (probs.length > 0) {
       console.error(formatProblems("replay", cfg.validateOnly, probs));
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_SCHEMA, probs, cfg.fields);
       return EXIT_SCHEMA;
     }
     console.log(
       `[replay] --validate-only OK: ${cfg.validateOnly} matches sticky-replay/v1` +
         (cfg.fields.length > 0 ? ` (scoped to: ${cfg.fields.join(",")})` : ""),
     );
+    if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, true, EXIT_OK, [], cfg.fields);
     return EXIT_OK;
   }
   const pages = SCENARIOS[cfg.scenario];
@@ -336,7 +383,7 @@ export async function runReplay(argv: string[]): Promise<number> {
       // entry so the GitHub Actions annotation links reviewers from
       // the run summary straight to the machine-readable bundle index.
       const manifestTail = cfg.manifest
-        ? ` manifest=${cfg.manifest}#entries[bundle=sticky-replay,basename=${artifactPath.split("/").pop()}]`
+        ? buildManifestPointer(cfg.manifest, artifactPath)
         : "";
       emitGhAnnotation(
         "notice",

@@ -17,7 +17,7 @@
 // "cannot replay"), so partial captures can be fixed at the source.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { hasStickyMarker } from "./ci-sticky-pr-comment-upsert";
 import {
   validateFuzzReplayResult,
@@ -96,6 +96,8 @@ function parseArgs(argv: string[]): {
   pretty: boolean;
   validateOnly: string | null;
   fields: string[];
+  jsonSummary: string | null;
+  manifest: string | null;
   help: boolean;
 } {
   const out = {
@@ -104,6 +106,8 @@ function parseArgs(argv: string[]): {
     pretty: false,
     validateOnly: null as string | null,
     fields: [] as string[],
+    jsonSummary: null as string | null,
+    manifest: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -116,11 +120,51 @@ function parseArgs(argv: string[]): {
     else if (a === "--fields") {
       const v = argv[++i] ?? "";
       out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
-    } else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+    } else if (a === "--json-summary") out.jsonSummary = argv[++i] ?? null;
+    else if (a === "--manifest") out.manifest = argv[++i] ?? null;
+    else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
   }
   return out;
+}
+
+function writeValidateSummary(
+  path: string, target: string, ok: boolean, exitCode: number, problems: string[],
+  fieldsFilter: string[],
+) {
+  try {
+    mkdirSync(dirname(resolve(path)), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify(
+        {
+          schema: "sticky-validate-summary/v1",
+          kind: "sticky-fuzz-replay",
+          target, ok, exitCode,
+          fieldsFilter,
+          problemCount: problems.length,
+          problems: problems.map((m) => ({ message: m })),
+        },
+        null, 2,
+      ) + "\n",
+      "utf8",
+    );
+  } catch (e) {
+    console.error(`[fuzz-replay] WARN: failed to write --json-summary ${path}: ${(e as Error).message}`);
+  }
+}
+
+function buildManifestPointer(manifestPath: string, artifactPath: string): string {
+  const rel = relative(dirname(resolve(artifactPath)), resolve(manifestPath));
+  const safeRel = rel === "" ? manifestPath : rel;
+  const base = artifactPath.split(/[/\\]/).pop();
+  return ` manifest=${safeRel}#entries[bundle=sticky-fuzz-failures,basename=${base}]`;
+}
+
+function emitGhAnnotation(kind: "notice" | "error", file: string, msg: string) {
+  if (process.env.GITHUB_ACTIONS !== "true") return;
+  console.log(`::${kind} file=${file}::${msg}`);
 }
 
 
@@ -200,6 +244,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
       console.error(
         `[fuzz-replay] --validate-only: cannot read ${cfg.validateOnly}: ${(e as Error).message}`,
       );
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_IO, [`cannot read: ${(e as Error).message}`], cfg.fields);
       return EXIT_IO;
     }
     let payload: unknown;
@@ -209,6 +254,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
       console.error(
         `[fuzz-replay] --validate-only: ${cfg.validateOnly} is not valid JSON: ${(e as Error).message}`,
       );
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_PARSE, [`not valid JSON: ${(e as Error).message}`], cfg.fields);
       return EXIT_PARSE;
     }
     let probs = validateFuzzReplayResult(payload);
@@ -218,12 +264,14 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     }
     if (probs.length > 0) {
       console.error(formatProblems("fuzz-replay", cfg.validateOnly, probs));
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_SCHEMA, probs, cfg.fields);
       return EXIT_SCHEMA;
     }
     console.log(
       `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1` +
         (cfg.fields.length > 0 ? ` (scoped to: ${cfg.fields.join(",")})` : ""),
     );
+    if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, true, EXIT_OK, [], cfg.fields);
     return EXIT_OK;
   }
 
@@ -308,6 +356,15 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
         : JSON.stringify(result);
       writeFileSync(cfg.json, filePayload + "\n", "utf8");
       console.log(`[fuzz-replay] wrote json=${cfg.json}`);
+      const manifestTail = cfg.manifest
+        ? buildManifestPointer(cfg.manifest, cfg.json)
+        : "";
+      emitGhAnnotation(
+        "notice",
+        cfg.json,
+        `sticky-fuzz-replay source=${cfg.path} seed=${artifact.seed ?? "?"} ` +
+          `headMatched=${head.returned} fullMatched=${full.returned}${manifestTail}`,
+      );
     } catch (e) {
       console.error(
         `[fuzz-replay] WARN: failed to write ${cfg.json}: ${(e as Error).message}`,
