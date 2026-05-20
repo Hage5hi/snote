@@ -72,15 +72,22 @@ FLAGS
                         valid JSON matching the sticky-fuzz-replay/v1
                         schema in either compact or pretty form.
   --validate-only <p>   Validate an existing sticky-fuzz-replay/v1 JSON
-                        file at <p> against the strict schema and exit
-                        (0=valid, 1=invalid). No matcher is re-run and
-                        no file is written.
+                        file at <p> against the strict schema and exit.
+                        No matcher is re-run and no file is written.
+  --fields <prefixes>   With --validate-only, restrict reported problems
+                        to JSON paths starting with one of the given
+                        comma-separated prefixes (e.g. "inputs,matcher").
+                        Schema-mismatch errors are always reported so a
+                        wrong document never passes silently.
   -h, --help            Show this help
 
-The artifact must carry the sticky-fuzz-failure/v1 schema and contain
-inputs.markerLiteral + inputs.body. The CLI re-runs hasStickyMarker on
-both head-scan and full-scan paths and prints the matcher results
-alongside the cleanedIds the artifact captured at failure time.
+${EXIT_CODE_HELP}
+The artifact must carry a sticky-fuzz-failure/v1-compatible schema
+(${ACCEPTED_FUZZ_FAILURE_SCHEMAS.join(", ")} or future v1.x minor
+revisions) and contain inputs.markerLiteral + inputs.body. The CLI
+re-runs hasStickyMarker on both head-scan and full-scan paths and
+prints the matcher results alongside the cleanedIds the artifact
+captured at failure time.
 `;
 
 function parseArgs(argv: string[]): {
