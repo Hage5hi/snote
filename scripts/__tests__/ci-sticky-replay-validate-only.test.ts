@@ -60,7 +60,7 @@ describe("--validate-only on sticky replay CLIs", () => {
     const f = join(dir, "bad.json");
     writeFileSync(f, JSON.stringify({ schema: "other/v1" }), "utf8");
     const code = await runOverlapReplay(["--validate-only", f]);
-    expect(code).toBe(1);
+    expect(code).toBe(4); // EXIT_SCHEMA
     const e = errs.join("\n");
     expect(e).toMatch(/failed schema validation/);
     expect(e).toMatch(/at path \.schema/);
