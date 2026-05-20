@@ -62,24 +62,48 @@ interface Sample {
 }
 
 describe("perf regression: duplicate cleanup stays linear under load", () => {
-  // Generous absolute caps per N. These are well above any reasonable
-  // linear runtime; they exist to catch wall-clock blowups, not to
-  // benchmark.
+  // Default absolute caps per N — generous, runner-friendly. CI can
+  // tighten or relax these per environment via STICKY_PERF_CAP_MS_<N>
+  // and the linearity ratio via STICKY_PERF_RATIO_MAX, without
+  // touching test source. Memory cap (heapUsed delta, MB) is gated by
+  // STICKY_PERF_MEM_CAP_MB; unset disables the memory assertion.
+  function envCap(n: number, fallback: number): number {
+    const raw = process.env[`STICKY_PERF_CAP_MS_${n}`];
+    if (!raw) return fallback;
+    const v = Number(raw);
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  }
   const CAPS: Record<number, number> = {
-    100: 250,
-    500: 500,
-    2000: 1500,
-    5000: 4000,
+    100: envCap(100, 250),
+    500: envCap(500, 500),
+    2000: envCap(2000, 1500),
+    5000: envCap(5000, 4000),
   };
+  const RATIO_MAX = (() => {
+    const raw = process.env.STICKY_PERF_RATIO_MAX;
+    const v = raw ? Number(raw) : NaN;
+    return Number.isFinite(v) && v > 0 ? v : 4;
+  })();
+  const MEM_CAP_MB = (() => {
+    const raw = process.env.STICKY_PERF_MEM_CAP_MB;
+    if (!raw) return null;
+    const v = Number(raw);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  })();
 
   it("linearity + absolute timing caps across N ∈ {100, 500, 2000, 5000}", async () => {
     const samples: Sample[] = [];
 
     for (const N of [100, 500, 2000, 5000]) {
       const { api, state } = makeApi(N);
+      const memBefore =
+        typeof process.memoryUsage === "function" ? process.memoryUsage().heapUsed : 0;
       const t0 = performance.now();
       const res = await upsertStickyComment({ api, marker: MARKER, body: "fresh" });
       const elapsed = performance.now() - t0;
+      const memAfter =
+        typeof process.memoryUsage === "function" ? process.memoryUsage().heapUsed : 0;
+      const memDeltaMb = (memAfter - memBefore) / (1024 * 1024);
       summarizeScan(`perf N=${N}`, res);
 
       // Correctness pins.
@@ -87,11 +111,21 @@ describe("perf regression: duplicate cleanup stays linear under load", () => {
       expect(res.cleaned).toHaveLength(N - 1);
       expect(state).toHaveLength(1);
 
-      // Absolute cap.
+      // Absolute time cap.
       expect(
         elapsed,
-        `N=${N} took ${elapsed.toFixed(1)}ms, cap ${CAPS[N]}ms`,
+        `N=${N} took ${elapsed.toFixed(1)}ms, cap ${CAPS[N]}ms ` +
+          `(override via STICKY_PERF_CAP_MS_${N})`,
       ).toBeLessThan(CAPS[N]);
+
+      // Optional memory cap.
+      if (MEM_CAP_MB != null) {
+        expect(
+          memDeltaMb,
+          `N=${N} heapUsed delta ${memDeltaMb.toFixed(1)}MB, cap ${MEM_CAP_MB}MB ` +
+            `(override via STICKY_PERF_MEM_CAP_MB)`,
+        ).toBeLessThan(MEM_CAP_MB);
+      }
 
       samples.push({
         n: N,
@@ -104,7 +138,8 @@ describe("perf regression: duplicate cleanup stays linear under load", () => {
         console.log(
           `[sticky-perf] N=${String(N).padStart(5)} ` +
             `elapsed=${elapsed.toFixed(1).padStart(7)}ms ` +
-            `per-item=${samples[samples.length - 1].perItemUs.toFixed(2)}µs`,
+            `per-item=${samples[samples.length - 1].perItemUs.toFixed(2)}µs ` +
+            `mem=${memDeltaMb.toFixed(2)}MB`,
         );
       }
     }
@@ -119,8 +154,9 @@ describe("perf regression: duplicate cleanup stays linear under load", () => {
       `per-item cost ratio largest/smallest = ${ratio.toFixed(2)}× ` +
         `(${largest.n}→${largest.perItemUs.toFixed(2)}µs vs ` +
         `${smallest.n}→${smallest.perItemUs.toFixed(2)}µs); ` +
-        `expected ≤ 4× for linear cleanup`,
-    ).toBeLessThanOrEqual(4);
+        `expected ≤ ${RATIO_MAX}× for linear cleanup ` +
+        `(override via STICKY_PERF_RATIO_MAX)`,
+    ).toBeLessThanOrEqual(RATIO_MAX);
   }, 30_000);
 
   it("repeated reruns on a converged thread are O(1) — no scan blowup", async () => {
