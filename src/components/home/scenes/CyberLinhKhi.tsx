@@ -99,6 +99,10 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
         program.uniforms.u_time.value = (now - start) * TIME_SCALE;
         program.uniforms.u_isDark.value = isDarkRef.current ? 1 : 0;
         renderer.render({ scene: mesh });
+        if (onReadyRef.current) {
+          onReadyRef.current();
+          onReadyRef.current = undefined;
+        }
       }
       rafId = requestAnimationFrame(tick);
     };
