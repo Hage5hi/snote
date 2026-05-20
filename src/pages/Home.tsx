@@ -291,10 +291,10 @@ export default function Home() {
               {pinned.map((s) => (
                 <li
                   key={s}
-                  className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background motion-safe:transition motion-safe:duration-150 motion-safe:hover:-translate-y-px hover:border-foreground/20 motion-safe:hover:shadow-sm"
+                  className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background motion-safe:transition motion-safe:duration-150 motion-safe:hover:-translate-y-px motion-safe:hover:border-foreground/20 motion-safe:hover:shadow-sm"
                 >
                   <button
-                    className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-sm hover:bg-accent"
+                    className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-sm motion-safe:hover:bg-accent"
                     onClick={() => softNavigate(navigate, `/${s}`)}
                     onMouseEnter={() => prefetchSnapshot(s)}
                     onTouchStart={() => prefetchSnapshot(s)}
@@ -306,7 +306,7 @@ export default function Home() {
                     aria-label={t("home.pinned.unpin")}
                     title={t("home.pinned.unpin")}
                     onClick={() => setPinned(togglePin(s))}
-                    className="flex items-center px-1.5 text-muted-foreground opacity-0 motion-safe:transition-opacity hover:text-destructive group-hover:opacity-100"
+                    className="flex items-center px-1.5 text-muted-foreground opacity-0 motion-safe:transition-opacity motion-safe:hover:text-destructive motion-safe:group-hover:opacity-100"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
@@ -339,8 +339,8 @@ export default function Home() {
                   key={r.slug}
                   className={
                     isCyber
-                      ? "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors hover:bg-teal-400/5 hover:ring-1 hover:ring-inset hover:ring-teal-400/30 motion-reduce:hover:ring-0"
-                      : "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors hover:bg-accent/50"
+                      ? "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors motion-safe:hover:bg-teal-400/5 motion-safe:hover:ring-1 motion-safe:hover:ring-inset motion-safe:hover:ring-teal-400/30"
+                      : "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors motion-safe:hover:bg-accent/50"
                   }
                   onMouseEnter={() => prefetchSnapshot(r.slug)}
                   onTouchStart={() => prefetchSnapshot(r.slug)}
@@ -355,7 +355,7 @@ export default function Home() {
                   <button
                     aria-label={t("home.recent.remove")}
                     onClick={() => setRecents(removeRecent(r.slug))}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive motion-safe:transition-opacity"
+                    className="opacity-0 text-muted-foreground motion-safe:transition-opacity motion-safe:group-hover:opacity-100 motion-safe:hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -397,7 +397,7 @@ export default function Home() {
                   key={s}
                   onClick={() => softNavigate(navigate, `/${s}`)}
                   onMouseEnter={() => prefetchSnapshot(s)}
-                  className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground motion-safe:transition hover:bg-accent motion-safe:hover:-translate-y-px motion-safe:hover:shadow-sm"
+                  className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground motion-safe:transition motion-safe:hover:bg-accent motion-safe:hover:-translate-y-px motion-safe:hover:shadow-sm"
                 >
                   /{s}
                 </button>
