@@ -172,6 +172,7 @@ export default function Home() {
   return (
     <div
       data-theme={isCyber ? "cyber" : undefined}
+      data-home-root="true"
       className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}
     >
       {hasScene && <SceneHost />}
@@ -220,7 +221,7 @@ export default function Home() {
             className={cn(
               "relative flex flex-1 items-center rounded-md border bg-transparent outline-none",
               motionSafe,
-              "focus-within:border-ring/70 focus-within:ring-1 focus-within:ring-ring/35",
+              "focus-within:border-ring/70 focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/35",
               isCyber
                 ? "border-cyan-400/25 focus-within:border-teal-300/60 focus-within:ring-teal-300/25"
                 : "border-input/70",
