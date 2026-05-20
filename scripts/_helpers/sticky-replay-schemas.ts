@@ -188,8 +188,18 @@ export function validateManifest(r: unknown): string[] {
       continue;
     }
     if (typeof e.bundle !== "string") p.push(problem(`${base}.bundle`, "a string", e.bundle));
-    if (typeof e.path !== "string") p.push(problem(`${base}.path`, "a string", e.path));
-    if (typeof e.basename !== "string") p.push(problem(`${base}.basename`, "a string", e.basename));
+    // Entries are pattern-OR-literal. Pattern-based entries require
+    // `pattern` (string) and `sizeBytes`; literal entries require
+    // `path`, `basename`, `sizeBytes`. Both must declare `downloadUrl`.
+    const hasPattern = typeof e.pattern === "string";
+    if (hasPattern) {
+      if (typeof e.path !== "undefined" && typeof e.path !== "string") {
+        p.push(problem(`${base}.path`, "a string when present", e.path));
+      }
+    } else {
+      if (typeof e.path !== "string") p.push(problem(`${base}.path`, "a string", e.path));
+      if (typeof e.basename !== "string") p.push(problem(`${base}.basename`, "a string", e.basename));
+    }
     if (typeof e.sizeBytes !== "number") p.push(problem(`${base}.sizeBytes`, "a number", e.sizeBytes));
     if (typeof e.downloadUrl !== "string") p.push(problem(`${base}.downloadUrl`, "a string", e.downloadUrl));
   }
