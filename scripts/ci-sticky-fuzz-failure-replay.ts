@@ -17,7 +17,7 @@
 // "cannot replay"), so partial captures can be fixed at the source.
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { hasStickyMarker } from "./ci-sticky-pr-comment-upsert";
 import {
   validateFuzzReplayResult,
