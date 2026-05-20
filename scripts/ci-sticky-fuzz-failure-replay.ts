@@ -22,7 +22,18 @@ import { hasStickyMarker } from "./ci-sticky-pr-comment-upsert";
 import {
   validateFuzzReplayResult,
   formatProblems,
+  filterProblemsByPath,
+  isAcceptedSchema,
+  ACCEPTED_FUZZ_FAILURE_SCHEMAS,
 } from "./_helpers/sticky-replay-schemas";
+import {
+  EXIT_OK,
+  EXIT_USAGE,
+  EXIT_IO,
+  EXIT_PARSE,
+  EXIT_SCHEMA,
+  EXIT_CODE_HELP,
+} from "./_helpers/sticky-replay-exit-codes";
 
 
 interface FuzzArtifactInputs {
