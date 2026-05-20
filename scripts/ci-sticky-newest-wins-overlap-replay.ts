@@ -126,6 +126,7 @@ function parseArgs(argv: string[]): {
   strategy: CleanupStrategy;
   out: string | null;
   noArtifact: boolean;
+  pretty: boolean;
   help: boolean;
 } {
   const out = {
@@ -134,6 +135,7 @@ function parseArgs(argv: string[]): {
     strategy: "delete" as CleanupStrategy,
     out: null as string | null,
     noArtifact: false,
+    pretty: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -145,6 +147,7 @@ function parseArgs(argv: string[]): {
     else if (a === "--strategy") out.strategy = take() as CleanupStrategy;
     else if (a === "--out" || a === "--json") out.out = take();
     else if (a === "--no-artifact") out.noArtifact = true;
+    else if (a === "--pretty") out.pretty = true;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
   if (!(out.scenario in SCENARIOS)) {
@@ -154,6 +157,7 @@ function parseArgs(argv: string[]): {
   }
   return out;
 }
+
 
 const HELP = `ci-sticky-newest-wins-overlap-replay — replay the pagination-overlap scenario
 
