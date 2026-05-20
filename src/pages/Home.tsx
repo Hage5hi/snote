@@ -319,14 +319,30 @@ export default function Home() {
 
         {recents.length > 0 ? (
           <section className="mt-12">
-            <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <h2
+              className={
+                isCyber
+                  ? "mb-3 font-mono text-xs font-medium uppercase tracking-wider text-teal-300/70"
+                  : "mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+              }
+            >
               {t("home.recent.title")}
             </h2>
-            <ul className="divide-y divide-border rounded-md border border-border">
+            <ul
+              className={
+                isCyber
+                  ? "divide-y divide-cyan-900/30 rounded-md border border-cyan-900/40 bg-black/40 backdrop-blur-md"
+                  : "divide-y divide-border rounded-md border border-border"
+              }
+            >
               {recents.slice(0, 12).map((r) => (
                 <li
                   key={r.slug}
-                  className="group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50"
+                  className={
+                    isCyber
+                      ? "group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-teal-400/5 hover:ring-1 hover:ring-inset hover:ring-teal-400/30"
+                      : "group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50"
+                  }
                   onMouseEnter={() => prefetchSnapshot(r.slug)}
                   onTouchStart={() => prefetchSnapshot(r.slug)}
                 >
@@ -334,8 +350,8 @@ export default function Home() {
                     className="flex flex-1 items-center justify-between text-left"
                     onClick={() => softNavigate(navigate, `/${r.slug}`)}
                   >
-                    <span className="font-mono text-sm">/{r.slug}</span>
-                    <span className="text-xs text-muted-foreground">{timeAgo(r.lastOpenedAt)}</span>
+                    <span className={isCyber ? "font-mono text-sm text-teal-100/90" : "font-mono text-sm"}>/{r.slug}</span>
+                    <span className={isCyber ? "font-mono text-xs text-teal-300/50" : "text-xs text-muted-foreground"}>{timeAgo(r.lastOpenedAt)}</span>
                   </button>
                   <button
                     aria-label={t("home.recent.remove")}
