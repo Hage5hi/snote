@@ -4,7 +4,7 @@
 // last broadcast/snapshot, last error, dismiss buttons).
 //
 // 5 statuses: synced / syncing / conflict / error / offline.
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -56,6 +56,18 @@ export function SyncIndicator({ provider }: SyncIndicatorProps) {
   const now = Date.now();
 
   const { Icon, cls, spin } = STYLES[snap.status];
+
+  // U4 — pulse the pill once each time the provider transitions to `synced`
+  // (e.g. after a snapshot finishes). The class is removed automatically when
+  // the animation ends so re-application on the next sync re-triggers it.
+  const prevStatusRef = useRef(snap.status);
+  const [pulse, setPulse] = useState(false);
+  useEffect(() => {
+    if (snap.status === "synced" && prevStatusRef.current !== "synced") {
+      setPulse(true);
+    }
+    prevStatusRef.current = snap.status;
+  }, [snap.status, snap.lastSnapshotAt]);
   const label = useMemo(() => {
     switch (snap.status) {
       case "synced":   return t("sync.label.synced");
@@ -88,7 +100,8 @@ export function SyncIndicator({ provider }: SyncIndicatorProps) {
             <button
               type="button"
               aria-label={label}
-              className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-accent ${cls}`}
+              onAnimationEnd={() => setPulse(false)}
+              className={`flex items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-accent ${cls} ${pulse ? "animate-sync-pulse" : ""}`}
             >
               <Icon className={`h-3 w-3 ${spin ? "animate-spin" : ""}`} />
               <span>{label}</span>

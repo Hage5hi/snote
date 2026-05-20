@@ -2,10 +2,12 @@
   "ok": true,
   "schemaOk": true,
   "driftOk": true,
-  "scopedToChanges": false,
+  "scopedToChanges": true,
   "reportPath": "reports/i18n-allowlist-report.json",
+  "exitCode": 0,
+  "publishCheckRun": true,
   "counts": {
-    "entries": 8,
+    "entries": 1,
     "schemaErrors": 0,
     "missing": 0,
     "stale": 0

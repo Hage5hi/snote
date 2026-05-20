@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowRight, Check, Loader2, Shuffle, Sparkles, Star, Trash2 } from "lucide-react";
+import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -204,7 +204,10 @@ export default function Home() {
               className="border-0 focus-visible:ring-0 font-mono"
               maxLength={64}
             />
-            <div className="shrink-0 whitespace-nowrap pr-2 text-muted-foreground">
+            <div
+              key={slugStatus}
+              className="shrink-0 whitespace-nowrap pr-2 text-muted-foreground motion-safe:animate-slug-status-pop"
+            >
               {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {slugStatus === "available" && (
                 <Check className="h-3.5 w-3.5 text-success" aria-label={t("home.status.available")} />
@@ -251,7 +254,10 @@ export default function Home() {
             </h2>
             <ul className="flex flex-wrap gap-1.5">
               {pinned.map((s) => (
-                <li key={s} className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background">
+                <li
+                  key={s}
+                  className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background transition motion-safe:duration-150 hover:border-foreground/20 hover:shadow-sm motion-safe:hover:-translate-y-px"
+                >
                   <button
                     className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-sm hover:bg-accent"
                     onClick={() => softNavigate(navigate, `/${s}`)}
@@ -284,7 +290,7 @@ export default function Home() {
               {recents.slice(0, 12).map((r) => (
                 <li
                   key={r.slug}
-                  className="group flex items-center gap-2 px-3 py-2 hover:bg-accent/50"
+                  className="group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50"
                   onMouseEnter={() => prefetchSnapshot(r.slug)}
                   onTouchStart={() => prefetchSnapshot(r.slug)}
                 >
@@ -312,7 +318,23 @@ export default function Home() {
         ) : (
           <section className="mt-12 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-8 text-center">
             <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-background ring-1 ring-border">
-              <Sparkles className="h-4 w-4 text-muted-foreground" />
+              {/* Custom hand-drawn notebook+pen mark — gentler than the
+                  generic Sparkles icon for an empty-state. */}
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="h-5 w-5 text-muted-foreground"
+                aria-hidden="true"
+              >
+                <path d="M6 4h9a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6z" />
+                <path d="M6 4v16" opacity="0.5" />
+                <path d="M9 8h5M9 12h5M9 16h3" opacity="0.6" />
+                <path d="M16.5 3.5l3 3-6 6H10.5v-3z" />
+              </svg>
             </div>
             <p className="text-sm font-medium">{t("home.empty.title")}</p>
             <p className="mt-1 text-xs text-muted-foreground">
@@ -324,7 +346,7 @@ export default function Home() {
                   key={s}
                   onClick={() => softNavigate(navigate, `/${s}`)}
                   onMouseEnter={() => prefetchSnapshot(s)}
-                  className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground hover:bg-accent"
+                  className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground transition hover:bg-accent hover:shadow-sm motion-safe:hover:-translate-y-px"
                 >
                   /{s}
                 </button>
