@@ -202,24 +202,37 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
     : `${marker}\n${body}`;
 
   let linesScanned = 0;
+  let headLinesScanned = 0;
   const headMatches: StickyComment[] = [];
   for (const c of comments) {
     const r = scanForMarker(c.body, marker, { headScanLines });
     linesScanned += r.linesScanned;
+    headLinesScanned += r.linesScanned;
     if (r.matched) headMatches.push(c);
   }
+  log?.(
+    `head-scan: pagesWalked=${pagesWalked} commentsExamined=${comments.length} ` +
+      `linesScanned=${headLinesScanned} matches=${headMatches.length} ` +
+      `headScanLines=${headScanLines}`,
+  );
   let matches = headMatches;
   let usedFullScan = false;
 
   if (matches.length === 0) {
     const fullMatches: StickyComment[] = [];
+    let fullLinesScanned = 0;
     for (const c of comments) {
       const r = scanForMarker(c.body, marker, { fullScan: true });
       linesScanned += r.linesScanned;
+      fullLinesScanned += r.linesScanned;
       if (r.matched) fullMatches.push(c);
     }
     matches = fullMatches;
     usedFullScan = matches.length > 0;
+    log?.(
+      `full-scan fallback: pagesWalked=${pagesWalked} commentsExamined=${comments.length} ` +
+        `linesScanned=${fullLinesScanned} matches=${fullMatches.length} engaged=${usedFullScan}`,
+    );
   }
 
   const scanStats: ScanStats = {
