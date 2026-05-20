@@ -178,6 +178,13 @@ FLAGS
   --no-artifact             Skip writing the JSON artifact file.
   --pretty                  Indent the written JSON artifact for readability.
                             Default: compact single-line JSON (smaller diffs).
+                            Combine with --json/--out — the written file
+                            remains valid JSON matching sticky-replay/v1
+                            in either compact or pretty form.
+  --validate-only <p>       Validate an existing sticky-replay/v1 JSON
+                            file at <p> against the strict schema and
+                            exit (0=valid, 1=invalid). No scenario is
+                            rerun and no file is written.
   -h, --help                Show this help
 
 `;
