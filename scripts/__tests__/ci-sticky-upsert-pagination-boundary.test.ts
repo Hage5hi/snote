@@ -133,10 +133,11 @@ describe("pagination + off-by-one head-scan boundary", () => {
     expect(res.cleaned.map((c) => c.id).sort((a, b) => a - b)).toEqual([100, 200]);
     expect(state.map((c) => c.id)).toEqual([300]);
 
-    // Head pass: 3 × 5 = 15 lines. Full pass: 3 × 7 = 21 lines
-    // (5 preamble + marker + 1 tail = 7). Total = 36.
+    // Head pass: 3 × 5 = 15 lines (no match, full window consumed).
+    // Full pass: marker sits at index 5, scan short-circuits after
+    // 6 lines per comment → 3 × 6 = 18. Total = 33.
     expect(res.scanStats.pagesWalked).toBe(3);
     expect(res.scanStats.commentsExamined).toBe(3);
-    expect(res.scanStats.linesScanned).toBe(3 * HEAD + 3 * 7);
+    expect(res.scanStats.linesScanned).toBe(3 * HEAD + 3 * 6);
   });
 });
