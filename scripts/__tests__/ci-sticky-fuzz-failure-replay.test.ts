@@ -70,17 +70,47 @@ describe("ci-sticky-fuzz-failure-replay CLI", () => {
     const path = writeArtifact("bad.json", { schema: "other/v1", inputs: {} });
     const code = await runFuzzReplay([path]);
     expect(code).toBe(1);
-    expect(errs.join("\n")).toMatch(/unexpected schema/);
+    const e = errs.join("\n");
+    expect(e).toMatch(/failed sticky-fuzz-failure\/v1 schema validation/);
+    expect(e).toMatch(/schema=/);
   });
 
-  it("errors when artifact lacks markerLiteral or body", async () => {
+  it("errors with a clear field-level message when inputs.body is missing", async () => {
     const path = writeArtifact("nobody.json", {
       schema: "sticky-fuzz-failure/v1",
+      seed: 1,
+      iteration: 1,
       inputs: { markerLiteral: MARKER, cleanedIds: null },
     });
     const code = await runFuzzReplay([path]);
     expect(code).toBe(1);
-    expect(errs.join("\n")).toMatch(/cannot re-run matcher paths/);
+    const e = errs.join("\n");
+    expect(e).toMatch(/inputs\.body is missing or not a string/);
+    expect(e).toMatch(/capture inputs\.body/);
+  });
+
+  it("rejects a non-object root with a single clear error", async () => {
+    const path = writeArtifact("notobj.json", 42 as unknown as object);
+    const code = await runFuzzReplay([path]);
+    expect(code).toBe(1);
+    expect(errs.join("\n")).toMatch(/artifact root is not a JSON object/);
+  });
+
+  it("--json <path> writes the machine-readable result to a file", async () => {
+    const fs = await import("node:fs");
+    const path = writeArtifact("ok2.json", {
+      schema: "sticky-fuzz-failure/v1",
+      seed: 1,
+      iteration: 1,
+      inputs: { markerLiteral: MARKER, body: `${MARKER}\nhi`, cleanedIds: [9] },
+    });
+    const out = join(dir, "result.json");
+    const code = await runFuzzReplay([path, "--json", out]);
+    expect(code).toBe(0);
+    expect(fs.existsSync(out)).toBe(true);
+    const parsed = JSON.parse(fs.readFileSync(out, "utf8"));
+    expect(parsed.schema).toBe("sticky-fuzz-replay/v1");
+    expect(parsed.capturedAtFailure.cleanedIds).toEqual([9]);
   });
 
   it("--help prints usage and returns 0", async () => {
