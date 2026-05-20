@@ -200,11 +200,20 @@ FLAGS
                             in either compact or pretty form.
   --validate-only <p>       Validate an existing sticky-replay/v1 JSON
                             file at <p> against the strict schema and
-                            exit (0=valid, 1=invalid). No scenario is
-                            rerun and no file is written.
+                            exit. No scenario is rerun, no file written.
+  --fields <prefixes>       With --validate-only, restrict reported
+                            problems to JSON paths starting with one of
+                            the given comma-separated prefixes (e.g.
+                            "scanStats,cleanedIds"). Schema-mismatch
+                            errors are always reported.
+  --manifest <p>            Path to sticky-artifacts-manifest.json. When
+                            set, the workflow annotation includes a
+                            pointer to this manifest so reviewers can
+                            click straight from the run summary to the
+                            machine-readable bundle index.
   -h, --help                Show this help
 
-`;
+${EXIT_CODE_HELP}`;
 
 function resolveArtifactPath(
   scenario: ScenarioName,
