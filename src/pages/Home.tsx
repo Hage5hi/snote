@@ -169,15 +169,25 @@ export default function Home() {
 
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
+  const isCyber = scene === "cyber-linh-khi";
 
   return (
-    <div className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}>
+    <div
+      data-theme={isCyber ? "cyber" : undefined}
+      className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}
+    >
       {hasScene && (
         <Suspense fallback={null}>
           <SceneHost />
         </Suspense>
       )}
-      <header className="relative z-10 flex h-12 items-center justify-between border-b border-border/60 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header
+        className={
+          isCyber
+            ? "relative z-10 flex h-12 items-center justify-between border-b border-cyan-900/30 bg-black/40 px-4 backdrop-blur-md"
+            : "relative z-10 flex h-12 items-center justify-between border-b border-border/60 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        }
+      >
         <div className="flex items-center gap-2">
           <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" fetchPriority="high" decoding="async" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Syrin Notes</span>
@@ -189,7 +199,13 @@ export default function Home() {
       </header>
 
       <main className="relative z-10 mx-auto w-full max-w-xl px-4 py-12 md:py-20">
-        <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]">
+        <h1
+          className={
+            isCyber
+              ? "bg-gradient-to-br from-teal-200 via-cyan-300 to-teal-500 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
+              : "bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
+          }
+        >
           {t("home.tagline")}
         </h1>
         <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both]">
@@ -205,7 +221,13 @@ export default function Home() {
             open(slug);
           }}
         >
-          <div className="flex flex-1 items-center rounded-md border border-input bg-background/80 transition-shadow focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)] focus-within:ring-2 focus-within:ring-ring">
+          <div
+            className={
+              isCyber
+                ? "flex flex-1 items-center rounded-md border border-cyan-900/40 bg-black/40 backdrop-blur-md transition-shadow focus-within:shadow-[0_0_0_3px_rgba(94,234,212,0.18)] focus-within:ring-2 focus-within:ring-teal-400/60"
+                : "flex flex-1 items-center rounded-md border border-input bg-background/80 transition-shadow focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)] focus-within:ring-2 focus-within:ring-ring"
+            }
+          >
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
             <Input
               autoFocus
@@ -297,14 +319,30 @@ export default function Home() {
 
         {recents.length > 0 ? (
           <section className="mt-12">
-            <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <h2
+              className={
+                isCyber
+                  ? "mb-3 font-mono text-xs font-medium uppercase tracking-wider text-teal-300/70"
+                  : "mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+              }
+            >
               {t("home.recent.title")}
             </h2>
-            <ul className="divide-y divide-border rounded-md border border-border">
+            <ul
+              className={
+                isCyber
+                  ? "divide-y divide-cyan-900/30 rounded-md border border-cyan-900/40 bg-black/40 backdrop-blur-md"
+                  : "divide-y divide-border rounded-md border border-border"
+              }
+            >
               {recents.slice(0, 12).map((r) => (
                 <li
                   key={r.slug}
-                  className="group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50"
+                  className={
+                    isCyber
+                      ? "group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-teal-400/5 hover:ring-1 hover:ring-inset hover:ring-teal-400/30"
+                      : "group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50"
+                  }
                   onMouseEnter={() => prefetchSnapshot(r.slug)}
                   onTouchStart={() => prefetchSnapshot(r.slug)}
                 >
@@ -312,8 +350,8 @@ export default function Home() {
                     className="flex flex-1 items-center justify-between text-left"
                     onClick={() => softNavigate(navigate, `/${r.slug}`)}
                   >
-                    <span className="font-mono text-sm">/{r.slug}</span>
-                    <span className="text-xs text-muted-foreground">{timeAgo(r.lastOpenedAt)}</span>
+                    <span className={isCyber ? "font-mono text-sm text-teal-100/90" : "font-mono text-sm"}>/{r.slug}</span>
+                    <span className={isCyber ? "font-mono text-xs text-teal-300/50" : "text-xs text-muted-foreground"}>{timeAgo(r.lastOpenedAt)}</span>
                   </button>
                   <button
                     aria-label={t("home.recent.remove")}
