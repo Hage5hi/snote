@@ -12,6 +12,16 @@ export default defineConfig({
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080",
     trace: "retain-on-failure",
+    // Capture a fresh screenshot on every failure so the CI artifact bundle
+    // includes the exact pixels that tripped the assertion (mask coverage,
+    // flicker, axe hit-test debug overlays, etc.).
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+  },
+  // Tunable thresholds for in-spec image diffs (toMatchSnapshot uses these).
+  expect: {
+    toHaveScreenshot: { maxDiffPixelRatio: 0.02 },
+    toMatchSnapshot: { maxDiffPixelRatio: 0.02 },
   },
   // Cross-browser matrix: filter via `--project=<name>` or PLAYWRIGHT_PROJECT.
   // CI runs all three; local dev defaults to chromium only.
