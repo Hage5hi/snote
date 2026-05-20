@@ -27,7 +27,7 @@
 // not assertions — assertions live in the vitest file.
 
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import {
   validateOverlapReplayResult,
   formatProblems,
@@ -41,6 +41,46 @@ import {
   EXIT_SCHEMA,
   EXIT_CODE_HELP,
 } from "./_helpers/sticky-replay-exit-codes";
+
+function writeValidateSummary(
+  path: string, target: string, ok: boolean, exitCode: number, problems: string[],
+  fieldsFilter: string[],
+) {
+  try {
+    mkdirSync(dirname(resolve(path)), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify(
+        {
+          schema: "sticky-validate-summary/v1",
+          kind: "sticky-replay",
+          target, ok, exitCode,
+          fieldsFilter,
+          problemCount: problems.length,
+          problems: problems.map((m) => ({ message: m })),
+        },
+        null, 2,
+      ) + "\n",
+      "utf8",
+    );
+  } catch (e) {
+    console.error(`[replay] WARN: failed to write --json-summary ${path}: ${(e as Error).message}`);
+  }
+}
+
+/**
+ * Build a manifest pointer string for GH annotations. Computes the
+ * relative path from the artifact's directory to the manifest file so
+ * the link works correctly when the manifest lives in a different
+ * directory than the artifact. The anchor uses basename matching so
+ * dashboards can resolve the exact entry regardless of order.
+ */
+function buildManifestPointer(manifestPath: string, artifactPath: string): string {
+  const rel = relative(dirname(resolve(artifactPath)), resolve(manifestPath));
+  const safeRel = rel === "" ? manifestPath : rel;
+  const base = artifactPath.split(/[/\\]/).pop();
+  return ` manifest=${safeRel}#entries[bundle=sticky-replay,basename=${base}]`;
+}
 
 
 
