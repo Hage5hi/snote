@@ -53,11 +53,18 @@ USAGE
   bun run scripts/ci-sticky-fuzz-failure-replay.ts <artifact.json> [flags]
 
 FLAGS
-  --file <path>     Read the artifact from <path>
-  --json <path>     Also write the machine-readable replay result to <path>
-  --pretty          Indent the written JSON output for readability.
-                    Default: compact single-line JSON (smaller diffs).
-  -h, --help        Show this help
+  --file <path>         Read the artifact from <path>
+  --json <path>         Also write the machine-readable replay result to <path>
+  --pretty              Indent the written JSON output for readability.
+                        Default: compact single-line JSON (smaller diffs).
+                        Combine with --json — the written file remains
+                        valid JSON matching the sticky-fuzz-replay/v1
+                        schema in either compact or pretty form.
+  --validate-only <p>   Validate an existing sticky-fuzz-replay/v1 JSON
+                        file at <p> against the strict schema and exit
+                        (0=valid, 1=invalid). No matcher is re-run and
+                        no file is written.
+  -h, --help            Show this help
 
 The artifact must carry the sticky-fuzz-failure/v1 schema and contain
 inputs.markerLiteral + inputs.body. The CLI re-runs hasStickyMarker on
@@ -69,12 +76,14 @@ function parseArgs(argv: string[]): {
   path: string | null;
   json: string | null;
   pretty: boolean;
+  validateOnly: string | null;
   help: boolean;
 } {
   const out = {
     path: null as string | null,
     json: null as string | null,
     pretty: false,
+    validateOnly: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -83,6 +92,7 @@ function parseArgs(argv: string[]): {
     else if (a === "--file") out.path = argv[++i] ?? null;
     else if (a === "--json") out.json = argv[++i] ?? null;
     else if (a === "--pretty") out.pretty = true;
+    else if (a === "--validate-only") out.validateOnly = argv[++i] ?? null;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
@@ -155,6 +165,31 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     console.log(HELP);
     return 0;
   }
+
+  // --validate-only short-circuits everything: load the file, run
+  // validateFuzzReplayResult on it, print a clear pass/fail message,
+  // and exit. No matcher re-run, no file write.
+  if (cfg.validateOnly) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(readFileSync(cfg.validateOnly, "utf8"));
+    } catch (e) {
+      console.error(
+        `[fuzz-replay] --validate-only: failed to read/parse ${cfg.validateOnly}: ${(e as Error).message}`,
+      );
+      return 1;
+    }
+    const probs = validateFuzzReplayResult(payload);
+    if (probs.length > 0) {
+      console.error(formatProblems("fuzz-replay", cfg.validateOnly, probs));
+      return 1;
+    }
+    console.log(
+      `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1`,
+    );
+    return 0;
+  }
+
   if (!cfg.path) {
     console.error("missing artifact path");
     console.error(HELP);

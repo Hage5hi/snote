@@ -186,7 +186,54 @@ jobs:
               echo '| _(none)_ | _no sticky-replay or sticky-fuzz-failures artifacts were produced by this run_ |'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # Machine-readable mirror of the table above. PR bots, dashboards,
+      # and downstream automation can ingest this without re-parsing the
+      # human-readable step summary. Each entry carries the bundle name,
+      # the exact path under reports/_ci/, the basename, and a linkable
+      # download URL pointing at the workflow run artifacts.
+      - name: Sticky artifacts — write machine-readable manifest JSON
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          mkdir -p reports/_ci
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts"
+          python3 - "$RUN_URL" <<'PY' > reports/_ci/sticky-artifacts-manifest.json
+          import json, os, sys
+          run_url = sys.argv[1]
+          bundles = [
+              ("sticky-replay", "reports/_ci/sticky-replay"),
+              ("sticky-fuzz-failures", "reports/_ci/sticky-fuzz-failures"),
+          ]
+          entries = []
+          for name, root in bundles:
+              if not os.path.isdir(root):
+                  continue
+              for fn in sorted(os.listdir(root)):
+                  p = os.path.join(root, fn)
+                  if not os.path.isfile(p):
+                      continue
+                  entries.append({
+                      "bundle": name,
+                      "path": p,
+                      "basename": fn,
+                      "sizeBytes": os.path.getsize(p),
+                      "downloadUrl": run_url,
+                  })
+          print(json.dumps({
+              "schema": "sticky-artifacts-manifest/v1",
+              "runUrl": run_url,
+              "entries": entries,
+          }, indent=2))
+          PY
+          echo "wrote reports/_ci/sticky-artifacts-manifest.json"
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: sticky-artifacts-manifest
+          path: reports/_ci/sticky-artifacts-manifest.json
+          retention-days: 14
+          if-no-files-found: warn
       - run: bun run build:check
+
 
 
   i18n:

@@ -46,10 +46,21 @@ describe("validateOverlapReplayResult", () => {
     expect(joined).toMatch(/timestamp is missing or not a string/);
   });
 
-  it("rejects cleanedIds containing non-numbers", () => {
-    expect(validateOverlapReplayResult({ ...good, cleanedIds: [1, "2"] })).toContain(
-      "cleanedIds is missing or not a number[]",
-    );
+  it("rejects cleanedIds containing non-numbers and includes the path + value snippet", () => {
+    const problems = validateOverlapReplayResult({ ...good, cleanedIds: [1, "2"] });
+    const joined = problems.join("\n");
+    expect(joined).toMatch(/\.cleanedIds is missing or not a number\[\]/);
+    // The received value snippet is included so reviewers can spot the bad item.
+    expect(joined).toMatch(/got: \[1,"2"\]/);
+  });
+
+  it("includes a bounded snippet of huge values rather than dumping them", () => {
+    const huge = "x".repeat(500);
+    const problems = validateOverlapReplayResult({ ...good, scenario: huge as unknown });
+    // String value is the right type — synthesize a wrong-typed field instead.
+    const p2 = validateOverlapReplayResult({ ...good, headScanLines: huge });
+    expect(p2.some((m) => m.includes("...") && m.length < 200)).toBe(true);
+    expect(problems).toEqual([]);
   });
 });
 

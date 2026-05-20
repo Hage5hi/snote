@@ -127,6 +127,7 @@ function parseArgs(argv: string[]): {
   out: string | null;
   noArtifact: boolean;
   pretty: boolean;
+  validateOnly: string | null;
   help: boolean;
 } {
   const out = {
@@ -136,6 +137,7 @@ function parseArgs(argv: string[]): {
     out: null as string | null,
     noArtifact: false,
     pretty: false,
+    validateOnly: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -148,8 +150,10 @@ function parseArgs(argv: string[]): {
     else if (a === "--out" || a === "--json") out.out = take();
     else if (a === "--no-artifact") out.noArtifact = true;
     else if (a === "--pretty") out.pretty = true;
+    else if (a === "--validate-only") out.validateOnly = take();
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
+  if (out.validateOnly) return out;
   if (!(out.scenario in SCENARIOS)) {
     throw new Error(
       `unknown scenario: ${out.scenario} (one of: ${Object.keys(SCENARIOS).join(", ")})`,
@@ -174,6 +178,13 @@ FLAGS
   --no-artifact             Skip writing the JSON artifact file.
   --pretty                  Indent the written JSON artifact for readability.
                             Default: compact single-line JSON (smaller diffs).
+                            Combine with --json/--out — the written file
+                            remains valid JSON matching sticky-replay/v1
+                            in either compact or pretty form.
+  --validate-only <p>       Validate an existing sticky-replay/v1 JSON
+                            file at <p> against the strict schema and
+                            exit (0=valid, 1=invalid). No scenario is
+                            rerun and no file is written.
   -h, --help                Show this help
 
 `;
@@ -208,6 +219,30 @@ export async function runReplay(argv: string[]): Promise<number> {
   }
   if (cfg.help) {
     console.log(HELP);
+    return 0;
+  }
+  // --validate-only short-circuits scenario execution: load the file,
+  // validate against sticky-replay/v1, print pass/fail, exit. No
+  // scenario rerun, no file write.
+  if (cfg.validateOnly) {
+    const { readFileSync } = await import("node:fs");
+    let payload: unknown;
+    try {
+      payload = JSON.parse(readFileSync(cfg.validateOnly, "utf8"));
+    } catch (e) {
+      console.error(
+        `[replay] --validate-only: failed to read/parse ${cfg.validateOnly}: ${(e as Error).message}`,
+      );
+      return 1;
+    }
+    const probs = validateOverlapReplayResult(payload);
+    if (probs.length > 0) {
+      console.error(formatProblems("replay", cfg.validateOnly, probs));
+      return 1;
+    }
+    console.log(
+      `[replay] --validate-only OK: ${cfg.validateOnly} matches sticky-replay/v1`,
+    );
     return 0;
   }
   const pages = SCENARIOS[cfg.scenario];
