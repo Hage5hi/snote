@@ -41,6 +41,8 @@ FLAGS
                    (default: \$GITHUB_RUN_URL or "" when missing).
   --base <root>    Make manifest entry paths relative to this base
                    directory. Default: parent of --out.
+  --bundle <name>  Restrict scan to a single bundle (repeatable). Accepts
+                   ${BUNDLES.map(b => `"${b.name}"`).join(" or ")}. Default: all.
   --pretty         Pretty-print the written manifest JSON (default: compact).
   -h, --help       Show this help
 
@@ -51,6 +53,7 @@ interface Args {
   out: string | null;
   runUrl: string;
   base: string | null;
+  bundles: string[];
   pretty: boolean;
   help: boolean;
 }
