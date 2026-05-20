@@ -127,7 +127,7 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
     <div
       ref={hostRef}
       aria-hidden="true"
-      className="absolute inset-0 h-full w-full motion-safe:animate-[fade-in_700ms_ease-out]"
+      className="absolute inset-0 h-full w-full"
     />
   );
 }
