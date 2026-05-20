@@ -159,7 +159,7 @@ FLAGS
                             Default: overlap-dup-page
   --head-scan-lines <n>     Override headScanLines (default 5)
   --strategy <s>            delete | lock (default delete)
-  --out <path>              Write the JSON summary to <path>.
+  --out, --json <path>      Write the JSON summary to <path>.
                             Overrides $STICKY_REPLAY_ARTIFACT.
   --no-artifact             Skip writing the JSON artifact file.
   -h, --help                Show this help
