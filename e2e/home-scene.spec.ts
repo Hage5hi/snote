@@ -236,3 +236,87 @@ for (const lang of ["en", "vi"] as const) {
     await expect(trigger).toBeFocused();
   });
 }
+
+// ---------------------------------------------------------------------------
+// 5. CSS isolation — cyber styling MUST NOT leak onto /:slug pages.
+// ---------------------------------------------------------------------------
+test("Cyber scene does not leak data-theme or isCyber styling onto /:slug", async ({ page }) => {
+  await seed(page, { lang: "en", scene: "cyber-linh-khi", theme: "dark" });
+  await page.goto("/");
+  // Sanity: Home is in cyber mode.
+  await expect(page.locator("[data-home-root][data-theme='cyber']")).toBeVisible();
+
+  // Navigate to a note route — same scene value in localStorage, but the
+  // styling must stay scoped to the Home component tree.
+  const slug = `e2e-leak-${Math.random().toString(36).slice(2, 8)}`;
+  await page.goto(`/${slug}`);
+  await page.waitForLoadState("domcontentloaded");
+
+  // No data-home-root anywhere.
+  await expect(page.locator("[data-home-root]")).toHaveCount(0);
+  // No data-theme='cyber' anywhere.
+  await expect(page.locator("[data-theme='cyber']")).toHaveCount(0);
+  // No SceneHost fade wrapper.
+  await expect(page.locator("[data-scene-ready]")).toHaveCount(0);
+
+  // Editor text container must not have inherited the cyber teal/cyan classes
+  // or font-mono coming from the Home Recents list styling.
+  const leakedClasses = await page.evaluate(() => {
+    const all = document.querySelectorAll<HTMLElement>("body *");
+    const hits: string[] = [];
+    all.forEach((el) => {
+      const c = el.className;
+      if (typeof c !== "string") return;
+      if (/\b(text-teal-|text-cyan-|border-cyan-|bg-cyan-|ring-teal-|from-teal-|to-cyan-)/.test(c)) {
+        hits.push(c);
+      }
+    });
+    return hits;
+  });
+  expect(leakedClasses).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// 6. axe accessibility scan on the open theme menu (EN + VI).
+// ---------------------------------------------------------------------------
+import AxeBuilder from "@axe-core/playwright";
+
+for (const lang of ["en", "vi"] as const) {
+  test(`Theme menu passes axe a11y scan (${lang})`, async ({ page }) => {
+    await seed(page, { lang });
+    await page.goto("/");
+
+    const trigger = page.getByRole("button", { name: themeAria[lang] });
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menu")).toBeVisible();
+
+    // Scan the whole document but restrict to serious+ rules that matter for
+    // a popover menu (color-contrast, name/role/value, focus, aria-*).
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      // Radix Portal lifts the menu out of <main>; that's expected and not a
+      // landmark violation for our purpose.
+      .disableRules(["region"])
+      .analyze();
+
+    const serious = results.violations.filter(
+      (v) => v.impact === "serious" || v.impact === "critical",
+    );
+    expect(
+      serious,
+      `axe violations:\n${JSON.stringify(serious, null, 2)}`,
+    ).toEqual([]);
+
+    // Spot-check: the trigger has an accessible name in the active locale,
+    // and every menuitemradio has both a role and an accessible name.
+    await expect(trigger).toHaveAttribute("aria-label", themeAria[lang]);
+    const items = page.getByRole("menuitemradio");
+    const count = await items.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const name = await items.nth(i).getAttribute("aria-label");
+      expect(name, `menuitemradio[${i}] missing aria-label`).toBeTruthy();
+    }
+  });
+}
