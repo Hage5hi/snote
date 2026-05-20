@@ -232,6 +232,8 @@ also written to a JSON artifact (`sticky-replay/v1` schema):
 | `--out <path>`                | Write the JSON summary to `<path>` (highest precedence).              |
 | `$STICKY_REPLAY_ARTIFACT`     | Default artifact path when `--out` is not passed.                     |
 | `--no-artifact`               | Suppress the file write entirely (stdout only).                       |
+| `--pretty`                    | Indent the written JSON for readability. Default is compact single-line JSON (smaller diffs). Combine freely with `--out`/`--json` — the written file remains valid JSON that passes the strict `sticky-replay/v1` validator either way (covered by `scripts/__tests__/ci-sticky-replay-pretty-schema.test.ts`). |
+| `--validate-only <p>`         | Validate an existing `sticky-replay/v1` JSON file at `<p>` against the strict schema and exit (0=valid, 1=invalid). No scenario is rerun, no file is written. Useful for CI gates and for sanity-checking a previously-written `--json` artifact. |
 | _none_                        | Falls back to `reports/_ci/sticky-replay/<scenario>.json`.            |
 
 Under GitHub Actions (`GITHUB_ACTIONS=true`), the replay also emits a
@@ -243,6 +245,23 @@ bun run scripts/ci-sticky-newest-wins-overlap-replay.ts \
   --scenario overlap-dup-page \
   --out reports/_ci/sticky-replay/overlap-dup-page.json
 ```
+
+The same `--validate-only` and `--pretty` flags also exist on
+`scripts/ci-sticky-fuzz-failure-replay.ts`, validating against
+`sticky-fuzz-replay/v1`.
+
+## CI artifact manifest
+
+After uploading the `sticky-replay/` and `sticky-fuzz-failures/`
+bundles, CI generates a machine-readable manifest at
+`reports/_ci/sticky-artifacts-manifest.json` (uploaded as the
+`sticky-artifacts-manifest` artifact). Schema: `sticky-artifacts-manifest/v1`.
+Each entry lists the bundle name, the exact in-repo path, basename,
+size, and a linkable download URL pointing at the workflow run's
+artifacts section. PR bots and dashboards should consume this JSON
+instead of re-parsing the human-readable step summary table.
+
+
 
 ## Exit codes
 
