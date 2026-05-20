@@ -41,20 +41,24 @@ export default function SceneHost() {
   const [ready, setReady] = useState(false);
   const revertedRef = useRef(false);
 
-  // Guard once per mount — if blocked, revert to none and remember.
+  // Run the guard synchronously on the first render where a scene is selected.
+  // This avoids creating the React.lazy ref (and thus dispatching the dynamic
+  // import) before we've decided whether to render the scene at all — which
+  // is the contract the perf tests enforce.
+  const blocked = scene !== SCENE_NONE && shouldBlockScene();
+
+  // Revert the user's choice once (post-commit) so the dropdown reflects it.
   useEffect(() => {
-    if (scene === SCENE_NONE) return;
+    if (!blocked) return;
     if (revertedRef.current) return;
-    if (shouldBlockScene()) {
-      revertedRef.current = true;
-      try {
-        sessionStorage.setItem(GUARD_FLAG_KEY, "1");
-      } catch {
-        /* ignore */
-      }
-      setScene(SCENE_NONE);
+    revertedRef.current = true;
+    try {
+      sessionStorage.setItem(GUARD_FLAG_KEY, "1");
+    } catch {
+      /* ignore */
     }
-  }, [scene, setScene]);
+    setScene(SCENE_NONE);
+  }, [blocked, setScene]);
 
   // Reset ready state whenever we switch scenes.
   useEffect(() => {
@@ -71,15 +75,17 @@ export default function SceneHost() {
   const def = getSceneDef(scene);
 
   // Lazy component reference — keyed on scene id so switching scenes mounts a
-  // fresh component (and gets the right chunk).
+  // fresh component (and gets the right chunk). Skipped entirely when blocked
+  // by guards, so the dynamic import never fires.
   const SceneComponent = useMemo(() => {
+    if (blocked) return null;
     if (!def || !def.enabled || !def.load) return null;
     return lazy(def.load);
-  }, [def]);
+  }, [def, blocked]);
 
   const handleReady = useCallback(() => setReady(true), []);
 
-  if (!def || def.id === SCENE_NONE || !SceneComponent) return null;
+  if (blocked || !def || def.id === SCENE_NONE || !SceneComponent) return null;
 
   return (
     <div
