@@ -41,11 +41,16 @@ const ws = (rng: () => number, max = 4) => {
 };
 const eol = (rng: () => number) => pick(rng, EOL);
 
-/** Inject N BOMs at random positions inside `s`. */
+/** Inject N BOMs at STRICTLY INTERIOR positions of `s` (never at the
+ * very start or very end, since `trim()` treats U+FEFF as whitespace
+ * and would silently strip a leading/trailing BOM — that is the
+ * intentionally-tolerated case, not a false positive). */
 function sprinkleBoms(rng: () => number, s: string, n: number): string {
+  if (s.length < 3) return s;
   let out = s;
   for (let i = 0; i < n; i++) {
-    const at = Math.floor(rng() * (out.length + 1));
+    // interior: 1..out.length-1 inclusive
+    const at = 1 + Math.floor(rng() * (out.length - 1));
     out = out.slice(0, at) + BOM + out.slice(at);
   }
   return out;
