@@ -243,11 +243,22 @@ export async function runReplay(argv: string[]): Promise<number> {
   };
   console.log(`[replay] result=${JSON.stringify(summary, null, 2)}`);
 
+  const validationProblems = validateOverlapReplayResult(summary);
+  if (validationProblems.length > 0) {
+    console.error(
+      formatProblems("replay", "<in-memory summary>", validationProblems),
+    );
+    return 1;
+  }
+
   const artifactPath = resolveArtifactPath(cfg.scenario, cfg.out, cfg.noArtifact);
   if (artifactPath) {
     try {
       mkdirSync(dirname(artifactPath), { recursive: true });
-      writeFileSync(artifactPath, JSON.stringify(summary, null, 2) + "\n", "utf8");
+      const payload = cfg.pretty
+        ? JSON.stringify(summary, null, 2)
+        : JSON.stringify(summary);
+      writeFileSync(artifactPath, payload + "\n", "utf8");
       console.log(`[replay] wrote artifact=${artifactPath}`);
       emitGhAnnotation(
         "notice",
@@ -261,6 +272,7 @@ export async function runReplay(argv: string[]): Promise<number> {
   }
   return 0;
 }
+
 
 const isEntrypoint =
   typeof process !== "undefined" &&
