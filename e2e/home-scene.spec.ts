@@ -54,7 +54,6 @@ const viewports = [
 for (const vp of viewports) {
   test(`Home masks don't cover header or recents @${vp.name}`, async ({ page }) => {
     await seed(page, { lang: "en", scene: "cyber-linh-khi", theme: "dark" });
-    // Pre-seed a recent note so the Recents list renders.
     await page.addInitScript(() => {
       const recents = [
         { slug: "hello", lastOpenedAt: Date.now() - 60_000 },
@@ -64,22 +63,69 @@ for (const vp of viewports) {
     });
     await page.setViewportSize({ width: vp.w, height: vp.h });
     await page.goto("/");
+    await page.waitForLoadState("networkidle");
 
-    // Header logo must be visible (not behind the top mask).
     const header = page.locator("header").first();
     await expect(header).toBeVisible();
-    await expect(header.getByText("Syrin Notes")).toBeVisible();
+    const brand = header.getByText("Syrin Notes");
+    await expect(brand).toBeVisible();
 
-    // Recents list, when present, must also be visible (not behind bottom mask).
+    // Pixel-level hit-test: the mask is pointer-events-none, but
+    // elementFromPoint still walks paint order. If a mask div had grown
+    // over the header, the topmost paintable node here would not be the
+    // header subtree.
+    const brandBox = (await brand.boundingBox())!;
+    const cx = Math.round(brandBox.x + brandBox.width / 2);
+    const cy = Math.round(brandBox.y + brandBox.height / 2);
+    const hitFromHeader = await page.evaluate(
+      ([x, y]) => {
+        const el = document.elementFromPoint(x, y);
+        return el?.closest("header") ? "header" : (el?.tagName.toLowerCase() ?? "none");
+      },
+      [cx, cy],
+    );
+    expect(hitFromHeader).toBe("header");
+
+    // Pixel-level: the header strip must contain multiple distinct colors
+    // (logo + text + bg). A fully-covering mask would collapse to ~1 color.
+    const headerShot = await page.screenshot({
+      clip: { x: 0, y: 0, width: Math.min(vp.w, 400), height: 48 },
+    });
+    const distinct = await page.evaluate(async (b64) => {
+      const img = new Image();
+      img.src = "data:image/png;base64," + b64;
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(img, 0, 0);
+      const data = ctx.getImageData(0, 0, img.width, img.height).data;
+      const seen = new Set<string>();
+      for (let i = 0; i < data.length; i += 4) {
+        seen.add(`${data[i]},${data[i + 1]},${data[i + 2]}`);
+        if (seen.size > 8) break;
+      }
+      return seen.size;
+    }, headerShot.toString("base64"));
+    expect(distinct).toBeGreaterThan(3);
+
+    // Recents: not clipped + hit-test the first row.
     const recents = page.getByRole("list").filter({ hasText: "/hello" }).first();
     if (await recents.count()) {
       await expect(recents).toBeVisible();
-      // The recents item must be inside the visible viewport (no clipping).
-      const box = await recents.boundingBox();
-      expect(box).not.toBeNull();
-      if (box) {
-        expect(box.y + box.height).toBeLessThanOrEqual(vp.h + 1);
-      }
+      const box = (await recents.boundingBox())!;
+      expect(box.y + box.height).toBeLessThanOrEqual(vp.h + 1);
+      const rx = Math.round(box.x + 24);
+      const ry = Math.round(box.y + 16);
+      const hitFromRecents = await page.evaluate(
+        ([x, y]) => {
+          const el = document.elementFromPoint(x, y);
+          return el?.closest("ul") ? "list" : el?.tagName.toLowerCase() ?? "none";
+        },
+        [rx, ry],
+      );
+      expect(hitFromRecents).toBe("list");
     }
   });
 }
@@ -188,5 +234,89 @@ for (const lang of ["en", "vi"] as const) {
     await page.keyboard.press("Escape");
     await expect(menu).toHaveCount(0);
     await expect(trigger).toBeFocused();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 5. CSS isolation — cyber styling MUST NOT leak onto /:slug pages.
+// ---------------------------------------------------------------------------
+test("Cyber scene does not leak data-theme or isCyber styling onto /:slug", async ({ page }) => {
+  await seed(page, { lang: "en", scene: "cyber-linh-khi", theme: "dark" });
+  await page.goto("/");
+  // Sanity: Home is in cyber mode.
+  await expect(page.locator("[data-home-root][data-theme='cyber']")).toBeVisible();
+
+  // Navigate to a note route — same scene value in localStorage, but the
+  // styling must stay scoped to the Home component tree.
+  const slug = `e2e-leak-${Math.random().toString(36).slice(2, 8)}`;
+  await page.goto(`/${slug}`);
+  await page.waitForLoadState("domcontentloaded");
+
+  // No data-home-root anywhere.
+  await expect(page.locator("[data-home-root]")).toHaveCount(0);
+  // No data-theme='cyber' anywhere.
+  await expect(page.locator("[data-theme='cyber']")).toHaveCount(0);
+  // No SceneHost fade wrapper.
+  await expect(page.locator("[data-scene-ready]")).toHaveCount(0);
+
+  // Editor text container must not have inherited the cyber teal/cyan classes
+  // or font-mono coming from the Home Recents list styling.
+  const leakedClasses = await page.evaluate(() => {
+    const all = document.querySelectorAll<HTMLElement>("body *");
+    const hits: string[] = [];
+    all.forEach((el) => {
+      const c = el.className;
+      if (typeof c !== "string") return;
+      if (/\b(text-teal-|text-cyan-|border-cyan-|bg-cyan-|ring-teal-|from-teal-|to-cyan-)/.test(c)) {
+        hits.push(c);
+      }
+    });
+    return hits;
+  });
+  expect(leakedClasses).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// 6. axe accessibility scan on the open theme menu (EN + VI).
+// ---------------------------------------------------------------------------
+import AxeBuilder from "@axe-core/playwright";
+
+for (const lang of ["en", "vi"] as const) {
+  test(`Theme menu passes axe a11y scan (${lang})`, async ({ page }) => {
+    await seed(page, { lang });
+    await page.goto("/");
+
+    const trigger = page.getByRole("button", { name: themeAria[lang] });
+    await trigger.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("menu")).toBeVisible();
+
+    // Scan the whole document but restrict to serious+ rules that matter for
+    // a popover menu (color-contrast, name/role/value, focus, aria-*).
+    const results = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+      // Radix Portal lifts the menu out of <main>; that's expected and not a
+      // landmark violation for our purpose.
+      .disableRules(["region"])
+      .analyze();
+
+    const serious = results.violations.filter(
+      (v) => v.impact === "serious" || v.impact === "critical",
+    );
+    expect(
+      serious,
+      `axe violations:\n${JSON.stringify(serious, null, 2)}`,
+    ).toEqual([]);
+
+    // Spot-check: the trigger has an accessible name in the active locale,
+    // and every menuitemradio has both a role and an accessible name.
+    await expect(trigger).toHaveAttribute("aria-label", themeAria[lang]);
+    const items = page.getByRole("menuitemradio");
+    const count = await items.count();
+    expect(count).toBeGreaterThan(0);
+    for (let i = 0; i < count; i++) {
+      const name = await items.nth(i).getAttribute("aria-label");
+      expect(name, `menuitemradio[${i}] missing aria-label`).toBeTruthy();
+    }
   });
 }
