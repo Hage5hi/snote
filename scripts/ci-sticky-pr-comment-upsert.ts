@@ -485,14 +485,16 @@ async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<number> {
   const api: StickyApi = {
     list: async () => {
       const out: StickyComment[] = [];
+      let pagesWalked = 0;
       for (let page = 1; page < 50; page++) {
         const r = await fetch(`${base}?per_page=100&page=${page}`, { headers });
         if (!r.ok) throw new Error(`list failed: ${r.status} ${await r.text()}`);
         const batch = (await r.json()) as Array<{ id: number; body: string }>;
+        pagesWalked++;
         out.push(...batch.map((c) => ({ id: c.id, body: c.body ?? "" })));
         if (batch.length < 100) break;
       }
-      return out;
+      return { comments: out, pagesWalked };
     },
     create: async (b) => {
       const r = await fetch(base, {
