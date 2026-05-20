@@ -53,11 +53,18 @@ USAGE
   bun run scripts/ci-sticky-fuzz-failure-replay.ts <artifact.json> [flags]
 
 FLAGS
-  --file <path>     Read the artifact from <path>
-  --json <path>     Also write the machine-readable replay result to <path>
-  --pretty          Indent the written JSON output for readability.
-                    Default: compact single-line JSON (smaller diffs).
-  -h, --help        Show this help
+  --file <path>         Read the artifact from <path>
+  --json <path>         Also write the machine-readable replay result to <path>
+  --pretty              Indent the written JSON output for readability.
+                        Default: compact single-line JSON (smaller diffs).
+                        Combine with --json — the written file remains
+                        valid JSON matching the sticky-fuzz-replay/v1
+                        schema in either compact or pretty form.
+  --validate-only <p>   Validate an existing sticky-fuzz-replay/v1 JSON
+                        file at <p> against the strict schema and exit
+                        (0=valid, 1=invalid). No matcher is re-run and
+                        no file is written.
+  -h, --help            Show this help
 
 The artifact must carry the sticky-fuzz-failure/v1 schema and contain
 inputs.markerLiteral + inputs.body. The CLI re-runs hasStickyMarker on
@@ -69,12 +76,14 @@ function parseArgs(argv: string[]): {
   path: string | null;
   json: string | null;
   pretty: boolean;
+  validateOnly: string | null;
   help: boolean;
 } {
   const out = {
     path: null as string | null,
     json: null as string | null,
     pretty: false,
+    validateOnly: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -83,6 +92,7 @@ function parseArgs(argv: string[]): {
     else if (a === "--file") out.path = argv[++i] ?? null;
     else if (a === "--json") out.json = argv[++i] ?? null;
     else if (a === "--pretty") out.pretty = true;
+    else if (a === "--validate-only") out.validateOnly = argv[++i] ?? null;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
