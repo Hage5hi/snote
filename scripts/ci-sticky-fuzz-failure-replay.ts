@@ -19,6 +19,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { hasStickyMarker } from "./ci-sticky-pr-comment-upsert";
+import {
+  validateFuzzReplayResult,
+  formatProblems,
+} from "./_helpers/sticky-replay-schemas";
+
 
 interface FuzzArtifactInputs {
   markerLiteral?: string;
