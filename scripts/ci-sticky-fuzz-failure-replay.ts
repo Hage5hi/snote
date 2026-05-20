@@ -182,41 +182,55 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
   } catch (e) {
     console.error((e as Error).message);
     console.error(HELP);
-    return 1;
+    return EXIT_USAGE;
   }
   if (cfg.help) {
     console.log(HELP);
-    return 0;
+    return EXIT_OK;
   }
 
   // --validate-only short-circuits everything: load the file, run
   // validateFuzzReplayResult on it, print a clear pass/fail message,
   // and exit. No matcher re-run, no file write.
   if (cfg.validateOnly) {
-    let payload: unknown;
+    let raw: string;
     try {
-      payload = JSON.parse(readFileSync(cfg.validateOnly, "utf8"));
+      raw = readFileSync(cfg.validateOnly, "utf8");
     } catch (e) {
       console.error(
-        `[fuzz-replay] --validate-only: failed to read/parse ${cfg.validateOnly}: ${(e as Error).message}`,
+        `[fuzz-replay] --validate-only: cannot read ${cfg.validateOnly}: ${(e as Error).message}`,
       );
-      return 1;
+      return EXIT_IO;
     }
-    const probs = validateFuzzReplayResult(payload);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch (e) {
+      console.error(
+        `[fuzz-replay] --validate-only: ${cfg.validateOnly} is not valid JSON: ${(e as Error).message}`,
+      );
+      return EXIT_PARSE;
+    }
+    let probs = validateFuzzReplayResult(payload);
+    if (cfg.fields.length > 0) {
+      probs = filterProblemsByPath(probs, cfg.fields);
+      console.log(`[fuzz-replay] --fields filter: ${cfg.fields.join(",")}`);
+    }
     if (probs.length > 0) {
       console.error(formatProblems("fuzz-replay", cfg.validateOnly, probs));
-      return 1;
+      return EXIT_SCHEMA;
     }
     console.log(
-      `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1`,
+      `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1` +
+        (cfg.fields.length > 0 ? ` (scoped to: ${cfg.fields.join(",")})` : ""),
     );
-    return 0;
+    return EXIT_OK;
   }
 
   if (!cfg.path) {
     console.error("missing artifact path");
     console.error(HELP);
-    return 1;
+    return EXIT_USAGE;
   }
 
   let raw: string;
@@ -224,14 +238,14 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     raw = readFileSync(cfg.path, "utf8");
   } catch (e) {
     console.error(`[fuzz-replay] failed to read ${cfg.path}: ${(e as Error).message}`);
-    return 1;
+    return EXIT_IO;
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
     console.error(`[fuzz-replay] ${cfg.path} is not valid JSON: ${(e as Error).message}`);
-    return 1;
+    return EXIT_PARSE;
   }
 
   const problems = validateFuzzArtifact(parsed);
@@ -241,7 +255,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
         `schema validation (${problems.length} problem${problems.length === 1 ? "" : "s"}):`,
     );
     for (const p of problems) console.error(`  - ${p}`);
-    return 1;
+    return EXIT_SCHEMA;
   }
 
   const artifact = parsed as FuzzArtifact;
