@@ -27,7 +27,11 @@
 
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve, dirname } from "node:path";
-import { validateManifest, formatProblems } from "./_helpers/sticky-replay-schemas";
+import {
+  validateManifest,
+  validateValidateSummary,
+  formatProblems,
+} from "./_helpers/sticky-replay-schemas";
 import { resolveManifestGlob } from "./_helpers/sticky-manifest-glob";
 import {
   EXIT_OK,
