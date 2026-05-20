@@ -105,4 +105,14 @@ describe("ci-sticky-newest-wins-overlap-replay CLI", () => {
       `::notice file=${out}::sticky-replay scenario=overlap-dup-page`,
     );
   });
+
+  it("--json <path> is an alias for --out and writes the same JSON payload", async () => {
+    const out = join(dir, "via-json.json");
+    const code = await runReplay(["--json", out]);
+    expect(code).toBe(0);
+    expect(existsSync(out)).toBe(true);
+    const parsed = JSON.parse(readFileSync(out, "utf8"));
+    expect(parsed.schema).toBe("sticky-replay/v1");
+    expect(parsed.selectedId).toBe(900);
+  });
 });
