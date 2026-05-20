@@ -100,9 +100,10 @@ describe("paginated list with legacy array return shape", () => {
 
     expect(res.scanStats.pagesWalked).toBe(1); // legacy shape default
     expect(res.scanStats.commentsExamined).toBe(3);
-    // head: 3 lines × 3 comments = 9
-    // full: 10 lines × 3 comments = 30 (8 noise + marker + tail)
-    expect(res.scanStats.linesScanned).toBe(3 * 3 + 10 * 3);
+    // head: 3 lines × 3 comments = 9.
+    // full scan stops at the marker (index 8 in a 10-line body) → 9
+    // lines × 3 comments = 27.
+    expect(res.scanStats.linesScanned).toBe(3 * 3 + 9 * 3);
     expect(res.usedFullScan).toBe(true);
     expect(res.comment.id).toBe(3);
     expect(res.cleaned.map((c) => c.id).sort((a, b) => a - b)).toEqual([1, 2]);
