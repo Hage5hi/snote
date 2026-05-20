@@ -217,13 +217,24 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     },
     timestamp: new Date().toISOString(),
   };
-  const payload = JSON.stringify(result, null, 2);
-  console.log(payload);
+  const stdoutPayload = JSON.stringify(result, null, 2);
+  console.log(stdoutPayload);
+
+  const validationProblems = validateFuzzReplayResult(result);
+  if (validationProblems.length > 0) {
+    console.error(
+      formatProblems("fuzz-replay", "<in-memory result>", validationProblems),
+    );
+    return 1;
+  }
 
   if (cfg.json) {
     try {
       mkdirSync(dirname(cfg.json), { recursive: true });
-      writeFileSync(cfg.json, payload + "\n", "utf8");
+      const filePayload = cfg.pretty
+        ? JSON.stringify(result, null, 2)
+        : JSON.stringify(result);
+      writeFileSync(cfg.json, filePayload + "\n", "utf8");
       console.log(`[fuzz-replay] wrote json=${cfg.json}`);
     } catch (e) {
       console.error(
@@ -233,6 +244,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
   }
   return 0;
 }
+
 
 const isEntrypoint =
   typeof process !== "undefined" &&
