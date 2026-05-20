@@ -80,7 +80,8 @@ export const ThemeToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
                     key={def.id}
                     value={def.id}
                     disabled={!def.enabled}
-                    className="gap-2"
+                    aria-label={desc ? `${label} — ${desc}` : label}
+                    className="gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                   >
                     <span
                       aria-hidden="true"

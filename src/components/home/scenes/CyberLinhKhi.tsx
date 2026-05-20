@@ -9,12 +9,14 @@ import { CYBER_LINH_KHI_FRAG, CYBER_LINH_KHI_VERT } from "./cyber-linh-khi.frag"
 const FRAME_MS = 1000 / 30; // 30fps target
 const TIME_SCALE = 0.0008;  // "u_time * tiny" — very slow turbulence
 
-export default function CyberLinhKhi({ paused, isDark }: SceneProps) {
+export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const isDarkRef = useRef(isDark);
   isDarkRef.current = isDark;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -97,6 +99,10 @@ export default function CyberLinhKhi({ paused, isDark }: SceneProps) {
         program.uniforms.u_time.value = (now - start) * TIME_SCALE;
         program.uniforms.u_isDark.value = isDarkRef.current ? 1 : 0;
         renderer.render({ scene: mesh });
+        if (onReadyRef.current) {
+          onReadyRef.current();
+          onReadyRef.current = undefined;
+        }
       }
       rafId = requestAnimationFrame(tick);
     };
@@ -121,7 +127,7 @@ export default function CyberLinhKhi({ paused, isDark }: SceneProps) {
     <div
       ref={hostRef}
       aria-hidden="true"
-      className="absolute inset-0 h-full w-full motion-safe:animate-[fade-in_700ms_ease-out]"
+      className="absolute inset-0 h-full w-full"
     />
   );
 }
