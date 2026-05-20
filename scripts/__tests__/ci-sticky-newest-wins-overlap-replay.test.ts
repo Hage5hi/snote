@@ -34,7 +34,7 @@ describe("ci-sticky-newest-wins-overlap-replay CLI", () => {
     expect(code).toBe(0);
     const joined = logs.join("\n");
     expect(joined).toMatch(/"selectedId": 900/);
-    expect(joined).toMatch(/"cleanedIds": \[\s*100,\s*200,\s*300\s*\]/);
+    expect(joined).toMatch(/"cleanedIds": \[\s*300,\s*200,\s*100\s*\]/);
     expect(joined).toMatch(/"pagesWalked": 3/);
   });
 
