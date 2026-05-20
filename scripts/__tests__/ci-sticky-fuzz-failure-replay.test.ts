@@ -83,7 +83,7 @@ describe("ci-sticky-fuzz-failure-replay CLI", () => {
       inputs: { markerLiteral: MARKER, cleanedIds: null },
     });
     const code = await runFuzzReplay([path]);
-    expect(code).toBe(1);
+    expect(code).toBe(4); // EXIT_SCHEMA
     const e = errs.join("\n");
     expect(e).toMatch(/inputs\.body is missing or not a string/);
     expect(e).toMatch(/capture inputs\.body/);
