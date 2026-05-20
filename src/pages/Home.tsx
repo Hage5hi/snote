@@ -224,8 +224,8 @@ export default function Home() {
           <div
             className={
               isCyber
-                ? "flex flex-1 items-center rounded-md border border-cyan-900/40 bg-black/40 backdrop-blur-md transition-shadow focus-within:shadow-[0_0_0_3px_rgba(94,234,212,0.18)] focus-within:ring-2 focus-within:ring-teal-400/60"
-                : "flex flex-1 items-center rounded-md border border-input bg-background/80 transition-shadow focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)] focus-within:ring-2 focus-within:ring-ring"
+                ? "flex flex-1 items-center rounded-md border border-cyan-400/20 bg-transparent transition-colors focus-within:border-teal-300/50"
+                : "flex flex-1 items-center rounded-md border border-input/70 bg-transparent transition-colors focus-within:border-ring/60"
             }
           >
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
