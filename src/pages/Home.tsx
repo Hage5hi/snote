@@ -10,6 +10,7 @@ import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
+import { cn } from "@/lib/utils";
 
 // SceneHost is dynamic — when scene === "none" it short-circuits to null
 // before loading any shader chunk. We still lazy-load the component shell
@@ -170,6 +171,7 @@ export default function Home() {
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
   const isCyber = scene === "cyber-linh-khi";
+  const motionSafe = "motion-safe:transition motion-safe:duration-150";
 
   return (
     <div
@@ -222,11 +224,14 @@ export default function Home() {
           }}
         >
           <div
-            className={
+            className={cn(
+              "relative flex flex-1 items-center rounded-md border bg-transparent outline-none",
+              motionSafe,
+              "focus-within:border-ring/70 focus-within:ring-1 focus-within:ring-ring/35",
               isCyber
-                ? "flex flex-1 items-center rounded-md border border-cyan-400/20 bg-transparent transition-colors focus-within:border-teal-300/50"
-                : "flex flex-1 items-center rounded-md border border-input/70 bg-transparent transition-colors focus-within:border-ring/60"
-            }
+                ? "border-cyan-400/25 focus-within:border-teal-300/60 focus-within:ring-teal-300/25"
+                : "border-input/70",
+            )}
           >
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
             <Input
@@ -237,7 +242,7 @@ export default function Home() {
                 setError(null);
               }}
               placeholder={t("home.placeholder")}
-              className="border-0 focus-visible:ring-0 font-mono"
+              className="h-10 border-0 bg-transparent px-1 font-mono shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
               maxLength={64}
             />
             <div
