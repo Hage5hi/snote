@@ -167,9 +167,17 @@ export default function Home() {
       });
   };
 
+  const { scene } = useSceneTheme();
+  const hasScene = scene !== "none";
+
   return (
-    <div className="min-h-svh bg-background">
-      <header className="flex h-12 items-center justify-between border-b border-border px-4">
+    <div className="relative min-h-svh bg-background">
+      {hasScene && (
+        <Suspense fallback={null}>
+          <SceneHost />
+        </Suspense>
+      )}
+      <header className="relative z-10 flex h-12 items-center justify-between border-b border-border/60 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="flex items-center gap-2">
           <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" fetchPriority="high" decoding="async" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Syrin Notes</span>
@@ -180,24 +188,24 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-xl px-4 py-12 md:py-20">
-        <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
+      <main className="relative z-10 mx-auto w-full max-w-xl px-4 py-12 md:py-20">
+        <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]">
           {t("home.tagline")}
         </h1>
-        <p className="mt-3 text-muted-foreground">
+        <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both]">
           {t("home.intro_prefix")}
           <code className="rounded bg-muted px-1.5 py-0.5 text-sm">/hello</code>
           {t("home.intro_suffix")}
         </p>
 
         <form
-          className="mt-8 flex gap-2"
+          className="mt-8 flex gap-2 motion-safe:animate-[fade-in_500ms_ease-out_160ms_both]"
           onSubmit={(e) => {
             e.preventDefault();
             open(slug);
           }}
         >
-          <div className="flex flex-1 items-center rounded-md border border-input bg-background focus-within:ring-2 focus-within:ring-ring">
+          <div className="flex flex-1 items-center rounded-md border border-input bg-background/80 transition-shadow focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)] focus-within:ring-2 focus-within:ring-ring">
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
             <Input
               autoFocus
