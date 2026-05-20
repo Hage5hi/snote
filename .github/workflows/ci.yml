@@ -47,6 +47,10 @@ jobs:
       - name: Sticky-upsert integration + perf suite
         env:
           STICKY_DEBUG: ${{ inputs.sticky_debug || '0' }}
+          # Always-on compact per-scenario scanStats summary in CI logs.
+          # Tests no-op when this is unset; we enable it here so reviewers
+          # see the marker-scan profile inline without re-running locally.
+          STICKY_TEST_SUMMARY: '1'
         if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         run: |
           set -e
@@ -68,6 +72,9 @@ jobs:
             scripts/__tests__/ci-sticky-upsert-randomized-concurrency.test.ts
             scripts/__tests__/ci-sticky-upsert-multi-marker-paginated.test.ts
             scripts/__tests__/ci-sticky-upsert-debug-gating-drift.test.ts
+            scripts/__tests__/ci-sticky-upsert-scan-stats-budgets.test.ts
+            scripts/__tests__/ci-sticky-upsert-bulk-cleanup-perf-regression.test.ts
+            scripts/__tests__/ci-sticky-upsert-newest-wins-pagination-overlap.test.ts
           )
           DEBUG_TESTS=(
             scripts/__tests__/ci-sticky-upsert-debug-summary-gating.test.ts
@@ -92,6 +99,7 @@ jobs:
         if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           STICKY_DEBUG: ${{ inputs.sticky_debug || '0' }}
+          STICKY_TEST_SUMMARY: '1'
         timeout-minutes: 2
         run: |
           set -e
@@ -102,6 +110,8 @@ jobs:
             scripts/__tests__/ci-sticky-upsert-pagination-boundary.test.ts
             scripts/__tests__/ci-sticky-upsert-empty-pages.test.ts
             scripts/__tests__/ci-sticky-upsert-paginated-list.test.ts
+            scripts/__tests__/ci-sticky-upsert-bulk-cleanup-perf-regression.test.ts
+            scripts/__tests__/ci-sticky-upsert-scan-stats-budgets.test.ts
           )
           if [ "$STICKY_DEBUG" = "1" ]; then
             echo "sticky_debug=1 → capturing perf timing log"
