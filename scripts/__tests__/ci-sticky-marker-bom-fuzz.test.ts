@@ -82,12 +82,29 @@ describe("hasStickyMarker — BOM + partial-marker false-positive fuzzing", () =
         const corrupted = sprinkleBoms(rng, MARKER, 1 + Math.floor(rng() * 6));
         const body =
           ws(rng) + corrupted + ws(rng) + eol(rng) + `tail content ${i}`;
-        ctx.extra = { body, corrupted };
-        let r: unknown;
-        expect(() => { r = hasStickyMarker(body, MARKER); }).not.toThrow();
-        expect(typeof r).toBe("boolean");
-        expect(r).toBe(false);
-        expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(false);
+        let headResult: unknown;
+        let fullResult: unknown;
+        let headThrew: string | null = null;
+        let fullThrew: string | null = null;
+        try { headResult = hasStickyMarker(body, MARKER); }
+        catch (e) { headThrew = (e as Error).message; }
+        try { fullResult = hasStickyMarker(body, MARKER, { fullScan: true }); }
+        catch (e) { fullThrew = (e as Error).message; }
+        ctx.extra = {
+          markerLiteral: MARKER,
+          markerVariant: corrupted,
+          body,
+          paths: {
+            headScan: { returned: headResult, threw: headThrew },
+            fullScan: { returned: fullResult, threw: fullThrew },
+          },
+          cleanedIds: null, // N/A: matcher-only test, no upsert ran
+        };
+        expect(headThrew).toBeNull();
+        expect(fullThrew).toBeNull();
+        expect(typeof headResult).toBe("boolean");
+        expect(headResult).toBe(false);
+        expect(fullResult).toBe(false);
       },
     });
   });
@@ -109,12 +126,30 @@ describe("hasStickyMarker — BOM + partial-marker false-positive fuzzing", () =
         ).join("");
         const body =
           before + ws(rng) + noisy + ws(rng) + eol(rng) + `padding ${i}`;
-        ctx.extra = { partial, noisy, body };
-        let r: unknown;
-        expect(() => { r = hasStickyMarker(body, MARKER); }).not.toThrow();
-        expect(typeof r).toBe("boolean");
-        expect(r).toBe(false);
-        expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(false);
+        let headResult: unknown;
+        let fullResult: unknown;
+        let headThrew: string | null = null;
+        let fullThrew: string | null = null;
+        try { headResult = hasStickyMarker(body, MARKER); }
+        catch (e) { headThrew = (e as Error).message; }
+        try { fullResult = hasStickyMarker(body, MARKER, { fullScan: true }); }
+        catch (e) { fullThrew = (e as Error).message; }
+        ctx.extra = {
+          markerLiteral: MARKER,
+          markerVariant: noisy,
+          partial,
+          body,
+          paths: {
+            headScan: { returned: headResult, threw: headThrew },
+            fullScan: { returned: fullResult, threw: fullThrew },
+          },
+          cleanedIds: null, // N/A: matcher-only test, no upsert ran
+        };
+        expect(headThrew).toBeNull();
+        expect(fullThrew).toBeNull();
+        expect(typeof headResult).toBe("boolean");
+        expect(headResult).toBe(false);
+        expect(fullResult).toBe(false);
       },
     });
   });
