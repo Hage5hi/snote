@@ -208,3 +208,45 @@ export function validateManifest(r: unknown): string[] {
   }
   return p;
 }
+
+/**
+ * Strict validator for the `sticky-validate-summary/v1` files written by
+ * the manifest validator and replay --validate-only CLIs. Ensures CI
+ * consumers (PR bots, dashboards) never receive a malformed summary
+ * even if the producer regresses. Returns a list of human-readable
+ * problems; empty list means the payload is valid.
+ */
+export function validateValidateSummary(r: unknown): string[] {
+  const p: string[] = [];
+  if (!isPlainObject(r)) return ["summary is not a JSON object"];
+  if (!isAcceptedSchema(r.schema, ACCEPTED_VALIDATE_SUMMARY_SCHEMAS)) {
+    p.push(
+      `schema=${JSON.stringify(r.schema)} (expected one of ${JSON.stringify(ACCEPTED_VALIDATE_SUMMARY_SCHEMAS)}) at path .schema`,
+    );
+  }
+  if (typeof r.target !== "string") p.push(problem(".target", "a string", r.target));
+  if (typeof r.ok !== "boolean") p.push(problem(".ok", "a boolean", r.ok));
+  if (typeof r.exitCode !== "number") p.push(problem(".exitCode", "a number", r.exitCode));
+  if (!Array.isArray(r.schemaProblems) || !r.schemaProblems.every((x) => typeof x === "string")) {
+    p.push(problem(".schemaProblems", "a string[]", r.schemaProblems));
+  }
+  if (typeof r.entryFailureCount !== "number") {
+    p.push(problem(".entryFailureCount", "a number", r.entryFailureCount));
+  }
+  if (!Array.isArray(r.entries)) {
+    p.push(problem(".entries", "an array", r.entries));
+    return p;
+  }
+  for (let i = 0; i < r.entries.length; i++) {
+    const e = r.entries[i];
+    const base = `.entries[${i}]`;
+    if (!isPlainObject(e)) { p.push(problem(base, "an object", e)); continue; }
+    if (typeof e.index !== "number") p.push(problem(`${base}.index`, "a number", e.index));
+    if (typeof e.bundle !== "string") p.push(problem(`${base}.bundle`, "a string", e.bundle));
+    if (typeof e.ok !== "boolean") p.push(problem(`${base}.ok`, "a boolean", e.ok));
+    if (!Array.isArray(e.problems) || !e.problems.every((x: unknown) => typeof x === "string")) {
+      p.push(problem(`${base}.problems`, "a string[]", e.problems));
+    }
+  }
+  return p;
+}
