@@ -195,7 +195,20 @@ export async function runValidateManifest(argv: string[]): Promise<number> {
       summary.resolvedMatches = matches.length;
       if (matches.length !== 1) {
         summary.ok = false;
-        const msg = `pattern "${e.pattern}" resolved to ${matches.length} files (expected exactly 1)${matches.length > 0 ? `: ${matches.join(", ")}` : ""}`;
+        // Enumerate every resolved candidate WITH its byte size so
+        // reviewers can pinpoint whether the pattern is too broad
+        // (multiple matches) or wrong altogether (zero matches) and
+        // immediately compare candidate sizes against the declared
+        // `sizeBytes` without re-running stat by hand.
+        const candidates = matches.map((m) => {
+          let s = "?";
+          try { s = `${statSync(m).size}B`; } catch (err) { s = `stat-error: ${(err as Error).message}`; }
+          return `    - ${m} (${s})`;
+        });
+        const head = `pattern "${e.pattern}" resolved to ${matches.length} files (expected exactly 1, declared sizeBytes=${e.sizeBytes})`;
+        const msg = matches.length === 0
+          ? `${head}; no candidates found under base ${baseRoot}`
+          : `${head}; candidates:\n${candidates.join("\n")}`;
         summary.problems.push(msg);
         fileProblems.push(`entries[${i}] (bundle=${e.bundle}): ${msg}`);
         entrySummaries.push(summary);
