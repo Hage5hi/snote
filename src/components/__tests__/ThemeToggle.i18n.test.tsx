@@ -46,6 +46,12 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
         renderToggle();
         await user.click(screen.getByRole("button", { name: dict[lang]["theme.aria"] }));
 
+        for (const key of ["theme.color.light", "theme.color.dark", "theme.color.system"] as const) {
+          const item = screen.getByRole("menuitemradio", { name: dict[lang][key] });
+          expect(item).toHaveAttribute("aria-label", dict[lang][key]);
+          expect(within(item).getByText(dict[lang][key])).toBeInTheDocument();
+        }
+
         for (const scene of enabledScenes) {
           const label = dict[lang][scene.labelKey];
           const desc = scene.descKey ? dict[lang][scene.descKey] : "";
@@ -58,6 +64,24 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
       });
     });
   }
+
+  it("supports keyboard navigation with Tab, Arrow keys, and Escape", async () => {
+    localStorage.setItem(LANG_KEY, "en");
+    const user = userEvent.setup();
+    renderToggle();
+
+    await user.tab();
+    expect(screen.getByRole("button", { name: dict.en["theme.aria"] })).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    const items = screen.getAllByRole("menuitemradio");
+    const focusedBefore = document.activeElement;
+    await user.keyboard("{ArrowDown}");
+    expect(items).toContain(document.activeElement);
+    expect(document.activeElement).not.toBe(focusedBefore);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("menuitemradio", { name: dict.en["theme.color.light"] })).toBeNull();
+  });
 
   it("does NOT render a 'none' scene row (single-axis menu)", async () => {
     localStorage.setItem(LANG_KEY, "en");

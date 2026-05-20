@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,11 +10,8 @@ import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
-
-// SceneHost is dynamic — when scene === "none" it short-circuits to null
-// before loading any shader chunk. We still lazy-load the component shell
-// itself to keep it out of the entry chunk.
-const SceneHost = lazy(() => import("@/components/home/SceneHost"));
+import { cn } from "@/lib/utils";
+import SceneHost from "@/components/home/SceneHost";
 
 // Cross-fade navigation when the browser supports the View Transitions API.
 function softNavigate(navigate: (path: string) => void, path: string) {
@@ -170,26 +167,25 @@ export default function Home() {
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
   const isCyber = scene === "cyber-linh-khi";
+  const motionSafe = "motion-safe:transition motion-safe:duration-150";
 
   return (
     <div
       data-theme={isCyber ? "cyber" : undefined}
+      data-home-root="true"
       className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}
     >
-      {hasScene && (
-        <Suspense fallback={null}>
-          <SceneHost />
-        </Suspense>
-      )}
+      {hasScene && <SceneHost />}
       <header
-        className={
+        className={cn(
+          "relative z-10 flex h-12 items-center justify-between border-b px-4 motion-reduce:transition-none",
           isCyber
-            ? "relative z-10 flex h-12 items-center justify-between border-b border-cyan-900/30 bg-black/40 px-4 backdrop-blur-md"
-            : "relative z-10 flex h-12 items-center justify-between border-b border-border/60 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60"
-        }
+            ? "border-cyan-900/30 bg-black/40 motion-safe:backdrop-blur-md"
+            : "border-border/60 bg-background/80 supports-[backdrop-filter]:bg-background/60 motion-safe:backdrop-blur",
+        )}
       >
         <div className="flex items-center gap-2">
-          <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" fetchPriority="high" decoding="async" className="h-6 w-6 rounded-md object-contain" />
+          <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" decoding="async" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Syrin Notes</span>
         </div>
         <div className="flex items-center gap-1">
@@ -202,31 +198,34 @@ export default function Home() {
         <h1
           className={
             isCyber
-              ? "bg-gradient-to-br from-teal-200 via-cyan-300 to-teal-500 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
-              : "bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
+              ? "bg-gradient-to-br from-teal-200 via-cyan-300 to-teal-500 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out] motion-reduce:animate-none"
+              : "bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out] motion-reduce:animate-none"
           }
         >
           {t("home.tagline")}
         </h1>
-        <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both]">
+        <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both] motion-reduce:animate-none">
           {t("home.intro_prefix")}
           <code className="rounded bg-muted px-1.5 py-0.5 text-sm">/hello</code>
           {t("home.intro_suffix")}
         </p>
 
         <form
-          className="mt-8 flex gap-2 motion-safe:animate-[fade-in_500ms_ease-out_160ms_both]"
+          className="mt-8 flex gap-2 motion-safe:animate-[fade-in_500ms_ease-out_160ms_both] motion-reduce:animate-none"
           onSubmit={(e) => {
             e.preventDefault();
             open(slug);
           }}
         >
           <div
-            className={
+            className={cn(
+              "relative flex flex-1 items-center rounded-md border bg-transparent outline-none",
+              motionSafe,
+              "focus-within:border-ring/70 focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/35",
               isCyber
-                ? "flex flex-1 items-center rounded-md border border-cyan-400/20 bg-transparent transition-colors focus-within:border-teal-300/50"
-                : "flex flex-1 items-center rounded-md border border-input/70 bg-transparent transition-colors focus-within:border-ring/60"
-            }
+                ? "border-cyan-400/25 focus-within:border-teal-300/60 focus-within:ring-teal-300/25"
+                : "border-input/70",
+            )}
           >
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
             <Input
@@ -237,14 +236,14 @@ export default function Home() {
                 setError(null);
               }}
               placeholder={t("home.placeholder")}
-              className="border-0 focus-visible:ring-0 font-mono"
+              className="h-10 border-0 bg-transparent px-1 font-mono shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
               maxLength={64}
             />
             <div
               key={slugStatus}
               className="shrink-0 whitespace-nowrap pr-2 text-muted-foreground motion-safe:animate-slug-status-pop"
             >
-              {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" />}
               {slugStatus === "available" && (
                 <Check className="h-3.5 w-3.5 text-success" aria-label={t("home.status.available")} />
               )}
@@ -281,7 +280,7 @@ export default function Home() {
 
         {pinned.length > 0 && (
           <section
-            className="sticky top-0 z-10 mt-10 -mx-4 bg-background/95 px-4 pb-3 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+            className="sticky top-0 z-10 mt-10 -mx-4 bg-background/95 px-4 pb-3 pt-3 supports-[backdrop-filter]:bg-background/80 motion-safe:backdrop-blur"
             aria-label={t("home.pinned.aria")}
           >
             <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -292,10 +291,10 @@ export default function Home() {
               {pinned.map((s) => (
                 <li
                   key={s}
-                  className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background transition motion-safe:duration-150 hover:border-foreground/20 hover:shadow-sm motion-safe:hover:-translate-y-px"
+                  className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background motion-safe:transition motion-safe:duration-150 motion-safe:hover:-translate-y-px motion-safe:hover:border-foreground/20 motion-safe:hover:shadow-sm"
                 >
                   <button
-                    className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-sm hover:bg-accent"
+                    className="flex items-center gap-1.5 px-2.5 py-1 font-mono text-sm motion-safe:hover:bg-accent"
                     onClick={() => softNavigate(navigate, `/${s}`)}
                     onMouseEnter={() => prefetchSnapshot(s)}
                     onTouchStart={() => prefetchSnapshot(s)}
@@ -307,7 +306,7 @@ export default function Home() {
                     aria-label={t("home.pinned.unpin")}
                     title={t("home.pinned.unpin")}
                     onClick={() => setPinned(togglePin(s))}
-                    className="flex items-center px-1.5 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                    className="flex items-center px-1.5 text-muted-foreground opacity-0 motion-safe:transition-opacity motion-safe:hover:text-destructive motion-safe:group-hover:opacity-100"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
@@ -331,7 +330,7 @@ export default function Home() {
             <ul
               className={
                 isCyber
-                  ? "divide-y divide-cyan-900/30 rounded-md border border-cyan-900/40 bg-black/40 backdrop-blur-md"
+                  ? "divide-y divide-cyan-900/30 rounded-md border border-cyan-900/40 bg-black/40 motion-safe:backdrop-blur-md"
                   : "divide-y divide-border rounded-md border border-border"
               }
             >
@@ -340,8 +339,8 @@ export default function Home() {
                   key={r.slug}
                   className={
                     isCyber
-                      ? "group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-teal-400/5 hover:ring-1 hover:ring-inset hover:ring-teal-400/30"
-                      : "group flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent/50"
+                      ? "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors motion-safe:hover:bg-teal-400/5 motion-safe:hover:ring-1 motion-safe:hover:ring-inset motion-safe:hover:ring-teal-400/30"
+                      : "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors motion-safe:hover:bg-accent/50"
                   }
                   onMouseEnter={() => prefetchSnapshot(r.slug)}
                   onTouchStart={() => prefetchSnapshot(r.slug)}
@@ -356,7 +355,7 @@ export default function Home() {
                   <button
                     aria-label={t("home.recent.remove")}
                     onClick={() => setRecents(removeRecent(r.slug))}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity"
+                    className="opacity-0 text-muted-foreground motion-safe:transition-opacity motion-safe:group-hover:opacity-100 motion-safe:hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
@@ -398,7 +397,7 @@ export default function Home() {
                   key={s}
                   onClick={() => softNavigate(navigate, `/${s}`)}
                   onMouseEnter={() => prefetchSnapshot(s)}
-                  className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground transition hover:bg-accent hover:shadow-sm motion-safe:hover:-translate-y-px"
+                  className="rounded-md border border-border bg-background px-2.5 py-1 font-mono text-xs text-foreground motion-safe:transition motion-safe:hover:bg-accent motion-safe:hover:-translate-y-px motion-safe:hover:shadow-sm"
                 >
                   /{s}
                 </button>
