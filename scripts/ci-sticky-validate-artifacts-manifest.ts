@@ -281,11 +281,14 @@ export async function runValidateManifest(argv: string[]): Promise<number> {
   console.log(
     `[manifest] OK: ${cfg.path} (${manifest.entries.length} entries, all files present and sizes match)`,
   );
-  if (cfg.jsonSummary) writeSummary(cfg.jsonSummary, {
-    schema: "sticky-validate-summary/v1", target: cfg.path, ok: true,
-    exitCode: EXIT_OK, schemaProblems: [], entryFailureCount: 0,
-    entries: entrySummaries,
-  });
+  if (cfg.jsonSummary) {
+    const res = writeSummary(cfg.jsonSummary, {
+      schema: "sticky-validate-summary/v1", target: cfg.path, ok: true,
+      exitCode: EXIT_OK, schemaProblems: [], entryFailureCount: 0,
+      entries: entrySummaries,
+    });
+    if (!res.ok) return EXIT_OTHER;
+  }
   return EXIT_OK;
 }
 
