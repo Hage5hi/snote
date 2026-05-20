@@ -166,3 +166,32 @@ export function formatProblems(kind: string, path: string, problems: string[]): 
     `(${problems.length} problem${problems.length === 1 ? "" : "s"}):`;
   return [head, ...problems.map((p) => `  - ${p}`)].join("\n");
 }
+
+export function validateManifest(r: unknown): string[] {
+  const p: string[] = [];
+  if (!isPlainObject(r)) return ["manifest is not a JSON object"];
+  if (!isAcceptedSchema(r.schema, ACCEPTED_MANIFEST_SCHEMAS)) {
+    p.push(
+      `schema=${JSON.stringify(r.schema)} (expected one of ${JSON.stringify(ACCEPTED_MANIFEST_SCHEMAS)}) at path .schema`,
+    );
+  }
+  if (typeof r.runUrl !== "string") p.push(problem(".runUrl", "a string", r.runUrl));
+  if (!Array.isArray(r.entries)) {
+    p.push(problem(".entries", "an array", r.entries));
+    return p;
+  }
+  for (let i = 0; i < r.entries.length; i++) {
+    const e = r.entries[i];
+    const base = `.entries[${i}]`;
+    if (!isPlainObject(e)) {
+      p.push(problem(base, "an object", e));
+      continue;
+    }
+    if (typeof e.bundle !== "string") p.push(problem(`${base}.bundle`, "a string", e.bundle));
+    if (typeof e.path !== "string") p.push(problem(`${base}.path`, "a string", e.path));
+    if (typeof e.basename !== "string") p.push(problem(`${base}.basename`, "a string", e.basename));
+    if (typeof e.sizeBytes !== "number") p.push(problem(`${base}.sizeBytes`, "a number", e.sizeBytes));
+    if (typeof e.downloadUrl !== "string") p.push(problem(`${base}.downloadUrl`, "a string", e.downloadUrl));
+  }
+  return p;
+}
