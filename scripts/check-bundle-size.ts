@@ -34,6 +34,9 @@ const CHUNK_RULES: Rule[] = [
   { prefix: "yjs-vendor-", label: "yjs-vendor", maxGz: 35_000 },
   { prefix: "md-vendor-", label: "md-vendor", maxGz: 38_000 },
   { prefix: "chunk-a8f3-", label: "admin", maxGz: 22_000 },
+  // Home background scene chunks — must stay tiny and lazy-only.
+  { prefix: "ogl-vendor-", label: "ogl-vendor", maxGz: 22_000 },
+  { prefix: "scene-cyber-linh-khi-", label: "scene-cyber-linh-khi", maxGz: 8_000 },
 ];
 
 // Init route preload: sum gzip of chunks in <link rel="modulepreload"> + entry.
