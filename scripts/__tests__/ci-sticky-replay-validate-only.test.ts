@@ -123,7 +123,7 @@ describe("--validate-only on sticky replay CLIs", () => {
       "utf8",
     );
     const code = await runFuzzReplay(["--validate-only", f]);
-    expect(code).toBe(1);
+    expect(code).toBe(4); // EXIT_SCHEMA
     const e = errs.join("\n");
     expect(e).toMatch(/\.inputs\.markerLiteral is missing or not a string/);
     expect(e).toMatch(/\.matcher\.headScan is missing or not an object/);
