@@ -146,6 +146,31 @@ export function hasStickyMarker(
 }
 
 /**
+ * Like {@link hasStickyMarker} but also returns the number of lines it
+ * actually inspected so callers can roll up a precise `linesScanned`
+ * total (used by `ScanStats`). Stops early on first match.
+ */
+function scanForMarker(
+  body: unknown,
+  marker: string,
+  opts: { headScanLines?: number; fullScan?: boolean } = {},
+): { matched: boolean; linesScanned: number } {
+  if (typeof body !== "string" || body.length === 0) {
+    return { matched: false, linesScanned: 0 };
+  }
+  const normalized = body.replace(/\r\n?/g, "\n").replace(/^\uFEFF/, "");
+  const allLines = normalized.split("\n");
+  const limit = opts.fullScan
+    ? allLines.length
+    : Math.min(allLines.length, opts.headScanLines ?? MARKER_HEAD_SCAN_LINES);
+  const target = marker.trim();
+  for (let i = 0; i < limit; i++) {
+    if (allLines[i].trim() === target) return { matched: true, linesScanned: i + 1 };
+  }
+  return { matched: false, linesScanned: limit };
+}
+
+/**
  * Upsert a sticky comment, cleaning up any older duplicates carrying
  * the same marker. See module docstring for the full contract.
  */
@@ -167,19 +192,41 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
         ? opts.debug
         : null;
 
-  const comments = await api.list();
+  const listed = await api.list();
+  const isMeta = !Array.isArray(listed);
+  const comments: StickyComment[] = isMeta ? listed.comments : listed;
+  const pagesWalked = isMeta ? listed.pagesWalked : 1;
 
   const stamped = hasStickyMarker(body, marker, { headScanLines: 1 })
     ? body
     : `${marker}\n${body}`;
 
-  let matches = comments.filter((c) => hasStickyMarker(c.body, marker, { headScanLines }));
+  let linesScanned = 0;
+  const headMatches: StickyComment[] = [];
+  for (const c of comments) {
+    const r = scanForMarker(c.body, marker, { headScanLines });
+    linesScanned += r.linesScanned;
+    if (r.matched) headMatches.push(c);
+  }
+  let matches = headMatches;
   let usedFullScan = false;
 
   if (matches.length === 0) {
-    matches = comments.filter((c) => hasStickyMarker(c.body, marker, { fullScan: true }));
+    const fullMatches: StickyComment[] = [];
+    for (const c of comments) {
+      const r = scanForMarker(c.body, marker, { fullScan: true });
+      linesScanned += r.linesScanned;
+      if (r.matched) fullMatches.push(c);
+    }
+    matches = fullMatches;
     usedFullScan = matches.length > 0;
   }
+
+  const scanStats: ScanStats = {
+    pagesWalked,
+    commentsExamined: comments.length,
+    linesScanned,
+  };
 
   if (matches.length === 0) {
     const created = await api.create(stamped);
@@ -189,7 +236,7 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
         `(deleted=0 tombstoned=0) ` +
         `requestedStrategy=${requestedStrategy} effectiveStrategy=${strategy}`,
     );
-    return { action: "created", comment: created, cleaned: [], usedFullScan: false };
+    return { action: "created", comment: created, cleaned: [], usedFullScan: false, scanStats };
   }
 
   const newest = matches.reduce((a, b) => (a.id > b.id ? a : b));
@@ -224,7 +271,7 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
       `requestedStrategy=${requestedStrategy} effectiveStrategy=${strategy}`,
   );
 
-  return { action: "updated", comment: updated, cleaned, usedFullScan };
+  return { action: "updated", comment: updated, cleaned, usedFullScan, scanStats };
 }
 
 
