@@ -46,8 +46,20 @@ export interface StickyComment {
   body: string;
 }
 
+/**
+ * Optional rich return shape for `StickyApi.list`. When the API
+ * implementation walks paginated GitHub responses internally it can
+ * return `{ comments, pagesWalked }` so the upsert reports
+ * `scanStats.pagesWalked` precisely. Plain `StickyComment[]` is still
+ * accepted (treated as a single page) for backward compatibility.
+ */
+export interface StickyListMeta {
+  comments: StickyComment[];
+  pagesWalked: number;
+}
+
 export interface StickyApi {
-  list: () => Promise<StickyComment[]>;
+  list: () => Promise<StickyComment[] | StickyListMeta>;
   create: (body: string) => Promise<StickyComment>;
   update: (id: number, body: string) => Promise<StickyComment>;
   remove?: (id: number) => Promise<void>;
@@ -72,12 +84,36 @@ export interface UpsertOptions {
   debug?: boolean | ((line: string) => void);
 }
 
+/**
+ * Marker-scan statistics, returned so integration tests can assert the
+ * `headScanLines` bound precisely (including across paginated lists,
+ * empty pages, and full-body fallback rescues).
+ *
+ *   • `pagesWalked`      — pages the `list` impl reported walking
+ *                          (defaults to 1 when the API returns a plain
+ *                          array). Empty pages still count as walked.
+ *   • `commentsExamined` — total comments returned by `list` (across
+ *                          all pages).
+ *   • `linesScanned`     — sum of body lines actually inspected across
+ *                          BOTH the head scan and (when engaged) the
+ *                          full-body fallback. Bounded per comment by
+ *                          `headScanLines` on the fast path; the
+ *                          fallback walks the full body once.
+ */
+export interface ScanStats {
+  pagesWalked: number;
+  commentsExamined: number;
+  linesScanned: number;
+}
+
 export interface UpsertResult {
   action: "created" | "updated";
   comment: StickyComment;
   cleaned: { id: number; via: "delete" | "lock" }[];
   /** True if the matched comment was found via the full-body fallback. */
   usedFullScan: boolean;
+  /** See `ScanStats`. Always populated. */
+  scanStats: ScanStats;
 }
 
 
