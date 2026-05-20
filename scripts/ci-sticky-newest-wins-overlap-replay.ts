@@ -221,6 +221,30 @@ export async function runReplay(argv: string[]): Promise<number> {
     console.log(HELP);
     return 0;
   }
+  // --validate-only short-circuits scenario execution: load the file,
+  // validate against sticky-replay/v1, print pass/fail, exit. No
+  // scenario rerun, no file write.
+  if (cfg.validateOnly) {
+    const { readFileSync } = await import("node:fs");
+    let payload: unknown;
+    try {
+      payload = JSON.parse(readFileSync(cfg.validateOnly, "utf8"));
+    } catch (e) {
+      console.error(
+        `[replay] --validate-only: failed to read/parse ${cfg.validateOnly}: ${(e as Error).message}`,
+      );
+      return 1;
+    }
+    const probs = validateOverlapReplayResult(payload);
+    if (probs.length > 0) {
+      console.error(formatProblems("replay", cfg.validateOnly, probs));
+      return 1;
+    }
+    console.log(
+      `[replay] --validate-only OK: ${cfg.validateOnly} matches sticky-replay/v1`,
+    );
+    return 0;
+  }
   const pages = SCENARIOS[cfg.scenario];
   const { api, state } = makeOverlappingApi(pages);
 
