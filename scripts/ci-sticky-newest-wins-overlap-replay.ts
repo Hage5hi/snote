@@ -31,7 +31,16 @@ import { dirname } from "node:path";
 import {
   validateOverlapReplayResult,
   formatProblems,
+  filterProblemsByPath,
 } from "./_helpers/sticky-replay-schemas";
+import {
+  EXIT_OK,
+  EXIT_USAGE,
+  EXIT_IO,
+  EXIT_PARSE,
+  EXIT_SCHEMA,
+  EXIT_CODE_HELP,
+} from "./_helpers/sticky-replay-exit-codes";
 
 
 
