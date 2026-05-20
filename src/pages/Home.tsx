@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,12 @@ import { getPinned, getRecents, removeRecent, togglePin, type RecentNote } from 
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
+import { useSceneTheme } from "@/hooks/use-scene-theme";
+
+// SceneHost is dynamic — when scene === "none" it short-circuits to null
+// before loading any shader chunk. We still lazy-load the component shell
+// itself to keep it out of the entry chunk.
+const SceneHost = lazy(() => import("@/components/home/SceneHost"));
 
 // Cross-fade navigation when the browser supports the View Transitions API.
 function softNavigate(navigate: (path: string) => void, path: string) {
