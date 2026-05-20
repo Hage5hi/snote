@@ -1,0 +1,2 @@
+{"schema":"sticky-scan-summary/v1","label":"case-A","action":"updated","id":42,"cleaned":1,"cleanedIds":[7],"usedFullScan":false,"scanStats":{"pagesWalked":2,"commentsExamined":5,"linesScanned":13},"timestamp":"2026-05-20T07:39:49.278Z"}
+{"schema":"sticky-scan-summary/v1","label":"case-B","action":"created","id":99,"cleaned":0,"cleanedIds":[],"usedFullScan":false,"scanStats":{"pagesWalked":2,"commentsExamined":5,"linesScanned":13},"timestamp":"2026-05-20T07:39:49.279Z"}
