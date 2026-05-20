@@ -297,7 +297,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     console.error(
       formatProblems("fuzz-replay", "<in-memory result>", validationProblems),
     );
-    return 1;
+    return EXIT_SCHEMA;
   }
 
   if (cfg.json) {
