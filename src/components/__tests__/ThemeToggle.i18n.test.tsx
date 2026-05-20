@@ -41,10 +41,9 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
       });
 
       it("renders every enabled scene with i18n label + aria-label", async () => {
-        const user = userEvent.setup();
         renderToggle();
         await act(async () => {
-          await user.click(screen.getByRole("button", { name: dict[lang]["theme.aria"] }));
+          fireEvent.click(screen.getByRole("button", { name: dict[lang]["theme.aria"] }));
         });
 
         for (const scene of enabledScenes) {
