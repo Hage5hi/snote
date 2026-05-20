@@ -123,7 +123,10 @@ export async function runGenerateManifest(argv: string[]): Promise<number> {
   const baseAbs = cfg.base ? resolve(cfg.base) : dirname(outAbs);
 
   const entries: Array<Record<string, unknown>> = [];
-  for (const bundle of BUNDLES) {
+  const selected = cfg.bundles.length > 0
+    ? BUNDLES.filter((b) => cfg.bundles.includes(b.name))
+    : BUNDLES;
+  for (const bundle of selected) {
     const subAbs = join(rootAbs, bundle.subdir);
     const files = listJsonFiles(subAbs);
     for (const abs of files) {
