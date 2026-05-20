@@ -94,11 +94,18 @@
       })();
     </script>
     <div id="root">
-      <!-- Initial loader: visible before React hydrates so the screen isn't blank. -->
+      <!-- Initial loader: visible before React hydrates so the screen isn't blank.
+           Colors track the theme set by the script above (.dark on <html>) so the
+           spinner is visible on both light and dark backgrounds. -->
       <div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center">
-        <div style="width:28px;height:28px;border:2px solid rgba(255,255,255,0.15);border-top-color:rgba(255,255,255,0.6);border-radius:50%;animation:n-spin 0.8s linear infinite"></div>
+        <div class="n-spin"></div>
       </div>
-      <style>@keyframes n-spin{to{transform:rotate(360deg)}}</style>
+      <style>
+        @keyframes n-spin-r{to{transform:rotate(360deg)}}
+        .n-spin{width:28px;height:28px;border:2px solid rgba(15,15,18,0.12);border-top-color:rgba(15,15,18,0.55);border-radius:50%;animation:n-spin-r 0.8s linear infinite}
+        html.dark .n-spin{border-color:rgba(255,255,255,0.15);border-top-color:rgba(255,255,255,0.6)}
+        @media (prefers-reduced-motion:reduce){.n-spin{animation:none}}
+      </style>
     </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -39,6 +39,12 @@ const FORBIDDEN_IN_PRELOAD = [
   "hljs-vendor",
   "wardley",
   "preview-worker",
+  // Admin panel (obfuscated) is lazy-loaded only when an admin signs in.
+  "chunk-a8f3",
+  // QR vendor is lazy-loaded only when user opens the share dialog.
+  "qrcode-vendor",
+  // UnlockForm chunk is lazy-loaded only on encrypted notes.
+  "UnlockForm",
 ];
 
 function gzSize(filePath: string): number {
