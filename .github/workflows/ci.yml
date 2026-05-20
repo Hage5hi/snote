@@ -105,6 +105,15 @@ jobs:
           else
             bunx vitest run "${PERF_TESTS[@]}"
           fi
+      # Defensive guard: if STICKY_DEBUG is unset or "0", make sure no
+      # stale perf timing log survives from a previous step / cache /
+      # restored workspace. The upload step below is *also* gated on
+      # sticky_debug == '1', so this is belt-and-braces — ensures the
+      # artifact is never created OR uploaded when debug is off, even
+      # if a future step starts logging debug lines for other reasons.
+      - name: Sticky-upsert perf timing log — purge when debug is off
+        if: ${{ inputs.sticky_debug != '1' }}
+        run: rm -f reports/_ci/sticky-upsert-perf-timing.log
       - if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (inputs.sticky_debug == '1') }}
         uses: actions/upload-artifact@v4
         with:
