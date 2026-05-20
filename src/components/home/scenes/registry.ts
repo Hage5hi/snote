@@ -14,6 +14,9 @@ export interface SceneProps {
   paused: boolean;
   /** Active color scheme so the shader can theme itself. */
   isDark: boolean;
+  /** Called once the shader has compiled + rendered its first frame.
+   *  SceneHost uses this to fade the background in (avoids flicker). */
+  onReady?: () => void;
 }
 
 export interface SceneDef {
