@@ -86,3 +86,40 @@ Removed: `StatusPill.tsx` (legacy, redundant with `SyncIndicator`), `SaveStatus`
 See `docs/known-issues.md`:
 
 - `y-codemirror.next` re-entrancy bug (upstream PR #39 pending).
+
+## 8. Scene Registry & 3D Hero (Home only)
+
+Optional animated background on `/`. Orthogonal to `next-themes` (light/dark)
+and stored under `localStorage["home.scene"]` (default `"none"`).
+
+- **Zero cost when off**: `useSceneTheme()` returns `"none"`, `<SceneHost />`
+  is not mounted at all in `Home.tsx`, so no scene/OGL chunk is ever fetched.
+  Locked in by `src/components/home/__tests__/SceneHost.test.tsx`.
+- **Lazy per scene**: every entry in `SCENE_REGISTRY` provides its own
+  dynamic `load: () => import("./MyScene")`. Vite splits each into its own
+  chunk (`scene-*`) — see `manualChunks` in `vite.config.ts`.
+- **Runtime guards** (`SceneHost.shouldBlockScene`): silently reverts to
+  `"none"` on `prefers-reduced-motion: reduce`, `.eink`, `hardwareConcurrency < 4`,
+  `saveData`, or `2g/slow-2g` connections.
+- **No skeleton, no flicker**: host renders at `opacity-0` and only fades to
+  `opacity-100` once the scene calls `onReady()` after its first compiled
+  frame. CSS-only transition — no layout shift on a `-z-10` layer.
+- **Pause on hidden tab**: scenes receive `paused` and must short-circuit
+  their rAF loop while `document.visibilityState !== "visible"`.
+
+### Adding a new scene (3-step checklist)
+
+1. **Create the scene file** at `src/components/home/scenes/MyScene.tsx`
+   with a `default export` of `React.FC<SceneProps>` (see `registry.ts`).
+   Call `onReady?.()` after the first successful render and respect `paused`.
+2. **Update the registry**: in `SCENE_REGISTRY` (registry.ts), flip
+   `enabled: true` and add `load: () => import("./MyScene")`. Add a
+   `manualChunks` entry in `vite.config.ts` so it lands in its own chunk,
+   then add the chunk name (and any new vendor) to `scripts/check-bundle-size.ts`
+   under `FORBIDDEN_IN_PRELOAD`.
+3. **Add i18n keys**: `scene.<id>.label` and `scene.<id>.desc` in both `en`
+   and `vi` blocks of `src/i18n/index.ts`. The dropdown picks them up
+   automatically via `labelKey` / `descKey`.
+
+That's the entire surface — `ThemeToggle`, `SceneHost`, and `Home.tsx` never
+need to change.
