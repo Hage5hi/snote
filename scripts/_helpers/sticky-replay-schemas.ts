@@ -131,9 +131,9 @@ export function validateOverlapReplayResult(r: unknown): string[] {
 export function validateFuzzReplayResult(r: unknown): string[] {
   const p: string[] = [];
   if (!isPlainObject(r)) return ["replay result is not a JSON object"];
-  if (r.schema !== "sticky-fuzz-replay/v1") {
+  if (!isAcceptedSchema(r.schema, ACCEPTED_FUZZ_REPLAY_SCHEMAS)) {
     p.push(
-      `schema=${JSON.stringify(r.schema)} (expected "sticky-fuzz-replay/v1") at path .schema`,
+      `schema=${JSON.stringify(r.schema)} (expected one of ${JSON.stringify(ACCEPTED_FUZZ_REPLAY_SCHEMAS)}) at path .schema`,
     );
   }
   if (typeof r.source !== "string") p.push(problem(".source", "a string", r.source));
