@@ -87,24 +87,49 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 900,
     modulePreload: {
       // Vite's default emits <link rel="modulepreload"> for every chunk it
-      // thinks the entry needs. mermaid/katex/hljs are dynamic-only and must
-      // stay OUT of the eager preload list — otherwise users pay the network
-      // cost on every page load even when they never render those blocks.
-      // The runtime `__vitePreload` helper still fetches them when the
-      // dynamic import() call site executes (i.e., on first use).
+      // thinks the entry needs. The chunks below are lazy-only (loaded on
+      // explicit user action like opening a note, viewing an encrypted note,
+      // sharing via QR, viewing /n/note admin, or rendering a wardley diagram)
+      // and must stay OUT of the eager preload list — otherwise users pay the
+      // network cost on every page load even when they never use those
+      // features. The runtime `__vitePreload` helper still fetches them when
+      // the dynamic import() call site executes (i.e., on first use).
       resolveDependencies: (_filename, deps) =>
         deps.filter(
-          (dep) => !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor)-/.test(dep),
+          (dep) =>
+            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley)-/.test(
+              dep,
+            ),
         ),
     },
     rollupOptions: {
       output: {
-        // Split heavy vendors so first paint pulls only what's needed.
+        // Obfuscate the admin chunk's file name so its name doesn't hint at
+        // admin functionality in the network tab. We do this via
+        // `chunkFileNames` rather than `manualChunks` because a manual
+        // chunk for AdminPanel pulled its shared deps (e.g. `use-toast`)
+        // into the same chunk, which then forced the entry to STATICALLY
+        // import that chunk just to get the shared deps — defeating the
+        // lazy split entirely. Letting Rollup chunk AdminPanel naturally
+        // (as a side-effect of `lazy(() => import(...))`) keeps shared
+        // utilities in the entry where they belong.
+        chunkFileNames: (chunkInfo) => {
+          if (chunkInfo.name === "AdminPanel") {
+            return "assets/chunk-a8f3-[hash].js";
+          }
+          return "assets/[name]-[hash].js";
+        },
         manualChunks(id) {
-          // Obfuscate the admin chunk so its name doesn't hint at admin
-          // functionality in the network tab.
-          if (id.includes("/pages/AdminPanel")) {
-            return "chunk-a8f3";
+          // Pin Vite's `__vitePreload` helper to its own tiny chunk.
+          // Without this, Rollup hoists the helper into whichever lazy chunk
+          // it happens to land in (historically `mermaid-vendor`), which
+          // then forces the entry to STATICALLY import that heavy chunk
+          // just to get the helper — defeating the entire lazy-load split
+          // and pulling ~740KB of mermaid into the initial graph on every
+          // page. Routing it to a dedicated chunk keeps the helper out of
+          // the heavy vendor chunks entirely.
+          if (id.includes("vite/preload-helper")) {
+            return "preload-helper";
           }
           if (!id.includes("node_modules")) return;
           if (id.includes("/react-dom/") || id.includes("/react-router") || id.match(/\/react\//)) {
