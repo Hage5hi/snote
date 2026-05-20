@@ -92,7 +92,7 @@ describe("ci-sticky-fuzz-failure-replay CLI", () => {
   it("rejects a non-object root with a single clear error", async () => {
     const path = writeArtifact("notobj.json", 42 as unknown as object);
     const code = await runFuzzReplay([path]);
-    expect(code).toBe(1);
+    expect(code).toBe(4); // EXIT_SCHEMA
     expect(errs.join("\n")).toMatch(/artifact root is not a JSON object/);
   });
 
