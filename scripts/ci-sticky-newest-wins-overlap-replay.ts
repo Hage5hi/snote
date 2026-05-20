@@ -13,10 +13,22 @@
 // Usage:
 //   bun run scripts/ci-sticky-newest-wins-overlap-replay.ts \
 //     [--scenario newest-on-first-page|overlap-dup-page|ts-vs-id|rerun] \
-//     [--head-scan-lines 5] [--strategy delete|lock]
+//     [--head-scan-lines 5] [--strategy delete|lock] \
+//     [--out <path>] [--no-artifact]
+//
+// In addition to printing the summary to stdout, the replay writes a
+// JSON artifact with the same payload to a configurable path so CI
+// jobs (and humans) can attach it for later inspection. Path
+// precedence: --out <path>  >  $STICKY_REPLAY_ARTIFACT  >  default
+// reports/_ci/sticky-replay/<scenario>.json. Pass --no-artifact to
+// suppress the file entirely.
 //
 // Exits non-zero only on internal errors. The point is diagnostics,
 // not assertions — assertions live in the vitest file.
+
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+
 
 import {
   upsertStickyComment,
