@@ -69,19 +69,34 @@ export function runFuzzWithSeed(opts: {
       const repro =
         `\n[sticky-fuzz] FAILURE — ${name}\n` +
         `[sticky-fuzz]   STICKY_FUZZ_SEED=${seed} iteration=${i}\n` +
+        `[sticky-fuzz]   STICKY_FUZZ_ARTIFACT_DIR=${fuzzArtifactDir()}\n` +
         (ctx.extra !== undefined
           ? `[sticky-fuzz]   inputs=${safeJson(ctx.extra)}\n`
           : "") +
         (artifactPath
           ? `[sticky-fuzz]   artifact=${artifactPath}\n`
           : "") +
-        `[sticky-fuzz]   reproduce: STICKY_FUZZ_SEED=${seed} bunx vitest run <file>\n`;
+        `[sticky-fuzz]   reproduce: STICKY_FUZZ_SEED=${seed} bunx vitest run <file>\n` +
+        (artifactPath
+          ? `[sticky-fuzz]   replay:    bun run scripts/ci-sticky-fuzz-failure-replay.ts ${artifactPath}\n`
+          : "");
       // eslint-disable-next-line no-console
       console.error(repro);
+      // GitHub Actions annotation — surfaces a clickable error in the
+      // run summary pointing at the artifact dir so reviewers don't
+      // have to scroll the raw log to find it.
+      if (process.env.GITHUB_ACTIONS === "true" && artifactPath) {
+        // eslint-disable-next-line no-console
+        console.log(
+          `::error file=${artifactPath}::sticky-fuzz failure name=${name} ` +
+            `seed=${seed} iter=${i} dir=${fuzzArtifactDir()}`,
+        );
+      }
       throw err;
     }
   }
 }
+
 
 function writeFuzzFailureArtifact(payload: {
   name: string;
