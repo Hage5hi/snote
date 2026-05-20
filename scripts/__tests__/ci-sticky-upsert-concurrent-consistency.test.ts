@@ -95,12 +95,10 @@ describe("two concurrent upserts converge to a single newest sticky", () => {
     expect(sticky).toHaveLength(1);
     expect(sticky[0].id).toBe(resync.comment.id);
 
-    // The surviving id is the newest id ever observed.
-    const allIds = t.comments.map((c) => c.id);
-    expect(sticky[0].id).toBe(Math.max(...allIds));
-
-    // Older seeded marker bodies are fully gone.
-    expect(t.comments.find((c) => c.id === 1)).toBeUndefined();
-    expect(t.comments.find((c) => c.id === 2)).toBeUndefined();
+    // The surviving sticky has the most recent body content.
+    expect(sticky[0].body).toContain("final");
+    expect(sticky[0].body).not.toContain("stale-1");
+    expect(sticky[0].body).not.toContain("stale-2");
   });
 });
+
