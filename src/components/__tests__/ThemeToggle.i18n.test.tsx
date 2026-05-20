@@ -7,7 +7,7 @@
  *    formatted as "<label> — <desc>" when a desc exists;
  *  - shows the matching visible label text from the i18n dict.
  */
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MemoryRouter } from "react-router-dom";
