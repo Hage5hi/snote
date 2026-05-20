@@ -165,6 +165,31 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     console.log(HELP);
     return 0;
   }
+
+  // --validate-only short-circuits everything: load the file, run
+  // validateFuzzReplayResult on it, print a clear pass/fail message,
+  // and exit. No matcher re-run, no file write.
+  if (cfg.validateOnly) {
+    let payload: unknown;
+    try {
+      payload = JSON.parse(readFileSync(cfg.validateOnly, "utf8"));
+    } catch (e) {
+      console.error(
+        `[fuzz-replay] --validate-only: failed to read/parse ${cfg.validateOnly}: ${(e as Error).message}`,
+      );
+      return 1;
+    }
+    const probs = validateFuzzReplayResult(payload);
+    if (probs.length > 0) {
+      console.error(formatProblems("fuzz-replay", cfg.validateOnly, probs));
+      return 1;
+    }
+    console.log(
+      `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1`,
+    );
+    return 0;
+  }
+
   if (!cfg.path) {
     console.error("missing artifact path");
     console.error(HELP);
