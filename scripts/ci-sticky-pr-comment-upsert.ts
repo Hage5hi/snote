@@ -534,7 +534,10 @@ async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<number> {
     });
     log(
       `done: action=${res.action} id=${res.comment.id} cleaned=${res.cleaned.length} ` +
-        `usedFullScan=${res.usedFullScan}`,
+        `usedFullScan=${res.usedFullScan} ` +
+        `pagesWalked=${res.scanStats.pagesWalked} ` +
+        `commentsExamined=${res.scanStats.commentsExamined} ` +
+        `linesScanned=${res.scanStats.linesScanned}`,
     );
     return 0;
   } catch (e) {
