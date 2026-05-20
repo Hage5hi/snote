@@ -174,11 +174,7 @@ export default function Home() {
       data-theme={isCyber ? "cyber" : undefined}
       className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}
     >
-      {hasScene && (
-        <Suspense fallback={null}>
-          <SceneHost />
-        </Suspense>
-      )}
+      {hasScene && <SceneHost />}
       <header
         className={
           isCyber
