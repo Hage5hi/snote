@@ -304,9 +304,95 @@ reported so a fundamentally wrong document never passes silently.
 AND confirms each `.entries[]` file exists with the declared size.
 Use `--base <root>` to resolve relative entry paths.
 
+When a glob `pattern` entry fails the "exactly one match" rule, the
+validator prints every resolved candidate path with its actual byte
+size, so reviewers can tell at a glance whether the pattern is too
+broad (multiple matches) or wrong (zero matches) and compare against
+the entry's declared `sizeBytes` without re-running `stat` by hand.
+
+Pass `--json-summary <out.json>` to write a strict
+`sticky-validate-summary/v1` file with `ok`, `exitCode`,
+`schemaProblems`, `entryFailureCount` and a per-entry `entries[]`
+array. The validator strict-validates the summary against its own
+schema before writing so CI never consumes a malformed summary; if
+the summary itself is invalid the validator exits OTHER (5).
+
 ## Manifest links in annotations
 
 Pass `--manifest <path>` to the overlap replay CLI to include a
 `manifest=<path>#entries[bundle=...,basename=...]` pointer in the
 GitHub Actions `::notice` annotation, so reviewers can click straight
 from the run summary to the matching entry in the bundle index.
+
+## sticky-artifacts-manifest/v1 — README & examples
+
+Schema: `sticky-artifacts-manifest/v1`. Each entry describes one
+uploaded artifact file. Two entry shapes are supported:
+
+1. **Literal path entry.** Use when the file name is fully known
+   ahead of time. Required fields: `bundle`, `path`, `basename`,
+   `sizeBytes`, `downloadUrl`. The validator verifies the file exists
+   at `path` (resolved against `--base <root>`) and that its actual
+   byte size matches `sizeBytes`. `basename` must equal the final
+   segment of `path`.
+
+   ```json
+   {
+     "bundle": "sticky-replay",
+     "path": "sticky-replay/overlap-newest-wins.json",
+     "basename": "overlap-newest-wins.json",
+     "sizeBytes": 482,
+     "downloadUrl": "https://github.com/owner/repo/actions/runs/1234#artifacts"
+   }
+   ```
+
+2. **Glob `pattern` entry.** Use when only the file name *shape* is
+   known (e.g. a hash-suffixed coverage bundle). Required fields:
+   `bundle`, `pattern`, `sizeBytes`, `downloadUrl`. Patterns may
+   contain a single `*` wildcard, and only in the LAST path segment
+   — directory parts are literal. No `**`, no character classes.
+
+   ```json
+   {
+     "bundle": "sticky-replay",
+     "pattern": "sticky-replay/coverage-*.json",
+     "sizeBytes": 19234,
+     "downloadUrl": "https://github.com/owner/repo/actions/runs/1234#artifacts"
+   }
+   ```
+
+### "Exactly one match" rule
+
+Glob entries MUST resolve to **exactly one** file under `--base`. If
+the pattern matches zero files OR two or more files, the validator
+fails with EXIT_OTHER (5) and prints every candidate path with its
+byte size, e.g.:
+
+```
+pattern "sticky-replay/coverage-*.json" resolved to 2 files (expected exactly 1, declared sizeBytes=19234); candidates:
+    - /repo/reports/_ci/sticky-replay/coverage-abc.json (19234B)
+    - /repo/reports/_ci/sticky-replay/coverage-def.json (20011B)
+```
+
+The resolved file's size must also equal `sizeBytes`; a size mismatch
+fails the same way, with the actual vs. declared bytes printed
+side-by-side.
+
+### Generating a manifest locally
+
+```sh
+# All bundles (default)
+bun run scripts/ci-sticky-generate-artifacts-manifest.ts \
+  --root reports/_ci --out reports/_ci/sticky-artifacts-manifest.json
+
+# Only the sticky-replay bundle (filter, repeatable)
+bun run scripts/ci-sticky-generate-artifacts-manifest.ts \
+  --root reports/_ci --out reports/_ci/sticky-replay-manifest.json \
+  --bundle sticky-replay
+
+# Only the sticky-fuzz-failures bundle
+bun run scripts/ci-sticky-generate-artifacts-manifest.ts \
+  --root reports/_ci --out reports/_ci/sticky-fuzz-manifest.json \
+  --bundle sticky-fuzz-failures
+```
+

@@ -27,7 +27,11 @@
 
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, resolve, dirname } from "node:path";
-import { validateManifest, formatProblems } from "./_helpers/sticky-replay-schemas";
+import {
+  validateManifest,
+  validateValidateSummary,
+  formatProblems,
+} from "./_helpers/sticky-replay-schemas";
 import { resolveManifestGlob } from "./_helpers/sticky-manifest-glob";
 import {
   EXIT_OK,
@@ -96,13 +100,24 @@ function writeSummary(
     entryFailureCount: number;
     entries: EntrySummary[];
   },
-) {
+): { ok: boolean; problems: string[] } {
+  // Strict-validate the summary BEFORE writing so CI never consumes a
+  // malformed sticky-validate-summary/v1 file. A producer regression
+  // surfaces here as a clear failure instead of silently shipping bad
+  // JSON to downstream PR bots / dashboards.
+  const probs = validateValidateSummary(payload);
+  if (probs.length > 0) {
+    console.error(formatProblems("validate-summary", path, probs));
+    return { ok: false, problems: probs };
+  }
   try {
     mkdirSync(dirname(resolve(path)), { recursive: true });
     writeFileSync(path, JSON.stringify(payload, null, 2) + "\n", "utf8");
   } catch (e) {
     console.error(`[manifest] WARN: failed to write --json-summary ${path}: ${(e as Error).message}`);
+    return { ok: false, problems: [(e as Error).message] };
   }
+  return { ok: true, problems: [] };
 }
 
 export async function runValidateManifest(argv: string[]): Promise<number> {
@@ -180,7 +195,20 @@ export async function runValidateManifest(argv: string[]): Promise<number> {
       summary.resolvedMatches = matches.length;
       if (matches.length !== 1) {
         summary.ok = false;
-        const msg = `pattern "${e.pattern}" resolved to ${matches.length} files (expected exactly 1)${matches.length > 0 ? `: ${matches.join(", ")}` : ""}`;
+        // Enumerate every resolved candidate WITH its byte size so
+        // reviewers can pinpoint whether the pattern is too broad
+        // (multiple matches) or wrong altogether (zero matches) and
+        // immediately compare candidate sizes against the declared
+        // `sizeBytes` without re-running stat by hand.
+        const candidates = matches.map((m) => {
+          let s = "?";
+          try { s = `${statSync(m).size}B`; } catch (err) { s = `stat-error: ${(err as Error).message}`; }
+          return `    - ${m} (${s})`;
+        });
+        const head = `pattern "${e.pattern}" resolved to ${matches.length} files (expected exactly 1, declared sizeBytes=${e.sizeBytes})`;
+        const msg = matches.length === 0
+          ? `${head}; no candidates found under base ${baseRoot}`
+          : `${head}; candidates:\n${candidates.join("\n")}`;
         summary.problems.push(msg);
         fileProblems.push(`entries[${i}] (bundle=${e.bundle}): ${msg}`);
         entrySummaries.push(summary);
@@ -253,11 +281,14 @@ export async function runValidateManifest(argv: string[]): Promise<number> {
   console.log(
     `[manifest] OK: ${cfg.path} (${manifest.entries.length} entries, all files present and sizes match)`,
   );
-  if (cfg.jsonSummary) writeSummary(cfg.jsonSummary, {
-    schema: "sticky-validate-summary/v1", target: cfg.path, ok: true,
-    exitCode: EXIT_OK, schemaProblems: [], entryFailureCount: 0,
-    entries: entrySummaries,
-  });
+  if (cfg.jsonSummary) {
+    const res = writeSummary(cfg.jsonSummary, {
+      schema: "sticky-validate-summary/v1", target: cfg.path, ok: true,
+      exitCode: EXIT_OK, schemaProblems: [], entryFailureCount: 0,
+      entries: entrySummaries,
+    });
+    if (!res.ok) return EXIT_OTHER;
+  }
   return EXIT_OK;
 }
 
