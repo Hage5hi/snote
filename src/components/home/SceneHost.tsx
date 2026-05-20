@@ -4,7 +4,12 @@
 // Runs runtime guards (reduced-motion, e-ink, low-end, save-data) and reverts
 // the user's choice when guards trip, then suppresses re-prompting via a
 // session flag.
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+//
+// Fade-in policy: the host renders at opacity-0 until the scene reports its
+// first compiled frame, then transitions to its final opacity. This avoids
+// the flicker/layout-shift that a skeleton fallback would cause on a -z-10
+// background layer.
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import { SCENE_NONE, getSceneDef } from "./scenes/registry";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
@@ -33,6 +38,7 @@ export default function SceneHost() {
   const [paused, setPaused] = useState(
     typeof document !== "undefined" && document.visibilityState !== "visible",
   );
+  const [ready, setReady] = useState(false);
   const revertedRef = useRef(false);
 
   // Guard once per mount — if blocked, revert to none and remember.
@@ -50,6 +56,11 @@ export default function SceneHost() {
     }
   }, [scene, setScene]);
 
+  // Reset ready state whenever we switch scenes.
+  useEffect(() => {
+    setReady(false);
+  }, [scene]);
+
   // Pause render loop while the tab is hidden.
   useEffect(() => {
     const onVis = () => setPaused(document.visibilityState !== "visible");
@@ -66,20 +77,30 @@ export default function SceneHost() {
     return lazy(def.load);
   }, [def]);
 
+  const handleReady = useCallback(() => setReady(true), []);
+
   if (!def || def.id === SCENE_NONE || !SceneComponent) return null;
 
   return (
     <div
       aria-hidden="true"
-      className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
+      className={[
+        "pointer-events-none fixed inset-0 -z-10 overflow-hidden",
+        "transition-opacity duration-700 ease-out",
+        ready ? "opacity-100" : "opacity-0",
+      ].join(" ")}
+      data-scene-ready={ready ? "true" : "false"}
     >
       <Suspense fallback={null}>
-        <SceneComponent paused={paused} isDark={isDark} />
+        <SceneComponent paused={paused} isDark={isDark} onReady={handleReady} />
       </Suspense>
-      {/* Soft mask: keeps top/bottom edges grounded with the page bg so the
-          header chrome + bottom recents stay legible. */}
+      {/* Very light edge mask — keeps top header bar + bottom recents legible
+          without washing out the shader on light backgrounds. */}
       <div
-        className="absolute inset-0 bg-gradient-to-b from-background/70 via-background/10 to-background/80"
+        className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-background/80 to-transparent"
+      />
+      <div
+        className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background/70 to-transparent"
       />
     </div>
   );
