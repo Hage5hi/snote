@@ -244,6 +244,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
       console.error(
         `[fuzz-replay] --validate-only: cannot read ${cfg.validateOnly}: ${(e as Error).message}`,
       );
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_IO, [`cannot read: ${(e as Error).message}`], cfg.fields);
       return EXIT_IO;
     }
     let payload: unknown;
@@ -253,6 +254,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
       console.error(
         `[fuzz-replay] --validate-only: ${cfg.validateOnly} is not valid JSON: ${(e as Error).message}`,
       );
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_PARSE, [`not valid JSON: ${(e as Error).message}`], cfg.fields);
       return EXIT_PARSE;
     }
     let probs = validateFuzzReplayResult(payload);
@@ -262,12 +264,14 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     }
     if (probs.length > 0) {
       console.error(formatProblems("fuzz-replay", cfg.validateOnly, probs));
+      if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, false, EXIT_SCHEMA, probs, cfg.fields);
       return EXIT_SCHEMA;
     }
     console.log(
       `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1` +
         (cfg.fields.length > 0 ? ` (scoped to: ${cfg.fields.join(",")})` : ""),
     );
+    if (cfg.jsonSummary) writeValidateSummary(cfg.jsonSummary, cfg.validateOnly, true, EXIT_OK, [], cfg.fields);
     return EXIT_OK;
   }
 
