@@ -221,7 +221,13 @@ export default function Home() {
             open(slug);
           }}
         >
-          <div className="flex flex-1 items-center rounded-md border border-input bg-background/80 transition-shadow focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)] focus-within:ring-2 focus-within:ring-ring">
+          <div
+            className={
+              isCyber
+                ? "flex flex-1 items-center rounded-md border border-cyan-900/40 bg-black/40 backdrop-blur-md transition-shadow focus-within:shadow-[0_0_0_3px_rgba(94,234,212,0.18)] focus-within:ring-2 focus-within:ring-teal-400/60"
+                : "flex flex-1 items-center rounded-md border border-input bg-background/80 transition-shadow focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)] focus-within:ring-2 focus-within:ring-ring"
+            }
+          >
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
             <Input
               autoFocus
