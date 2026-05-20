@@ -73,8 +73,8 @@ export const ThemeToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
             </DropdownMenuLabel>
             <DropdownMenuRadioGroup value={scene} onValueChange={setScene}>
               {SCENE_REGISTRY.map((def) => {
-                const label = t(def.labelKey);
-                const desc = def.descKey ? t(def.descKey) : "";
+                const label = t(def.labelKey as Parameters<typeof t>[0]);
+                const desc = def.descKey ? t(def.descKey as Parameters<typeof t>[0]) : "";
                 return (
                   <DropdownMenuRadioItem
                     key={def.id}
