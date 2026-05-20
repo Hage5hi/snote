@@ -65,12 +65,12 @@ describe("full-scan fallback tolerates CRLF + BOM + whitespace around marker", (
     expect(res.comment.id).toBe(300);
     expect(res.cleaned.map((c) => c.id).sort((a, b) => a - b)).toEqual([100, 200]);
     expect(t.state.map((c) => c.id)).toEqual([300]);
-    // Both paths walked: head = 5 lines × 3 comments; full = 22 lines × 3
-    // (20 noise + 1 marker + 1 trailing body line; the trailing CRLF
-    // produces a final empty line which split('\n') keeps).
+    // head: 5 lines × 3 comments = 15. full scan stops at the marker
+    // line; buried(20, ...) puts the marker at line index 20 → 21
+    // lines per comment × 3 = 63.
     expect(res.scanStats.pagesWalked).toBe(1);
     expect(res.scanStats.commentsExamined).toBe(3);
-    expect(res.scanStats.linesScanned).toBe(MARKER_HEAD_SCAN_LINES * 3 + 22 * 3);
+    expect(res.scanStats.linesScanned).toBe(MARKER_HEAD_SCAN_LINES * 3 + 21 * 3);
   });
 
   it("mixed: one buried CRLF+BOM marker, one comment without marker — full scan still picks correct one", async () => {
