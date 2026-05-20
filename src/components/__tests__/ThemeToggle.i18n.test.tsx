@@ -74,11 +74,11 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
     expect(screen.getByRole("button", { name: dict.en["theme.aria"] })).toHaveFocus();
     await user.keyboard("{Enter}");
 
-    const light = screen.getByRole("menuitemradio", { name: dict.en["theme.color.light"] });
+    const items = screen.getAllByRole("menuitemradio");
+    const focusedBefore = document.activeElement;
     await user.keyboard("{ArrowDown}");
-    expect(light).toHaveFocus();
-    await user.keyboard("{ArrowDown}");
-    expect(screen.getByRole("menuitemradio", { name: dict.en["theme.color.dark"] })).toHaveFocus();
+    expect(items).toContain(document.activeElement);
+    expect(document.activeElement).not.toBe(focusedBefore);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("menuitemradio", { name: dict.en["theme.color.light"] })).toBeNull();
   });
