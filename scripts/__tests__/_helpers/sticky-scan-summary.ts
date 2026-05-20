@@ -21,9 +21,9 @@ import { dirname, join } from "node:path";
 import type { UpsertResult } from "../../ci-sticky-pr-comment-upsert";
 
 const fuzzArtifactDir = () =>
-  process.env.STICKY_FUZZ_ARTIFACT_DIR ?? "reports/_ci/sticky-fuzz-failures";
+  process.env.STICKY_fuzzArtifactDir() ?? "reports/_ci/sticky-fuzz-failures";
 const scanSummaryJsonl = () =>
-  process.env.STICKY_SCAN_SUMMARY_JSONL ?? "reports/_ci/sticky-scan-summary.jsonl";
+  process.env.STICKY_scanSummaryJsonl() ?? "reports/_ci/sticky-scan-summary.jsonl";
 
 /** Read the fuzz seed from env or fall back. Logged on failure. */
 export function fuzzSeed(fallback: number): number {
@@ -91,10 +91,10 @@ function writeFuzzFailureArtifact(payload: {
   error: string;
 }): string | null {
   try {
-    mkdirSync(FUZZ_ARTIFACT_DIR, { recursive: true });
+    mkdirSync(fuzzArtifactDir(), { recursive: true });
     const safeName = payload.name.replace(/[^a-zA-Z0-9_-]+/g, "-");
     const path = join(
-      FUZZ_ARTIFACT_DIR,
+      fuzzArtifactDir(),
       `${safeName}-seed${payload.seed}-iter${payload.iteration}.json`,
     );
     const record = {
@@ -156,8 +156,8 @@ export function summarizeScan(label: string, res: UpsertResult): void {
   // eslint-disable-next-line no-console
   console.log(`[sticky-scan-json] ${JSON.stringify(record)}`);
   try {
-    mkdirSync(dirname(SCAN_SUMMARY_JSONL), { recursive: true });
-    appendFileSync(SCAN_SUMMARY_JSONL, JSON.stringify(record) + "\n", "utf8");
+    mkdirSync(dirname(scanSummaryJsonl()), { recursive: true });
+    appendFileSync(scanSummaryJsonl(), JSON.stringify(record) + "\n", "utf8");
   } catch {
     // Non-fatal — log line is still emitted above.
   }
