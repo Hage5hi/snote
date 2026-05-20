@@ -356,6 +356,15 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
         : JSON.stringify(result);
       writeFileSync(cfg.json, filePayload + "\n", "utf8");
       console.log(`[fuzz-replay] wrote json=${cfg.json}`);
+      const manifestTail = cfg.manifest
+        ? buildManifestPointer(cfg.manifest, cfg.json)
+        : "";
+      emitGhAnnotation(
+        "notice",
+        cfg.json,
+        `sticky-fuzz-replay source=${cfg.path} seed=${artifact.seed ?? "?"} ` +
+          `headMatched=${head.returned} fullMatched=${full.returned}${manifestTail}`,
+      );
     } catch (e) {
       console.error(
         `[fuzz-replay] WARN: failed to write ${cfg.json}: ${(e as Error).message}`,
