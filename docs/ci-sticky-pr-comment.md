@@ -119,6 +119,38 @@ requested strategy was downgraded — e.g. `requestedStrategy=delete
 effectiveStrategy=lock` means the API client lacked delete permission
 and the script fell back to tombstoning older duplicates.
 
+## CI artifact gating: `STICKY_DEBUG`
+
+The dedicated sticky-upsert perf step in `.github/workflows/ci.yml`
+tees its vitest output to `reports/_ci/sticky-upsert-perf-timing.log`
+**only** when `STICKY_DEBUG=1` (driven by the `sticky_debug`
+workflow_dispatch input, default `'0'`).
+
+| `sticky_debug` input | Perf log created? | Artifact uploaded? |
+| -------------------- | ----------------- | ------------------ |
+| unset (push / PR)    | no                | no                 |
+| `'0'` (default)      | no                | no                 |
+| `'1'`                | yes (tee’d)       | yes (`actions/upload-artifact@v4`) |
+
+Three independent gates enforce this, all using the exact expression
+`inputs.sticky_debug == '1'` (or its shell equivalent
+`[ "$STICKY_DEBUG" = "1" ]`):
+
+1. **Tee gate** — the perf step only writes the log inside an
+   `if [ "$STICKY_DEBUG" = "1" ]` branch.
+2. **Defensive purge** — a step gated on
+   `inputs.sticky_debug != '1'` runs
+   `rm -f reports/_ci/sticky-upsert-perf-timing.log`, so a stale log
+   from a cached / restored workspace can’t survive a non-debug run.
+3. **Upload gate** — the `actions/upload-artifact@v4` step’s `if:`
+   includes `inputs.sticky_debug == '1'`.
+
+If any of these three expressions drifts (different operand, different
+value, removed entirely),
+`scripts/__tests__/ci-sticky-upsert-debug-gating-drift.test.ts` fails
+the CI job. That guard is the single source of truth for the artifact
+contract — change the expressions and the test together, or not at all.
+
 ## Exit codes
 
 | Code | Meaning                                     |
