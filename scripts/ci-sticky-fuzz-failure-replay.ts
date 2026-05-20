@@ -146,9 +146,9 @@ export function validateFuzzArtifact(a: unknown): string[] {
     return ["artifact root is not a JSON object"];
   }
   const art = a as FuzzArtifact;
-  if (art.schema !== "sticky-fuzz-failure/v1") {
+  if (!isAcceptedSchema(art.schema, ACCEPTED_FUZZ_FAILURE_SCHEMAS)) {
     problems.push(
-      `schema=${JSON.stringify(art.schema)} (expected "sticky-fuzz-failure/v1")`,
+      `schema=${JSON.stringify(art.schema)} (expected one of ${JSON.stringify(ACCEPTED_FUZZ_FAILURE_SCHEMAS)})`,
     );
   }
   if (typeof art.seed !== "number") {
