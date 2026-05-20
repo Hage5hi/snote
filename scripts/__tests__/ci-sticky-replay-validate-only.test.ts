@@ -72,8 +72,8 @@ describe("--validate-only on sticky replay CLIs", () => {
     const f = join(dir, "broken.json");
     writeFileSync(f, "not json {{", "utf8");
     const code = await runOverlapReplay(["--validate-only", f]);
-    expect(code).toBe(1);
-    expect(errs.join("\n")).toMatch(/--validate-only: failed to read\/parse/);
+    expect(code).toBe(3); // EXIT_PARSE
+    expect(errs.join("\n")).toMatch(/is not valid JSON/);
   });
 
   it("overlap: --validate-only does NOT require --scenario", async () => {
