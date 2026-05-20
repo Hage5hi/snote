@@ -170,10 +170,22 @@ export function summarizeScan(label: string, res: UpsertResult): void {
   };
   // eslint-disable-next-line no-console
   console.log(`[sticky-scan-json] ${JSON.stringify(record)}`);
+  let writtenPath: string | null = null;
   try {
     mkdirSync(dirname(scanSummaryJsonl()), { recursive: true });
     appendFileSync(scanSummaryJsonl(), JSON.stringify(record) + "\n", "utf8");
+    writtenPath = scanSummaryJsonl();
   } catch {
     // Non-fatal — log line is still emitted above.
   }
+  // GitHub Actions annotation pointing at the JSONL record location
+  // so reviewers can jump straight to the per-scenario telemetry file.
+  if (process.env.GITHUB_ACTIONS === "true" && writtenPath) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `::notice file=${writtenPath}::[sticky-scan-json] label=${label} ` +
+        `action=${res.action} id=${res.comment.id} cleaned=${res.cleaned.length}`,
+    );
+  }
 }
+
