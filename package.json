@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
+    "theme:isolation": "bun run scripts/check-home-theme-isolation.ts",
     "i18n:check": "bun run scripts/i18n-coverage.ts",
     "i18n:audit": "bun run scripts/i18n-audit.ts",
     "i18n:allowlist": "bun run scripts/i18n-allowlist-check.ts",
