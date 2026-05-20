@@ -28,6 +28,12 @@
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import {
+  validateOverlapReplayResult,
+  formatProblems,
+} from "./_helpers/sticky-replay-schemas";
+
+
 
 
 import {
@@ -120,6 +126,7 @@ function parseArgs(argv: string[]): {
   strategy: CleanupStrategy;
   out: string | null;
   noArtifact: boolean;
+  pretty: boolean;
   help: boolean;
 } {
   const out = {
@@ -128,6 +135,7 @@ function parseArgs(argv: string[]): {
     strategy: "delete" as CleanupStrategy,
     out: null as string | null,
     noArtifact: false,
+    pretty: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -139,6 +147,7 @@ function parseArgs(argv: string[]): {
     else if (a === "--strategy") out.strategy = take() as CleanupStrategy;
     else if (a === "--out" || a === "--json") out.out = take();
     else if (a === "--no-artifact") out.noArtifact = true;
+    else if (a === "--pretty") out.pretty = true;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
   if (!(out.scenario in SCENARIOS)) {
@@ -148,6 +157,7 @@ function parseArgs(argv: string[]): {
   }
   return out;
 }
+
 
 const HELP = `ci-sticky-newest-wins-overlap-replay — replay the pagination-overlap scenario
 
@@ -162,7 +172,10 @@ FLAGS
   --out, --json <path>      Write the JSON summary to <path>.
                             Overrides $STICKY_REPLAY_ARTIFACT.
   --no-artifact             Skip writing the JSON artifact file.
+  --pretty                  Indent the written JSON artifact for readability.
+                            Default: compact single-line JSON (smaller diffs).
   -h, --help                Show this help
+
 `;
 
 function resolveArtifactPath(
@@ -230,11 +243,22 @@ export async function runReplay(argv: string[]): Promise<number> {
   };
   console.log(`[replay] result=${JSON.stringify(summary, null, 2)}`);
 
+  const validationProblems = validateOverlapReplayResult(summary);
+  if (validationProblems.length > 0) {
+    console.error(
+      formatProblems("replay", "<in-memory summary>", validationProblems),
+    );
+    return 1;
+  }
+
   const artifactPath = resolveArtifactPath(cfg.scenario, cfg.out, cfg.noArtifact);
   if (artifactPath) {
     try {
       mkdirSync(dirname(artifactPath), { recursive: true });
-      writeFileSync(artifactPath, JSON.stringify(summary, null, 2) + "\n", "utf8");
+      const payload = cfg.pretty
+        ? JSON.stringify(summary, null, 2)
+        : JSON.stringify(summary);
+      writeFileSync(artifactPath, payload + "\n", "utf8");
       console.log(`[replay] wrote artifact=${artifactPath}`);
       emitGhAnnotation(
         "notice",
@@ -248,6 +272,7 @@ export async function runReplay(argv: string[]): Promise<number> {
   }
   return 0;
 }
+
 
 const isEntrypoint =
   typeof process !== "undefined" &&

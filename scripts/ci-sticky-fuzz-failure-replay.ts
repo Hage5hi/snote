@@ -19,6 +19,11 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { hasStickyMarker } from "./ci-sticky-pr-comment-upsert";
+import {
+  validateFuzzReplayResult,
+  formatProblems,
+} from "./_helpers/sticky-replay-schemas";
+
 
 interface FuzzArtifactInputs {
   markerLiteral?: string;
@@ -50,6 +55,8 @@ USAGE
 FLAGS
   --file <path>     Read the artifact from <path>
   --json <path>     Also write the machine-readable replay result to <path>
+  --pretty          Indent the written JSON output for readability.
+                    Default: compact single-line JSON (smaller diffs).
   -h, --help        Show this help
 
 The artifact must carry the sticky-fuzz-failure/v1 schema and contain
@@ -61,20 +68,28 @@ alongside the cleanedIds the artifact captured at failure time.
 function parseArgs(argv: string[]): {
   path: string | null;
   json: string | null;
+  pretty: boolean;
   help: boolean;
 } {
-  const out = { path: null as string | null, json: null as string | null, help: false };
+  const out = {
+    path: null as string | null,
+    json: null as string | null,
+    pretty: false,
+    help: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") out.help = true;
     else if (a === "--file") out.path = argv[++i] ?? null;
     else if (a === "--json") out.json = argv[++i] ?? null;
+    else if (a === "--pretty") out.pretty = true;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
   }
   return out;
 }
+
 
 function runMatcher(body: string, marker: string, fullScan: boolean) {
   try {
@@ -202,13 +217,24 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     },
     timestamp: new Date().toISOString(),
   };
-  const payload = JSON.stringify(result, null, 2);
-  console.log(payload);
+  const stdoutPayload = JSON.stringify(result, null, 2);
+  console.log(stdoutPayload);
+
+  const validationProblems = validateFuzzReplayResult(result);
+  if (validationProblems.length > 0) {
+    console.error(
+      formatProblems("fuzz-replay", "<in-memory result>", validationProblems),
+    );
+    return 1;
+  }
 
   if (cfg.json) {
     try {
       mkdirSync(dirname(cfg.json), { recursive: true });
-      writeFileSync(cfg.json, payload + "\n", "utf8");
+      const filePayload = cfg.pretty
+        ? JSON.stringify(result, null, 2)
+        : JSON.stringify(result);
+      writeFileSync(cfg.json, filePayload + "\n", "utf8");
       console.log(`[fuzz-replay] wrote json=${cfg.json}`);
     } catch (e) {
       console.error(
@@ -218,6 +244,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
   }
   return 0;
 }
+
 
 const isEntrypoint =
   typeof process !== "undefined" &&
