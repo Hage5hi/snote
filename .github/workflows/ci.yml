@@ -99,6 +99,7 @@ jobs:
         if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           STICKY_DEBUG: ${{ inputs.sticky_debug || '0' }}
+          STICKY_TEST_SUMMARY: '1'
         timeout-minutes: 2
         run: |
           set -e
@@ -109,6 +110,8 @@ jobs:
             scripts/__tests__/ci-sticky-upsert-pagination-boundary.test.ts
             scripts/__tests__/ci-sticky-upsert-empty-pages.test.ts
             scripts/__tests__/ci-sticky-upsert-paginated-list.test.ts
+            scripts/__tests__/ci-sticky-upsert-bulk-cleanup-perf-regression.test.ts
+            scripts/__tests__/ci-sticky-upsert-scan-stats-budgets.test.ts
           )
           if [ "$STICKY_DEBUG" = "1" ]; then
             echo "sticky_debug=1 → capturing perf timing log"
