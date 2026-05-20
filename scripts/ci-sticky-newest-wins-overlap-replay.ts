@@ -31,7 +31,16 @@ import { dirname } from "node:path";
 import {
   validateOverlapReplayResult,
   formatProblems,
+  filterProblemsByPath,
 } from "./_helpers/sticky-replay-schemas";
+import {
+  EXIT_OK,
+  EXIT_USAGE,
+  EXIT_IO,
+  EXIT_PARSE,
+  EXIT_SCHEMA,
+  EXIT_CODE_HELP,
+} from "./_helpers/sticky-replay-exit-codes";
 
 
 
@@ -128,6 +137,8 @@ function parseArgs(argv: string[]): {
   noArtifact: boolean;
   pretty: boolean;
   validateOnly: string | null;
+  fields: string[];
+  manifest: string | null;
   help: boolean;
 } {
   const out = {
@@ -138,6 +149,8 @@ function parseArgs(argv: string[]): {
     noArtifact: false,
     pretty: false,
     validateOnly: null as string | null,
+    fields: [] as string[],
+    manifest: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -151,6 +164,10 @@ function parseArgs(argv: string[]): {
     else if (a === "--no-artifact") out.noArtifact = true;
     else if (a === "--pretty") out.pretty = true;
     else if (a === "--validate-only") out.validateOnly = take();
+    else if (a === "--fields") {
+      const v = take() ?? "";
+      out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (a === "--manifest") out.manifest = take();
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
   if (out.validateOnly) return out;
@@ -183,11 +200,20 @@ FLAGS
                             in either compact or pretty form.
   --validate-only <p>       Validate an existing sticky-replay/v1 JSON
                             file at <p> against the strict schema and
-                            exit (0=valid, 1=invalid). No scenario is
-                            rerun and no file is written.
+                            exit. No scenario is rerun, no file written.
+  --fields <prefixes>       With --validate-only, restrict reported
+                            problems to JSON paths starting with one of
+                            the given comma-separated prefixes (e.g.
+                            "scanStats,cleanedIds"). Schema-mismatch
+                            errors are always reported.
+  --manifest <p>            Path to sticky-artifacts-manifest.json. When
+                            set, the workflow annotation includes a
+                            pointer to this manifest so reviewers can
+                            click straight from the run summary to the
+                            machine-readable bundle index.
   -h, --help                Show this help
 
-`;
+${EXIT_CODE_HELP}`;
 
 function resolveArtifactPath(
   scenario: ScenarioName,
@@ -215,35 +241,46 @@ export async function runReplay(argv: string[]): Promise<number> {
   } catch (e) {
     console.error((e as Error).message);
     console.error(HELP);
-    return 1;
+    return EXIT_USAGE;
   }
   if (cfg.help) {
     console.log(HELP);
-    return 0;
+    return EXIT_OK;
   }
-  // --validate-only short-circuits scenario execution: load the file,
-  // validate against sticky-replay/v1, print pass/fail, exit. No
-  // scenario rerun, no file write.
   if (cfg.validateOnly) {
     const { readFileSync } = await import("node:fs");
-    let payload: unknown;
+    let raw: string;
     try {
-      payload = JSON.parse(readFileSync(cfg.validateOnly, "utf8"));
+      raw = readFileSync(cfg.validateOnly, "utf8");
     } catch (e) {
       console.error(
-        `[replay] --validate-only: failed to read/parse ${cfg.validateOnly}: ${(e as Error).message}`,
+        `[replay] --validate-only: cannot read ${cfg.validateOnly}: ${(e as Error).message}`,
       );
-      return 1;
+      return EXIT_IO;
     }
-    const probs = validateOverlapReplayResult(payload);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch (e) {
+      console.error(
+        `[replay] --validate-only: ${cfg.validateOnly} is not valid JSON: ${(e as Error).message}`,
+      );
+      return EXIT_PARSE;
+    }
+    let probs = validateOverlapReplayResult(payload);
+    if (cfg.fields.length > 0) {
+      probs = filterProblemsByPath(probs, cfg.fields);
+      console.log(`[replay] --fields filter: ${cfg.fields.join(",")}`);
+    }
     if (probs.length > 0) {
       console.error(formatProblems("replay", cfg.validateOnly, probs));
-      return 1;
+      return EXIT_SCHEMA;
     }
     console.log(
-      `[replay] --validate-only OK: ${cfg.validateOnly} matches sticky-replay/v1`,
+      `[replay] --validate-only OK: ${cfg.validateOnly} matches sticky-replay/v1` +
+        (cfg.fields.length > 0 ? ` (scoped to: ${cfg.fields.join(",")})` : ""),
     );
-    return 0;
+    return EXIT_OK;
   }
   const pages = SCENARIOS[cfg.scenario];
   const { api, state } = makeOverlappingApi(pages);
@@ -283,7 +320,7 @@ export async function runReplay(argv: string[]): Promise<number> {
     console.error(
       formatProblems("replay", "<in-memory summary>", validationProblems),
     );
-    return 1;
+    return EXIT_SCHEMA;
   }
 
   const artifactPath = resolveArtifactPath(cfg.scenario, cfg.out, cfg.noArtifact);
@@ -295,17 +332,23 @@ export async function runReplay(argv: string[]): Promise<number> {
         : JSON.stringify(summary);
       writeFileSync(artifactPath, payload + "\n", "utf8");
       console.log(`[replay] wrote artifact=${artifactPath}`);
+      // When a manifest is provided, append a pointer to the matching
+      // entry so the GitHub Actions annotation links reviewers from
+      // the run summary straight to the machine-readable bundle index.
+      const manifestTail = cfg.manifest
+        ? ` manifest=${cfg.manifest}#entries[bundle=sticky-replay,basename=${artifactPath.split("/").pop()}]`
+        : "";
       emitGhAnnotation(
         "notice",
         artifactPath,
         `sticky-replay scenario=${cfg.scenario} selectedId=${res.comment.id} ` +
-          `cleaned=${res.cleaned.length} usedFullScan=${res.usedFullScan}`,
+          `cleaned=${res.cleaned.length} usedFullScan=${res.usedFullScan}${manifestTail}`,
       );
     } catch (e) {
       console.error(`[replay] WARN: failed to write artifact ${artifactPath}: ${(e as Error).message}`);
     }
   }
-  return 0;
+  return EXIT_OK;
 }
 
 

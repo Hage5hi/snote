@@ -22,7 +22,18 @@ import { hasStickyMarker } from "./ci-sticky-pr-comment-upsert";
 import {
   validateFuzzReplayResult,
   formatProblems,
+  filterProblemsByPath,
+  isAcceptedSchema,
+  ACCEPTED_FUZZ_FAILURE_SCHEMAS,
 } from "./_helpers/sticky-replay-schemas";
+import {
+  EXIT_OK,
+  EXIT_USAGE,
+  EXIT_IO,
+  EXIT_PARSE,
+  EXIT_SCHEMA,
+  EXIT_CODE_HELP,
+} from "./_helpers/sticky-replay-exit-codes";
 
 
 interface FuzzArtifactInputs {
@@ -61,15 +72,22 @@ FLAGS
                         valid JSON matching the sticky-fuzz-replay/v1
                         schema in either compact or pretty form.
   --validate-only <p>   Validate an existing sticky-fuzz-replay/v1 JSON
-                        file at <p> against the strict schema and exit
-                        (0=valid, 1=invalid). No matcher is re-run and
-                        no file is written.
+                        file at <p> against the strict schema and exit.
+                        No matcher is re-run and no file is written.
+  --fields <prefixes>   With --validate-only, restrict reported problems
+                        to JSON paths starting with one of the given
+                        comma-separated prefixes (e.g. "inputs,matcher").
+                        Schema-mismatch errors are always reported so a
+                        wrong document never passes silently.
   -h, --help            Show this help
 
-The artifact must carry the sticky-fuzz-failure/v1 schema and contain
-inputs.markerLiteral + inputs.body. The CLI re-runs hasStickyMarker on
-both head-scan and full-scan paths and prints the matcher results
-alongside the cleanedIds the artifact captured at failure time.
+${EXIT_CODE_HELP}
+The artifact must carry a sticky-fuzz-failure/v1-compatible schema
+(${ACCEPTED_FUZZ_FAILURE_SCHEMAS.join(", ")} or future v1.x minor
+revisions) and contain inputs.markerLiteral + inputs.body. The CLI
+re-runs hasStickyMarker on both head-scan and full-scan paths and
+prints the matcher results alongside the cleanedIds the artifact
+captured at failure time.
 `;
 
 function parseArgs(argv: string[]): {
@@ -77,6 +95,7 @@ function parseArgs(argv: string[]): {
   json: string | null;
   pretty: boolean;
   validateOnly: string | null;
+  fields: string[];
   help: boolean;
 } {
   const out = {
@@ -84,6 +103,7 @@ function parseArgs(argv: string[]): {
     json: null as string | null,
     pretty: false,
     validateOnly: null as string | null,
+    fields: [] as string[],
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -93,7 +113,10 @@ function parseArgs(argv: string[]): {
     else if (a === "--json") out.json = argv[++i] ?? null;
     else if (a === "--pretty") out.pretty = true;
     else if (a === "--validate-only") out.validateOnly = argv[++i] ?? null;
-    else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+    else if (a === "--fields") {
+      const v = argv[++i] ?? "";
+      out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
   }
@@ -123,9 +146,9 @@ export function validateFuzzArtifact(a: unknown): string[] {
     return ["artifact root is not a JSON object"];
   }
   const art = a as FuzzArtifact;
-  if (art.schema !== "sticky-fuzz-failure/v1") {
+  if (!isAcceptedSchema(art.schema, ACCEPTED_FUZZ_FAILURE_SCHEMAS)) {
     problems.push(
-      `schema=${JSON.stringify(art.schema)} (expected "sticky-fuzz-failure/v1")`,
+      `schema=${JSON.stringify(art.schema)} (expected one of ${JSON.stringify(ACCEPTED_FUZZ_FAILURE_SCHEMAS)})`,
     );
   }
   if (typeof art.seed !== "number") {
@@ -159,41 +182,55 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
   } catch (e) {
     console.error((e as Error).message);
     console.error(HELP);
-    return 1;
+    return EXIT_USAGE;
   }
   if (cfg.help) {
     console.log(HELP);
-    return 0;
+    return EXIT_OK;
   }
 
   // --validate-only short-circuits everything: load the file, run
   // validateFuzzReplayResult on it, print a clear pass/fail message,
   // and exit. No matcher re-run, no file write.
   if (cfg.validateOnly) {
-    let payload: unknown;
+    let raw: string;
     try {
-      payload = JSON.parse(readFileSync(cfg.validateOnly, "utf8"));
+      raw = readFileSync(cfg.validateOnly, "utf8");
     } catch (e) {
       console.error(
-        `[fuzz-replay] --validate-only: failed to read/parse ${cfg.validateOnly}: ${(e as Error).message}`,
+        `[fuzz-replay] --validate-only: cannot read ${cfg.validateOnly}: ${(e as Error).message}`,
       );
-      return 1;
+      return EXIT_IO;
     }
-    const probs = validateFuzzReplayResult(payload);
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch (e) {
+      console.error(
+        `[fuzz-replay] --validate-only: ${cfg.validateOnly} is not valid JSON: ${(e as Error).message}`,
+      );
+      return EXIT_PARSE;
+    }
+    let probs = validateFuzzReplayResult(payload);
+    if (cfg.fields.length > 0) {
+      probs = filterProblemsByPath(probs, cfg.fields);
+      console.log(`[fuzz-replay] --fields filter: ${cfg.fields.join(",")}`);
+    }
     if (probs.length > 0) {
       console.error(formatProblems("fuzz-replay", cfg.validateOnly, probs));
-      return 1;
+      return EXIT_SCHEMA;
     }
     console.log(
-      `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1`,
+      `[fuzz-replay] --validate-only OK: ${cfg.validateOnly} matches sticky-fuzz-replay/v1` +
+        (cfg.fields.length > 0 ? ` (scoped to: ${cfg.fields.join(",")})` : ""),
     );
-    return 0;
+    return EXIT_OK;
   }
 
   if (!cfg.path) {
     console.error("missing artifact path");
     console.error(HELP);
-    return 1;
+    return EXIT_USAGE;
   }
 
   let raw: string;
@@ -201,14 +238,14 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     raw = readFileSync(cfg.path, "utf8");
   } catch (e) {
     console.error(`[fuzz-replay] failed to read ${cfg.path}: ${(e as Error).message}`);
-    return 1;
+    return EXIT_IO;
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch (e) {
     console.error(`[fuzz-replay] ${cfg.path} is not valid JSON: ${(e as Error).message}`);
-    return 1;
+    return EXIT_PARSE;
   }
 
   const problems = validateFuzzArtifact(parsed);
@@ -218,7 +255,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
         `schema validation (${problems.length} problem${problems.length === 1 ? "" : "s"}):`,
     );
     for (const p of problems) console.error(`  - ${p}`);
-    return 1;
+    return EXIT_SCHEMA;
   }
 
   const artifact = parsed as FuzzArtifact;
@@ -260,7 +297,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     console.error(
       formatProblems("fuzz-replay", "<in-memory result>", validationProblems),
     );
-    return 1;
+    return EXIT_SCHEMA;
   }
 
   if (cfg.json) {
@@ -277,7 +314,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
       );
     }
   }
-  return 0;
+  return EXIT_OK;
 }
 
 

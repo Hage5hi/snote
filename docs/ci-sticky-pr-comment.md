@@ -271,3 +271,42 @@ instead of re-parsing the human-readable step summary table.
 | 1    | Bad flags / missing required input          |
 | 2    | GitHub API error                            |
 
+
+## Exit codes (replay & manifest CLIs)
+
+| Code | Meaning                                                  |
+| ---- | -------------------------------------------------------- |
+| 0    | OK                                                       |
+| 1    | USAGE  — unknown flag / missing required argument        |
+| 2    | IO     — file not found / read error                     |
+| 3    | PARSE  — file is not valid JSON                          |
+| 4    | SCHEMA — failed strict schema validation                 |
+| 5    | OTHER  — non-schema runtime error (e.g. manifest entry refers to a missing file or size mismatch) |
+
+## Backward-compatible schema acceptance
+
+The strict validators accept the pinned v1 literal AND any additive v1
+minor revision (e.g. `sticky-replay/v1.1`, `sticky-fuzz-replay/v1.2`),
+so historic CI bundles and committed fuzz failures keep validating as
+the schemas evolve. They never widen across majors.
+
+## --validate-only --fields <prefixes>
+
+Both replay CLIs accept `--fields <comma,separated,prefixes>` together
+with `--validate-only` to restrict reported problems to a sub-tree
+(e.g. `--fields inputs,matcher`). Schema-mismatch errors are always
+reported so a fundamentally wrong document never passes silently.
+
+## Manifest validator
+
+`scripts/ci-sticky-validate-artifacts-manifest.ts <path>` validates
+`sticky-artifacts-manifest.json` against `sticky-artifacts-manifest/v1`
+AND confirms each `.entries[]` file exists with the declared size.
+Use `--base <root>` to resolve relative entry paths.
+
+## Manifest links in annotations
+
+Pass `--manifest <path>` to the overlap replay CLI to include a
+`manifest=<path>#entries[bundle=...,basename=...]` pointer in the
+GitHub Actions `::notice` annotation, so reviewers can click straight
+from the run summary to the matching entry in the bundle index.

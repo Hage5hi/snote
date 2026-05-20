@@ -49,12 +49,70 @@ function problem(path: string, expected: string, got: unknown): string {
   return `${path} is missing or not ${expected} (got: ${snippet(got)})`;
 }
 
+// Backward-compatible schema acceptance. Older artifacts pinned to v1
+// (and any future minor revisions of the v1 family, e.g. "v1.1") must
+// keep validating even after a v2 ships, so historic CI bundles and
+// committed fuzz failures stay usable. Add new compatible literals to
+// the arrays below; do NOT remove v1 without a major migration.
+export const ACCEPTED_OVERLAP_REPLAY_SCHEMAS: readonly string[] = [
+  "sticky-replay/v1",
+];
+export const ACCEPTED_FUZZ_REPLAY_SCHEMAS: readonly string[] = [
+  "sticky-fuzz-replay/v1",
+];
+export const ACCEPTED_FUZZ_FAILURE_SCHEMAS: readonly string[] = [
+  "sticky-fuzz-failure/v1",
+];
+export const ACCEPTED_MANIFEST_SCHEMAS: readonly string[] = [
+  "sticky-artifacts-manifest/v1",
+];
+
+/**
+ * Accept exact match against the listed schema versions, plus any
+ * additive v1 minor revision (e.g. "sticky-replay/v1.1") that shares
+ * the same `<family>/v<major>.` prefix. Never widens across majors.
+ */
+export function isAcceptedSchema(
+  value: unknown,
+  accepted: readonly string[],
+): boolean {
+  if (typeof value !== "string") return false;
+  if (accepted.includes(value)) return true;
+  for (const a of accepted) {
+    const m = a.match(/^(.*)\/v(\d+)$/);
+    if (!m) continue;
+    const prefix = `${m[1]}/v${m[2]}.`;
+    if (value.startsWith(prefix)) return true;
+  }
+  return false;
+}
+
+/**
+ * Restrict a list of problem messages to those whose JSON path starts
+ * with one of the given dotted prefixes (e.g. `inputs`, `matcher`).
+ * The schema-mismatch message and root-object error are always kept
+ * so users never get a silent green run on a fundamentally broken doc.
+ */
+export function filterProblemsByPath(
+  problems: string[],
+  prefixes: string[],
+): string[] {
+  if (prefixes.length === 0) return problems;
+  const normalized = prefixes.map((p) => (p.startsWith(".") ? p : `.${p}`));
+  return problems.filter((m) => {
+    if (m.startsWith("schema=") || m.includes("not a JSON object")) return true;
+    return normalized.some((pref) => m.startsWith(pref));
+  });
+}
+
+
+
 export function validateOverlapReplayResult(r: unknown): string[] {
   const p: string[] = [];
   if (!isPlainObject(r)) return ["replay result is not a JSON object"];
-  if (r.schema !== "sticky-replay/v1") {
+  if (!isAcceptedSchema(r.schema, ACCEPTED_OVERLAP_REPLAY_SCHEMAS)) {
     p.push(
-      `schema=${JSON.stringify(r.schema)} (expected "sticky-replay/v1") at path .schema`,
+      `schema=${JSON.stringify(r.schema)} (expected one of ${JSON.stringify(ACCEPTED_OVERLAP_REPLAY_SCHEMAS)}) at path .schema`,
     );
   }
   if (typeof r.scenario !== "string") p.push(problem(".scenario", "a string", r.scenario));
@@ -73,9 +131,9 @@ export function validateOverlapReplayResult(r: unknown): string[] {
 export function validateFuzzReplayResult(r: unknown): string[] {
   const p: string[] = [];
   if (!isPlainObject(r)) return ["replay result is not a JSON object"];
-  if (r.schema !== "sticky-fuzz-replay/v1") {
+  if (!isAcceptedSchema(r.schema, ACCEPTED_FUZZ_REPLAY_SCHEMAS)) {
     p.push(
-      `schema=${JSON.stringify(r.schema)} (expected "sticky-fuzz-replay/v1") at path .schema`,
+      `schema=${JSON.stringify(r.schema)} (expected one of ${JSON.stringify(ACCEPTED_FUZZ_REPLAY_SCHEMAS)}) at path .schema`,
     );
   }
   if (typeof r.source !== "string") p.push(problem(".source", "a string", r.source));
@@ -107,4 +165,33 @@ export function formatProblems(kind: string, path: string, problems: string[]): 
   const head = `[${kind}] generated payload at ${path} failed schema validation ` +
     `(${problems.length} problem${problems.length === 1 ? "" : "s"}):`;
   return [head, ...problems.map((p) => `  - ${p}`)].join("\n");
+}
+
+export function validateManifest(r: unknown): string[] {
+  const p: string[] = [];
+  if (!isPlainObject(r)) return ["manifest is not a JSON object"];
+  if (!isAcceptedSchema(r.schema, ACCEPTED_MANIFEST_SCHEMAS)) {
+    p.push(
+      `schema=${JSON.stringify(r.schema)} (expected one of ${JSON.stringify(ACCEPTED_MANIFEST_SCHEMAS)}) at path .schema`,
+    );
+  }
+  if (typeof r.runUrl !== "string") p.push(problem(".runUrl", "a string", r.runUrl));
+  if (!Array.isArray(r.entries)) {
+    p.push(problem(".entries", "an array", r.entries));
+    return p;
+  }
+  for (let i = 0; i < r.entries.length; i++) {
+    const e = r.entries[i];
+    const base = `.entries[${i}]`;
+    if (!isPlainObject(e)) {
+      p.push(problem(base, "an object", e));
+      continue;
+    }
+    if (typeof e.bundle !== "string") p.push(problem(`${base}.bundle`, "a string", e.bundle));
+    if (typeof e.path !== "string") p.push(problem(`${base}.path`, "a string", e.path));
+    if (typeof e.basename !== "string") p.push(problem(`${base}.basename`, "a string", e.basename));
+    if (typeof e.sizeBytes !== "number") p.push(problem(`${base}.sizeBytes`, "a number", e.sizeBytes));
+    if (typeof e.downloadUrl !== "string") p.push(problem(`${base}.downloadUrl`, "a string", e.downloadUrl));
+  }
+  return p;
 }
