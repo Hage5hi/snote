@@ -91,6 +91,24 @@ describe("perf regression: duplicate cleanup stays linear under load", () => {
     return Number.isFinite(v) && v > 0 ? v : null;
   })();
 
+  // Effective thresholds resolved from env overrides — printed once
+  // at the top of the test run so CI logs always show the budgets
+  // actually in effect (not just the defaults documented in the
+  // source). Mirrors the same info the matching assertion messages
+  // include, but in one easy-to-grep block.
+  // eslint-disable-next-line no-console
+  console.log(
+    `[sticky-perf] effective thresholds: ` +
+      Object.entries(CAPS)
+        .map(([n, ms]) => `cap_ms_${n}=${ms}`)
+        .join(" ") +
+      ` ratio_max=${RATIO_MAX}` +
+      ` mem_cap_mb=${MEM_CAP_MB ?? "off"}` +
+      ` (overrides: STICKY_PERF_CAP_MS_<N>, STICKY_PERF_RATIO_MAX, STICKY_PERF_MEM_CAP_MB)`,
+  );
+
+
+
   it("linearity + absolute timing caps across N ∈ {100, 500, 2000, 5000}", async () => {
     const samples: Sample[] = [];
 
