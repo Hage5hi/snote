@@ -69,7 +69,7 @@ describe("ci-sticky-fuzz-failure-replay CLI", () => {
   it("rejects artifacts with the wrong schema", async () => {
     const path = writeArtifact("bad.json", { schema: "other/v1", inputs: {} });
     const code = await runFuzzReplay([path]);
-    expect(code).toBe(1);
+    expect(code).toBe(4); // EXIT_SCHEMA
     const e = errs.join("\n");
     expect(e).toMatch(/failed sticky-fuzz-failure\/v1 schema validation/);
     expect(e).toMatch(/schema=/);
