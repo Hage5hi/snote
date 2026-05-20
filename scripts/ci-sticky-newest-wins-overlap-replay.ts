@@ -13,10 +13,22 @@
 // Usage:
 //   bun run scripts/ci-sticky-newest-wins-overlap-replay.ts \
 //     [--scenario newest-on-first-page|overlap-dup-page|ts-vs-id|rerun] \
-//     [--head-scan-lines 5] [--strategy delete|lock]
+//     [--head-scan-lines 5] [--strategy delete|lock] \
+//     [--out <path>] [--no-artifact]
+//
+// In addition to printing the summary to stdout, the replay writes a
+// JSON artifact with the same payload to a configurable path so CI
+// jobs (and humans) can attach it for later inspection. Path
+// precedence: --out <path>  >  $STICKY_REPLAY_ARTIFACT  >  default
+// reports/_ci/sticky-replay/<scenario>.json. Pass --no-artifact to
+// suppress the file entirely.
 //
 // Exits non-zero only on internal errors. The point is diagnostics,
 // not assertions — assertions live in the vitest file.
+
+import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+
 
 import {
   upsertStickyComment,
@@ -106,12 +118,16 @@ function parseArgs(argv: string[]): {
   scenario: ScenarioName;
   headScanLines: number;
   strategy: CleanupStrategy;
+  out: string | null;
+  noArtifact: boolean;
   help: boolean;
 } {
   const out = {
     scenario: "overlap-dup-page" as ScenarioName,
     headScanLines: 5,
     strategy: "delete" as CleanupStrategy,
+    out: null as string | null,
+    noArtifact: false,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -121,6 +137,8 @@ function parseArgs(argv: string[]): {
     else if (a === "--scenario") out.scenario = take() as ScenarioName;
     else if (a === "--head-scan-lines") out.headScanLines = Number(take());
     else if (a === "--strategy") out.strategy = take() as CleanupStrategy;
+    else if (a === "--out") out.out = take();
+    else if (a === "--no-artifact") out.noArtifact = true;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
   if (!(out.scenario in SCENARIOS)) {
@@ -141,8 +159,30 @@ FLAGS
                             Default: overlap-dup-page
   --head-scan-lines <n>     Override headScanLines (default 5)
   --strategy <s>            delete | lock (default delete)
+  --out <path>              Write the JSON summary to <path>.
+                            Overrides $STICKY_REPLAY_ARTIFACT.
+  --no-artifact             Skip writing the JSON artifact file.
   -h, --help                Show this help
 `;
+
+function resolveArtifactPath(
+  scenario: ScenarioName,
+  out: string | null,
+  noArtifact: boolean,
+): string | null {
+  if (noArtifact) return null;
+  if (out) return out;
+  const envPath = process.env.STICKY_REPLAY_ARTIFACT;
+  if (envPath && envPath.length > 0) return envPath;
+  return `reports/_ci/sticky-replay/${scenario}.json`;
+}
+
+function emitGhAnnotation(kind: "notice" | "error", file: string, msg: string) {
+  if (process.env.GITHUB_ACTIONS !== "true") return;
+  // GitHub Actions workflow command — surfaces a clickable annotation
+  // in the run summary pointing at the artifact file.
+  console.log(`::${kind} file=${file}::${msg}`);
+}
 
 export async function runReplay(argv: string[]): Promise<number> {
   let cfg;
@@ -176,15 +216,36 @@ export async function runReplay(argv: string[]): Promise<number> {
   });
 
   const summary = {
+    schema: "sticky-replay/v1",
     scenario: cfg.scenario,
+    headScanLines: cfg.headScanLines,
+    strategy: cfg.strategy,
     action: res.action,
     selectedId: res.comment.id,
     cleanedIds: res.cleaned.map((c) => c.id),
     usedFullScan: res.usedFullScan,
     scanStats: res.scanStats,
     finalIds: [...state.keys()].sort((a, b) => a - b),
+    timestamp: new Date().toISOString(),
   };
   console.log(`[replay] result=${JSON.stringify(summary, null, 2)}`);
+
+  const artifactPath = resolveArtifactPath(cfg.scenario, cfg.out, cfg.noArtifact);
+  if (artifactPath) {
+    try {
+      mkdirSync(dirname(artifactPath), { recursive: true });
+      writeFileSync(artifactPath, JSON.stringify(summary, null, 2) + "\n", "utf8");
+      console.log(`[replay] wrote artifact=${artifactPath}`);
+      emitGhAnnotation(
+        "notice",
+        artifactPath,
+        `sticky-replay scenario=${cfg.scenario} selectedId=${res.comment.id} ` +
+          `cleaned=${res.cleaned.length} usedFullScan=${res.usedFullScan}`,
+      );
+    } catch (e) {
+      console.error(`[replay] WARN: failed to write artifact ${artifactPath}: ${(e as Error).message}`);
+    }
+  }
   return 0;
 }
 
@@ -198,3 +259,4 @@ const isEntrypoint =
 if (isEntrypoint) {
   runReplay(process.argv.slice(2)).then((code) => process.exit(code));
 }
+
