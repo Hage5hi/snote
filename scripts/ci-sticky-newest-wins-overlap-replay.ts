@@ -137,6 +137,8 @@ function parseArgs(argv: string[]): {
   noArtifact: boolean;
   pretty: boolean;
   validateOnly: string | null;
+  fields: string[];
+  manifest: string | null;
   help: boolean;
 } {
   const out = {
@@ -147,6 +149,8 @@ function parseArgs(argv: string[]): {
     noArtifact: false,
     pretty: false,
     validateOnly: null as string | null,
+    fields: [] as string[],
+    manifest: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -160,6 +164,10 @@ function parseArgs(argv: string[]): {
     else if (a === "--no-artifact") out.noArtifact = true;
     else if (a === "--pretty") out.pretty = true;
     else if (a === "--validate-only") out.validateOnly = take();
+    else if (a === "--fields") {
+      const v = take() ?? "";
+      out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (a === "--manifest") out.manifest = take();
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
   if (out.validateOnly) return out;
