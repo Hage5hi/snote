@@ -136,6 +136,25 @@ jobs:
           path: reports/_ci/sticky-upsert-perf-timing.log
           retention-days: 7
           if-no-files-found: warn
+      # Always upload the sticky-replay JSONs (one per scenario) and
+      # any sticky-fuzz-failures captured during the test run, so they
+      # are downloadable directly from the workflow run summary. These
+      # artifacts are tiny and only present when the corresponding code
+      # paths emitted them (`if-no-files-found: ignore`).
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: sticky-replay
+          path: reports/_ci/sticky-replay/
+          retention-days: 14
+          if-no-files-found: ignore
+      - if: always() && (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: sticky-fuzz-failures
+          path: reports/_ci/sticky-fuzz-failures/
+          retention-days: 14
+          if-no-files-found: ignore
       - run: bun run build:check
 
   i18n:

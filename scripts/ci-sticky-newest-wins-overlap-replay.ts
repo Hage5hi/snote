@@ -137,7 +137,7 @@ function parseArgs(argv: string[]): {
     else if (a === "--scenario") out.scenario = take() as ScenarioName;
     else if (a === "--head-scan-lines") out.headScanLines = Number(take());
     else if (a === "--strategy") out.strategy = take() as CleanupStrategy;
-    else if (a === "--out") out.out = take();
+    else if (a === "--out" || a === "--json") out.out = take();
     else if (a === "--no-artifact") out.noArtifact = true;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
@@ -159,7 +159,7 @@ FLAGS
                             Default: overlap-dup-page
   --head-scan-lines <n>     Override headScanLines (default 5)
   --strategy <s>            delete | lock (default delete)
-  --out <path>              Write the JSON summary to <path>.
+  --out, --json <path>      Write the JSON summary to <path>.
                             Overrides $STICKY_REPLAY_ARTIFACT.
   --no-artifact             Skip writing the JSON artifact file.
   -h, --help                Show this help
