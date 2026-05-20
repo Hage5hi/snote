@@ -9,7 +9,7 @@ import { CYBER_LINH_KHI_FRAG, CYBER_LINH_KHI_VERT } from "./cyber-linh-khi.frag"
 const FRAME_MS = 1000 / 30; // 30fps target
 const TIME_SCALE = 0.0008;  // "u_time * tiny" — very slow turbulence
 
-export default function CyberLinhKhi({ paused, isDark }: SceneProps) {
+export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const isDarkRef = useRef(isDark);
   isDarkRef.current = isDark;
