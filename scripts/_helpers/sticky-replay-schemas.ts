@@ -66,6 +66,9 @@ export const ACCEPTED_FUZZ_FAILURE_SCHEMAS: readonly string[] = [
 export const ACCEPTED_MANIFEST_SCHEMAS: readonly string[] = [
   "sticky-artifacts-manifest/v1",
 ];
+export const ACCEPTED_VALIDATE_SUMMARY_SCHEMAS: readonly string[] = [
+  "sticky-validate-summary/v1",
+];
 
 /**
  * Accept exact match against the listed schema versions, plus any
