@@ -95,6 +95,7 @@ function parseArgs(argv: string[]): {
   json: string | null;
   pretty: boolean;
   validateOnly: string | null;
+  fields: string[];
   help: boolean;
 } {
   const out = {
@@ -102,6 +103,7 @@ function parseArgs(argv: string[]): {
     json: null as string | null,
     pretty: false,
     validateOnly: null as string | null,
+    fields: [] as string[],
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -111,7 +113,10 @@ function parseArgs(argv: string[]): {
     else if (a === "--json") out.json = argv[++i] ?? null;
     else if (a === "--pretty") out.pretty = true;
     else if (a === "--validate-only") out.validateOnly = argv[++i] ?? null;
-    else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+    else if (a === "--fields") {
+      const v = argv[++i] ?? "";
+      out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
   }
