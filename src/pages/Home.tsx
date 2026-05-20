@@ -176,11 +176,12 @@ export default function Home() {
     >
       {hasScene && <SceneHost />}
       <header
-        className={
+        className={cn(
+          "relative z-10 flex h-12 items-center justify-between border-b px-4 motion-reduce:transition-none",
           isCyber
-            ? "relative z-10 flex h-12 items-center justify-between border-b border-cyan-900/30 bg-black/40 px-4 backdrop-blur-md"
-            : "relative z-10 flex h-12 items-center justify-between border-b border-border/60 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60"
-        }
+            ? "border-cyan-900/30 bg-black/40 motion-safe:backdrop-blur-md"
+            : "border-border/60 bg-background/80 supports-[backdrop-filter]:bg-background/60 motion-safe:backdrop-blur",
+        )}
       >
         <div className="flex items-center gap-2">
           <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" fetchPriority="high" decoding="async" className="h-6 w-6 rounded-md object-contain" />
@@ -196,20 +197,20 @@ export default function Home() {
         <h1
           className={
             isCyber
-              ? "bg-gradient-to-br from-teal-200 via-cyan-300 to-teal-500 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
-              : "bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
+              ? "bg-gradient-to-br from-teal-200 via-cyan-300 to-teal-500 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out] motion-reduce:animate-none"
+              : "bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out] motion-reduce:animate-none"
           }
         >
           {t("home.tagline")}
         </h1>
-        <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both]">
+        <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both] motion-reduce:animate-none">
           {t("home.intro_prefix")}
           <code className="rounded bg-muted px-1.5 py-0.5 text-sm">/hello</code>
           {t("home.intro_suffix")}
         </p>
 
         <form
-          className="mt-8 flex gap-2 motion-safe:animate-[fade-in_500ms_ease-out_160ms_both]"
+          className="mt-8 flex gap-2 motion-safe:animate-[fade-in_500ms_ease-out_160ms_both] motion-reduce:animate-none"
           onSubmit={(e) => {
             e.preventDefault();
             open(slug);
