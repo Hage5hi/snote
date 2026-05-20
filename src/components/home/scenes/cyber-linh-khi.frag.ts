@@ -74,9 +74,9 @@ void main() {
   float vig = smoothstep(1.05, 0.35, length(p));
   col *= mix(0.55, 1.0, vig);
 
-  // Light theme: invert luminance approach — lighter, lower opacity.
+  // Light theme: soft tinted wash so the shader stays visible against light bg.
   if (u_isDark < 0.5) {
-    col = mix(vec3(0.96, 0.99, 0.99), col, 0.28);
+    col = mix(vec3(0.94, 0.99, 0.98), col * 1.2, 0.55);
   }
 
   gl_FragColor = vec4(col, 1.0);
