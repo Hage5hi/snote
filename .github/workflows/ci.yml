@@ -37,6 +37,43 @@ jobs:
       - run: bun run lint
       - run: bunx tsc --noEmit
       - run: bun run test
+      # Dedicated sticky-upsert integration + perf suite. Runs on every
+      # PR (and on push to main) so regressions in marker scanning
+      # bounds, pagination handling, malformed-metadata skipping, or
+      # lock→rerun convergence surface as their own red check. The
+      # debug-summary suite is verbose and is only exercised when the
+      # workflow_dispatch `sticky_debug` input is set to 1; otherwise
+      # we run the lean integration/perf set.
+      - name: Sticky-upsert integration + perf suite
+        env:
+          STICKY_DEBUG: ${{ inputs.sticky_debug || '0' }}
+        if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        run: |
+          set -e
+          BASE_TESTS=(
+            scripts/__tests__/ci-sticky-upsert-paginated-list.test.ts
+            scripts/__tests__/ci-sticky-upsert-malformed-marker-metadata.test.ts
+            scripts/__tests__/ci-sticky-upsert-lock-then-rerun.test.ts
+            scripts/__tests__/ci-sticky-upsert-scan-perf-bound.test.ts
+            scripts/__tests__/ci-sticky-upsert-scan-bounded.test.ts
+            scripts/__tests__/ci-sticky-upsert-head-scan-window-integration.test.ts
+            scripts/__tests__/ci-sticky-upsert-parallel-jobs-convergence.test.ts
+            scripts/__tests__/ci-sticky-upsert-concurrent-cleanup.test.ts
+            scripts/__tests__/ci-sticky-upsert-lock-strategy.test.ts
+            scripts/__tests__/ci-sticky-upsert-delete-fallback-to-lock.test.ts
+          )
+          DEBUG_TESTS=(
+            scripts/__tests__/ci-sticky-upsert-debug-summary-gating.test.ts
+            scripts/__tests__/ci-sticky-upsert-create-debug-summary.test.ts
+            scripts/__tests__/ci-sticky-upsert-flag-env-precedence.test.ts
+            scripts/__tests__/ci-sticky-upsert-cli-help.test.ts
+          )
+          if [ "$STICKY_DEBUG" = "1" ]; then
+            echo "sticky_debug=1 → including debug-summary suites"
+            bunx vitest run "${BASE_TESTS[@]}" "${DEBUG_TESTS[@]}"
+          else
+            bunx vitest run "${BASE_TESTS[@]}"
+          fi
       - run: bun run build:check
 
   i18n:
