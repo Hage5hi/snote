@@ -399,7 +399,7 @@ export const dict = {
 
     // Theme & scene picker
     "theme.aria": "Theme settings",
-    "theme.color.label": "Color theme",
+    "theme.color.label": "Theme",
     "theme.color.light": "Light",
     "theme.color.dark": "Dark",
     "theme.color.system": "System",
