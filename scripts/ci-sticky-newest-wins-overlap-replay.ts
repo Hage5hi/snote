@@ -178,6 +178,7 @@ function parseArgs(argv: string[]): {
   pretty: boolean;
   validateOnly: string | null;
   fields: string[];
+  jsonSummary: string | null;
   manifest: string | null;
   help: boolean;
 } {
@@ -190,6 +191,7 @@ function parseArgs(argv: string[]): {
     pretty: false,
     validateOnly: null as string | null,
     fields: [] as string[],
+    jsonSummary: null as string | null,
     manifest: null as string | null,
     help: false,
   };
