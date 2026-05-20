@@ -110,9 +110,9 @@ export function filterProblemsByPath(
 export function validateOverlapReplayResult(r: unknown): string[] {
   const p: string[] = [];
   if (!isPlainObject(r)) return ["replay result is not a JSON object"];
-  if (r.schema !== "sticky-replay/v1") {
+  if (!isAcceptedSchema(r.schema, ACCEPTED_OVERLAP_REPLAY_SCHEMAS)) {
     p.push(
-      `schema=${JSON.stringify(r.schema)} (expected "sticky-replay/v1") at path .schema`,
+      `schema=${JSON.stringify(r.schema)} (expected one of ${JSON.stringify(ACCEPTED_OVERLAP_REPLAY_SCHEMAS)}) at path .schema`,
     );
   }
   if (typeof r.scenario !== "string") p.push(problem(".scenario", "a string", r.scenario));
