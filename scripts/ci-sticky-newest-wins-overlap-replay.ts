@@ -172,7 +172,10 @@ FLAGS
   --out, --json <path>      Write the JSON summary to <path>.
                             Overrides $STICKY_REPLAY_ARTIFACT.
   --no-artifact             Skip writing the JSON artifact file.
+  --pretty                  Indent the written JSON artifact for readability.
+                            Default: compact single-line JSON (smaller diffs).
   -h, --help                Show this help
+
 `;
 
 function resolveArtifactPath(
