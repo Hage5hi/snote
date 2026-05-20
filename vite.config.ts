@@ -97,7 +97,7 @@ export default defineConfig(({ mode }) => ({
       resolveDependencies: (_filename, deps) =>
         deps.filter(
           (dep) =>
-            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley)-/.test(
+            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley|scene-|ogl-vendor)-/.test(
               dep,
             ),
         ),
