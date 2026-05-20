@@ -55,6 +55,8 @@ USAGE
 FLAGS
   --file <path>     Read the artifact from <path>
   --json <path>     Also write the machine-readable replay result to <path>
+  --pretty          Indent the written JSON output for readability.
+                    Default: compact single-line JSON (smaller diffs).
   -h, --help        Show this help
 
 The artifact must carry the sticky-fuzz-failure/v1 schema and contain
@@ -66,20 +68,28 @@ alongside the cleanedIds the artifact captured at failure time.
 function parseArgs(argv: string[]): {
   path: string | null;
   json: string | null;
+  pretty: boolean;
   help: boolean;
 } {
-  const out = { path: null as string | null, json: null as string | null, help: false };
+  const out = {
+    path: null as string | null,
+    json: null as string | null,
+    pretty: false,
+    help: false,
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") out.help = true;
     else if (a === "--file") out.path = argv[++i] ?? null;
     else if (a === "--json") out.json = argv[++i] ?? null;
+    else if (a === "--pretty") out.pretty = true;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
   }
   return out;
 }
+
 
 function runMatcher(body: string, marker: string, fullScan: boolean) {
   try {
