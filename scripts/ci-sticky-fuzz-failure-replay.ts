@@ -96,6 +96,8 @@ function parseArgs(argv: string[]): {
   pretty: boolean;
   validateOnly: string | null;
   fields: string[];
+  jsonSummary: string | null;
+  manifest: string | null;
   help: boolean;
 } {
   const out = {
@@ -104,6 +106,8 @@ function parseArgs(argv: string[]): {
     pretty: false,
     validateOnly: null as string | null,
     fields: [] as string[],
+    jsonSummary: null as string | null,
+    manifest: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -116,11 +120,51 @@ function parseArgs(argv: string[]): {
     else if (a === "--fields") {
       const v = argv[++i] ?? "";
       out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
-    } else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
+    } else if (a === "--json-summary") out.jsonSummary = argv[++i] ?? null;
+    else if (a === "--manifest") out.manifest = argv[++i] ?? null;
+    else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
   }
   return out;
+}
+
+function writeValidateSummary(
+  path: string, target: string, ok: boolean, exitCode: number, problems: string[],
+  fieldsFilter: string[],
+) {
+  try {
+    mkdirSync(dirname(resolve(path)), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify(
+        {
+          schema: "sticky-validate-summary/v1",
+          kind: "sticky-fuzz-replay",
+          target, ok, exitCode,
+          fieldsFilter,
+          problemCount: problems.length,
+          problems: problems.map((m) => ({ message: m })),
+        },
+        null, 2,
+      ) + "\n",
+      "utf8",
+    );
+  } catch (e) {
+    console.error(`[fuzz-replay] WARN: failed to write --json-summary ${path}: ${(e as Error).message}`);
+  }
+}
+
+function buildManifestPointer(manifestPath: string, artifactPath: string): string {
+  const rel = relative(dirname(resolve(artifactPath)), resolve(manifestPath));
+  const safeRel = rel === "" ? manifestPath : rel;
+  const base = artifactPath.split(/[/\\]/).pop();
+  return ` manifest=${safeRel}#entries[bundle=sticky-fuzz-failures,basename=${base}]`;
+}
+
+function emitGhAnnotation(kind: "notice" | "error", file: string, msg: string) {
+  if (process.env.GITHUB_ACTIONS !== "true") return;
+  console.log(`::${kind} file=${file}::${msg}`);
 }
 
 
