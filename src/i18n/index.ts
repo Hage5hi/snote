@@ -744,7 +744,7 @@ export const dict = {
 
     // Theme & scene picker
     "theme.aria": "C\u00e0i \u0111\u1eb7t giao di\u1ec7n",
-    "theme.color.label": "M\u00e0u giao di\u1ec7n",
+    "theme.color.label": "Giao diện",
     "theme.color.light": "S\u00e1ng",
     "theme.color.dark": "T\u1ed1i",
     "theme.color.system": "Theo h\u1ec7 th\u1ed1ng",
