@@ -314,7 +314,7 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
       );
     }
   }
-  return 0;
+  return EXIT_OK;
 }
 
 
