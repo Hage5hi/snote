@@ -280,7 +280,7 @@ export default function Home() {
 
         {pinned.length > 0 && (
           <section
-            className="sticky top-0 z-10 mt-10 -mx-4 bg-background/95 px-4 pb-3 pt-3 backdrop-blur supports-[backdrop-filter]:bg-background/80"
+            className="sticky top-0 z-10 mt-10 -mx-4 bg-background/95 px-4 pb-3 pt-3 supports-[backdrop-filter]:bg-background/80 motion-safe:backdrop-blur"
             aria-label={t("home.pinned.aria")}
           >
             <h2 className="mb-2 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
