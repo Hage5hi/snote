@@ -21,9 +21,9 @@ import { dirname, join } from "node:path";
 import type { UpsertResult } from "../../ci-sticky-pr-comment-upsert";
 
 const fuzzArtifactDir = () =>
-  process.env.STICKY_fuzzArtifactDir() ?? "reports/_ci/sticky-fuzz-failures";
+  process.env.STICKY_FUZZ_ARTIFACT_DIR ?? "reports/_ci/sticky-fuzz-failures";
 const scanSummaryJsonl = () =>
-  process.env.STICKY_scanSummaryJsonl() ?? "reports/_ci/sticky-scan-summary.jsonl";
+  process.env.STICKY_SCAN_SUMMARY_JSONL ?? "reports/_ci/sticky-scan-summary.jsonl";
 
 /** Read the fuzz seed from env or fall back. Logged on failure. */
 export function fuzzSeed(fallback: number): number {
