@@ -20,7 +20,14 @@ interface Rule {
 // Thresholds: Phase 7 baseline + ~10-15% headroom for normal feature work.
 // When exceeded, either fix code or bump threshold (PR review).
 const CHUNK_RULES: Rule[] = [
-  { prefix: "index-", label: "entry", maxGz: 45_000 },
+  // Entry threshold was raised from 45KB to 75KB in Phase 9 (perf PR #3).
+  // PR #3 collapsed the previously-manual `chunk-a8f3` (which had been
+  // absorbing shared utilities like `use-toast` and shadcn primitives) into
+  // the entry chunk where Rollup correctly places shared code. The entry
+  // is now ~72KB gz, but the OVERALL initial route is ~30KB lighter (the
+  // entire 740KB `mermaid-vendor` no longer leaks into the eager graph).
+  // The total-initial-route gate below remains the real protection.
+  { prefix: "index-", label: "entry", maxGz: 75_000 },
   { prefix: "react-vendor-", label: "react-vendor", maxGz: 68_000 },
   { prefix: "supabase-vendor-", label: "supabase-vendor", maxGz: 58_000 },
   { prefix: "radix-vendor-", label: "radix-vendor", maxGz: 35_000 },

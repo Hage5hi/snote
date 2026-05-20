@@ -138,7 +138,10 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
       el.removeAttribute("data-mermaid");
       try {
         const svg = await renderMermaid(code, isDark);
-        if (isCurrent()) el.innerHTML = svg;
+        if (isCurrent()) {
+          el.innerHTML = svg;
+          el.classList.add("hydrate-fade-in");
+        }
       } catch (e) {
         if (isCurrent()) {
           el.innerHTML = `<pre class="text-destructive text-sm">${escapeHtml(
@@ -158,7 +161,10 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
       el.removeAttribute("data-katex");
       renderKatex(tex, true)
         .then((rendered) => {
-          if (isCurrent()) el.innerHTML = rendered;
+          if (isCurrent()) {
+            el.innerHTML = rendered;
+            el.classList.add("hydrate-fade-in");
+          }
         })
         .catch((e) => {
           if (isCurrent()) {
@@ -177,7 +183,10 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
       if (!lang) return;
       highlightCode(code, lang)
         .then((rendered) => {
-          if (isCurrent()) el.innerHTML = rendered;
+          if (isCurrent()) {
+            el.innerHTML = rendered;
+            el.classList.add("hydrate-fade-in");
+          }
         })
         .catch(() => {
           /* keep escaped text */

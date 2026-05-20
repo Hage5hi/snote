@@ -393,3 +393,45 @@
 .animate-swipe-nudge {
   animation: swipe-nudge 1.2s ease-in-out 2;
 }
+
+/* ================== Micro-interactions (Phase 9 UI polish) ==================
+   All effects gated by `prefers-reduced-motion: no-preference` so users with
+   the reduced-motion OS setting (and `html.eink` mode, which already pins
+   `animation: none !important` globally) see no motion. */
+@media (prefers-reduced-motion: no-preference) {
+  /* U3 — Slug-status icon pop-in when availability check resolves.
+     Used by the small Check/Loader2/error pill inside the slug input. */
+  @keyframes slug-status-pop {
+    0%   { transform: scale(0.6); opacity: 0; }
+    60%  { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(1);    opacity: 1; }
+  }
+  .animate-slug-status-pop { animation: slug-status-pop 220ms cubic-bezier(0.4, 0, 0.2, 1); }
+
+  /* U4 — Sync indicator: a single soft pulse the moment the provider
+     transitions to `synced`. Re-keyed on `lastSnapshotAt` so identical
+     consecutive snapshots still feel acknowledged. */
+  @keyframes sync-pulse {
+    0%   { box-shadow: 0 0 0 0 hsl(var(--success) / 0.45); }
+    100% { box-shadow: 0 0 0 6px hsl(var(--success) / 0); }
+  }
+  .animate-sync-pulse { animation: sync-pulse 720ms ease-out; }
+
+  /* U6 — Word-goal confetti: 12 dots float up and fade. Pure CSS, no JS lib,
+     no runtime DOM cost beyond the 12 spans during the 1.4s lifetime. */
+  @keyframes goal-confetti {
+    0%   { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 0; }
+    10%  { opacity: 1; }
+    100% { transform: translate3d(var(--cf-x, 0px), -120px, 0) rotate(var(--cf-r, 180deg)); opacity: 0; }
+  }
+  .animate-goal-confetti { animation: goal-confetti 1.4s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+
+  /* U7 — Hydrated preview blocks (mermaid SVG, KaTeX, syntax-highlighted code)
+     fade in after their async render instead of popping. The class is added
+     by Preview.tsx after content is written. */
+  @keyframes hydrate-fade {
+    0%   { opacity: 0; transform: translateY(2px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .hydrate-fade-in { animation: hydrate-fade 220ms ease-out; }
+}

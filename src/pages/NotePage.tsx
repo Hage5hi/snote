@@ -8,6 +8,7 @@ import { Preview } from "@/components/note/Preview";
 import { Topbar } from "@/components/note/Topbar";
 import { UnlockForm } from "@/components/note/UnlockForm";
 import { PageIndicator } from "@/components/note/PageIndicator";
+import { GoalConfetti } from "@/components/note/GoalConfetti";
 
 import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
 import { toast } from "@/hooks/use-toast";
@@ -83,12 +84,16 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   );
 
   // Celebrate when crossing the goal threshold (once per goal value).
+  // `confettiTrigger` bumps in lockstep with the toast so a CSS-only burst
+  // fires alongside the notification (U6).
+  const [confettiTrigger, setConfettiTrigger] = useState(0);
   useEffect(() => {
     if (consumeGoalReached(slug, counts.words, goal)) {
       toast({
         title: t("note.goal_reached"),
         description: `${counts.words.toLocaleString()} / ${goal!.toLocaleString()}`,
       });
+      setConfettiTrigger((n) => n + 1);
     }
   }, [slug, counts.words, goal, t]);
 
@@ -431,6 +436,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       </main>
 
       <OutlineSidebar doc={doc} onJump={(line) => editorRef.current?.jumpToLine(line)} />
+
+      <GoalConfetti trigger={confettiTrigger} />
 
       {paginated && (
         <PageIndicator
