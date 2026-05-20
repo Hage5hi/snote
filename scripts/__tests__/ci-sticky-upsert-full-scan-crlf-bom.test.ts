@@ -90,7 +90,7 @@ describe("full-scan fallback tolerates CRLF + BOM + whitespace around marker", (
     expect(res.usedFullScan).toBe(true);
     expect(res.comment.id).toBe(9);
     expect(res.cleaned).toEqual([]); // only one true match
-    expect(t.state.find((c) => c.id === 9)!.body).toBe("fresh");
+    expect(t.state.find((c) => c.id === 9)!.body).toBe(`${MARKER}\nfresh`);
   });
 
   it("debug log reports linesScanned across both head-scan and full-scan paths", async () => {
