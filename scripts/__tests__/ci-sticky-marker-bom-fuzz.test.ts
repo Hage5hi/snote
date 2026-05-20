@@ -71,44 +71,52 @@ function partialMarker(rng: () => number): string {
 
 describe("hasStickyMarker — BOM + partial-marker false-positive fuzzing", () => {
   it("200 random bodies with BOMs embedded INSIDE the marker text never match", () => {
-    const rng = mulberry32(0xB0FFEE);
-    for (let i = 0; i < 200; i++) {
-      // 1..6 BOMs sprinkled INSIDE the marker
-      const corrupted = sprinkleBoms(rng, MARKER, 1 + Math.floor(rng() * 6));
-      const body =
-        ws(rng) +
-        corrupted +
-        ws(rng) +
-        eol(rng) +
-        `tail content ${i}`;
-      let r: unknown;
-      expect(() => { r = hasStickyMarker(body, MARKER); }).not.toThrow();
-      expect(typeof r).toBe("boolean");
-      expect(r, `iteration ${i} body=${JSON.stringify(body)}`).toBe(false);
-      // Full-scan must also reject — BOMs inside marker are not whitespace.
-      expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(false);
-    }
+    const seed = fuzzSeed(0xB0FFEE);
+    const rng = mulberry32(seed);
+    runFuzzWithSeed({
+      name: "BOM-inside-marker",
+      seed,
+      iterations: 200,
+      rng,
+      body: (rng, i, ctx) => {
+        const corrupted = sprinkleBoms(rng, MARKER, 1 + Math.floor(rng() * 6));
+        const body =
+          ws(rng) + corrupted + ws(rng) + eol(rng) + `tail content ${i}`;
+        ctx.extra = { body, corrupted };
+        let r: unknown;
+        expect(() => { r = hasStickyMarker(body, MARKER); }).not.toThrow();
+        expect(typeof r).toBe("boolean");
+        expect(r).toBe(false);
+        expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(false);
+      },
+    });
   });
 
   it("200 random bodies with PARTIAL marker substrings + random BOMs never match", () => {
-    const rng = mulberry32(0xFEEDFACE);
-    for (let i = 0; i < 200; i++) {
-      const partial = partialMarker(rng);
-      const noisy = sprinkleBoms(rng, partial, Math.floor(rng() * 4));
-      const before = Array.from({ length: Math.floor(rng() * 3) }, () => ws(rng) + eol(rng)).join("");
-      const body =
-        before +
-        ws(rng) +
-        noisy +
-        ws(rng) +
-        eol(rng) +
-        `padding ${i}`;
-      let r: unknown;
-      expect(() => { r = hasStickyMarker(body, MARKER); }).not.toThrow();
-      expect(typeof r).toBe("boolean");
-      expect(r, `partial=${JSON.stringify(partial)} body=${JSON.stringify(body)}`).toBe(false);
-      expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(false);
-    }
+    const seed = fuzzSeed(0xFEEDFACE);
+    const rng = mulberry32(seed);
+    runFuzzWithSeed({
+      name: "partial-marker+BOMs",
+      seed,
+      iterations: 200,
+      rng,
+      body: (rng, i, ctx) => {
+        const partial = partialMarker(rng);
+        const noisy = sprinkleBoms(rng, partial, Math.floor(rng() * 4));
+        const before = Array.from(
+          { length: Math.floor(rng() * 3) },
+          () => ws(rng) + eol(rng),
+        ).join("");
+        const body =
+          before + ws(rng) + noisy + ws(rng) + eol(rng) + `padding ${i}`;
+        ctx.extra = { partial, noisy, body };
+        let r: unknown;
+        expect(() => { r = hasStickyMarker(body, MARKER); }).not.toThrow();
+        expect(typeof r).toBe("boolean");
+        expect(r).toBe(false);
+        expect(hasStickyMarker(body, MARKER, { fullScan: true })).toBe(false);
+      },
+    });
   });
 
   it("a leading BOM at the very start of the body is the ONLY tolerated BOM placement", () => {
