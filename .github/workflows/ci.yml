@@ -63,6 +63,11 @@ jobs:
             scripts/__tests__/ci-sticky-upsert-delete-fallback-to-lock.test.ts
             scripts/__tests__/ci-sticky-upsert-pagination-boundary.test.ts
             scripts/__tests__/ci-sticky-upsert-empty-pages.test.ts
+            scripts/__tests__/ci-sticky-marker-bom-fuzz.test.ts
+            scripts/__tests__/ci-sticky-upsert-bulk-cleanup-linear.test.ts
+            scripts/__tests__/ci-sticky-upsert-randomized-concurrency.test.ts
+            scripts/__tests__/ci-sticky-upsert-multi-marker-paginated.test.ts
+            scripts/__tests__/ci-sticky-upsert-debug-gating-drift.test.ts
           )
           DEBUG_TESTS=(
             scripts/__tests__/ci-sticky-upsert-debug-summary-gating.test.ts
