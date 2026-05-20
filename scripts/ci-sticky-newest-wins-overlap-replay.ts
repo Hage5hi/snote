@@ -210,6 +210,7 @@ function parseArgs(argv: string[]): {
       const v = take() ?? "";
       out.fields = v.split(",").map((s) => s.trim()).filter(Boolean);
     } else if (a === "--manifest") out.manifest = take();
+    else if (a === "--json-summary") out.jsonSummary = take();
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
   if (out.validateOnly) return out;
