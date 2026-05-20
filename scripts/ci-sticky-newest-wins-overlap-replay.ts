@@ -127,6 +127,7 @@ function parseArgs(argv: string[]): {
   out: string | null;
   noArtifact: boolean;
   pretty: boolean;
+  validateOnly: string | null;
   help: boolean;
 } {
   const out = {
@@ -136,6 +137,7 @@ function parseArgs(argv: string[]): {
     out: null as string | null,
     noArtifact: false,
     pretty: false,
+    validateOnly: null as string | null,
     help: false,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -148,8 +150,10 @@ function parseArgs(argv: string[]): {
     else if (a === "--out" || a === "--json") out.out = take();
     else if (a === "--no-artifact") out.noArtifact = true;
     else if (a === "--pretty") out.pretty = true;
+    else if (a === "--validate-only") out.validateOnly = take();
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
   }
+  if (out.validateOnly) return out;
   if (!(out.scenario in SCENARIOS)) {
     throw new Error(
       `unknown scenario: ${out.scenario} (one of: ${Object.keys(SCENARIOS).join(", ")})`,
