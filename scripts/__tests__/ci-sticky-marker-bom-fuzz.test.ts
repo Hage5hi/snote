@@ -16,6 +16,7 @@
 // false-positive surface that BOM handling could open up.
 import { describe, expect, it } from "vitest";
 import { hasStickyMarker } from "../ci-sticky-pr-comment-upsert";
+import { fuzzSeed, runFuzzWithSeed } from "./_helpers/sticky-scan-summary";
 
 const MARKER = "<!-- Sticky Pull Request Commenti18n-cli-coverage -->";
 const BOM = "\uFEFF";
