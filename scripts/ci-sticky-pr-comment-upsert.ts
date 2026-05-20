@@ -46,8 +46,20 @@ export interface StickyComment {
   body: string;
 }
 
+/**
+ * Optional rich return shape for `StickyApi.list`. When the API
+ * implementation walks paginated GitHub responses internally it can
+ * return `{ comments, pagesWalked }` so the upsert reports
+ * `scanStats.pagesWalked` precisely. Plain `StickyComment[]` is still
+ * accepted (treated as a single page) for backward compatibility.
+ */
+export interface StickyListMeta {
+  comments: StickyComment[];
+  pagesWalked: number;
+}
+
 export interface StickyApi {
-  list: () => Promise<StickyComment[]>;
+  list: () => Promise<StickyComment[] | StickyListMeta>;
   create: (body: string) => Promise<StickyComment>;
   update: (id: number, body: string) => Promise<StickyComment>;
   remove?: (id: number) => Promise<void>;
@@ -72,12 +84,36 @@ export interface UpsertOptions {
   debug?: boolean | ((line: string) => void);
 }
 
+/**
+ * Marker-scan statistics, returned so integration tests can assert the
+ * `headScanLines` bound precisely (including across paginated lists,
+ * empty pages, and full-body fallback rescues).
+ *
+ *   • `pagesWalked`      — pages the `list` impl reported walking
+ *                          (defaults to 1 when the API returns a plain
+ *                          array). Empty pages still count as walked.
+ *   • `commentsExamined` — total comments returned by `list` (across
+ *                          all pages).
+ *   • `linesScanned`     — sum of body lines actually inspected across
+ *                          BOTH the head scan and (when engaged) the
+ *                          full-body fallback. Bounded per comment by
+ *                          `headScanLines` on the fast path; the
+ *                          fallback walks the full body once.
+ */
+export interface ScanStats {
+  pagesWalked: number;
+  commentsExamined: number;
+  linesScanned: number;
+}
+
 export interface UpsertResult {
   action: "created" | "updated";
   comment: StickyComment;
   cleaned: { id: number; via: "delete" | "lock" }[];
   /** True if the matched comment was found via the full-body fallback. */
   usedFullScan: boolean;
+  /** See `ScanStats`. Always populated. */
+  scanStats: ScanStats;
 }
 
 
@@ -110,6 +146,31 @@ export function hasStickyMarker(
 }
 
 /**
+ * Like {@link hasStickyMarker} but also returns the number of lines it
+ * actually inspected so callers can roll up a precise `linesScanned`
+ * total (used by `ScanStats`). Stops early on first match.
+ */
+function scanForMarker(
+  body: unknown,
+  marker: string,
+  opts: { headScanLines?: number; fullScan?: boolean } = {},
+): { matched: boolean; linesScanned: number } {
+  if (typeof body !== "string" || body.length === 0) {
+    return { matched: false, linesScanned: 0 };
+  }
+  const normalized = body.replace(/\r\n?/g, "\n").replace(/^\uFEFF/, "");
+  const allLines = normalized.split("\n");
+  const limit = opts.fullScan
+    ? allLines.length
+    : Math.min(allLines.length, opts.headScanLines ?? MARKER_HEAD_SCAN_LINES);
+  const target = marker.trim();
+  for (let i = 0; i < limit; i++) {
+    if (allLines[i].trim() === target) return { matched: true, linesScanned: i + 1 };
+  }
+  return { matched: false, linesScanned: limit };
+}
+
+/**
  * Upsert a sticky comment, cleaning up any older duplicates carrying
  * the same marker. See module docstring for the full contract.
  */
@@ -131,19 +192,41 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
         ? opts.debug
         : null;
 
-  const comments = await api.list();
+  const listed = await api.list();
+  const isMeta = !Array.isArray(listed);
+  const comments: StickyComment[] = isMeta ? listed.comments : listed;
+  const pagesWalked = isMeta ? listed.pagesWalked : 1;
 
   const stamped = hasStickyMarker(body, marker, { headScanLines: 1 })
     ? body
     : `${marker}\n${body}`;
 
-  let matches = comments.filter((c) => hasStickyMarker(c.body, marker, { headScanLines }));
+  let linesScanned = 0;
+  const headMatches: StickyComment[] = [];
+  for (const c of comments) {
+    const r = scanForMarker(c.body, marker, { headScanLines });
+    linesScanned += r.linesScanned;
+    if (r.matched) headMatches.push(c);
+  }
+  let matches = headMatches;
   let usedFullScan = false;
 
   if (matches.length === 0) {
-    matches = comments.filter((c) => hasStickyMarker(c.body, marker, { fullScan: true }));
+    const fullMatches: StickyComment[] = [];
+    for (const c of comments) {
+      const r = scanForMarker(c.body, marker, { fullScan: true });
+      linesScanned += r.linesScanned;
+      if (r.matched) fullMatches.push(c);
+    }
+    matches = fullMatches;
     usedFullScan = matches.length > 0;
   }
+
+  const scanStats: ScanStats = {
+    pagesWalked,
+    commentsExamined: comments.length,
+    linesScanned,
+  };
 
   if (matches.length === 0) {
     const created = await api.create(stamped);
@@ -153,7 +236,7 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
         `(deleted=0 tombstoned=0) ` +
         `requestedStrategy=${requestedStrategy} effectiveStrategy=${strategy}`,
     );
-    return { action: "created", comment: created, cleaned: [], usedFullScan: false };
+    return { action: "created", comment: created, cleaned: [], usedFullScan: false, scanStats };
   }
 
   const newest = matches.reduce((a, b) => (a.id > b.id ? a : b));
@@ -188,7 +271,7 @@ export async function upsertStickyComment(opts: UpsertOptions): Promise<UpsertRe
       `requestedStrategy=${requestedStrategy} effectiveStrategy=${strategy}`,
   );
 
-  return { action: "updated", comment: updated, cleaned, usedFullScan };
+  return { action: "updated", comment: updated, cleaned, usedFullScan, scanStats };
 }
 
 
@@ -402,14 +485,16 @@ async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<number> {
   const api: StickyApi = {
     list: async () => {
       const out: StickyComment[] = [];
+      let pagesWalked = 0;
       for (let page = 1; page < 50; page++) {
         const r = await fetch(`${base}?per_page=100&page=${page}`, { headers });
         if (!r.ok) throw new Error(`list failed: ${r.status} ${await r.text()}`);
         const batch = (await r.json()) as Array<{ id: number; body: string }>;
+        pagesWalked++;
         out.push(...batch.map((c) => ({ id: c.id, body: c.body ?? "" })));
         if (batch.length < 100) break;
       }
-      return out;
+      return { comments: out, pagesWalked };
     },
     create: async (b) => {
       const r = await fetch(base, {
@@ -449,7 +534,10 @@ async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<number> {
     });
     log(
       `done: action=${res.action} id=${res.comment.id} cleaned=${res.cleaned.length} ` +
-        `usedFullScan=${res.usedFullScan}`,
+        `usedFullScan=${res.usedFullScan} ` +
+        `pagesWalked=${res.scanStats.pagesWalked} ` +
+        `commentsExamined=${res.scanStats.commentsExamined} ` +
+        `linesScanned=${res.scanStats.linesScanned}`,
     );
     return 0;
   } catch (e) {

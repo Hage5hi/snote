@@ -61,6 +61,8 @@ jobs:
             scripts/__tests__/ci-sticky-upsert-concurrent-cleanup.test.ts
             scripts/__tests__/ci-sticky-upsert-lock-strategy.test.ts
             scripts/__tests__/ci-sticky-upsert-delete-fallback-to-lock.test.ts
+            scripts/__tests__/ci-sticky-upsert-pagination-boundary.test.ts
+            scripts/__tests__/ci-sticky-upsert-empty-pages.test.ts
           )
           DEBUG_TESTS=(
             scripts/__tests__/ci-sticky-upsert-debug-summary-gating.test.ts
@@ -74,6 +76,42 @@ jobs:
           else
             bunx vitest run "${BASE_TESTS[@]}"
           fi
+      # Dedicated perf-only step with a stricter timeout. These suites
+      # pin marker-scanning bounds (head-scan window + at most one
+      # full-body fallback) and pagination/empty-page budgets, so any
+      # accidental quadratic regression should blow the wall-clock here
+      # long before it shows up in the broader suite. Timing logs are
+      # uploaded ONLY when STICKY_DEBUG=1 to avoid artifact noise on
+      # every PR.
+      - name: Sticky-upsert perf suite (stricter timeout)
+        if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          STICKY_DEBUG: ${{ inputs.sticky_debug || '0' }}
+        timeout-minutes: 2
+        run: |
+          set -e
+          mkdir -p reports/_ci
+          PERF_TESTS=(
+            scripts/__tests__/ci-sticky-upsert-scan-perf-bound.test.ts
+            scripts/__tests__/ci-sticky-upsert-scan-bounded.test.ts
+            scripts/__tests__/ci-sticky-upsert-pagination-boundary.test.ts
+            scripts/__tests__/ci-sticky-upsert-empty-pages.test.ts
+            scripts/__tests__/ci-sticky-upsert-paginated-list.test.ts
+          )
+          if [ "$STICKY_DEBUG" = "1" ]; then
+            echo "sticky_debug=1 → capturing perf timing log"
+            bunx vitest run --reporter=verbose "${PERF_TESTS[@]}" \
+              2>&1 | tee reports/_ci/sticky-upsert-perf-timing.log
+          else
+            bunx vitest run "${PERF_TESTS[@]}"
+          fi
+      - if: ${{ (github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'workflow_dispatch') && (inputs.sticky_debug == '1') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: sticky-upsert-perf-timing
+          path: reports/_ci/sticky-upsert-perf-timing.log
+          retention-days: 7
+          if-no-files-found: warn
       - run: bun run build:check
 
   i18n:
