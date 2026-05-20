@@ -41,10 +41,9 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
       });
 
       it("renders every enabled scene with i18n label + aria-label", async () => {
+        const user = userEvent.setup();
         renderToggle();
-        await act(async () => {
-          fireEvent.click(screen.getByRole("button", { name: dict[lang]["theme.aria"] }));
-        });
+        await user.click(screen.getByRole("button", { name: dict[lang]["theme.aria"] }));
 
         for (const scene of enabledScenes) {
           const label = dict[lang][scene.labelKey];
@@ -53,7 +52,6 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
 
           const item = screen.getByRole("menuitemradio", { name: expectedAria });
           expect(item).toHaveAttribute("aria-label", expectedAria);
-          // Visible label text is rendered alongside the swatch.
           expect(within(item).getByText(label)).toBeInTheDocument();
         }
       });
@@ -62,10 +60,9 @@ describe("ThemeToggle — scene menuitem aria-label + i18n", () => {
 
   it("'none' option also exposes an aria-label from i18n (EN)", async () => {
     localStorage.setItem(LANG_KEY, "en");
+    const user = userEvent.setup();
     renderToggle();
-    await act(async () => {
-      fireEvent.click(screen.getByRole("button", { name: dict.en["theme.aria"] }));
-    });
+    await user.click(screen.getByRole("button", { name: dict.en["theme.aria"] }));
     const ariaNone = `${dict.en["scene.none.label"]} — ${dict.en["scene.none.desc"]}`;
     expect(screen.getByRole("menuitemradio", { name: ariaNone })).toBeInTheDocument();
   });
