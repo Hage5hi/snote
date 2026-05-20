@@ -184,7 +184,9 @@ describe("SceneHost — chunk-loading contract", () => {
     const host = container.querySelector("[data-scene-ready]") as HTMLElement;
     expect(host.className).toMatch(/pointer-events-none/);
     expect(host.className).toMatch(/fixed/);
-    expect(host.className).toMatch(/-z-10/);
+    expect(host.className).toMatch(/z-0/);
+    expect(host.className).not.toMatch(/-z-10/);
+    expect(host.className).toMatch(/motion-safe:transition-opacity/);
     // Top mask is 96px (h-24), bottom mask is 128px (h-32) — both short enough
     // that the centered Hero (~ vh/2) and recents block stay legible.
     const masks = host.querySelectorAll("div.absolute");

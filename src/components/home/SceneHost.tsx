@@ -91,8 +91,8 @@ export default function SceneHost() {
     <div
       aria-hidden="true"
       className={[
-        "pointer-events-none fixed inset-0 -z-10 overflow-hidden",
-        "transition-opacity duration-700 ease-out",
+        "pointer-events-none fixed inset-0 z-0 overflow-hidden",
+        "motion-safe:transition-opacity motion-safe:duration-700 motion-safe:ease-out",
         ready ? "opacity-100" : "opacity-0",
       ].join(" ")}
       data-scene-ready={ready ? "true" : "false"}
