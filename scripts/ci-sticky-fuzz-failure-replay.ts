@@ -4,19 +4,20 @@
 // `reports/_ci/sticky-fuzz-failures/` by default), re-runs the exact
 // marker matcher paths on the captured body + marker literal and
 // prints the matcher results plus the cleanedIds the artifact
-// recorded. This is the one-shot local repro path — no fuzzing loop,
-// no PRNG, just the exact inputs that broke.
+// recorded.
 //
 // Usage:
 //   bun run scripts/ci-sticky-fuzz-failure-replay.ts <artifact.json>
 //   bun run scripts/ci-sticky-fuzz-failure-replay.ts --file <path>
-//   bun run scripts/ci-sticky-fuzz-failure-replay.ts --help
+//   bun run scripts/ci-sticky-fuzz-failure-replay.ts <a.json> --json <out.json>
 //
-// Exit codes:
-//   0  ran successfully (regardless of matcher outcome)
-//   1  bad flags / missing/invalid artifact
+// Schema validation: artifacts MUST be sticky-fuzz-failure/v1 and
+// carry inputs.markerLiteral + inputs.body. Missing required fields
+// produce a single clear error listing every problem (not a vague
+// "cannot replay"), so partial captures can be fixed at the source.
 
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
 import { hasStickyMarker } from "./ci-sticky-pr-comment-upsert";
 
 interface FuzzArtifactInputs {
@@ -44,8 +45,12 @@ interface FuzzArtifact {
 const HELP = `ci-sticky-fuzz-failure-replay — re-run a fuzz failure artifact
 
 USAGE
-  bun run scripts/ci-sticky-fuzz-failure-replay.ts <artifact.json>
-  bun run scripts/ci-sticky-fuzz-failure-replay.ts --file <path>
+  bun run scripts/ci-sticky-fuzz-failure-replay.ts <artifact.json> [flags]
+
+FLAGS
+  --file <path>     Read the artifact from <path>
+  --json <path>     Also write the machine-readable replay result to <path>
+  -h, --help        Show this help
 
 The artifact must carry the sticky-fuzz-failure/v1 schema and contain
 inputs.markerLiteral + inputs.body. The CLI re-runs hasStickyMarker on
@@ -53,12 +58,17 @@ both head-scan and full-scan paths and prints the matcher results
 alongside the cleanedIds the artifact captured at failure time.
 `;
 
-function parseArgs(argv: string[]): { path: string | null; help: boolean } {
-  const out = { path: null as string | null, help: false };
+function parseArgs(argv: string[]): {
+  path: string | null;
+  json: string | null;
+  help: boolean;
+} {
+  const out = { path: null as string | null, json: null as string | null, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") out.help = true;
     else if (a === "--file") out.path = argv[++i] ?? null;
+    else if (a === "--json") out.json = argv[++i] ?? null;
     else if (a.startsWith("--")) throw new Error(`unknown flag: ${a}`);
     else if (out.path === null) out.path = a;
     else throw new Error(`unexpected positional: ${a}`);
@@ -68,10 +78,53 @@ function parseArgs(argv: string[]): { path: string | null; help: boolean } {
 
 function runMatcher(body: string, marker: string, fullScan: boolean) {
   try {
-    return { returned: hasStickyMarker(body, marker, { fullScan }), threw: null as string | null };
+    return {
+      returned: hasStickyMarker(body, marker, { fullScan }),
+      threw: null as string | null,
+    };
   } catch (e) {
     return { returned: null, threw: (e as Error).message };
   }
+}
+
+/**
+ * Strict schema check. Returns the list of problems (empty = valid).
+ * Each problem is human-readable and names the offending field so the
+ * caller can produce a single consolidated error message.
+ */
+export function validateFuzzArtifact(a: unknown): string[] {
+  const problems: string[] = [];
+  if (!a || typeof a !== "object") {
+    return ["artifact root is not a JSON object"];
+  }
+  const art = a as FuzzArtifact;
+  if (art.schema !== "sticky-fuzz-failure/v1") {
+    problems.push(
+      `schema=${JSON.stringify(art.schema)} (expected "sticky-fuzz-failure/v1")`,
+    );
+  }
+  if (typeof art.seed !== "number") {
+    problems.push("seed is missing or not a number");
+  }
+  if (typeof art.iteration !== "number") {
+    problems.push("iteration is missing or not a number");
+  }
+  const inputs = art.inputs;
+  if (!inputs || typeof inputs !== "object") {
+    problems.push("inputs is missing or not an object");
+    return problems;
+  }
+  if (typeof inputs.markerLiteral !== "string") {
+    problems.push("inputs.markerLiteral is missing or not a string");
+  }
+  if (typeof inputs.body !== "string") {
+    problems.push(
+      "inputs.body is missing or not a string — without the original " +
+        "comment body the matcher paths cannot be re-executed; capture " +
+        "inputs.body when emitting the fuzz failure artifact",
+    );
+  }
+  return problems;
 }
 
 export async function runFuzzReplay(argv: string[]): Promise<number> {
@@ -93,36 +146,40 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
     return 1;
   }
 
-  let artifact: FuzzArtifact;
+  let raw: string;
   try {
-    artifact = JSON.parse(readFileSync(cfg.path, "utf8")) as FuzzArtifact;
+    raw = readFileSync(cfg.path, "utf8");
   } catch (e) {
     console.error(`[fuzz-replay] failed to read ${cfg.path}: ${(e as Error).message}`);
     return 1;
   }
-  if (artifact.schema !== "sticky-fuzz-failure/v1") {
-    console.error(
-      `[fuzz-replay] unexpected schema=${String(artifact.schema)} ` +
-        `(expected sticky-fuzz-failure/v1)`,
-    );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    console.error(`[fuzz-replay] ${cfg.path} is not valid JSON: ${(e as Error).message}`);
     return 1;
   }
-  const inputs = artifact.inputs ?? {};
-  const marker = inputs.markerLiteral;
-  const body = inputs.body;
-  if (typeof marker !== "string" || typeof body !== "string") {
+
+  const problems = validateFuzzArtifact(parsed);
+  if (problems.length > 0) {
     console.error(
-      `[fuzz-replay] artifact missing inputs.markerLiteral or inputs.body — ` +
-        `cannot re-run matcher paths (this is normal for matcher-only ` +
-        `fuzz tests that did not capture the body; nothing to replay).`,
+      `[fuzz-replay] artifact ${cfg.path} failed sticky-fuzz-failure/v1 ` +
+        `schema validation (${problems.length} problem${problems.length === 1 ? "" : "s"}):`,
     );
+    for (const p of problems) console.error(`  - ${p}`);
     return 1;
   }
+
+  const artifact = parsed as FuzzArtifact;
+  const inputs = artifact.inputs!;
+  const marker = inputs.markerLiteral as string;
+  const body = inputs.body as string;
 
   const head = runMatcher(body, marker, false);
   const full = runMatcher(body, marker, true);
 
-  const out = {
+  const result = {
     schema: "sticky-fuzz-replay/v1",
     source: cfg.path,
     artifact: {
@@ -143,8 +200,22 @@ export async function runFuzzReplay(argv: string[]): Promise<number> {
       paths: inputs.paths ?? null,
       cleanedIds: inputs.cleanedIds ?? null,
     },
+    timestamp: new Date().toISOString(),
   };
-  console.log(JSON.stringify(out, null, 2));
+  const payload = JSON.stringify(result, null, 2);
+  console.log(payload);
+
+  if (cfg.json) {
+    try {
+      mkdirSync(dirname(cfg.json), { recursive: true });
+      writeFileSync(cfg.json, payload + "\n", "utf8");
+      console.log(`[fuzz-replay] wrote json=${cfg.json}`);
+    } catch (e) {
+      console.error(
+        `[fuzz-replay] WARN: failed to write ${cfg.json}: ${(e as Error).message}`,
+      );
+    }
+  }
   return 0;
 }
 
