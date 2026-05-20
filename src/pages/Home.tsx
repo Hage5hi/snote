@@ -169,15 +169,25 @@ export default function Home() {
 
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
+  const isCyber = scene === "cyber-linh-khi";
 
   return (
-    <div className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}>
+    <div
+      data-theme={isCyber ? "cyber" : undefined}
+      className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}
+    >
       {hasScene && (
         <Suspense fallback={null}>
           <SceneHost />
         </Suspense>
       )}
-      <header className="relative z-10 flex h-12 items-center justify-between border-b border-border/60 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header
+        className={
+          isCyber
+            ? "relative z-10 flex h-12 items-center justify-between border-b border-cyan-900/30 bg-black/40 px-4 backdrop-blur-md"
+            : "relative z-10 flex h-12 items-center justify-between border-b border-border/60 bg-background/80 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+        }
+      >
         <div className="flex items-center gap-2">
           <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" fetchPriority="high" decoding="async" className="h-6 w-6 rounded-md object-contain" />
           <span className="font-semibold tracking-tight">Syrin Notes</span>
@@ -189,7 +199,13 @@ export default function Home() {
       </header>
 
       <main className="relative z-10 mx-auto w-full max-w-xl px-4 py-12 md:py-20">
-        <h1 className="bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]">
+        <h1
+          className={
+            isCyber
+              ? "bg-gradient-to-br from-teal-200 via-cyan-300 to-teal-500 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
+              : "bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out]"
+          }
+        >
           {t("home.tagline")}
         </h1>
         <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both]">
