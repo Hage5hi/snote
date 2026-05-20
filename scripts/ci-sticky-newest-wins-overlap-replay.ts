@@ -383,7 +383,7 @@ export async function runReplay(argv: string[]): Promise<number> {
       // entry so the GitHub Actions annotation links reviewers from
       // the run summary straight to the machine-readable bundle index.
       const manifestTail = cfg.manifest
-        ? ` manifest=${cfg.manifest}#entries[bundle=sticky-replay,basename=${artifactPath.split("/").pop()}]`
+        ? buildManifestPointer(cfg.manifest, artifactPath)
         : "";
       emitGhAnnotation(
         "notice",
