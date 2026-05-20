@@ -15,6 +15,8 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
   isDarkRef.current = isDark;
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
 
   useEffect(() => {
     const host = hostRef.current;
