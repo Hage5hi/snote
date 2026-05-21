@@ -62,6 +62,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     enabled: true,
     load: () => import("./CyberLinhKhi"),
     forceColorScheme: "dark",
+    // Heavy shader with glow halos that bleed slightly past the mask edges.
+    pixelDiffRatio: 0.035,
   },
   {
     id: "ethereal-aurora",
@@ -71,6 +73,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     enabled: true,
     load: () => import("./EtherealAurora"),
     forceColorScheme: "dark",
+    // Curl-noise ribbons; soft pastels diffuse into chrome edges.
+    pixelDiffRatio: 0.04,
   },
   {
     id: "obsidian-ink",
@@ -81,6 +85,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     load: () => import("./ObsidianInk"),
     forceColorScheme: "light",
     lightweight: true,
+    // Flat paper; tighten the gate to catch the smallest token regression.
+    pixelDiffRatio: 0.015,
   },
   {
     id: "digital-constellation",
@@ -91,6 +97,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     load: () => import("./DigitalConstellation"),
     forceColorScheme: "dark",
     lightweight: true,
+    pixelDiffRatio: 0.02,
   },
   {
     id: "neon-vapor",
@@ -100,6 +107,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     enabled: true,
     load: () => import("./NeonVapor"),
     forceColorScheme: "dark",
+    // Scanlines + magenta fog; highest tolerable jitter.
+    pixelDiffRatio: 0.045,
   },
   {
     id: "terminal-boot",
@@ -110,6 +119,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     load: () => import("./TerminalBoot"),
     forceColorScheme: "dark",
     lightweight: true,
+    pixelDiffRatio: 0.02,
   },
 ];
 
