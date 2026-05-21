@@ -13,16 +13,28 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 
 type AttachmentRef = { name: string; path?: string; contentType?: string };
+type Annotation = { type: string; description?: string };
 type TestResult = {
   status: "passed" | "failed" | "timedOut" | "skipped" | "interrupted";
   error?: { message?: string };
   attachments?: AttachmentRef[];
   retry?: number;
 };
-type TestEntry = { title: string; results: TestResult[]; projectName?: string };
+type TestEntry = {
+  title: string;
+  results: TestResult[];
+  projectName?: string;
+  annotations?: Annotation[];
+};
 type SpecEntry = { title: string; file: string; tests: TestEntry[] };
 type SuiteEntry = { title?: string; specs?: SpecEntry[]; suites?: SuiteEntry[] };
 type Report = { suites?: SuiteEntry[]; stats?: { duration?: number } };
+
+interface DiffImageSet {
+  expected?: AttachmentRef;
+  actual?: AttachmentRef;
+  diff?: AttachmentRef;
+}
 
 interface Failure {
   file: string;
@@ -31,8 +43,12 @@ interface Failure {
   project: string;
   retry: number;
   message: string;
-  pixelDiff?: string;       // parsed "ratio 0.012" if present
+  pixelDiff?: string;       // parsed "ratio 0.012" from the error message
+  threshold?: string;       // resolved per-scene maxDiffPixelRatio (from annotations)
+  scene?: string;           // from annotations
+  override?: string;        // SCENE_DIFF_RATIOS hit, when present
   attachments: AttachmentRef[];
+  images: DiffImageSet;
 }
 
 function* walkSpecs(suites: SuiteEntry[] | undefined): Generator<SpecEntry> {
@@ -44,7 +60,6 @@ function* walkSpecs(suites: SuiteEntry[] | undefined): Generator<SpecEntry> {
 }
 
 function extractPixelDiff(msg: string): string | undefined {
-  // Matches "ratio 0.012", "0.5% pixels differ", "12 pixels diff".
   const m = msg.match(/(?:ratio|threshold|maxDiffPixelRatio)[^\d]{0,8}([\d.]+)/i);
   if (m) return m[1];
   const pct = msg.match(/([\d.]+)\s*%\s*(?:of\s*)?pixels/i);
@@ -52,15 +67,32 @@ function extractPixelDiff(msg: string): string | undefined {
   return undefined;
 }
 
+/** Group the *-expected/*-actual/*-diff PNG attachments that Playwright
+ *  emits when toHaveScreenshot fails. */
+function collectImages(atts: AttachmentRef[]): DiffImageSet {
+  const out: DiffImageSet = {};
+  for (const a of atts) {
+    const name = (a.name ?? "") + " " + (a.path ?? "");
+    if (/-expected\.png(\b|$)/i.test(name)) out.expected ??= a;
+    else if (/-actual\.png(\b|$)/i.test(name)) out.actual ??= a;
+    else if (/-diff\.png(\b|$)/i.test(name)) out.diff ??= a;
+  }
+  return out;
+}
+
+function annoValue(annos: Annotation[] | undefined, type: string): string | undefined {
+  return annos?.find((a) => a.type === type)?.description;
+}
+
 function parse(report: Report): Failure[] {
   const out: Failure[] = [];
   for (const spec of walkSpecs(report.suites)) {
     for (const t of spec.tests) {
-      // Pick the worst result (last retry usually).
       const last = t.results[t.results.length - 1];
       if (!last) continue;
       if (last.status === "passed" || last.status === "skipped") continue;
       const msg = last.error?.message ?? "(no message)";
+      const atts = last.attachments ?? [];
       out.push({
         file: spec.file,
         spec: spec.title,
@@ -69,12 +101,17 @@ function parse(report: Report): Failure[] {
         retry: last.retry ?? 0,
         message: msg.split("\n").slice(0, 4).join(" ").slice(0, 300),
         pixelDiff: extractPixelDiff(msg),
-        attachments: last.attachments ?? [],
+        threshold: annoValue(t.annotations, "pixelDiffRatio"),
+        scene: annoValue(t.annotations, "scene"),
+        override: annoValue(t.annotations, "pixelDiffOverride"),
+        attachments: atts,
+        images: collectImages(atts),
       });
     }
   }
   return out;
 }
+
 
 function artifactUrl(runUrl: string, artifactId?: string): string | undefined {
   if (!artifactId) return undefined;
