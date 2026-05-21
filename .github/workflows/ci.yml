@@ -740,18 +740,34 @@ jobs:
         browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need the merge-base with origin/main for PR-scoped diffing in
+          # scripts/e2e-run-changed-scenes.ts. Shallow=1 breaks it.
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: Install Playwright browser (${{ matrix.browser }})
         run: bunx playwright install --with-deps ${{ matrix.browser }}
-      - name: Run E2E on ${{ matrix.browser }}
+      # PR mode: visual regression suite is scoped to scenes that changed
+      # in this PR (safety-net specs — webgl-fallback + smoke — always run).
+      # Push to main / workflow_dispatch / scheduled: full suite.
+      - name: Run E2E on ${{ matrix.browser }} (PR-scoped)
+        if: github.event_name == 'pull_request'
+        run: bun run scripts/e2e-run-changed-scenes.ts --base origin/${{ github.base_ref }}
+        env:
+          CI: "1"
+          PLAYWRIGHT_PROJECT: ${{ matrix.browser }}
+          E2E_TOAST_TIMEOUT_MS: "8000"
+          E2E_TOAST_DISMISS_TIMEOUT_MS: "12000"
+          E2E_TOAST_MIN_VISIBLE_MS: "250"
+      - name: Run E2E on ${{ matrix.browser }} (full)
+        if: github.event_name != 'pull_request'
         run: bunx playwright test --project=${{ matrix.browser }}
         env:
           CI: "1"
           PLAYWRIGHT_PROJECT: ${{ matrix.browser }}
-          # Slower CI runners — give toasts more headroom.
           E2E_TOAST_TIMEOUT_MS: "8000"
           E2E_TOAST_DISMISS_TIMEOUT_MS: "12000"
           E2E_TOAST_MIN_VISIBLE_MS: "250"
