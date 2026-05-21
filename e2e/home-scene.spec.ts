@@ -22,6 +22,12 @@
 import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+// This whole file is the pixel-diff + hit-test + flicker regression net.
+// Allow up to 2 retries in CI so a single GPU/font-hint blip doesn't turn
+// the branch red — a real regression reproduces on every attempt. The rest
+// of the e2e suite stays at retries=0 (set globally in playwright.config).
+test.describe.configure({ retries: process.env.CI ? 2 : 0 });
+
 // --- Storage keys ----------------------------------------------------------
 const LANG_KEY = "lang";
 const LANG_IP_KEY = "lang.ip_detected";

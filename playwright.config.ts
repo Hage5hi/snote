@@ -2,16 +2,25 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Playwright E2E config — runs against `bun run dev` (Vite).
 // Keep this scoped to /e2e so it never picks up Vitest unit tests under /src.
+
+// Pixel-diff threshold — overridable per-run via PIXEL_DIFF_RATIO so the
+// same config works for "tighten the gate" (=0.005) and "accept new
+// baseline" (=0.05) without editing source.
+const PIXEL_DIFF_RATIO = (() => {
+  const v = Number(process.env.PIXEL_DIFF_RATIO);
+  return Number.isFinite(v) && v >= 0 ? v : 0.02;
+})();
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false, // language tests touch shared localStorage
   forbidOnly: !!process.env.CI,
-  // Pixel-diff / hit-test specs can flake on shared CI runners (GPU jitter,
-  // font-hinting changes, slow scene first-frame). Retry up to 2x in CI so a
-  // single transient blip doesn't turn a green branch red — real regressions
-  // still fail because they reproduce on every retry. Locally the default is
-  // 0 so a flake is noisy and gets fixed at the source.
-  retries: process.env.CI ? 2 : 0,
+  // Global retries are 0 — flake hides real regressions. The pixel-diff and
+  // hit-test specs that legitimately need GPU/font-jitter tolerance opt in
+  // locally via `test.describe.configure({ retries: ... })`. This keeps
+  // logic/i18n suites strict while still catching genuine pixel regressions
+  // (which reproduce on every retry).
+  retries: 0,
   workers: 1,
   reporter: process.env.CI
     ? [["github"], ["list"], ["json", { outputFile: "test-results/e2e-results.json" }]]
@@ -19,17 +28,15 @@ export default defineConfig({
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080",
     trace: "retain-on-failure",
-    // Capture a fresh screenshot on every failure so the CI artifact bundle
-    // includes the exact pixels that tripped the assertion (mask coverage,
-    // flicker, axe hit-test debug overlays, etc.).
     screenshot: "only-on-failure",
     video: "retain-on-failure",
   },
   // Tunable thresholds for in-spec image diffs (toMatchSnapshot uses these).
   expect: {
-    toHaveScreenshot: { maxDiffPixelRatio: 0.02 },
-    toMatchSnapshot: { maxDiffPixelRatio: 0.02 },
+    toHaveScreenshot: { maxDiffPixelRatio: PIXEL_DIFF_RATIO },
+    toMatchSnapshot: { maxDiffPixelRatio: PIXEL_DIFF_RATIO },
   },
+
   // Cross-browser matrix: filter via `--project=<name>` or PLAYWRIGHT_PROJECT.
   // CI runs all three; local dev defaults to chromium only.
   projects: (() => {

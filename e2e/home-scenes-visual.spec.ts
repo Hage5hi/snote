@@ -13,6 +13,11 @@
 // Run baseline update locally with:
 //   bun run test:e2e:update:scene
 import { test, expect, type Page } from "@playwright/test";
+import { diffRatio } from "./helpers/pixel-diff";
+
+// Pixel-diff suite — opt into retries to absorb shader/GPU jitter in CI
+// without re-running the entire e2e matrix (global retries are 0).
+test.describe.configure({ retries: process.env.CI ? 2 : 0 });
 
 const SCENES = [
   "cyber-linh-khi",
@@ -74,7 +79,7 @@ for (const scene of SCENES) {
       await expect(page).toHaveScreenshot(`scene-${scene}-${lang}-chrome.png`, {
         clip: { x: 0, y: 0, width: 1280, height: 320 },
         mask: [page.locator("[data-scene-ready]")],
-        maxDiffPixelRatio: 0.03,
+        maxDiffPixelRatio: diffRatio(0.03),
         animations: "disabled",
       });
     });

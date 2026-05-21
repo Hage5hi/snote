@@ -76,28 +76,52 @@ function parse(report: Report): Failure[] {
   return out;
 }
 
-function fmtMd(failures: Failure[], runUrl: string): string {
+function artifactUrl(runUrl: string, artifactId?: string): string | undefined {
+  if (!artifactId) return undefined;
+  // GitHub artifact direct-download URL (works for logged-in repo viewers).
+  // Strip the trailing #artifacts anchor if present.
+  const base = runUrl.replace(/#.*$/, "");
+  return `${base}/artifacts/${artifactId}`;
+}
+
+function fmtMd(
+  failures: Failure[],
+  runUrl: string,
+  reportArtifactId?: string,
+  debugArtifactId?: string,
+  browser?: string,
+): string {
   if (failures.length === 0) {
     return "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
   }
+  const reportUrl = artifactUrl(runUrl, reportArtifactId);
+  const debugUrl = artifactUrl(runUrl, debugArtifactId);
   const lines = [
-    `### Playwright E2E — ${failures.length} failing test(s)`,
+    `### Playwright E2E${browser ? ` · ${browser}` : ""} — ${failures.length} failing test(s)`,
     "",
-    `Download artifacts: [open run artifacts](${runUrl})`,
+    `- All artifacts: [open run artifacts](${runUrl})`,
+    reportUrl ? `- Playwright HTML report: [download](${reportUrl})` : "",
+    debugUrl ? `- Debug bundle (screenshots, traces, axe JSON): [download](${debugUrl})` : "",
     "",
-    "| Project | Spec → Test | Retry | Pixel diff | Attachments |",
-    "|---|---|---|---|---|",
-  ];
+    "| Project | Spec → Test | Retry | Pixel diff | Report | Debug artifacts |",
+    "|---|---|---|---|---|---|",
+  ].filter(Boolean);
   for (const f of failures) {
     const atts =
       f.attachments
         .filter((a) => /\.(png|json|webm|zip)$/.test(a.name) || a.contentType)
         .map((a) => `\`${a.name}\``)
-        .join(", ") || "—";
+        .join("<br>") || "—";
+    // Direct link to the HTML report's trace viewer for this exact test —
+    // the report folder is uploaded as one artifact; reviewers click through
+    // from index.html, but we surface the artifact link per row so the
+    // download-then-open step is one click instead of three.
+    const reportCell = reportUrl ? `[open](${reportUrl})` : "—";
+    const debugCell = debugUrl ? `[bundle](${debugUrl})<br>${atts}` : atts;
     lines.push(
       `| \`${f.project}\` | \`${f.file}\` → ${f.test} | ${f.retry} | ${
         f.pixelDiff ?? "—"
-      } | ${atts} |`,
+      } | ${reportCell} | ${debugCell} |`,
     );
   }
   lines.push("", "<details><summary>Failure messages (truncated)</summary>", "");
@@ -108,18 +132,26 @@ function fmtMd(failures: Failure[], runUrl: string): string {
   return lines.join("\n") + "\n";
 }
 
+
 // ---------- main ----------
 const args = process.argv.slice(2);
 const file = args[0];
-const runUrlIdx = args.indexOf("--run-url");
-const runUrl = runUrlIdx >= 0 ? args[runUrlIdx + 1] : "";
-const outIdx = args.indexOf("--out");
-const outFile = outIdx >= 0 ? args[outIdx + 1] : undefined;
-const jsonIdx = args.indexOf("--json");
-const jsonOut = jsonIdx >= 0 ? args[jsonIdx + 1] : undefined;
+function flag(name: string): string | undefined {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+const runUrl = flag("--run-url") ?? "";
+const outFile = flag("--out");
+const jsonOut = flag("--json");
+const reportArtifactId = flag("--report-artifact-id");
+const debugArtifactId = flag("--debug-artifact-id");
+const browser = flag("--browser");
 
 if (!file) {
-  console.error("usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>]");
+  console.error(
+    "usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>] " +
+      "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>]",
+  );
   process.exit(2);
 }
 
@@ -131,7 +163,7 @@ if (!existsSync(file)) {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));
     failures = parse(report);
-    md = fmtMd(failures, runUrl);
+    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser);
   } catch (err) {
     md = `### Playwright E2E — failed to parse JSON\n\n\`\`\`\n${(err as Error).message}\n\`\`\`\n`;
   }

@@ -755,16 +755,33 @@ jobs:
           E2E_TOAST_TIMEOUT_MS: "8000"
           E2E_TOAST_DISMISS_TIMEOUT_MS: "12000"
           E2E_TOAST_MIN_VISIBLE_MS: "250"
-      # Always emit a markdown failure summary (with pixel-diff thresholds
-      # + links to the uploaded artifacts) so reviewers can triage
-      # red Playwright runs without downloading the HTML report first.
+      # Upload the HTML report + raw test-results FIRST so we have an
+      # artifact-id to deep-link from the summary table below.
+      - id: upload_playwright_report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.browser }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+      # Markdown failure summary (pixel-diff thresholds + direct links to
+      # the HTML report artifact and per-failure debug bundles) so reviewers
+      # can triage a red Playwright run without downloading anything first.
       - name: E2E failure summary (markdown + machine-readable JSON)
         if: always()
+        env:
+          REPORT_ARTIFACT_ID: ${{ steps.upload_playwright_report.outputs.artifact-id }}
         run: |
           mkdir -p reports/_ci
-          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts"
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           bun run scripts/ci-e2e-summary.ts test-results/e2e-results.json \
             --run-url "$RUN_URL" \
+            --browser "${{ matrix.browser }}" \
+            --report-artifact-id "${REPORT_ARTIFACT_ID:-}" \
+            --debug-artifact-id "${REPORT_ARTIFACT_ID:-}" \
             --out reports/_ci/e2e-failure-summary.md \
             --json reports/_ci/e2e-failure-summary.json \
             || true
@@ -778,14 +795,7 @@ jobs:
             reports/_ci/e2e-failure-summary.json
           retention-days: 14
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report-${{ matrix.browser }}
-          path: |
-            playwright-report/
-            test-results/
-          retention-days: 7
+
 
   i18n-cli-matrix:
     # Cross-platform sanity for the CLI truncation/parity tests across
