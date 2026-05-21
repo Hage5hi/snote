@@ -394,6 +394,95 @@
   animation: swipe-nudge 1.2s ease-in-out 2;
 }
 
+/* ================== Home scene tokens (Phase 1) ==================
+   The Home route exposes one set of CSS vars whose values are swapped per
+   `[data-home-root][data-scene="<id>"]`. This keeps Home.tsx free of per-scene
+   `isCyber ? ... : ...` branches and prevents any token from leaking into
+   /:slug surfaces (NotePage/Editor/Preview) — those subtrees never get a
+   `data-home-root` ancestor.
+
+   Default values (scene === "none" OR no scene yet) mirror the existing
+   light/dark theme so nothing changes for users who never pick a scene. */
+[data-home-root] {
+  --home-chrome-bg: hsl(var(--background) / 0.8);
+  --home-chrome-border: hsl(var(--border) / 0.6);
+  --home-recents-bg: transparent;
+  --home-recents-border: hsl(var(--border));
+  --home-recents-divider: hsl(var(--border));
+  --home-row-hover-bg: hsl(var(--accent) / 0.5);
+  --home-row-hover-ring: transparent;
+  --home-slug-color: hsl(var(--foreground));
+  --home-slug-time-color: hsl(var(--muted-foreground));
+  --home-section-label: hsl(var(--muted-foreground));
+  --home-input-border: hsl(var(--input) / 0.7);
+  --home-input-focus-border: hsl(var(--ring) / 0.7);
+  --home-input-focus-ring: hsl(var(--ring) / 0.35);
+  --home-mask-top: linear-gradient(to bottom, hsl(var(--background) / 0.8), transparent);
+  --home-mask-bottom: linear-gradient(to top, hsl(var(--background) / 0.7), transparent);
+  --home-mono-family: ui-sans-serif, system-ui, sans-serif;
+  --home-title-grad: linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--foreground) / 0.6));
+}
+
+[data-home-root][data-scene="cyber-linh-khi"] {
+  --home-chrome-bg: hsl(0 0% 0% / 0.40);
+  --home-chrome-border: hsl(190 50% 20% / 0.50);
+  --home-recents-bg: hsl(0 0% 0% / 0.40);
+  --home-recents-border: hsl(190 60% 25% / 0.50);
+  --home-recents-divider: hsl(190 60% 25% / 0.40);
+  --home-row-hover-bg: hsl(172 80% 50% / 0.06);
+  --home-row-hover-ring: hsl(172 80% 50% / 0.35);
+  --home-slug-color: hsl(172 80% 88% / 0.92);
+  --home-slug-time-color: hsl(172 80% 70% / 0.55);
+  --home-section-label: hsl(172 80% 72% / 0.75);
+  --home-input-border: hsl(190 80% 60% / 0.25);
+  --home-input-focus-border: hsl(172 80% 75% / 0.60);
+  --home-input-focus-ring: hsl(172 80% 75% / 0.25);
+  --home-mask-top: linear-gradient(to bottom, hsl(220 30% 4% / 0.70), transparent);
+  --home-mask-bottom: linear-gradient(to top, hsl(220 30% 4% / 0.65), transparent);
+  --home-mono-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --home-title-grad: linear-gradient(135deg, hsl(172 90% 85%), hsl(187 95% 75%), hsl(172 80% 55%));
+}
+
+[data-home-root][data-scene="ethereal-aurora"] {
+  --home-chrome-bg: hsl(265 50% 10% / 0.45);
+  --home-chrome-border: hsl(280 40% 35% / 0.35);
+  --home-recents-bg: hsl(265 40% 8% / 0.45);
+  --home-recents-border: hsl(280 35% 40% / 0.35);
+  --home-recents-divider: hsl(280 35% 40% / 0.30);
+  --home-row-hover-bg: hsl(320 90% 80% / 0.08);
+  --home-row-hover-ring: hsl(320 90% 80% / 0.35);
+  --home-slug-color: hsl(320 100% 93%);
+  --home-slug-time-color: hsl(280 60% 80% / 0.60);
+  --home-section-label: hsl(320 60% 85% / 0.75);
+  --home-input-border: hsl(280 60% 70% / 0.30);
+  --home-input-focus-border: hsl(320 90% 80% / 0.60);
+  --home-input-focus-ring: hsl(320 90% 80% / 0.25);
+  --home-mask-top: linear-gradient(to bottom, hsl(265 50% 6% / 0.65), transparent);
+  --home-mask-bottom: linear-gradient(to top, hsl(265 50% 6% / 0.60), transparent);
+  --home-title-grad: linear-gradient(135deg, hsl(320 100% 92%), hsl(280 90% 80%), hsl(220 80% 75%));
+}
+
+[data-home-root][data-scene="obsidian-ink"] {
+  /* Light-mode ink-on-paper. ThemeToggle pins next-themes=light alongside. */
+  --home-chrome-bg: hsl(38 30% 96% / 0.80);
+  --home-chrome-border: hsl(30 15% 60% / 0.40);
+  --home-recents-bg: hsl(38 30% 98% / 0.60);
+  --home-recents-border: hsl(30 15% 55% / 0.40);
+  --home-recents-divider: hsl(30 15% 55% / 0.35);
+  --home-row-hover-bg: hsl(30 25% 88% / 0.70);
+  --home-row-hover-ring: hsl(25 15% 25% / 0.15);
+  --home-slug-color: hsl(25 20% 15%);
+  --home-slug-time-color: hsl(25 12% 38% / 0.75);
+  --home-section-label: hsl(25 15% 32% / 0.80);
+  --home-input-border: hsl(30 15% 55% / 0.50);
+  --home-input-focus-border: hsl(25 30% 25%);
+  --home-input-focus-ring: hsl(25 30% 25% / 0.20);
+  --home-mask-top: linear-gradient(to bottom, hsl(38 30% 96% / 0.85), transparent);
+  --home-mask-bottom: linear-gradient(to top, hsl(38 30% 96% / 0.75), transparent);
+  --home-mono-family: 'Iowan Old Style', 'Palatino Linotype', 'Georgia', serif;
+  --home-title-grad: linear-gradient(135deg, hsl(25 30% 15%), hsl(25 22% 28%), hsl(25 18% 42%));
+}
+
 /* ================== Micro-interactions (Phase 9 UI polish) ==================
    All effects gated by `prefers-reduced-motion: no-preference` so users with
    the reduced-motion OS setting (and `html.eink` mode, which already pins
