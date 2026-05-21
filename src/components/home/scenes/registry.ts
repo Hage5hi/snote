@@ -37,6 +37,11 @@ export interface SceneDef {
   /** Bypass the hardwareConcurrency<4 guard. Use for cheap Canvas2D scenes
    *  that run fine on low-end devices. WebGL shaders should leave this off. */
   lightweight?: boolean;
+  /** Per-scene maxDiffPixelRatio for chrome screenshot baselines.
+   *  Tailored per scene because shader-heavy backgrounds tolerate slightly
+   *  more GPU/AA jitter even when masked, while flat Canvas2D scenes can
+   *  use a tighter gate. Env PIXEL_DIFF_RATIO still overrides at runtime. */
+  pixelDiffRatio?: number;
 }
 
 export const SCENE_NONE = "none";
@@ -57,6 +62,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     enabled: true,
     load: () => import("./CyberLinhKhi"),
     forceColorScheme: "dark",
+    // Heavy shader with glow halos that bleed slightly past the mask edges.
+    pixelDiffRatio: 0.035,
   },
   {
     id: "ethereal-aurora",
@@ -66,6 +73,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     enabled: true,
     load: () => import("./EtherealAurora"),
     forceColorScheme: "dark",
+    // Curl-noise ribbons; soft pastels diffuse into chrome edges.
+    pixelDiffRatio: 0.04,
   },
   {
     id: "obsidian-ink",
@@ -76,6 +85,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     load: () => import("./ObsidianInk"),
     forceColorScheme: "light",
     lightweight: true,
+    // Flat paper; tighten the gate to catch the smallest token regression.
+    pixelDiffRatio: 0.015,
   },
   {
     id: "digital-constellation",
@@ -86,6 +97,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     load: () => import("./DigitalConstellation"),
     forceColorScheme: "dark",
     lightweight: true,
+    pixelDiffRatio: 0.02,
   },
   {
     id: "neon-vapor",
@@ -95,6 +107,8 @@ export const SCENE_REGISTRY: SceneDef[] = [
     enabled: true,
     load: () => import("./NeonVapor"),
     forceColorScheme: "dark",
+    // Scanlines + magenta fog; highest tolerable jitter.
+    pixelDiffRatio: 0.045,
   },
   {
     id: "terminal-boot",
@@ -105,6 +119,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     load: () => import("./TerminalBoot"),
     forceColorScheme: "dark",
     lightweight: true,
+    pixelDiffRatio: 0.02,
   },
 ];
 

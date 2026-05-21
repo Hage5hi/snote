@@ -78,10 +78,40 @@ function parse(report: Report): Failure[] {
 
 function artifactUrl(runUrl: string, artifactId?: string): string | undefined {
   if (!artifactId) return undefined;
-  // GitHub artifact direct-download URL (works for logged-in repo viewers).
-  // Strip the trailing #artifacts anchor if present.
   const base = runUrl.replace(/#.*$/, "");
   return `${base}/artifacts/${artifactId}`;
+}
+
+/** Build a deep-link into the Playwright trace viewer for a single test.
+ *
+ * Two modes:
+ *   1. `--trace-base-url <url>`: a publicly-fetchable URL prefix where the
+ *      `test-results/` folder is mirrored (e.g. GitHub Pages, S3, Vercel
+ *      preview). We construct
+ *      `https://trace.playwright.dev/?trace=<baseUrl>/<trace.zip>`
+ *      so the link opens the exact trace one-click.
+ *   2. No base URL: emit the relative path so reviewers know which file to
+ *      drag onto trace.playwright.dev after downloading the report artifact.
+ */
+function traceLink(
+  attachments: AttachmentRef[],
+  traceBaseUrl: string | undefined,
+): { label: string; href?: string } | undefined {
+  const trace = attachments.find(
+    (a) => a.name === "trace" || /trace\.zip$/.test(a.path ?? "") || /trace\.zip$/.test(a.name),
+  );
+  if (!trace?.path) return undefined;
+  // Normalize: paths in JSON reporter are repo-absolute; strip leading
+  // `test-results/` only when we have a base URL pointing at that folder.
+  const rel = trace.path.replace(/^.*?test-results\//, "test-results/");
+  if (traceBaseUrl) {
+    const tracedUrl = `${traceBaseUrl.replace(/\/$/, "")}/${rel}`;
+    return {
+      label: "open trace",
+      href: `https://trace.playwright.dev/?trace=${encodeURIComponent(tracedUrl)}`,
+    };
+  }
+  return { label: `trace: \`${rel}\`` };
 }
 
 function fmtMd(
@@ -90,6 +120,7 @@ function fmtMd(
   reportArtifactId?: string,
   debugArtifactId?: string,
   browser?: string,
+  traceBaseUrl?: string,
 ): string {
   if (failures.length === 0) {
     return "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
@@ -102,8 +133,11 @@ function fmtMd(
     `- All artifacts: [open run artifacts](${runUrl})`,
     reportUrl ? `- Playwright HTML report: [download](${reportUrl})` : "",
     debugUrl ? `- Debug bundle (screenshots, traces, axe JSON): [download](${debugUrl})` : "",
+    traceBaseUrl
+      ? `- Trace links below open directly in [trace.playwright.dev](https://trace.playwright.dev)`
+      : `- Trace viewer: download the report above and drop the listed \`trace.zip\` onto [trace.playwright.dev](https://trace.playwright.dev)`,
     "",
-    "| Project | Spec → Test | Retry | Pixel diff | Report | Debug artifacts |",
+    "| Project | Spec → Test | Retry | Pixel diff | Trace | Debug |",
     "|---|---|---|---|---|---|",
   ].filter(Boolean);
   for (const f of failures) {
@@ -112,16 +146,17 @@ function fmtMd(
         .filter((a) => /\.(png|json|webm|zip)$/.test(a.name) || a.contentType)
         .map((a) => `\`${a.name}\``)
         .join("<br>") || "—";
-    // Direct link to the HTML report's trace viewer for this exact test —
-    // the report folder is uploaded as one artifact; reviewers click through
-    // from index.html, but we surface the artifact link per row so the
-    // download-then-open step is one click instead of three.
-    const reportCell = reportUrl ? `[open](${reportUrl})` : "—";
+    const trace = traceLink(f.attachments, traceBaseUrl);
+    const traceCell = trace
+      ? trace.href
+        ? `[${trace.label}](${trace.href})`
+        : trace.label
+      : "—";
     const debugCell = debugUrl ? `[bundle](${debugUrl})<br>${atts}` : atts;
     lines.push(
       `| \`${f.project}\` | \`${f.file}\` → ${f.test} | ${f.retry} | ${
         f.pixelDiff ?? "—"
-      } | ${reportCell} | ${debugCell} |`,
+      } | ${traceCell} | ${debugCell} |`,
     );
   }
   lines.push("", "<details><summary>Failure messages (truncated)</summary>", "");
@@ -131,6 +166,7 @@ function fmtMd(
   lines.push("</details>");
   return lines.join("\n") + "\n";
 }
+
 
 
 // ---------- main ----------
@@ -146,11 +182,13 @@ const jsonOut = flag("--json");
 const reportArtifactId = flag("--report-artifact-id");
 const debugArtifactId = flag("--debug-artifact-id");
 const browser = flag("--browser");
+const traceBaseUrl = flag("--trace-base-url") ?? process.env.PLAYWRIGHT_TRACE_BASE_URL;
 
 if (!file) {
   console.error(
     "usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>] " +
-      "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>]",
+      "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>] " +
+      "[--trace-base-url <https://...>]",
   );
   process.exit(2);
 }
@@ -163,7 +201,7 @@ if (!existsSync(file)) {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));
     failures = parse(report);
-    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser);
+    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser, traceBaseUrl);
   } catch (err) {
     md = `### Playwright E2E — failed to parse JSON\n\n\`\`\`\n${(err as Error).message}\n\`\`\`\n`;
   }

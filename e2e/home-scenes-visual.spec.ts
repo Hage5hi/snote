@@ -14,19 +14,18 @@
 //   bun run test:e2e:update:scene
 import { test, expect, type Page } from "@playwright/test";
 import { diffRatio } from "./helpers/pixel-diff";
+import { SCENE_REGISTRY } from "../src/components/home/scenes/registry";
 
 // Pixel-diff suite — opt into retries to absorb shader/GPU jitter in CI
 // without re-running the entire e2e matrix (global retries are 0).
 test.describe.configure({ retries: process.env.CI ? 2 : 0 });
 
-const SCENES = [
-  "cyber-linh-khi",
-  "ethereal-aurora",
-  "obsidian-ink",
-  "digital-constellation",
-  "neon-vapor",
-  "terminal-boot",
-] as const;
+// Derive the scene list from the single source of truth so adding a scene
+// to the registry automatically extends this suite — and per-scene
+// pixelDiffRatio overrides are picked up without touching the spec.
+const SCENES = SCENE_REGISTRY.filter((s) => s.enabled && s.id !== "none").map(
+  (s) => ({ id: s.id, threshold: s.pixelDiffRatio ?? 0.03 }),
+);
 
 const themeAria = { en: "Theme settings", vi: "Cài đặt giao diện" } as const;
 
@@ -48,7 +47,7 @@ async function seedScene(page: Page, lang: "en" | "vi", scene: string) {
   );
 }
 
-for (const scene of SCENES) {
+for (const { id: scene, threshold } of SCENES) {
   for (const lang of ["en", "vi"] as const) {
     test(`scene[${scene}] @${lang} — token + chrome regression`, async ({ page }) => {
       await seedScene(page, lang, scene);
@@ -75,11 +74,12 @@ for (const scene of SCENES) {
       // 4. Snapshot the chrome strip (top 320px). Mask the animated scene
       // layer so shader randomness doesn't flake the baseline; the chrome
       // sits *above* the scene so the visible diff stays in design-system
-      // tokens only.
+      // tokens only. Threshold is per-scene from the registry; PIXEL_DIFF_RATIO
+      // env always wins via diffRatio().
       await expect(page).toHaveScreenshot(`scene-${scene}-${lang}-chrome.png`, {
         clip: { x: 0, y: 0, width: 1280, height: 320 },
         mask: [page.locator("[data-scene-ready]")],
-        maxDiffPixelRatio: diffRatio(0.03),
+        maxDiffPixelRatio: diffRatio(threshold),
         animations: "disabled",
       });
     });
@@ -98,7 +98,7 @@ test("every enabled scene can be selected at runtime", async ({ page }) => {
 
   // Cycle scenes via localStorage + reload (more reliable than driving the
   // dropdown when the menu items shift between locales).
-  for (const scene of SCENES) {
+  for (const { id: scene } of SCENES) {
     await page.evaluate((s) => localStorage.setItem("home.scene", s), scene);
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(root).toHaveAttribute("data-scene", scene);
