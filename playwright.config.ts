@@ -2,10 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 // Playwright E2E config — runs against `bun run dev` (Vite).
 // Keep this scoped to /e2e so it never picks up Vitest unit tests under /src.
-export default defineConfig({
-  testDir: "./e2e",
-  fullyParallel: false, // language tests touch shared localStorage
-  forbidOnly: !!process.env.CI,
+
 // Pixel-diff threshold — overridable per-run via PIXEL_DIFF_RATIO so the
 // same config works for "tighten the gate" (=0.005) and "accept new
 // baseline" (=0.05) without editing source.
