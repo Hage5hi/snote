@@ -99,6 +99,21 @@ function annoValue(annos: Annotation[] | undefined, type: string): string | unde
   return annos?.find((a) => a.type === type)?.description;
 }
 
+/** Bucket spec-attached debug PNG/JSON files by purpose so the CI summary
+ *  can render one-click links separately from the screenshot diff trio. */
+function collectOverlays(atts: AttachmentRef[]): OverlayAttachments {
+  const out: OverlayAttachments = { mask: [], hitTest: [], flicker: [], axe: [] };
+  for (const a of atts) {
+    const name = a.name ?? "";
+    if (/-(expected|actual|diff)\.png$/i.test(name)) continue; // handled by collectImages
+    if (/^debug-mask-/i.test(name)) out.mask.push(a);
+    else if (/^debug-(hit|hittest|hit-test)/i.test(name)) out.hitTest.push(a);
+    else if (/^flicker-/i.test(name)) out.flicker.push(a);
+    else if (/^axe-/i.test(name) && /\.json$/i.test(name)) out.axe.push(a);
+  }
+  return out;
+}
+
 function parse(report: Report): Failure[] {
   const out: Failure[] = [];
   for (const spec of walkSpecs(report.suites)) {
@@ -117,10 +132,14 @@ function parse(report: Report): Failure[] {
         message: msg.split("\n").slice(0, 4).join(" ").slice(0, 300),
         pixelDiff: extractPixelDiff(msg),
         threshold: annoValue(t.annotations, "pixelDiffRatio"),
+        chromeThreshold: annoValue(t.annotations, "chromeDiffRatio"),
+        sceneThreshold: annoValue(t.annotations, "sceneDiffRatio"),
         scene: annoValue(t.annotations, "scene"),
         override: annoValue(t.annotations, "pixelDiffOverride"),
+        chromeOverride: annoValue(t.annotations, "chromeDiffOverride"),
         attachments: atts,
         images: collectImages(atts),
+        overlays: collectOverlays(atts),
       });
     }
   }
