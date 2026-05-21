@@ -41,6 +41,9 @@ const forbidden = [
   "cyber-linh-khi",
   "ethereal-aurora",
   "obsidian-ink",
+  "digital-constellation",
+  "neon-vapor",
+  "terminal-boot",
 ];
 
 for (const file of NOTE_SURFACES) {

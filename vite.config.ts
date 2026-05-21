@@ -143,6 +143,15 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("/src/components/home/scenes/ObsidianInk")) {
             return "scene-obsidian-ink";
           }
+          if (id.includes("/src/components/home/scenes/DigitalConstellation")) {
+            return "scene-digital-constellation";
+          }
+          if (id.includes("/src/components/home/scenes/NeonVapor")) {
+            return "scene-neon-vapor";
+          }
+          if (id.includes("/src/components/home/scenes/TerminalBoot")) {
+            return "scene-terminal-boot";
+          }
           if (!id.includes("node_modules")) return;
           // OGL — WebGL micro-lib used only by scenes. Keep as its own vendor
           // chunk so multiple scenes can share it without duplication.

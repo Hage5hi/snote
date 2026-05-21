@@ -77,27 +77,34 @@ export const SCENE_REGISTRY: SceneDef[] = [
     forceColorScheme: "light",
     lightweight: true,
   },
-  // === Roadmap — flip `enabled` + add `load` to ship. ===
   {
     id: "digital-constellation",
     labelKey: "scene.digital_constellation.label",
     descKey: "scene.digital_constellation.desc",
     swatch: ["#1e293b", "#cbd5e1"],
-    enabled: false,
+    enabled: true,
+    load: () => import("./DigitalConstellation"),
+    forceColorScheme: "dark",
+    lightweight: true,
   },
   {
     id: "neon-vapor",
     labelKey: "scene.neon_vapor.label",
     descKey: "scene.neon_vapor.desc",
     swatch: ["#1a0a2e", "#ec4899"],
-    enabled: false,
+    enabled: true,
+    load: () => import("./NeonVapor"),
+    forceColorScheme: "dark",
   },
   {
     id: "terminal-boot",
     labelKey: "scene.terminal_boot.label",
     descKey: "scene.terminal_boot.desc",
     swatch: ["#020202", "#00ff66"],
-    enabled: false,
+    enabled: true,
+    load: () => import("./TerminalBoot"),
+    forceColorScheme: "dark",
+    lightweight: true,
   },
 ];
 
