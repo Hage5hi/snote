@@ -137,6 +137,12 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("/src/components/home/scenes/CyberLinhKhi")) {
             return "scene-cyber-linh-khi";
           }
+          if (id.includes("/src/components/home/scenes/EtherealAurora")) {
+            return "scene-ethereal-aurora";
+          }
+          if (id.includes("/src/components/home/scenes/ObsidianInk")) {
+            return "scene-obsidian-ink";
+          }
           if (!id.includes("node_modules")) return;
           // OGL — WebGL micro-lib used only by scenes. Keep as its own vendor
           // chunk so multiple scenes can share it without duplication.

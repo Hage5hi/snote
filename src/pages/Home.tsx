@@ -166,11 +166,19 @@ export default function Home() {
 
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
+  // Legacy attribute kept for backward-compat with the i18n test + isolation
+  // script; new code should branch on `data-scene` instead.
   const isCyber = scene === "cyber-linh-khi";
   const motionSafe = "motion-safe:transition motion-safe:duration-150";
 
+  // Per-scene tokens come from index.css via [data-home-root][data-scene=...].
+  // Default scene === "none" branch keeps its plain Tailwind classes so the
+  // pristine light/dark layout stays byte-identical when no scene is active.
+  const monoStyle = hasScene ? { fontFamily: "var(--home-mono-family)" } : undefined;
+
   return (
     <div
+      data-scene={hasScene ? scene : undefined}
       data-theme={isCyber ? "cyber" : undefined}
       data-home-root="true"
       className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}
@@ -179,10 +187,15 @@ export default function Home() {
       <header
         className={cn(
           "relative z-10 flex h-12 items-center justify-between border-b px-4 motion-reduce:transition-none",
-          isCyber
-            ? "border-cyan-900/30 bg-black/40 motion-safe:backdrop-blur-md"
+          hasScene
+            ? "motion-safe:backdrop-blur-md"
             : "border-border/60 bg-background/80 supports-[backdrop-filter]:bg-background/60 motion-safe:backdrop-blur",
         )}
+        style={
+          hasScene
+            ? { background: "var(--home-chrome-bg)", borderColor: "var(--home-chrome-border)" }
+            : undefined
+        }
       >
         <div className="flex items-center gap-2">
           <img src="/logo.webp" alt="Syrin Notes logo" width="24" height="24" decoding="async" className="h-6 w-6 rounded-md object-contain" />
@@ -196,10 +209,11 @@ export default function Home() {
 
       <main className="relative z-10 mx-auto w-full max-w-xl px-4 py-12 md:py-20">
         <h1
-          className={
-            isCyber
-              ? "bg-gradient-to-br from-teal-200 via-cyan-300 to-teal-500 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out] motion-reduce:animate-none"
-              : "bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out] motion-reduce:animate-none"
+          className="bg-clip-text text-3xl font-semibold tracking-tight text-transparent md:text-4xl motion-safe:animate-[fade-in_500ms_ease-out] motion-reduce:animate-none"
+          style={
+            hasScene
+              ? { backgroundImage: "var(--home-title-grad)" }
+              : { backgroundImage: "linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--foreground) / 0.6))" }
           }
         >
           {t("home.tagline")}
@@ -221,11 +235,18 @@ export default function Home() {
             className={cn(
               "relative flex flex-1 items-center rounded-md border bg-transparent outline-none",
               motionSafe,
-              "focus-within:border-ring/70 focus-within:ring-1 focus-within:ring-inset focus-within:ring-ring/35",
-              isCyber
-                ? "border-cyan-400/25 focus-within:border-teal-300/60 focus-within:ring-teal-300/25"
-                : "border-input/70",
+              "focus-within:ring-1 focus-within:ring-inset",
+              !hasScene && "border-input/70 focus-within:border-ring/70 focus-within:ring-ring/35",
             )}
+            style={
+              hasScene
+                ? ({
+                    borderColor: "var(--home-input-border)",
+                    // `--tw-ring-color` is what `focus-within:ring-*` reads.
+                    ["--tw-ring-color" as string]: "var(--home-input-focus-ring)",
+                  } as React.CSSProperties)
+                : undefined
+            }
           >
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
             <Input
@@ -319,38 +340,84 @@ export default function Home() {
         {recents.length > 0 ? (
           <section className="mt-12">
             <h2
-              className={
-                isCyber
-                  ? "mb-3 font-mono text-xs font-medium uppercase tracking-wider text-teal-300/70"
-                  : "mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+              className="mb-3 text-xs font-medium uppercase tracking-wider"
+              style={
+                hasScene
+                  ? { color: "var(--home-section-label)", fontFamily: "var(--home-mono-family)" }
+                  : { color: "hsl(var(--muted-foreground))" }
               }
             >
               {t("home.recent.title")}
             </h2>
             <ul
-              className={
-                isCyber
-                  ? "divide-y divide-cyan-900/30 rounded-md border border-cyan-900/40 bg-black/40 motion-safe:backdrop-blur-md"
-                  : "divide-y divide-border rounded-md border border-border"
+              className={cn(
+                "divide-y rounded-md border",
+                hasScene && "motion-safe:backdrop-blur-md",
+              )}
+              style={
+                hasScene
+                  ? {
+                      background: "var(--home-recents-bg)",
+                      borderColor: "var(--home-recents-border)",
+                      // `divide-*` uses `--tw-divide-opacity` + currentColor on
+                      // the border, so set the explicit color via style instead.
+                      ["--home-recents-divider-var" as string]: "var(--home-recents-divider)",
+                    } as React.CSSProperties
+                  : undefined
               }
             >
               {recents.slice(0, 12).map((r) => (
                 <li
                   key={r.slug}
-                  className={
-                    isCyber
-                      ? "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors motion-safe:hover:bg-teal-400/5 motion-safe:hover:ring-1 motion-safe:hover:ring-inset motion-safe:hover:ring-teal-400/30"
-                      : "group flex items-center gap-2 px-3 py-2 motion-safe:transition-colors motion-safe:hover:bg-accent/50"
+                  className={cn(
+                    "group flex items-center gap-2 px-3 py-2",
+                    "motion-safe:transition-colors",
+                    hasScene
+                      ? "motion-safe:hover:ring-1 motion-safe:hover:ring-inset"
+                      : "motion-safe:hover:bg-accent/50",
+                  )}
+                  style={
+                    hasScene
+                      ? ({
+                          borderTopColor: "var(--home-recents-divider)",
+                        } as React.CSSProperties)
+                      : undefined
                   }
-                  onMouseEnter={() => prefetchSnapshot(r.slug)}
+                  onMouseEnter={(e) => {
+                    if (hasScene) {
+                      e.currentTarget.style.backgroundColor = "var(--home-row-hover-bg)";
+                      e.currentTarget.style.boxShadow = "inset 0 0 0 1px var(--home-row-hover-ring)";
+                    }
+                    prefetchSnapshot(r.slug);
+                  }}
+                  onMouseLeave={(e) => {
+                    if (hasScene) {
+                      e.currentTarget.style.backgroundColor = "";
+                      e.currentTarget.style.boxShadow = "";
+                    }
+                  }}
                   onTouchStart={() => prefetchSnapshot(r.slug)}
                 >
                   <button
                     className="flex flex-1 items-center justify-between text-left"
                     onClick={() => softNavigate(navigate, `/${r.slug}`)}
                   >
-                    <span className={isCyber ? "font-mono text-sm text-teal-100/90" : "font-mono text-sm"}>/{r.slug}</span>
-                    <span className={isCyber ? "font-mono text-xs text-teal-300/50" : "text-xs text-muted-foreground"}>{timeAgo(r.lastOpenedAt)}</span>
+                    <span
+                      className="font-mono text-sm"
+                      style={hasScene ? { color: "var(--home-slug-color)", fontFamily: "var(--home-mono-family)" } : undefined}
+                    >
+                      /{r.slug}
+                    </span>
+                    <span
+                      className="text-xs"
+                      style={
+                        hasScene
+                          ? { color: "var(--home-slug-time-color)", fontFamily: "var(--home-mono-family)" }
+                          : { color: "hsl(var(--muted-foreground))" }
+                      }
+                    >
+                      {timeAgo(r.lastOpenedAt)}
+                    </span>
                   </button>
                   <button
                     aria-label={t("home.recent.remove")}
