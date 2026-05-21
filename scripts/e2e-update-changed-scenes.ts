@@ -20,7 +20,7 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseSceneDiffFlags } from "./_helpers/scene-diff-args";
+import { parseSceneDiffFlags, loadKnownSceneIds } from "./_helpers/scene-diff-args";
 
 const args = process.argv.slice(2);
 function flag(name: string, fallback?: string): string | undefined {
@@ -30,7 +30,13 @@ function flag(name: string, fallback?: string): string | undefined {
 
 const base = flag("--base") ?? safeMergeBase("origin/main");
 const explicit = flag("--scenes");
-const { env: childEnv, overrides: sceneDiffOverrides } = parseSceneDiffFlags(args);
+const knownIds = loadKnownSceneIds();
+const {
+  env: childEnv,
+  overrides: sceneDiffOverrides,
+  chromeDiff: chromeDiffOverride,
+  unknown: unknownSceneFlags,
+} = parseSceneDiffFlags(args, { knownSceneIds: knownIds });
 
 function safeMergeBase(ref: string): string {
   try {
@@ -94,6 +100,12 @@ const cmd = `bunx playwright test e2e/home-scenes-visual.spec.ts --update-snapsh
 console.log(`[update-changed-scenes] Updating baselines for: ${sceneIds.join(", ")}`);
 if (Object.keys(sceneDiffOverrides).length > 0) {
   console.log(`[update-changed-scenes] scene-diff overrides: ${JSON.stringify(sceneDiffOverrides)}`);
+}
+if (chromeDiffOverride !== undefined) {
+  console.log(`[update-changed-scenes] chrome-diff override: ${chromeDiffOverride}`);
+}
+if (unknownSceneFlags.length > 0) {
+  console.log(`[update-changed-scenes] WARNING: unknown --scene-diff ids: ${unknownSceneFlags.join(", ")}`);
 }
 console.log(`[update-changed-scenes] $ ${cmd}`);
 try {

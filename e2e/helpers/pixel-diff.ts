@@ -1,19 +1,30 @@
 // Pixel-diff knobs shared across screenshot/mask/hit-test specs.
 //
-// Two override layers (env wins, then per-scene, then inline default):
+// Three override layers (env wins, then per-scene, then inline default):
 //
 // 1. Global ratio: PIXEL_DIFF_RATIO=0.05 — applies to every comparison.
-// 2. Per-scene ratio: SCENE_DIFF_RATIOS="neon-vapor=0.05,obsidian-ink=0.01"
+// 2. Chrome ratio: CHROME_DIFF_RATIO=0.02 — applies only to the masked
+//    chrome screenshots in home-scenes-visual.spec.ts (Header/Recents
+//    strip). Lets a reviewer tighten chrome gates while loosening scene
+//    layer gates separately.
+// 3. Per-scene ratio: SCENE_DIFF_RATIOS="neon-vapor=0.05,obsidian-ink=0.01"
 //    Or JSON: SCENE_DIFF_RATIOS='{"neon-vapor":0.05}'
+//    Wildcard keys (e.g. `neon-*`) are expanded at the CLI layer in
+//    scripts/_helpers/scene-diff-args.ts — by the time this file reads
+//    SCENE_DIFF_RATIOS, all keys are literal scene ids.
 //
 // The CI wrapper scripts (e2e-run-changed-scenes, e2e-update-changed-scenes)
-// accept `--scene-diff <id>=<ratio>` flags (repeatable) and merge them into
-// SCENE_DIFF_RATIOS before invoking Playwright, so a reviewer can tune a
-// single shader's gate without editing the registry:
+// accept `--scene-diff <id|glob>=<ratio>` (repeatable) and `--chrome-diff
+// <ratio>` flags and merge them into the env before invoking Playwright:
 //
-//   bun run test:e2e:update:changed --scene-diff neon-vapor=0.05
+//   bun run test:e2e:update:changed --scene-diff "neon-*=0.05" --chrome-diff 0.015
+
 const ENV = process.env.PIXEL_DIFF_RATIO;
 const PARSED = ENV !== undefined && ENV !== "" ? Number(ENV) : NaN;
+
+const CHROME_ENV = process.env.CHROME_DIFF_RATIO;
+const CHROME_PARSED =
+  CHROME_ENV !== undefined && CHROME_ENV !== "" ? Number(CHROME_ENV) : NaN;
 
 /** Default diff ratio (also mirrored in playwright.config.ts expect block). */
 export const DEFAULT_PIXEL_DIFF_RATIO = 0.02;
@@ -25,7 +36,6 @@ function parseSceneDiffs(raw: string | undefined): Record<string, number> {
   if (!raw) return {};
   const trimmed = raw.trim();
   if (!trimmed) return {};
-  // Try JSON first.
   if (trimmed.startsWith("{")) {
     try {
       const obj = JSON.parse(trimmed) as Record<string, unknown>;
@@ -36,10 +46,9 @@ function parseSceneDiffs(raw: string | undefined): Record<string, number> {
       }
       return out;
     } catch {
-      // fall through to KV parsing
+      /* fall through */
     }
   }
-  // KV form: "id=ratio,id=ratio".
   const out: Record<string, number> = {};
   for (const part of trimmed.split(/[,\s]+/).filter(Boolean)) {
     const m = part.match(/^([^=]+)=([\d.]+)$/);
@@ -57,10 +66,22 @@ export function diffRatio(inline = DEFAULT_PIXEL_DIFF_RATIO): number {
   return Number.isFinite(PARSED) ? PARSED : inline;
 }
 
-/** Per-scene resolved threshold. Precedence: PIXEL_DIFF_RATIO env (global)
- *  → SCENE_DIFF_RATIOS env (per-scene) → registry/inline fallback. */
+/** Per-scene resolved threshold for the *masked scene layer* / hit-test specs.
+ *  Precedence: PIXEL_DIFF_RATIO (global) → SCENE_DIFF_RATIOS (per-scene) →
+ *  registry/inline fallback. */
 export function sceneDiffRatio(sceneId: string, fallback: number): number {
   if (Number.isFinite(PARSED)) return PARSED;
+  if (sceneId in SCENE_OVERRIDES) return SCENE_OVERRIDES[sceneId];
+  return fallback;
+}
+
+/** Chrome screenshot threshold. Separate axis from sceneDiffRatio so a
+ *  reviewer can tighten chrome gates while still tolerating shader jitter
+ *  in the masked scene layer. Precedence: PIXEL_DIFF_RATIO (global hard
+ *  override) → CHROME_DIFF_RATIO (env) → per-scene → fallback. */
+export function chromeDiffRatio(sceneId: string, fallback: number): number {
+  if (Number.isFinite(PARSED)) return PARSED;
+  if (Number.isFinite(CHROME_PARSED)) return CHROME_PARSED;
   if (sceneId in SCENE_OVERRIDES) return SCENE_OVERRIDES[sceneId];
   return fallback;
 }
@@ -68,4 +89,9 @@ export function sceneDiffRatio(sceneId: string, fallback: number): number {
 /** Exposed for diagnostics (e.g. logging the resolved value in a spec). */
 export function sceneDiffOverride(sceneId: string): number | undefined {
   return SCENE_OVERRIDES[sceneId];
+}
+
+/** Exposed for diagnostics — was --chrome-diff / CHROME_DIFF_RATIO set? */
+export function chromeDiffOverride(): number | undefined {
+  return Number.isFinite(CHROME_PARSED) ? CHROME_PARSED : undefined;
 }

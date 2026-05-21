@@ -36,6 +36,17 @@ interface DiffImageSet {
   diff?: AttachmentRef;
 }
 
+/** Auxiliary debug artifacts attached by hit-test / flicker specs.
+ *  Distinct from the expected/actual/diff trio produced by toHaveScreenshot:
+ *  these are spec-attached PNGs (mask overlays, flicker frames, axe JSON).
+ *  Surfaced as a separate column so reviewers can open them in one click. */
+interface OverlayAttachments {
+  mask: AttachmentRef[];      // debug-mask-*.png from home-scene.spec.ts
+  hitTest: AttachmentRef[];   // debug-hit*.png / hit-test overlays
+  flicker: AttachmentRef[];   // flicker-a.png / flicker-b.png
+  axe: AttachmentRef[];       // axe-*.json
+}
+
 interface Failure {
   file: string;
   spec: string;
@@ -45,10 +56,14 @@ interface Failure {
   message: string;
   pixelDiff?: string;       // parsed "ratio 0.012" from the error message
   threshold?: string;       // resolved per-scene maxDiffPixelRatio (from annotations)
+  chromeThreshold?: string; // resolved chrome screenshot threshold
+  sceneThreshold?: string;  // resolved masked-layer / hit-test threshold
   scene?: string;           // from annotations
   override?: string;        // SCENE_DIFF_RATIOS hit, when present
+  chromeOverride?: string;  // CHROME_DIFF_RATIO hit, when present
   attachments: AttachmentRef[];
   images: DiffImageSet;
+  overlays: OverlayAttachments;
 }
 
 function* walkSpecs(suites: SuiteEntry[] | undefined): Generator<SpecEntry> {
@@ -84,6 +99,21 @@ function annoValue(annos: Annotation[] | undefined, type: string): string | unde
   return annos?.find((a) => a.type === type)?.description;
 }
 
+/** Bucket spec-attached debug PNG/JSON files by purpose so the CI summary
+ *  can render one-click links separately from the screenshot diff trio. */
+function collectOverlays(atts: AttachmentRef[]): OverlayAttachments {
+  const out: OverlayAttachments = { mask: [], hitTest: [], flicker: [], axe: [] };
+  for (const a of atts) {
+    const name = a.name ?? "";
+    if (/-(expected|actual|diff)\.png$/i.test(name)) continue; // handled by collectImages
+    if (/^debug-mask-/i.test(name)) out.mask.push(a);
+    else if (/^debug-(hit|hittest|hit-test)/i.test(name)) out.hitTest.push(a);
+    else if (/^flicker-/i.test(name)) out.flicker.push(a);
+    else if (/^axe-/i.test(name) && /\.json$/i.test(name)) out.axe.push(a);
+  }
+  return out;
+}
+
 function parse(report: Report): Failure[] {
   const out: Failure[] = [];
   for (const spec of walkSpecs(report.suites)) {
@@ -102,10 +132,14 @@ function parse(report: Report): Failure[] {
         message: msg.split("\n").slice(0, 4).join(" ").slice(0, 300),
         pixelDiff: extractPixelDiff(msg),
         threshold: annoValue(t.annotations, "pixelDiffRatio"),
+        chromeThreshold: annoValue(t.annotations, "chromeDiffRatio"),
+        sceneThreshold: annoValue(t.annotations, "sceneDiffRatio"),
         scene: annoValue(t.annotations, "scene"),
         override: annoValue(t.annotations, "pixelDiffOverride"),
+        chromeOverride: annoValue(t.annotations, "chromeDiffOverride"),
         attachments: atts,
         images: collectImages(atts),
+        overlays: collectOverlays(atts),
       });
     }
   }
@@ -192,10 +226,13 @@ function fmtMd(
       ? `- Trace + image links below open directly from \`${traceBaseUrl}\``
       : `- Trace/image links show the relative path inside the report artifact (download then open). Set \`PLAYWRIGHT_TRACE_BASE_URL\` for one-click links.`,
     "",
-    // Threshold column = the per-scene maxDiffPixelRatio actually used.
-    // Pixel diff column = the actual diff observed in the failure message.
-    "| Project | Spec → Test | Scene | Retry | Threshold | Observed diff | Images | Trace | Debug |",
-    "|---|---|---|---|---|---|---|---|---|",
+    // Columns:
+    //  Scene/Threshold — chrome:scene split if both annotations present.
+    //  Observed diff   — diff parsed from the failure message.
+    //  Images          — expected/actual/diff PNG trio (toHaveScreenshot).
+    //  Overlays        — mask / hit-test / flicker / axe debug artifacts.
+    "| Project | Spec → Test | Scene | Retry | Threshold (chrome / scene) | Observed diff | Images | Overlays | Trace | Debug |",
+    "|---|---|---|---|---|---|---|---|---|---|",
   ].filter(Boolean);
   for (const f of failures) {
     const atts =
@@ -214,22 +251,54 @@ function fmtMd(
       imageLink(f.images.actual, traceBaseUrl, "actual"),
       imageLink(f.images.diff, traceBaseUrl, "diff"),
     ].filter(Boolean).join("<br>") || "—";
+    // One-click links to mask / hit-test / flicker / axe debug artifacts
+    // (separate from the toHaveScreenshot trio). Each gets a labeled link
+    // so reviewers can jump straight to the right overlay PNG.
+    const overlayLinks: string[] = [];
+    for (const a of f.overlays.mask) {
+      const l = imageLink(a, traceBaseUrl, `mask: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    for (const a of f.overlays.hitTest) {
+      const l = imageLink(a, traceBaseUrl, `hit-test: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    for (const a of f.overlays.flicker) {
+      const l = imageLink(a, traceBaseUrl, `flicker: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    for (const a of f.overlays.axe) {
+      const l = imageLink(a, traceBaseUrl, `axe: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    const overlayCell = overlayLinks.join("<br>") || "—";
     const debugCell = debugUrl ? `[bundle](${debugUrl})<br>${atts}` : atts;
+    const sceneMarkers: string[] = [];
+    if (f.override) sceneMarkers.push("*");
+    if (f.chromeOverride) sceneMarkers.push("†");
     const sceneCell = f.scene
-      ? f.override
-        ? `\`${f.scene}\`<sup>*</sup>` // marker for override applied
+      ? sceneMarkers.length > 0
+        ? `\`${f.scene}\`<sup>${sceneMarkers.join("")}</sup>`
         : `\`${f.scene}\``
       : "—";
-    const thresholdCell = f.threshold ?? "—";
+    // Show chrome / scene thresholds split when both are present (visual
+    // spec emits both). Fall back to the legacy single value otherwise.
+    const thresholdCell =
+      f.chromeThreshold && f.sceneThreshold
+        ? `${f.chromeThreshold} / ${f.sceneThreshold}`
+        : f.threshold ?? f.chromeThreshold ?? f.sceneThreshold ?? "—";
     lines.push(
       `| \`${f.project}\` | \`${f.file}\` → ${f.test} | ${sceneCell} | ${f.retry} | ${thresholdCell} | ${
         f.pixelDiff ?? "—"
-      } | ${imgs} | ${traceCell} | ${debugCell} |`,
+      } | ${imgs} | ${overlayCell} | ${traceCell} | ${debugCell} |`,
     );
   }
-  // Footnote for the override marker.
+  // Footnotes for the override markers.
   if (failures.some((f) => f.override)) {
-    lines.push("", "<sup>*</sup> threshold was overridden via `SCENE_DIFF_RATIOS`/`--scene-diff` (see annotations).");
+    lines.push("", "<sup>*</sup> scene threshold overridden via `SCENE_DIFF_RATIOS` / `--scene-diff` (see annotations).");
+  }
+  if (failures.some((f) => f.chromeOverride)) {
+    lines.push("<sup>†</sup> chrome threshold overridden via `CHROME_DIFF_RATIO` / `--chrome-diff`.");
   }
   lines.push("", "<details><summary>Failure messages (truncated)</summary>", "");
   for (const f of failures) {

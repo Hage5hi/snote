@@ -15,7 +15,7 @@
 import { execSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseSceneDiffFlags } from "./_helpers/scene-diff-args";
+import { parseSceneDiffFlags, loadKnownSceneIds } from "./_helpers/scene-diff-args";
 
 const args = process.argv.slice(2);
 function flag(name: string): string | undefined {
@@ -24,7 +24,13 @@ function flag(name: string): string | undefined {
 }
 const ALL = args.includes("--all");
 const BASE = flag("--base") ?? safeMergeBase("origin/main");
-const { env: CHILD_ENV, overrides: SCENE_DIFF_OVERRIDES } = parseSceneDiffFlags(args);
+const KNOWN_IDS = loadKnownSceneIds();
+const {
+  env: CHILD_ENV,
+  overrides: SCENE_DIFF_OVERRIDES,
+  chromeDiff: CHROME_DIFF_OVERRIDE,
+  unknown: UNKNOWN_SCENE_FLAGS,
+} = parseSceneDiffFlags(args, { knownSceneIds: KNOWN_IDS });
 
 // Specs that ALWAYS run regardless of diff.
 const ALWAYS_RUN = [
@@ -143,6 +149,12 @@ const { ids, runVisual, reason } = detectChangedScenes();
 console.log(`[run-changed-scenes] visual scope: ${reason}`);
 if (Object.keys(SCENE_DIFF_OVERRIDES).length > 0) {
   console.log(`[run-changed-scenes] scene-diff overrides: ${JSON.stringify(SCENE_DIFF_OVERRIDES)}`);
+}
+if (CHROME_DIFF_OVERRIDE !== undefined) {
+  console.log(`[run-changed-scenes] chrome-diff override: ${CHROME_DIFF_OVERRIDE}`);
+}
+if (UNKNOWN_SCENE_FLAGS.length > 0) {
+  console.log(`[run-changed-scenes] WARNING: unknown --scene-diff ids: ${UNKNOWN_SCENE_FLAGS.join(", ")}`);
 }
 
 // 1. Always run the safety-net specs.

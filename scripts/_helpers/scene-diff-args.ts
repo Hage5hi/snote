@@ -1,40 +1,113 @@
 // Shared CLI helpers for the e2e wrapper scripts.
 //
-// `parseSceneDiffFlags` collects repeated `--scene-diff <id>=<ratio>` args
-// and folds them into the SCENE_DIFF_RATIOS env var that
-// e2e/helpers/pixel-diff.ts reads at test time. Existing SCENE_DIFF_RATIOS
-// values are preserved unless explicitly overridden.
+// Responsibilities:
+//   * Parse repeated `--scene-diff <id|glob>=<ratio>` flags.
+//   * Parse single `--chrome-diff <ratio>` flag (chrome screenshot threshold).
+//   * Expand wildcard scene ids (e.g. `neon-*`) against the registry-derived
+//     list of known scene ids.
+//   * Validate that every literal `--scene-diff` id exists in the registry,
+//     warning by default or failing under `--strict-scene-diff`.
+//   * Fold all of it into the SCENE_DIFF_RATIOS + CHROME_DIFF_RATIO env vars
+//     that e2e/helpers/pixel-diff.ts reads at test time.
+//
+// Pre-existing SCENE_DIFF_RATIOS / CHROME_DIFF_RATIO env values are
+// preserved unless explicitly overridden by a CLI flag.
+import { readFileSync, existsSync } from "node:fs";
+import { resolve } from "node:path";
 
-export function parseSceneDiffFlags(argv: string[]): {
+/** Regex-extract the list of enabled scene ids from registry.ts.
+ *  Mirrors the same parsing strategy used by the runner scripts so we
+ *  never need to import the React-loaded module from Node. */
+export function loadKnownSceneIds(): string[] {
+  const registryPath = resolve("src/components/home/scenes/registry.ts");
+  if (!existsSync(registryPath)) return [];
+  const txt = readFileSync(registryPath, "utf8");
+  const ids: string[] = [];
+  for (const block of txt.split(/\{\s*\n/).slice(1)) {
+    const id = block.match(/id:\s*["']([^"']+)["']/)?.[1];
+    if (id) ids.push(id);
+  }
+  return ids;
+}
+
+function globToRegex(glob: string): RegExp {
+  // Convert a glob like `neon-*` to /^neon-.*$/. Only `*` is supported.
+  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+function isGlob(s: string): boolean {
+  return s.includes("*");
+}
+
+function parseExistingSceneEnv(raw: string | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw) return out;
+  const trimmed = raw.trim();
+  if (!trimmed) return out;
+  try {
+    if (trimmed.startsWith("{")) {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(obj)) {
+        const n = Number(v);
+        if (Number.isFinite(n)) out[k] = n;
+      }
+      return out;
+    }
+  } catch {
+    /* fall through */
+  }
+  for (const part of trimmed.split(/[,\s]+/).filter(Boolean)) {
+    const m = part.match(/^([^=]+)=([\d.]+)$/);
+    if (m) out[m[1]] = Number(m[2]);
+  }
+  return out;
+}
+
+export interface ParsedDiffFlags {
   /** A new env map (shallow-copied + extended). Pass to spawnSync({env}). */
   env: NodeJS.ProcessEnv;
-  /** Just the overrides, useful for logging. */
+  /** Resolved per-scene overrides after wildcard expansion. */
   overrides: Record<string, number>;
-} {
-  const overrides: Record<string, number> = {};
-  // Seed from existing env so we don't accidentally drop CI-set values.
-  const existing = process.env.SCENE_DIFF_RATIOS;
-  if (existing) {
-    try {
-      if (existing.trim().startsWith("{")) {
-        const obj = JSON.parse(existing) as Record<string, unknown>;
-        for (const [k, v] of Object.entries(obj)) {
-          const n = Number(v);
-          if (Number.isFinite(n)) overrides[k] = n;
-        }
-      } else {
-        for (const part of existing.split(/[,\s]+/).filter(Boolean)) {
-          const m = part.match(/^([^=]+)=([\d.]+)$/);
-          if (m) overrides[m[1]] = Number(m[2]);
-        }
-      }
-    } catch {
-      // ignore malformed env — CLI flags will take over
-    }
+  /** Global chrome screenshot override, if --chrome-diff was passed. */
+  chromeDiff?: number;
+  /** Literal `--scene-diff` ids that didn't match any registry id. */
+  unknown: string[];
+}
+
+export function parseSceneDiffFlags(
+  argv: string[],
+  opts: { knownSceneIds?: string[]; strict?: boolean } = {},
+): ParsedDiffFlags {
+  const known = opts.knownSceneIds ?? loadKnownSceneIds();
+  const strict = opts.strict ?? argv.includes("--strict-scene-diff");
+
+  const overrides: Record<string, number> = parseExistingSceneEnv(
+    process.env.SCENE_DIFF_RATIOS,
+  );
+  const unknown: string[] = [];
+  let chromeDiff: number | undefined;
+
+  // Seed chrome diff from env so we don't drop pre-set values.
+  const envChrome = process.env.CHROME_DIFF_RATIO;
+  if (envChrome !== undefined && envChrome !== "") {
+    const n = Number(envChrome);
+    if (Number.isFinite(n) && n >= 0) chromeDiff = n;
   }
 
   for (let i = 0; i < argv.length; i++) {
-    if (argv[i] !== "--scene-diff") continue;
+    const arg = argv[i];
+    if (arg === "--chrome-diff") {
+      const value = argv[i + 1];
+      const n = Number(value);
+      if (!value || !Number.isFinite(n) || n < 0) {
+        console.warn(`[scene-diff] ignoring invalid --chrome-diff value: ${value}`);
+        continue;
+      }
+      chromeDiff = n;
+      continue;
+    }
+    if (arg !== "--scene-diff") continue;
     const value = argv[i + 1];
     if (!value) continue;
     const m = value.match(/^([^=]+)=([\d.]+)$/);
@@ -42,17 +115,49 @@ export function parseSceneDiffFlags(argv: string[]): {
       console.warn(`[scene-diff] ignoring malformed flag value: ${value} (expected id=ratio)`);
       continue;
     }
+    const pattern = m[1];
     const n = Number(m[2]);
     if (!Number.isFinite(n) || n < 0) {
       console.warn(`[scene-diff] ignoring non-numeric ratio: ${value}`);
       continue;
     }
-    overrides[m[1]] = n;
+    if (isGlob(pattern)) {
+      const re = globToRegex(pattern);
+      const matches = known.filter((id) => re.test(id));
+      if (matches.length === 0) {
+        const msg = `[scene-diff] pattern "${pattern}" matched no scenes in registry`;
+        if (strict) {
+          console.error(msg);
+          process.exit(2);
+        }
+        console.warn(msg);
+        unknown.push(pattern);
+        continue;
+      }
+      for (const id of matches) overrides[id] = n;
+    } else {
+      if (known.length > 0 && !known.includes(pattern)) {
+        const msg = `[scene-diff] unknown scene id "${pattern}" (not in registry: ${known.join(", ")})`;
+        if (strict) {
+          console.error(msg);
+          process.exit(2);
+        }
+        console.warn(msg);
+        unknown.push(pattern);
+        // Still record it — a typo will surface as "no effect" rather than
+        // a silent application to the wrong scene.
+        continue;
+      }
+      overrides[pattern] = n;
+    }
   }
 
   const env: NodeJS.ProcessEnv = { ...process.env };
   if (Object.keys(overrides).length > 0) {
     env.SCENE_DIFF_RATIOS = JSON.stringify(overrides);
   }
-  return { env, overrides };
+  if (chromeDiff !== undefined) {
+    env.CHROME_DIFF_RATIO = String(chromeDiff);
+  }
+  return { env, overrides, chromeDiff, unknown };
 }

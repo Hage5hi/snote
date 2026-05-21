@@ -13,7 +13,12 @@
 // Run baseline update locally with:
 //   bun run test:e2e:update:scene
 import { test, expect, type Page } from "@playwright/test";
-import { sceneDiffRatio, sceneDiffOverride } from "./helpers/pixel-diff";
+import {
+  sceneDiffRatio,
+  sceneDiffOverride,
+  chromeDiffRatio,
+  chromeDiffOverride,
+} from "./helpers/pixel-diff";
 import { SCENE_REGISTRY } from "../src/components/home/scenes/registry";
 
 // Pixel-diff suite — opt into retries to absorb shader/GPU jitter in CI
@@ -50,21 +55,41 @@ async function seedScene(page: Page, lang: "en" | "vi", scene: string) {
 for (const { id: scene, threshold } of SCENES) {
   for (const lang of ["en", "vi"] as const) {
     test(`scene[${scene}] @${lang} — token + chrome regression`, async ({ page }, info) => {
-      // Resolve the effective threshold (env / CLI override → registry → default)
-      // BEFORE the snapshot call so reviewers see the exact value used in CI.
-      const effective = sceneDiffRatio(scene, threshold);
-      const override = sceneDiffOverride(scene);
+      // Resolve effective thresholds (env / CLI override → registry → default)
+      // BEFORE the snapshot call so reviewers see the exact values used in CI.
+      // sceneThreshold = masked-layer / hit-test gate (per-scene tolerance for
+      // shader jitter); chromeThreshold = the chrome strip screenshot gate
+      // (Header + slug input + Recents). These are two independent axes so a
+      // reviewer can tighten chrome while loosening the scene layer.
+      const sceneThreshold = sceneDiffRatio(scene, threshold);
+      const chromeThreshold = chromeDiffRatio(scene, sceneThreshold);
+      const sceneOverride = sceneDiffOverride(scene);
+      const chromeOverride = chromeDiffOverride();
       // Surface in Playwright report + JSON reporter so the CI summary can
-      // print the threshold next to each pixel-diff outcome.
+      // print thresholds next to each pixel-diff outcome.
+      info.annotations.push({ type: "scene", description: scene });
       info.annotations.push({
         type: "pixelDiffRatio",
-        description: String(effective),
+        description: String(chromeThreshold),
       });
-      info.annotations.push({ type: "scene", description: scene });
-      if (override !== undefined) {
+      info.annotations.push({
+        type: "sceneDiffRatio",
+        description: String(sceneThreshold),
+      });
+      info.annotations.push({
+        type: "chromeDiffRatio",
+        description: String(chromeThreshold),
+      });
+      if (sceneOverride !== undefined) {
         info.annotations.push({
           type: "pixelDiffOverride",
-          description: `SCENE_DIFF_RATIOS[${scene}]=${override}`,
+          description: `SCENE_DIFF_RATIOS[${scene}]=${sceneOverride}`,
+        });
+      }
+      if (chromeOverride !== undefined) {
+        info.annotations.push({
+          type: "chromeDiffOverride",
+          description: `CHROME_DIFF_RATIO=${chromeOverride}`,
         });
       }
 
@@ -94,7 +119,7 @@ for (const { id: scene, threshold } of SCENES) {
       await expect(page).toHaveScreenshot(`scene-${scene}-${lang}-chrome.png`, {
         clip: { x: 0, y: 0, width: 1280, height: 320 },
         mask: [page.locator("[data-scene-ready]")],
-        maxDiffPixelRatio: effective,
+        maxDiffPixelRatio: chromeThreshold,
         animations: "disabled",
       });
     });
