@@ -16,6 +16,28 @@ import { useSceneTheme } from "@/hooks/use-scene-theme";
 
 const GUARD_FLAG_KEY = "home.scene.guard-reverted";
 
+// Cached WebGL probe — creating a context is expensive, so we do it once per
+// page load. Returns false on browsers without WebGL OR when the GPU process
+// has crashed and Chrome's blocklist is now refusing new contexts.
+let webglAvailable: boolean | null = null;
+function hasWebGL(): boolean {
+  if (webglAvailable !== null) return webglAvailable;
+  if (typeof document === "undefined") return (webglAvailable = false);
+  try {
+    const c = document.createElement("canvas");
+    const gl =
+      (c.getContext("webgl2") as WebGLRenderingContext | null) ||
+      (c.getContext("webgl") as WebGLRenderingContext | null) ||
+      (c.getContext("experimental-webgl") as WebGLRenderingContext | null);
+    webglAvailable = !!gl;
+    // Free the probe context immediately.
+    if (gl) gl.getExtension("WEBGL_lose_context")?.loseContext();
+    return webglAvailable;
+  } catch {
+    return (webglAvailable = false);
+  }
+}
+
 function shouldBlockScene(def: SceneDef | undefined): boolean {
   if (typeof window === "undefined") return true;
   if (document.documentElement.classList.contains("eink")) return true;
@@ -27,6 +49,10 @@ function shouldBlockScene(def: SceneDef | undefined): boolean {
   // Lightweight Canvas2D scenes (e.g. Obsidian Ink) opt out of the
   // hardwareConcurrency gate — they render fine on 2-core devices.
   if (!def?.lightweight && (navigator.hardwareConcurrency ?? 8) < 4) return true;
+  // WebGL-required scenes (anything not flagged `lightweight`) need a usable
+  // GL context. If the probe fails, revert to "none" so the user sees the
+  // default chrome instead of a black div + a console error from OGL.
+  if (!def?.lightweight && !hasWebGL()) return true;
   const conn = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
   if (conn?.saveData) return true;
   if (conn?.effectiveType === "2g" || conn?.effectiveType === "slow-2g") return true;

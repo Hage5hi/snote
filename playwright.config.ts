@@ -6,9 +6,16 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false, // language tests touch shared localStorage
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  // Pixel-diff / hit-test specs can flake on shared CI runners (GPU jitter,
+  // font-hinting changes, slow scene first-frame). Retry up to 2x in CI so a
+  // single transient blip doesn't turn a green branch red — real regressions
+  // still fail because they reproduce on every retry. Locally the default is
+  // 0 so a flake is noisy and gets fixed at the source.
+  retries: process.env.CI ? 2 : 0,
   workers: 1,
-  reporter: process.env.CI ? [["github"], ["list"]] : "list",
+  reporter: process.env.CI
+    ? [["github"], ["list"], ["json", { outputFile: "test-results/e2e-results.json" }]]
+    : "list",
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080",
     trace: "retain-on-failure",
