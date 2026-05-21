@@ -79,7 +79,7 @@ for (const scene of SCENES) {
       await expect(page).toHaveScreenshot(`scene-${scene}-${lang}-chrome.png`, {
         clip: { x: 0, y: 0, width: 1280, height: 320 },
         mask: [page.locator("[data-scene-ready]")],
-        maxDiffPixelRatio: 0.03,
+        maxDiffPixelRatio: diffRatio(0.03),
         animations: "disabled",
       });
     });
