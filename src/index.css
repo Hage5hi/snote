@@ -483,6 +483,67 @@
   --home-title-grad: linear-gradient(135deg, hsl(25 30% 15%), hsl(25 22% 28%), hsl(25 18% 42%));
 }
 
+[data-home-root][data-scene="digital-constellation"] {
+  /* Deep-space navy. Cool slate UI chrome that reads as star-chart paper. */
+  --home-chrome-bg: hsl(220 40% 6% / 0.55);
+  --home-chrome-border: hsl(215 30% 40% / 0.40);
+  --home-recents-bg: hsl(220 40% 6% / 0.50);
+  --home-recents-border: hsl(215 30% 45% / 0.35);
+  --home-recents-divider: hsl(215 25% 45% / 0.30);
+  --home-row-hover-bg: hsl(210 60% 70% / 0.07);
+  --home-row-hover-ring: hsl(210 60% 75% / 0.30);
+  --home-slug-color: hsl(215 35% 92%);
+  --home-slug-time-color: hsl(215 25% 65% / 0.65);
+  --home-section-label: hsl(215 30% 75% / 0.75);
+  --home-input-border: hsl(215 40% 55% / 0.30);
+  --home-input-focus-border: hsl(210 70% 75% / 0.55);
+  --home-input-focus-ring: hsl(210 70% 75% / 0.25);
+  --home-mask-top: linear-gradient(to bottom, hsl(220 40% 5% / 0.70), transparent);
+  --home-mask-bottom: linear-gradient(to top, hsl(220 40% 5% / 0.65), transparent);
+  --home-title-grad: linear-gradient(135deg, hsl(215 35% 95%), hsl(210 50% 78%), hsl(215 40% 60%));
+}
+
+[data-home-root][data-scene="neon-vapor"] {
+  /* Vaporwave magenta/cyan. UI chrome leans deep violet for contrast. */
+  --home-chrome-bg: hsl(280 50% 8% / 0.50);
+  --home-chrome-border: hsl(320 70% 50% / 0.35);
+  --home-recents-bg: hsl(280 55% 7% / 0.50);
+  --home-recents-border: hsl(320 70% 55% / 0.35);
+  --home-recents-divider: hsl(320 60% 55% / 0.30);
+  --home-row-hover-bg: hsl(320 95% 65% / 0.10);
+  --home-row-hover-ring: hsl(320 95% 70% / 0.40);
+  --home-slug-color: hsl(320 100% 94%);
+  --home-slug-time-color: hsl(190 80% 80% / 0.65);
+  --home-section-label: hsl(320 70% 80% / 0.75);
+  --home-input-border: hsl(320 80% 65% / 0.30);
+  --home-input-focus-border: hsl(190 90% 75% / 0.55);
+  --home-input-focus-ring: hsl(320 90% 70% / 0.30);
+  --home-mask-top: linear-gradient(to bottom, hsl(280 60% 5% / 0.70), transparent);
+  --home-mask-bottom: linear-gradient(to top, hsl(280 60% 5% / 0.65), transparent);
+  --home-title-grad: linear-gradient(135deg, hsl(320 100% 80%), hsl(280 80% 75%), hsl(190 90% 75%));
+}
+
+[data-home-root][data-scene="terminal-boot"] {
+  /* CRT phosphor. Pure-black chrome, phosphor-green accents, mono everything. */
+  --home-chrome-bg: hsl(120 30% 3% / 0.65);
+  --home-chrome-border: hsl(135 80% 40% / 0.35);
+  --home-recents-bg: hsl(120 30% 3% / 0.55);
+  --home-recents-border: hsl(135 80% 40% / 0.35);
+  --home-recents-divider: hsl(135 70% 40% / 0.30);
+  --home-row-hover-bg: hsl(135 100% 50% / 0.08);
+  --home-row-hover-ring: hsl(135 100% 55% / 0.40);
+  --home-slug-color: hsl(135 80% 85%);
+  --home-slug-time-color: hsl(135 50% 55% / 0.70);
+  --home-section-label: hsl(135 70% 65% / 0.80);
+  --home-input-border: hsl(135 70% 45% / 0.35);
+  --home-input-focus-border: hsl(135 100% 60% / 0.60);
+  --home-input-focus-ring: hsl(135 100% 60% / 0.25);
+  --home-mask-top: linear-gradient(to bottom, hsl(135 30% 2% / 0.80), transparent);
+  --home-mask-bottom: linear-gradient(to top, hsl(135 30% 2% / 0.75), transparent);
+  --home-mono-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --home-title-grad: linear-gradient(135deg, hsl(135 100% 85%), hsl(135 90% 60%), hsl(135 80% 40%));
+}
+
 /* ================== Micro-interactions (Phase 9 UI polish) ==================
    All effects gated by `prefers-reduced-motion: no-preference` so users with
    the reduced-motion OS setting (and `html.eink` mode, which already pins
