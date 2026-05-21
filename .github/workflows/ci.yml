@@ -790,6 +790,11 @@ jobs:
         if: always()
         env:
           REPORT_ARTIFACT_ID: ${{ steps.upload_playwright_report.outputs.artifact-id }}
+          # Optional: when the repo mirrors `test-results/` to a public
+          # location (GitHub Pages, S3, Vercel preview, etc.), set this
+          # repo variable and the summary emits one-click trace.playwright.dev
+          # links per failure instead of just the relative trace.zip path.
+          PLAYWRIGHT_TRACE_BASE_URL: ${{ vars.PLAYWRIGHT_TRACE_BASE_URL }}
         run: |
           mkdir -p reports/_ci
           RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
