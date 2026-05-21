@@ -226,10 +226,13 @@ function fmtMd(
       ? `- Trace + image links below open directly from \`${traceBaseUrl}\``
       : `- Trace/image links show the relative path inside the report artifact (download then open). Set \`PLAYWRIGHT_TRACE_BASE_URL\` for one-click links.`,
     "",
-    // Threshold column = the per-scene maxDiffPixelRatio actually used.
-    // Pixel diff column = the actual diff observed in the failure message.
-    "| Project | Spec → Test | Scene | Retry | Threshold | Observed diff | Images | Trace | Debug |",
-    "|---|---|---|---|---|---|---|---|---|",
+    // Columns:
+    //  Scene/Threshold — chrome:scene split if both annotations present.
+    //  Observed diff   — diff parsed from the failure message.
+    //  Images          — expected/actual/diff PNG trio (toHaveScreenshot).
+    //  Overlays        — mask / hit-test / flicker / axe debug artifacts.
+    "| Project | Spec → Test | Scene | Retry | Threshold (chrome / scene) | Observed diff | Images | Overlays | Trace | Debug |",
+    "|---|---|---|---|---|---|---|---|---|---|",
   ].filter(Boolean);
   for (const f of failures) {
     const atts =
@@ -248,22 +251,54 @@ function fmtMd(
       imageLink(f.images.actual, traceBaseUrl, "actual"),
       imageLink(f.images.diff, traceBaseUrl, "diff"),
     ].filter(Boolean).join("<br>") || "—";
+    // One-click links to mask / hit-test / flicker / axe debug artifacts
+    // (separate from the toHaveScreenshot trio). Each gets a labeled link
+    // so reviewers can jump straight to the right overlay PNG.
+    const overlayLinks: string[] = [];
+    for (const a of f.overlays.mask) {
+      const l = imageLink(a, traceBaseUrl, `mask: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    for (const a of f.overlays.hitTest) {
+      const l = imageLink(a, traceBaseUrl, `hit-test: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    for (const a of f.overlays.flicker) {
+      const l = imageLink(a, traceBaseUrl, `flicker: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    for (const a of f.overlays.axe) {
+      const l = imageLink(a, traceBaseUrl, `axe: ${a.name}`);
+      if (l) overlayLinks.push(l);
+    }
+    const overlayCell = overlayLinks.join("<br>") || "—";
     const debugCell = debugUrl ? `[bundle](${debugUrl})<br>${atts}` : atts;
+    const sceneMarkers: string[] = [];
+    if (f.override) sceneMarkers.push("*");
+    if (f.chromeOverride) sceneMarkers.push("†");
     const sceneCell = f.scene
-      ? f.override
-        ? `\`${f.scene}\`<sup>*</sup>` // marker for override applied
+      ? sceneMarkers.length > 0
+        ? `\`${f.scene}\`<sup>${sceneMarkers.join("")}</sup>`
         : `\`${f.scene}\``
       : "—";
-    const thresholdCell = f.threshold ?? "—";
+    // Show chrome / scene thresholds split when both are present (visual
+    // spec emits both). Fall back to the legacy single value otherwise.
+    const thresholdCell =
+      f.chromeThreshold && f.sceneThreshold
+        ? `${f.chromeThreshold} / ${f.sceneThreshold}`
+        : f.threshold ?? f.chromeThreshold ?? f.sceneThreshold ?? "—";
     lines.push(
       `| \`${f.project}\` | \`${f.file}\` → ${f.test} | ${sceneCell} | ${f.retry} | ${thresholdCell} | ${
         f.pixelDiff ?? "—"
-      } | ${imgs} | ${traceCell} | ${debugCell} |`,
+      } | ${imgs} | ${overlayCell} | ${traceCell} | ${debugCell} |`,
     );
   }
-  // Footnote for the override marker.
+  // Footnotes for the override markers.
   if (failures.some((f) => f.override)) {
-    lines.push("", "<sup>*</sup> threshold was overridden via `SCENE_DIFF_RATIOS`/`--scene-diff` (see annotations).");
+    lines.push("", "<sup>*</sup> scene threshold overridden via `SCENE_DIFF_RATIOS` / `--scene-diff` (see annotations).");
+  }
+  if (failures.some((f) => f.chromeOverride)) {
+    lines.push("<sup>†</sup> chrome threshold overridden via `CHROME_DIFF_RATIO` / `--chrome-diff`.");
   }
   lines.push("", "<details><summary>Failure messages (truncated)</summary>", "");
   for (const f of failures) {
