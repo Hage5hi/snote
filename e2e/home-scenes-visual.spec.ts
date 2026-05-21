@@ -13,7 +13,7 @@
 // Run baseline update locally with:
 //   bun run test:e2e:update:scene
 import { test, expect, type Page } from "@playwright/test";
-import { diffRatio } from "./helpers/pixel-diff";
+import { sceneDiffRatio, sceneDiffOverride } from "./helpers/pixel-diff";
 import { SCENE_REGISTRY } from "../src/components/home/scenes/registry";
 
 // Pixel-diff suite — opt into retries to absorb shader/GPU jitter in CI
