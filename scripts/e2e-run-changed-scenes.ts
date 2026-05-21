@@ -141,23 +141,24 @@ function run(cmd: string[], env: NodeJS.ProcessEnv = process.env): number {
 
 const { ids, runVisual, reason } = detectChangedScenes();
 console.log(`[run-changed-scenes] visual scope: ${reason}`);
+if (Object.keys(SCENE_DIFF_OVERRIDES).length > 0) {
+  console.log(`[run-changed-scenes] scene-diff overrides: ${JSON.stringify(SCENE_DIFF_OVERRIDES)}`);
+}
 
 // 1. Always run the safety-net specs.
-let exit = run(["bunx", "playwright", "test", ...ALWAYS_RUN]);
+let exit = run(["bunx", "playwright", "test", ...ALWAYS_RUN], CHILD_ENV);
 
 // 2. Visual regression — full suite or scoped grep.
 if (runVisual) {
   const cmd = ["bunx", "playwright", "test", VISUAL_SPEC];
   if (ids.length > 0) {
-    // -g filters by test title; spec titles are `scene[<id>] @<lang> — ...`
-    // and `every enabled scene can be selected at runtime` (keep that too).
     const grep = [
       ...ids.map((id) => `scene\\[${id}\\]`),
       "every enabled scene can be selected at runtime",
     ].join("|");
     cmd.push("-g", grep);
   }
-  const visualExit = run(cmd);
+  const visualExit = run(cmd, CHILD_ENV);
   if (visualExit !== 0) exit = visualExit;
 } else {
   console.log("[run-changed-scenes] skipping visual regression suite (no scope)");
