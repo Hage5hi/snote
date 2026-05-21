@@ -31,6 +31,12 @@ export interface SceneDef {
   enabled: boolean;
   /** Only present when enabled. Dynamic import the scene module. */
   load?: () => Promise<{ default: ComponentType<SceneProps> }>;
+  /** When set, ThemeToggle pins next-themes to this scheme on selection so
+   *  the UI tokens (header/recents/borders) match the scene's mood. */
+  forceColorScheme?: "light" | "dark";
+  /** Bypass the hardwareConcurrency<4 guard. Use for cheap Canvas2D scenes
+   *  that run fine on low-end devices. WebGL shaders should leave this off. */
+  lightweight?: boolean;
 }
 
 export const SCENE_NONE = "none";
@@ -50,15 +56,28 @@ export const SCENE_REGISTRY: SceneDef[] = [
     swatch: ["#0a2a26", "#5eead4"],
     enabled: true,
     load: () => import("./CyberLinhKhi"),
+    forceColorScheme: "dark",
   },
-  // === Roadmap — flip `enabled` + add `load` to ship. ===
   {
     id: "ethereal-aurora",
     labelKey: "scene.ethereal_aurora.label",
     descKey: "scene.ethereal_aurora.desc",
     swatch: ["#2d1b4e", "#fbcfe8"],
-    enabled: false,
+    enabled: true,
+    load: () => import("./EtherealAurora"),
+    forceColorScheme: "dark",
   },
+  {
+    id: "obsidian-ink",
+    labelKey: "scene.obsidian_ink.label",
+    descKey: "scene.obsidian_ink.desc",
+    swatch: ["#f5f5f4", "#1c1917"],
+    enabled: true,
+    load: () => import("./ObsidianInk"),
+    forceColorScheme: "light",
+    lightweight: true,
+  },
+  // === Roadmap — flip `enabled` + add `load` to ship. ===
   {
     id: "digital-constellation",
     labelKey: "scene.digital_constellation.label",
@@ -71,13 +90,6 @@ export const SCENE_REGISTRY: SceneDef[] = [
     labelKey: "scene.neon_vapor.label",
     descKey: "scene.neon_vapor.desc",
     swatch: ["#1a0a2e", "#ec4899"],
-    enabled: false,
-  },
-  {
-    id: "obsidian-ink",
-    labelKey: "scene.obsidian_ink.label",
-    descKey: "scene.obsidian_ink.desc",
-    swatch: ["#f5f5f4", "#1c1917"],
     enabled: false,
   },
   {

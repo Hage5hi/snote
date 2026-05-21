@@ -57,8 +57,8 @@ const SCENE_ENTRIES: SceneEntry[] = SCENE_REGISTRY
     descKey: s.descKey,
     swatch: s.swatch,
     enabled: s.enabled,
-    // All cyber-style scenes assume dark; current registry items are dark.
-    forceColorScheme: "dark",
+    // Pulled from the registry so each scene controls its own color scheme.
+    forceColorScheme: s.forceColorScheme,
   }));
 
 export const ThemeToggle = forwardRef<HTMLButtonElement>((_props, ref) => {

@@ -11,12 +11,12 @@
 // background layer.
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
-import { SCENE_NONE, getSceneDef } from "./scenes/registry";
+import { SCENE_NONE, getSceneDef, type SceneDef } from "./scenes/registry";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 
 const GUARD_FLAG_KEY = "home.scene.guard-reverted";
 
-function shouldBlockScene(): boolean {
+function shouldBlockScene(def: SceneDef | undefined): boolean {
   if (typeof window === "undefined") return true;
   if (document.documentElement.classList.contains("eink")) return true;
   try {
@@ -24,7 +24,9 @@ function shouldBlockScene(): boolean {
   } catch {
     /* matchMedia not available */
   }
-  if ((navigator.hardwareConcurrency ?? 8) < 4) return true;
+  // Lightweight Canvas2D scenes (e.g. Obsidian Ink) opt out of the
+  // hardwareConcurrency gate — they render fine on 2-core devices.
+  if (!def?.lightweight && (navigator.hardwareConcurrency ?? 8) < 4) return true;
   const conn = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
   if (conn?.saveData) return true;
   if (conn?.effectiveType === "2g" || conn?.effectiveType === "slow-2g") return true;
@@ -41,11 +43,13 @@ export default function SceneHost() {
   const [ready, setReady] = useState(false);
   const revertedRef = useRef(false);
 
+  const def = getSceneDef(scene);
+
   // Run the guard synchronously on the first render where a scene is selected.
   // This avoids creating the React.lazy ref (and thus dispatching the dynamic
   // import) before we've decided whether to render the scene at all — which
   // is the contract the perf tests enforce.
-  const blocked = scene !== SCENE_NONE && shouldBlockScene();
+  const blocked = scene !== SCENE_NONE && shouldBlockScene(def);
 
   // Revert the user's choice once (post-commit) so the dropdown reflects it.
   useEffect(() => {
@@ -71,8 +75,6 @@ export default function SceneHost() {
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
-
-  const def = getSceneDef(scene);
 
   // Lazy component reference — keyed on scene id so switching scenes mounts a
   // fresh component (and gets the right chunk). Skipped entirely when blocked
@@ -100,13 +102,16 @@ export default function SceneHost() {
       <Suspense fallback={null}>
         <SceneComponent paused={paused} isDark={isDark} onReady={handleReady} />
       </Suspense>
-      {/* Very light edge mask — keeps top header bar + bottom recents legible
-          without washing out the shader on light backgrounds. */}
+      {/* Edge masks — pulled from per-scene tokens defined on
+          [data-home-root][data-scene=...]. Keeps Header + Recents legible
+          without painting a hard letterbox bar. */}
       <div
-        className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-background/80 to-transparent"
+        className="absolute inset-x-0 top-0 h-24"
+        style={{ background: "var(--home-mask-top)" }}
       />
       <div
-        className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-background/70 to-transparent"
+        className="absolute inset-x-0 bottom-0 h-32"
+        style={{ background: "var(--home-mask-bottom)" }}
       />
     </div>
   );
