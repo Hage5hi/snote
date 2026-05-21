@@ -15,9 +15,12 @@
 //   3. If --scenes is passed, use that list instead of the diff.
 //   4. Invoke `playwright test --update-snapshots -g "scene\[<id>\]"`
 //      with the merged scene set. No scenes? Exit 0 (nothing to do).
+//   bun run scripts/e2e-update-changed-scenes.ts --scene-diff neon-vapor=0.05
+//   PIXEL_DIFF_RATIO=0.04 bun run scripts/e2e-update-changed-scenes.ts
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { parseSceneDiffFlags } from "./_helpers/scene-diff-args";
 
 const args = process.argv.slice(2);
 function flag(name: string, fallback?: string): string | undefined {
@@ -27,6 +30,7 @@ function flag(name: string, fallback?: string): string | undefined {
 
 const base = flag("--base") ?? safeMergeBase("origin/main");
 const explicit = flag("--scenes");
+const { env: childEnv, overrides: sceneDiffOverrides } = parseSceneDiffFlags(args);
 
 function safeMergeBase(ref: string): string {
   try {
@@ -88,9 +92,12 @@ const grep = sceneIds.map((id) => `scene\\[${id}\\]`).join("|");
 const cmd = `bunx playwright test e2e/home-scenes-visual.spec.ts --update-snapshots -g "${grep}"`;
 
 console.log(`[update-changed-scenes] Updating baselines for: ${sceneIds.join(", ")}`);
+if (Object.keys(sceneDiffOverrides).length > 0) {
+  console.log(`[update-changed-scenes] scene-diff overrides: ${JSON.stringify(sceneDiffOverrides)}`);
+}
 console.log(`[update-changed-scenes] $ ${cmd}`);
 try {
-  execSync(cmd, { stdio: "inherit", env: process.env });
+  execSync(cmd, { stdio: "inherit", env: childEnv });
 } catch (e) {
   console.error(`[update-changed-scenes] playwright exited non-zero: ${(e as Error).message}`);
   process.exit(1);

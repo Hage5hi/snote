@@ -13,7 +13,7 @@
 // Run baseline update locally with:
 //   bun run test:e2e:update:scene
 import { test, expect, type Page } from "@playwright/test";
-import { diffRatio } from "./helpers/pixel-diff";
+import { sceneDiffRatio, sceneDiffOverride } from "./helpers/pixel-diff";
 import { SCENE_REGISTRY } from "../src/components/home/scenes/registry";
 
 // Pixel-diff suite — opt into retries to absorb shader/GPU jitter in CI
@@ -49,7 +49,25 @@ async function seedScene(page: Page, lang: "en" | "vi", scene: string) {
 
 for (const { id: scene, threshold } of SCENES) {
   for (const lang of ["en", "vi"] as const) {
-    test(`scene[${scene}] @${lang} — token + chrome regression`, async ({ page }) => {
+    test(`scene[${scene}] @${lang} — token + chrome regression`, async ({ page }, info) => {
+      // Resolve the effective threshold (env / CLI override → registry → default)
+      // BEFORE the snapshot call so reviewers see the exact value used in CI.
+      const effective = sceneDiffRatio(scene, threshold);
+      const override = sceneDiffOverride(scene);
+      // Surface in Playwright report + JSON reporter so the CI summary can
+      // print the threshold next to each pixel-diff outcome.
+      info.annotations.push({
+        type: "pixelDiffRatio",
+        description: String(effective),
+      });
+      info.annotations.push({ type: "scene", description: scene });
+      if (override !== undefined) {
+        info.annotations.push({
+          type: "pixelDiffOverride",
+          description: `SCENE_DIFF_RATIOS[${scene}]=${override}`,
+        });
+      }
+
       await seedScene(page, lang, scene);
       await page.goto("/");
       await page.waitForLoadState("networkidle");
@@ -72,14 +90,11 @@ for (const { id: scene, threshold } of SCENES) {
       await expect(trigger).toBeVisible();
 
       // 4. Snapshot the chrome strip (top 320px). Mask the animated scene
-      // layer so shader randomness doesn't flake the baseline; the chrome
-      // sits *above* the scene so the visible diff stays in design-system
-      // tokens only. Threshold is per-scene from the registry; PIXEL_DIFF_RATIO
-      // env always wins via diffRatio().
+      // layer so shader randomness doesn't flake the baseline.
       await expect(page).toHaveScreenshot(`scene-${scene}-${lang}-chrome.png`, {
         clip: { x: 0, y: 0, width: 1280, height: 320 },
         mask: [page.locator("[data-scene-ready]")],
-        maxDiffPixelRatio: diffRatio(threshold),
+        maxDiffPixelRatio: effective,
         animations: "disabled",
       });
     });
