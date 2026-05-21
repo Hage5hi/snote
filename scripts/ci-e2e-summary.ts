@@ -136,15 +136,22 @@ function fmtMd(
 // ---------- main ----------
 const args = process.argv.slice(2);
 const file = args[0];
-const runUrlIdx = args.indexOf("--run-url");
-const runUrl = runUrlIdx >= 0 ? args[runUrlIdx + 1] : "";
-const outIdx = args.indexOf("--out");
-const outFile = outIdx >= 0 ? args[outIdx + 1] : undefined;
-const jsonIdx = args.indexOf("--json");
-const jsonOut = jsonIdx >= 0 ? args[jsonIdx + 1] : undefined;
+function flag(name: string): string | undefined {
+  const i = args.indexOf(name);
+  return i >= 0 ? args[i + 1] : undefined;
+}
+const runUrl = flag("--run-url") ?? "";
+const outFile = flag("--out");
+const jsonOut = flag("--json");
+const reportArtifactId = flag("--report-artifact-id");
+const debugArtifactId = flag("--debug-artifact-id");
+const browser = flag("--browser");
 
 if (!file) {
-  console.error("usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>]");
+  console.error(
+    "usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>] " +
+      "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>]",
+  );
   process.exit(2);
 }
 
@@ -156,7 +163,7 @@ if (!existsSync(file)) {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));
     failures = parse(report);
-    md = fmtMd(failures, runUrl);
+    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser);
   } catch (err) {
     md = `### Playwright E2E — failed to parse JSON\n\n\`\`\`\n${(err as Error).message}\n\`\`\`\n`;
   }
