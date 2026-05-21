@@ -182,11 +182,13 @@ const jsonOut = flag("--json");
 const reportArtifactId = flag("--report-artifact-id");
 const debugArtifactId = flag("--debug-artifact-id");
 const browser = flag("--browser");
+const traceBaseUrl = flag("--trace-base-url") ?? process.env.PLAYWRIGHT_TRACE_BASE_URL;
 
 if (!file) {
   console.error(
     "usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>] " +
-      "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>]",
+      "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>] " +
+      "[--trace-base-url <https://...>]",
   );
   process.exit(2);
 }
@@ -199,7 +201,7 @@ if (!existsSync(file)) {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));
     failures = parse(report);
-    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser);
+    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser, traceBaseUrl);
   } catch (err) {
     md = `### Playwright E2E — failed to parse JSON\n\n\`\`\`\n${(err as Error).message}\n\`\`\`\n`;
   }
