@@ -151,6 +151,24 @@ function traceLink(
   return { label: `trace: \`${rel}\`` };
 }
 
+/** Build a one-click link to a single attachment file (PNG/diff/etc).
+ *  Same caveat as trace links: works only when `--trace-base-url` (or env)
+ *  points at a publicly-fetchable mirror of `test-results/`. Otherwise we
+ *  emit the relative path so reviewers can locate the file in the artifact zip. */
+function imageLink(
+  att: AttachmentRef | undefined,
+  baseUrl: string | undefined,
+  label: string,
+): string | undefined {
+  if (!att?.path) return undefined;
+  const rel = att.path.replace(/^.*?test-results\//, "test-results/");
+  if (baseUrl) {
+    const url = `${baseUrl.replace(/\/$/, "")}/${rel}`;
+    return `[${label}](${url})`;
+  }
+  return `${label}: \`${rel}\``;
+}
+
 function fmtMd(
   failures: Failure[],
   runUrl: string,
@@ -171,11 +189,13 @@ function fmtMd(
     reportUrl ? `- Playwright HTML report: [download](${reportUrl})` : "",
     debugUrl ? `- Debug bundle (screenshots, traces, axe JSON): [download](${debugUrl})` : "",
     traceBaseUrl
-      ? `- Trace links below open directly in [trace.playwright.dev](https://trace.playwright.dev)`
-      : `- Trace viewer: download the report above and drop the listed \`trace.zip\` onto [trace.playwright.dev](https://trace.playwright.dev)`,
+      ? `- Trace + image links below open directly from \`${traceBaseUrl}\``
+      : `- Trace/image links show the relative path inside the report artifact (download then open). Set \`PLAYWRIGHT_TRACE_BASE_URL\` for one-click links.`,
     "",
-    "| Project | Spec → Test | Retry | Pixel diff | Trace | Debug |",
-    "|---|---|---|---|---|---|",
+    // Threshold column = the per-scene maxDiffPixelRatio actually used.
+    // Pixel diff column = the actual diff observed in the failure message.
+    "| Project | Spec → Test | Scene | Retry | Threshold | Observed diff | Images | Trace | Debug |",
+    "|---|---|---|---|---|---|---|---|---|",
   ].filter(Boolean);
   for (const f of failures) {
     const atts =
@@ -189,12 +209,27 @@ function fmtMd(
         ? `[${trace.label}](${trace.href})`
         : trace.label
       : "—";
+    const imgs = [
+      imageLink(f.images.expected, traceBaseUrl, "expected"),
+      imageLink(f.images.actual, traceBaseUrl, "actual"),
+      imageLink(f.images.diff, traceBaseUrl, "diff"),
+    ].filter(Boolean).join("<br>") || "—";
     const debugCell = debugUrl ? `[bundle](${debugUrl})<br>${atts}` : atts;
+    const sceneCell = f.scene
+      ? f.override
+        ? `\`${f.scene}\`<sup>*</sup>` // marker for override applied
+        : `\`${f.scene}\``
+      : "—";
+    const thresholdCell = f.threshold ?? "—";
     lines.push(
-      `| \`${f.project}\` | \`${f.file}\` → ${f.test} | ${f.retry} | ${
+      `| \`${f.project}\` | \`${f.file}\` → ${f.test} | ${sceneCell} | ${f.retry} | ${thresholdCell} | ${
         f.pixelDiff ?? "—"
-      } | ${traceCell} | ${debugCell} |`,
+      } | ${imgs} | ${traceCell} | ${debugCell} |`,
     );
+  }
+  // Footnote for the override marker.
+  if (failures.some((f) => f.override)) {
+    lines.push("", "<sup>*</sup> threshold was overridden via `SCENE_DIFF_RATIOS`/`--scene-diff` (see annotations).");
   }
   lines.push("", "<details><summary>Failure messages (truncated)</summary>", "");
   for (const f of failures) {
