@@ -13,8 +13,9 @@
 //   bun run scripts/e2e-run-changed-scenes.ts --all                # run visual for all
 //   PIXEL_DIFF_RATIO=0.04 PLAYWRIGHT_PROJECT=chromium bun run ...
 import { execSync, spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
+import { parseSceneDiffFlags } from "./_helpers/scene-diff-args";
 
 const args = process.argv.slice(2);
 function flag(name: string): string | undefined {
@@ -23,17 +24,56 @@ function flag(name: string): string | undefined {
 }
 const ALL = args.includes("--all");
 const BASE = flag("--base") ?? safeMergeBase("origin/main");
+const { env: CHILD_ENV, overrides: SCENE_DIFF_OVERRIDES } = parseSceneDiffFlags(args);
 
-// Specs that ALWAYS run regardless of diff — these protect the fallback
-// path + the registry/host integration that every scene depends on.
+// Specs that ALWAYS run regardless of diff.
 const ALWAYS_RUN = [
   "e2e/webgl-fallback.spec.ts",
   "e2e/home-scene.spec.ts", // smoke + i18n + a11y on Cyber scene
 ];
-// Specs that NEVER run in PR-mode unless their files (or shared infra)
-// changed. The visual regression suite is the only "skip when scope-empty"
-// candidate today.
 const VISUAL_SPEC = "e2e/home-scenes-visual.spec.ts";
+
+// "Shared renderer infra" — touching any of these can change every scene's
+// rendered chrome, so we run the full visual suite even when no scene file
+// changed. Glob-style prefixes (ending with `/`) match all descendants.
+//
+// Keep this list explicit (not a full-graph walk) so it's predictable and
+// reviewable. If we miss a renderer-affecting file, the fix is to add it
+// here rather than to rebuild a dependency graph at CI time.
+const SHARED_RENDERER_PATHS: string[] = [
+  // Direct scene infra
+  "src/components/home/scenes/registry.ts",
+  "src/components/home/SceneHost.tsx",
+  "src/components/home/", // any shared chrome (Header, Recents, etc.)
+  // Tokens + global styling that scene CSS variables sit on top of
+  "src/index.css",
+  "tailwind.config.ts",
+  // Routes / theme provider that mount the Home chrome
+  "src/pages/Home.tsx",
+  "src/components/ThemeToggle.tsx",
+  // shadcn primitives used by the chrome — input, button, dropdown.
+  // We narrow to the files the chrome actually imports; touching an
+  // unrelated primitive (e.g. accordion) doesn't trigger a full run.
+  "src/components/ui/button.tsx",
+  "src/components/ui/input.tsx",
+  "src/components/ui/dropdown-menu.tsx",
+  // E2E pipeline that feeds the visual suite
+  VISUAL_SPEC,
+  "e2e/helpers/pixel-diff.ts",
+  "e2e/helpers/", // any shared E2E helper (seedScene lives here once extracted)
+  "playwright.config.ts",
+];
+
+function isSharedRendererPath(p: string): boolean {
+  for (const entry of SHARED_RENDERER_PATHS) {
+    if (entry.endsWith("/")) {
+      if (p.startsWith(entry)) return true;
+    } else if (p === entry) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function safeMergeBase(ref: string): string {
   try {
@@ -45,7 +85,9 @@ function safeMergeBase(ref: string): string {
 
 // Map registry source files → scene ids (same logic as e2e-update-changed-scenes).
 function loadFileToId(): Map<string, string> {
-  const txt = readFileSync(resolve("src/components/home/scenes/registry.ts"), "utf8");
+  const registryPath = resolve("src/components/home/scenes/registry.ts");
+  if (!existsSync(registryPath)) return new Map();
+  const txt = readFileSync(registryPath, "utf8");
   const out = new Map<string, string>();
   for (const block of txt.split(/\{\s*\n/).slice(1)) {
     const id = block.match(/id:\s*["']([^"']+)["']/)?.[1];
@@ -55,36 +97,40 @@ function loadFileToId(): Map<string, string> {
   return out;
 }
 
-function detectChangedScenes(): { ids: string[]; runVisual: boolean; reason: string } {
-  if (ALL) return { ids: [], runVisual: true, reason: "--all flag" };
+function detectChangedScenes(): {
+  ids: string[];
+  runVisual: boolean;
+  reason: string;
+  sharedHits: string[];
+} {
+  if (ALL) return { ids: [], runVisual: true, reason: "--all flag", sharedHits: [] };
   let diff = "";
   try {
     diff = execSync(`git diff --name-only ${BASE}...HEAD`, { encoding: "utf8" });
   } catch (e) {
     console.warn(`[run-changed-scenes] git diff failed (${(e as Error).message}); running full visual suite`);
-    return { ids: [], runVisual: true, reason: "diff-failed" };
+    return { ids: [], runVisual: true, reason: "diff-failed", sharedHits: [] };
   }
   const changed = diff.split("\n").map((s) => s.trim()).filter(Boolean);
   const fileToId = loadFileToId();
   const ids = new Set<string>();
-  let runAllVisual = false;
+  const sharedHits: string[] = [];
   for (const path of changed) {
     if (fileToId.has(path)) ids.add(fileToId.get(path)!);
-    // Shared infra → re-run every scene's visual baseline.
-    if (
-      path === "src/components/home/scenes/registry.ts" ||
-      path === "src/components/home/SceneHost.tsx" ||
-      path === "src/index.css" ||
-      path === VISUAL_SPEC ||
-      path === "playwright.config.ts" ||
-      path === "e2e/helpers/pixel-diff.ts"
-    ) {
-      runAllVisual = true;
-    }
+    if (isSharedRendererPath(path)) sharedHits.push(path);
   }
-  if (runAllVisual) return { ids: [], runVisual: true, reason: "shared-infra changed" };
-  if (ids.size > 0) return { ids: [...ids], runVisual: true, reason: `scenes changed: ${[...ids].join(", ")}` };
-  return { ids: [], runVisual: false, reason: "no scene/visual changes" };
+  if (sharedHits.length > 0) {
+    return {
+      ids: [],
+      runVisual: true,
+      reason: `shared renderer paths touched: ${sharedHits.slice(0, 5).join(", ")}${sharedHits.length > 5 ? ` (+${sharedHits.length - 5})` : ""}`,
+      sharedHits,
+    };
+  }
+  if (ids.size > 0) {
+    return { ids: [...ids], runVisual: true, reason: `scenes changed: ${[...ids].join(", ")}`, sharedHits: [] };
+  }
+  return { ids: [], runVisual: false, reason: "no scene/visual changes", sharedHits: [] };
 }
 
 function run(cmd: string[], env: NodeJS.ProcessEnv = process.env): number {
