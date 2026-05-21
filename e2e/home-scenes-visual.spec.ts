@@ -98,7 +98,7 @@ test("every enabled scene can be selected at runtime", async ({ page }) => {
 
   // Cycle scenes via localStorage + reload (more reliable than driving the
   // dropdown when the menu items shift between locales).
-  for (const scene of SCENES) {
+  for (const { id: scene } of SCENES) {
     await page.evaluate((s) => localStorage.setItem("home.scene", s), scene);
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(root).toHaveAttribute("data-scene", scene);
