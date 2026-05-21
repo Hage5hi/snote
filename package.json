@@ -16,6 +16,7 @@
     "test:e2e:update": "playwright test --update-snapshots",
     "test:e2e:update:scene": "playwright test e2e/home-scenes-visual.spec.ts e2e/home-scene.spec.ts --update-snapshots",
     "test:e2e:update:changed": "bun run scripts/e2e-update-changed-scenes.ts",
+    "test:e2e:changed": "bun run scripts/e2e-run-changed-scenes.ts",
     "test:e2e:summary": "bun run scripts/ci-e2e-summary.ts test-results/e2e-results.json",
     "theme:isolation": "bun run scripts/check-home-theme-isolation.ts",
     "i18n:check": "bun run scripts/i18n-coverage.ts",
