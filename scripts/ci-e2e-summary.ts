@@ -36,6 +36,17 @@ interface DiffImageSet {
   diff?: AttachmentRef;
 }
 
+/** Auxiliary debug artifacts attached by hit-test / flicker specs.
+ *  Distinct from the expected/actual/diff trio produced by toHaveScreenshot:
+ *  these are spec-attached PNGs (mask overlays, flicker frames, axe JSON).
+ *  Surfaced as a separate column so reviewers can open them in one click. */
+interface OverlayAttachments {
+  mask: AttachmentRef[];      // debug-mask-*.png from home-scene.spec.ts
+  hitTest: AttachmentRef[];   // debug-hit*.png / hit-test overlays
+  flicker: AttachmentRef[];   // flicker-a.png / flicker-b.png
+  axe: AttachmentRef[];       // axe-*.json
+}
+
 interface Failure {
   file: string;
   spec: string;
@@ -45,10 +56,14 @@ interface Failure {
   message: string;
   pixelDiff?: string;       // parsed "ratio 0.012" from the error message
   threshold?: string;       // resolved per-scene maxDiffPixelRatio (from annotations)
+  chromeThreshold?: string; // resolved chrome screenshot threshold
+  sceneThreshold?: string;  // resolved masked-layer / hit-test threshold
   scene?: string;           // from annotations
   override?: string;        // SCENE_DIFF_RATIOS hit, when present
+  chromeOverride?: string;  // CHROME_DIFF_RATIO hit, when present
   attachments: AttachmentRef[];
   images: DiffImageSet;
+  overlays: OverlayAttachments;
 }
 
 function* walkSpecs(suites: SuiteEntry[] | undefined): Generator<SpecEntry> {
