@@ -755,6 +755,29 @@ jobs:
           E2E_TOAST_TIMEOUT_MS: "8000"
           E2E_TOAST_DISMISS_TIMEOUT_MS: "12000"
           E2E_TOAST_MIN_VISIBLE_MS: "250"
+      # Always emit a markdown failure summary (with pixel-diff thresholds
+      # + links to the uploaded artifacts) so reviewers can triage
+      # red Playwright runs without downloading the HTML report first.
+      - name: E2E failure summary (markdown + machine-readable JSON)
+        if: always()
+        run: |
+          mkdir -p reports/_ci
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}#artifacts"
+          bun run scripts/ci-e2e-summary.ts test-results/e2e-results.json \
+            --run-url "$RUN_URL" \
+            --out reports/_ci/e2e-failure-summary.md \
+            --json reports/_ci/e2e-failure-summary.json \
+            || true
+          cat reports/_ci/e2e-failure-summary.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-failure-summary-${{ matrix.browser }}
+          path: |
+            reports/_ci/e2e-failure-summary.md
+            reports/_ci/e2e-failure-summary.json
+          retention-days: 14
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
