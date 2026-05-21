@@ -14,19 +14,18 @@
 //   bun run test:e2e:update:scene
 import { test, expect, type Page } from "@playwright/test";
 import { diffRatio } from "./helpers/pixel-diff";
+import { SCENE_REGISTRY } from "../src/components/home/scenes/registry";
 
 // Pixel-diff suite — opt into retries to absorb shader/GPU jitter in CI
 // without re-running the entire e2e matrix (global retries are 0).
 test.describe.configure({ retries: process.env.CI ? 2 : 0 });
 
-const SCENES = [
-  "cyber-linh-khi",
-  "ethereal-aurora",
-  "obsidian-ink",
-  "digital-constellation",
-  "neon-vapor",
-  "terminal-boot",
-] as const;
+// Derive the scene list from the single source of truth so adding a scene
+// to the registry automatically extends this suite — and per-scene
+// pixelDiffRatio overrides are picked up without touching the spec.
+const SCENES = SCENE_REGISTRY.filter((s) => s.enabled && s.id !== "none").map(
+  (s) => ({ id: s.id, threshold: s.pixelDiffRatio ?? 0.03 }),
+);
 
 const themeAria = { en: "Theme settings", vi: "Cài đặt giao diện" } as const;
 
