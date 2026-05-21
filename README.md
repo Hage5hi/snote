@@ -42,10 +42,10 @@ Realtime markdown notes by URL. Create, share, and edit notes that sync across d
 ### Setup
 
 ```sh
-git clone https://github.com/sovergarden-dev/syrin-notes-4ec98658.git
-cd syrin-notes-4ec98658
-npm install      # or: bun install
-npm run dev      # start dev server at http://localhost:5173
+git clone https://github.com/Hageshiku/snote.git
+cd snote
+bun install      # or: npm install
+bun run dev      # start dev server at http://localhost:5173
 ```
 
 Copy `.env.example` to `.env` if not already present — it contains the public Supabase keys needed for local development.
