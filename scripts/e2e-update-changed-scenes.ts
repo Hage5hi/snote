@@ -92,9 +92,12 @@ const grep = sceneIds.map((id) => `scene\\[${id}\\]`).join("|");
 const cmd = `bunx playwright test e2e/home-scenes-visual.spec.ts --update-snapshots -g "${grep}"`;
 
 console.log(`[update-changed-scenes] Updating baselines for: ${sceneIds.join(", ")}`);
+if (Object.keys(sceneDiffOverrides).length > 0) {
+  console.log(`[update-changed-scenes] scene-diff overrides: ${JSON.stringify(sceneDiffOverrides)}`);
+}
 console.log(`[update-changed-scenes] $ ${cmd}`);
 try {
-  execSync(cmd, { stdio: "inherit", env: process.env });
+  execSync(cmd, { stdio: "inherit", env: childEnv });
 } catch (e) {
   console.error(`[update-changed-scenes] playwright exited non-zero: ${(e as Error).message}`);
   process.exit(1);
