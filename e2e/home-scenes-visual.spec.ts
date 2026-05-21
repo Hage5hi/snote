@@ -47,7 +47,7 @@ async function seedScene(page: Page, lang: "en" | "vi", scene: string) {
   );
 }
 
-for (const scene of SCENES) {
+for (const { id: scene, threshold } of SCENES) {
   for (const lang of ["en", "vi"] as const) {
     test(`scene[${scene}] @${lang} — token + chrome regression`, async ({ page }) => {
       await seedScene(page, lang, scene);
@@ -74,11 +74,12 @@ for (const scene of SCENES) {
       // 4. Snapshot the chrome strip (top 320px). Mask the animated scene
       // layer so shader randomness doesn't flake the baseline; the chrome
       // sits *above* the scene so the visible diff stays in design-system
-      // tokens only.
+      // tokens only. Threshold is per-scene from the registry; PIXEL_DIFF_RATIO
+      // env always wins via diffRatio().
       await expect(page).toHaveScreenshot(`scene-${scene}-${lang}-chrome.png`, {
         clip: { x: 0, y: 0, width: 1280, height: 320 },
         mask: [page.locator("[data-scene-ready]")],
-        maxDiffPixelRatio: diffRatio(0.03),
+        maxDiffPixelRatio: diffRatio(threshold),
         animations: "disabled",
       });
     });
