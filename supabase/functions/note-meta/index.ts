@@ -1,6 +1,10 @@
 // Endpoint trả về metadata cho 1 note (slug/token). Dùng bởi Cloudflare
 // Worker để render HTML với og/twitter/canonical tags cho crawler không-JS.
 // Bảo vệ bằng shared secret NOTE_META_SECRET (header x-meta-secret).
+//
+// Fail-closed: nếu NOTE_META_SECRET không được set thì endpoint trả 503,
+// trừ khi NOTE_META_ALLOW_INSECURE=1 được set tường minh (local dev).
+// Đây là sửa cho finding "auth is optional and silently disabled".
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -9,6 +13,13 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-meta-secret",
   "Access-Control-Allow-Methods": "GET, OPTIONS",
 };
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
 // Slug cho phép thêm dấu chấm (vd: my.note) — vẫn an toàn cho path/URL.
 const SLUG_RE = /^[a-zA-Z0-9._-]{1,80}$/;
@@ -41,11 +52,21 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
   try {
-    // 1. Bảo vệ endpoint bằng shared secret
-    const expected = Deno.env.get("NOTE_META_SECRET");
-    if (expected) {
+    // 1. Bảo vệ endpoint bằng shared secret (fail-closed).
+    const expected = Deno.env.get("NOTE_META_SECRET") ?? "";
+    const allowInsecure =
+      Deno.env.get("NOTE_META_ALLOW_INSECURE") === "1";
+    if (!expected) {
+      if (!allowInsecure) {
+        return jsonResponse(
+          { error: "server misconfigured: NOTE_META_SECRET unset" },
+          503,
+        );
+      }
+      // Local dev fallback — operator has explicitly opted out of auth.
+    } else {
       const got = req.headers.get("x-meta-secret") ?? "";
-      if (got !== expected) {
+      if (!constantTimeEqual(got, expected)) {
         return jsonResponse({ error: "forbidden" }, 403);
       }
     }
