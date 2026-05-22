@@ -20,12 +20,32 @@
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseSceneDiffFlags, loadKnownSceneIds } from "./_helpers/scene-diff-args";
+import {
+  parseSceneDiffFlags,
+  loadKnownSceneIds,
+  writeSceneDiffExpansionsLog,
+  SCENE_DIFF_HELP,
+} from "./_helpers/scene-diff-args";
 
 const args = process.argv.slice(2);
 function flag(name: string, fallback?: string): string | undefined {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : fallback;
+}
+
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(`Usage: bun run scripts/e2e-update-changed-scenes.ts [options]
+
+Updates Playwright screenshot baselines only for scenes whose source files
+changed in the current diff (or the explicit --scenes list).
+
+Options:
+  --base <ref>            Git ref to diff against (default: merge-base origin/main).
+  --scenes a,b,c          Update only these scene ids (skips the diff).
+
+${SCENE_DIFF_HELP}
+`);
+  process.exit(0);
 }
 
 const base = flag("--base") ?? safeMergeBase("origin/main");
@@ -36,7 +56,13 @@ const {
   overrides: sceneDiffOverrides,
   chromeDiff: chromeDiffOverride,
   unknown: unknownSceneFlags,
+  expansions: sceneDiffExpansions,
 } = parseSceneDiffFlags(args, { knownSceneIds: knownIds });
+
+const expansionsLog =
+  process.env.SCENE_DIFF_EXPANSIONS_LOG ??
+  "test-results/scene-diff-expansions.json";
+writeSceneDiffExpansionsLog(sceneDiffExpansions, expansionsLog);
 
 function safeMergeBase(ref: string): string {
   try {
