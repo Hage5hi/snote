@@ -1,5 +1,11 @@
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import bcrypt from "https://esm.sh/bcryptjs@2.4.3";
+import {
+  checkAdminLockout,
+  getClientIp,
+  lockoutResponse,
+  recordAdminAuthAttempt,
+} from "../_shared/admin-rate-limit.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -49,7 +55,12 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    const ip = getClientIp(req);
+    const gate = await checkAdminLockout(supabase, ip);
+    if (!gate.allowed) return lockoutResponse(gate.retryAfterSeconds, corsHeaders);
+
     const ok = await verifyPass(supabase, passphrase);
+    await recordAdminAuthAttempt(supabase, ip, ok);
     if (!ok) {
       return new Response(JSON.stringify({ error: "unauthorized" }), {
         status: 401,
