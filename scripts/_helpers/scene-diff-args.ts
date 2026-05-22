@@ -9,11 +9,13 @@
 //     warning by default or failing under `--strict-scene-diff`.
 //   * Fold all of it into the SCENE_DIFF_RATIOS + CHROME_DIFF_RATIO env vars
 //     that e2e/helpers/pixel-diff.ts reads at test time.
+//   * Persist wildcard → expanded-ids info to a sidecar file so the CI
+//     summary can show reviewers *which* patterns expanded to *what*.
 //
 // Pre-existing SCENE_DIFF_RATIOS / CHROME_DIFF_RATIO env values are
 // preserved unless explicitly overridden by a CLI flag.
-import { readFileSync, existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 /** Regex-extract the list of enabled scene ids from registry.ts.
  *  Mirrors the same parsing strategy used by the runner scripts so we
@@ -64,6 +66,16 @@ function parseExistingSceneEnv(raw: string | undefined): Record<string, number> 
   return out;
 }
 
+/** One wildcard expansion entry. `pattern` is the raw user input (e.g.
+ *  `neon-*`); `ids` is the registry ids it matched; `ratio` is the value
+ *  applied to all of them. Surface this in the CI summary so reviewers
+ *  can audit what the glob actually touched. */
+export interface SceneDiffExpansion {
+  pattern: string;
+  ids: string[];
+  ratio: number;
+}
+
 export interface ParsedDiffFlags {
   /** A new env map (shallow-copied + extended). Pass to spawnSync({env}). */
   env: NodeJS.ProcessEnv;
@@ -73,6 +85,66 @@ export interface ParsedDiffFlags {
   chromeDiff?: number;
   /** Literal `--scene-diff` ids that didn't match any registry id. */
   unknown: string[];
+  /** Wildcard patterns the user passed and what they expanded to. */
+  expansions: SceneDiffExpansion[];
+}
+
+/** Help text describing --scene-diff / --chrome-diff usage. Printed by
+ *  runner scripts when the user passes `--help`. Kept here so both runner
+ *  scripts surface identical examples (including the shell quoting that
+ *  globs need to survive the shell). */
+export const SCENE_DIFF_HELP = `
+Pixel-diff threshold flags (forwarded to Playwright via env):
+
+  --scene-diff <id|glob>=<ratio>   Per-scene maxDiffPixelRatio override for
+                                   the masked scene layer / hit-test specs.
+                                   Repeatable. Globs use \`*\`.
+
+  --chrome-diff <ratio>            Override for the chrome screenshot
+                                   threshold (Header + slug input + Recents).
+                                   Independent axis from --scene-diff.
+
+  --strict-scene-diff              Exit non-zero when a literal --scene-diff
+                                   id (or a glob with zero matches) is not
+                                   present in the scene registry. Default
+                                   is to warn and continue.
+
+Examples:
+
+  # Loosen a single scene
+  --scene-diff neon-vapor=0.05
+
+  # Tighten chrome while keeping shader scenes loose
+  --chrome-diff 0.015 --scene-diff "neon-*=0.05"
+
+  # Tune a whole family (QUOTE the glob so the shell doesn't expand it)
+  --scene-diff "ethereal-*=0.04" --scene-diff "obsidian-ink=0.012"
+
+  # Fail loudly on a typo'd scene id during baseline updates
+  --strict-scene-diff --scene-diff neon-vapr=0.05
+`.trim();
+
+/** Write a JSON sidecar describing wildcard expansions so ci-e2e-summary
+ *  can render a "pattern → ids" section in the GitHub step summary.
+ *  No-op when the path is unset or there are no expansions. */
+export function writeSceneDiffExpansionsLog(
+  expansions: SceneDiffExpansion[],
+  path: string | undefined,
+): void {
+  if (!path || expansions.length === 0) return;
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(
+      path,
+      JSON.stringify(
+        { schema: "scene-diff-expansions/v1", expansions },
+        null,
+        2,
+      ),
+    );
+  } catch (e) {
+    console.warn(`[scene-diff] failed to write expansions log to ${path}: ${(e as Error).message}`);
+  }
 }
 
 export function parseSceneDiffFlags(
@@ -86,6 +158,7 @@ export function parseSceneDiffFlags(
     process.env.SCENE_DIFF_RATIOS,
   );
   const unknown: string[] = [];
+  const expansions: SceneDiffExpansion[] = [];
   let chromeDiff: number | undefined;
 
   // Seed chrome diff from env so we don't drop pre-set values.
@@ -135,6 +208,7 @@ export function parseSceneDiffFlags(
         continue;
       }
       for (const id of matches) overrides[id] = n;
+      expansions.push({ pattern, ids: matches, ratio: n });
     } else {
       if (known.length > 0 && !known.includes(pattern)) {
         const msg = `[scene-diff] unknown scene id "${pattern}" (not in registry: ${known.join(", ")})`;
@@ -159,5 +233,5 @@ export function parseSceneDiffFlags(
   if (chromeDiff !== undefined) {
     env.CHROME_DIFF_RATIO = String(chromeDiff);
   }
-  return { env, overrides, chromeDiff, unknown };
+  return { env, overrides, chromeDiff, unknown, expansions };
 }
