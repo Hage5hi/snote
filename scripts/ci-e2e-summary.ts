@@ -410,6 +410,7 @@ if (jsonOut) {
         runUrl,
         total: failures.length,
         failures,
+        sceneDiffExpansions: expansions,
       },
       null,
       2,
