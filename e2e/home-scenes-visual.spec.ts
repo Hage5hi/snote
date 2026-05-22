@@ -29,7 +29,15 @@ test.describe.configure({ retries: process.env.CI ? 2 : 0 });
 // to the registry automatically extends this suite — and per-scene
 // pixelDiffRatio overrides are picked up without touching the spec.
 const SCENES = SCENE_REGISTRY.filter((s) => s.enabled && s.id !== "none").map(
-  (s) => ({ id: s.id, threshold: s.pixelDiffRatio ?? 0.03 }),
+  (s) => ({
+    id: s.id,
+    threshold: s.pixelDiffRatio ?? 0.03,
+    // Registry-level chrome fallback. Resolution order at runtime is still:
+    // PIXEL_DIFF_RATIO (global) → CHROME_DIFF_RATIO (env/CLI) →
+    // SCENE_DIFF_RATIOS (per-scene) → registry.chromeDiffRatio →
+    // registry.pixelDiffRatio.
+    chromeFallback: s.chromeDiffRatio ?? s.pixelDiffRatio ?? 0.03,
+  }),
 );
 
 const themeAria = { en: "Theme settings", vi: "Cài đặt giao diện" } as const;
