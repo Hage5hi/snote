@@ -60,7 +60,7 @@ async function seedScene(page: Page, lang: "en" | "vi", scene: string) {
   );
 }
 
-for (const { id: scene, threshold } of SCENES) {
+for (const { id: scene, threshold, chromeFallback } of SCENES) {
   for (const lang of ["en", "vi"] as const) {
     test(`scene[${scene}] @${lang} — token + chrome regression`, async ({ page }, info) => {
       // Resolve effective thresholds (env / CLI override → registry → default)
@@ -69,8 +69,11 @@ for (const { id: scene, threshold } of SCENES) {
       // shader jitter); chromeThreshold = the chrome strip screenshot gate
       // (Header + slug input + Recents). These are two independent axes so a
       // reviewer can tighten chrome while loosening the scene layer.
+      // chromeFallback comes from registry.chromeDiffRatio (or pixelDiffRatio
+      // when unset), letting a scene's CSS opt out of the global default
+      // without an env flag.
       const sceneThreshold = sceneDiffRatio(scene, threshold);
-      const chromeThreshold = chromeDiffRatio(scene, sceneThreshold);
+      const chromeThreshold = chromeDiffRatio(scene, chromeFallback);
       const sceneOverride = sceneDiffOverride(scene);
       const chromeOverride = chromeDiffOverride();
       // Surface in Playwright report + JSON reporter so the CI summary can
