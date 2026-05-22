@@ -203,6 +203,48 @@ function imageLink(
   return `${label}: \`${rel}\``;
 }
 
+interface SceneDiffExpansionEntry {
+  pattern: string;
+  ids: string[];
+  ratio: number;
+}
+
+/** Read the sidecar log written by scripts/_helpers/scene-diff-args.ts so
+ *  we can show reviewers which wildcards expanded to which scene ids in
+ *  the same step summary as the failing tests. */
+function loadExpansions(path: string | undefined): SceneDiffExpansionEntry[] {
+  if (!path || !existsSync(path)) return [];
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as {
+      expansions?: SceneDiffExpansionEntry[];
+    };
+    return raw.expansions ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function fmtExpansions(expansions: SceneDiffExpansionEntry[]): string {
+  if (expansions.length === 0) return "";
+  const rows = expansions
+    .map(
+      (e) =>
+        `| \`${e.pattern}\` | ${e.ratio} | ${e.ids.map((id) => `\`${id}\``).join(", ")} |`,
+    )
+    .join("\n");
+  return [
+    "",
+    "<details><summary>Scene-diff wildcard expansions</summary>",
+    "",
+    "| Pattern | Ratio | Expanded scene ids |",
+    "|---|---|---|",
+    rows,
+    "",
+    "</details>",
+    "",
+  ].join("\n");
+}
+
 function fmtMd(
   failures: Failure[],
   runUrl: string,
@@ -210,9 +252,11 @@ function fmtMd(
   debugArtifactId?: string,
   browser?: string,
   traceBaseUrl?: string,
+  expansions: SceneDiffExpansionEntry[] = [],
 ): string {
   if (failures.length === 0) {
-    return "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
+    const head = "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
+    return head + fmtExpansions(expansions);
   }
   const reportUrl = artifactUrl(runUrl, reportArtifactId);
   const debugUrl = artifactUrl(runUrl, debugArtifactId);
@@ -305,7 +349,9 @@ function fmtMd(
     lines.push(`**${f.project} · ${f.test}**`, "", "```", f.message, "```", "");
   }
   lines.push("</details>");
-  return lines.join("\n") + "\n";
+  // Append wildcard expansion table (if any) so reviewers can see exactly
+  // which scenes a `neon-*=0.05` flag actually applied to.
+  return lines.join("\n") + "\n" + fmtExpansions(expansions);
 }
 
 
@@ -324,25 +370,31 @@ const reportArtifactId = flag("--report-artifact-id");
 const debugArtifactId = flag("--debug-artifact-id");
 const browser = flag("--browser");
 const traceBaseUrl = flag("--trace-base-url") ?? process.env.PLAYWRIGHT_TRACE_BASE_URL;
+const expansionsPath =
+  flag("--scene-diff-expansions") ??
+  process.env.SCENE_DIFF_EXPANSIONS_LOG ??
+  "test-results/scene-diff-expansions.json";
 
 if (!file) {
   console.error(
     "usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>] " +
       "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>] " +
-      "[--trace-base-url <https://...>]",
+      "[--trace-base-url <https://...>] [--scene-diff-expansions <path>]",
   );
   process.exit(2);
 }
 
+const expansions = loadExpansions(expansionsPath);
+
 let md: string;
 let failures: Failure[] = [];
 if (!existsSync(file)) {
-  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n`;
+  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n${fmtExpansions(expansions)}`;
 } else {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));
     failures = parse(report);
-    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser, traceBaseUrl);
+    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser, traceBaseUrl, expansions);
   } catch (err) {
     md = `### Playwright E2E — failed to parse JSON\n\n\`\`\`\n${(err as Error).message}\n\`\`\`\n`;
   }
@@ -358,6 +410,7 @@ if (jsonOut) {
         runUrl,
         total: failures.length,
         failures,
+        sceneDiffExpansions: expansions,
       },
       null,
       2,

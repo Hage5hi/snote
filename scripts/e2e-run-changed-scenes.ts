@@ -15,12 +15,31 @@
 import { execSync, spawnSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { parseSceneDiffFlags, loadKnownSceneIds } from "./_helpers/scene-diff-args";
+import {
+  parseSceneDiffFlags,
+  loadKnownSceneIds,
+  writeSceneDiffExpansionsLog,
+  SCENE_DIFF_HELP,
+} from "./_helpers/scene-diff-args";
 
 const args = process.argv.slice(2);
 function flag(name: string): string | undefined {
   const i = args.indexOf(name);
   return i >= 0 ? args[i + 1] : undefined;
+}
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(`Usage: bun run scripts/e2e-run-changed-scenes.ts [options]
+
+Runs Playwright safety-net specs every time + the visual-regression suite
+scoped to scenes that changed in this PR.
+
+Options:
+  --base <ref>     Git ref to diff against (default: merge-base origin/main).
+  --all            Run the visual suite for every scene regardless of diff.
+
+${SCENE_DIFF_HELP}
+`);
+  process.exit(0);
 }
 const ALL = args.includes("--all");
 const BASE = flag("--base") ?? safeMergeBase("origin/main");
@@ -30,7 +49,14 @@ const {
   overrides: SCENE_DIFF_OVERRIDES,
   chromeDiff: CHROME_DIFF_OVERRIDE,
   unknown: UNKNOWN_SCENE_FLAGS,
+  expansions: SCENE_DIFF_EXPANSIONS,
 } = parseSceneDiffFlags(args, { knownSceneIds: KNOWN_IDS });
+
+// Persist wildcard expansions so ci-e2e-summary can list pattern → ids.
+const EXPANSIONS_LOG =
+  process.env.SCENE_DIFF_EXPANSIONS_LOG ??
+  "test-results/scene-diff-expansions.json";
+writeSceneDiffExpansionsLog(SCENE_DIFF_EXPANSIONS, EXPANSIONS_LOG);
 
 // Specs that ALWAYS run regardless of diff.
 const ALWAYS_RUN = [

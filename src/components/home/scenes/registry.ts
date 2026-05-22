@@ -37,11 +37,17 @@ export interface SceneDef {
   /** Bypass the hardwareConcurrency<4 guard. Use for cheap Canvas2D scenes
    *  that run fine on low-end devices. WebGL shaders should leave this off. */
   lightweight?: boolean;
-  /** Per-scene maxDiffPixelRatio for chrome screenshot baselines.
-   *  Tailored per scene because shader-heavy backgrounds tolerate slightly
-   *  more GPU/AA jitter even when masked, while flat Canvas2D scenes can
-   *  use a tighter gate. Env PIXEL_DIFF_RATIO still overrides at runtime. */
+  /** Per-scene maxDiffPixelRatio for the masked scene layer / hit-test
+   *  specs. Tailored per scene because shader-heavy backgrounds tolerate
+   *  slightly more GPU/AA jitter even when masked, while flat Canvas2D
+   *  scenes can use a tighter gate. Env PIXEL_DIFF_RATIO still overrides. */
   pixelDiffRatio?: number;
+  /** Per-scene maxDiffPixelRatio override for the *chrome* screenshot
+   *  (Header + slug input + Recents). Separate axis from pixelDiffRatio so
+   *  a glow-heavy scene whose halos bleed into chrome edges can relax
+   *  chrome tolerance without loosening the masked-layer gate. Falls back
+   *  to pixelDiffRatio when unset. Env CHROME_DIFF_RATIO still overrides. */
+  chromeDiffRatio?: number;
 }
 
 export const SCENE_NONE = "none";
