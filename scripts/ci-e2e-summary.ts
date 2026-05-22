@@ -349,7 +349,9 @@ function fmtMd(
     lines.push(`**${f.project} · ${f.test}**`, "", "```", f.message, "```", "");
   }
   lines.push("</details>");
-  return lines.join("\n") + "\n";
+  // Append wildcard expansion table (if any) so reviewers can see exactly
+  // which scenes a `neon-*=0.05` flag actually applied to.
+  return lines.join("\n") + "\n" + fmtExpansions(expansions);
 }
 
 
