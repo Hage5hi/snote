@@ -370,25 +370,31 @@ const reportArtifactId = flag("--report-artifact-id");
 const debugArtifactId = flag("--debug-artifact-id");
 const browser = flag("--browser");
 const traceBaseUrl = flag("--trace-base-url") ?? process.env.PLAYWRIGHT_TRACE_BASE_URL;
+const expansionsPath =
+  flag("--scene-diff-expansions") ??
+  process.env.SCENE_DIFF_EXPANSIONS_LOG ??
+  "test-results/scene-diff-expansions.json";
 
 if (!file) {
   console.error(
     "usage: ci-e2e-summary.ts <results.json> --run-url <url> [--out <md>] [--json <json>] " +
       "[--report-artifact-id <id>] [--debug-artifact-id <id>] [--browser <name>] " +
-      "[--trace-base-url <https://...>]",
+      "[--trace-base-url <https://...>] [--scene-diff-expansions <path>]",
   );
   process.exit(2);
 }
 
+const expansions = loadExpansions(expansionsPath);
+
 let md: string;
 let failures: Failure[] = [];
 if (!existsSync(file)) {
-  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n`;
+  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n${fmtExpansions(expansions)}`;
 } else {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));
     failures = parse(report);
-    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser, traceBaseUrl);
+    md = fmtMd(failures, runUrl, reportArtifactId, debugArtifactId, browser, traceBaseUrl, expansions);
   } catch (err) {
     md = `### Playwright E2E — failed to parse JSON\n\n\`\`\`\n${(err as Error).message}\n\`\`\`\n`;
   }
