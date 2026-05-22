@@ -203,6 +203,48 @@ function imageLink(
   return `${label}: \`${rel}\``;
 }
 
+interface SceneDiffExpansionEntry {
+  pattern: string;
+  ids: string[];
+  ratio: number;
+}
+
+/** Read the sidecar log written by scripts/_helpers/scene-diff-args.ts so
+ *  we can show reviewers which wildcards expanded to which scene ids in
+ *  the same step summary as the failing tests. */
+function loadExpansions(path: string | undefined): SceneDiffExpansionEntry[] {
+  if (!path || !existsSync(path)) return [];
+  try {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as {
+      expansions?: SceneDiffExpansionEntry[];
+    };
+    return raw.expansions ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function fmtExpansions(expansions: SceneDiffExpansionEntry[]): string {
+  if (expansions.length === 0) return "";
+  const rows = expansions
+    .map(
+      (e) =>
+        `| \`${e.pattern}\` | ${e.ratio} | ${e.ids.map((id) => `\`${id}\``).join(", ")} |`,
+    )
+    .join("\n");
+  return [
+    "",
+    "<details><summary>Scene-diff wildcard expansions</summary>",
+    "",
+    "| Pattern | Ratio | Expanded scene ids |",
+    "|---|---|---|",
+    rows,
+    "",
+    "</details>",
+    "",
+  ].join("\n");
+}
+
 function fmtMd(
   failures: Failure[],
   runUrl: string,
@@ -210,9 +252,11 @@ function fmtMd(
   debugArtifactId?: string,
   browser?: string,
   traceBaseUrl?: string,
+  expansions: SceneDiffExpansionEntry[] = [],
 ): string {
   if (failures.length === 0) {
-    return "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
+    const head = "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
+    return head + fmtExpansions(expansions);
   }
   const reportUrl = artifactUrl(runUrl, reportArtifactId);
   const debugUrl = artifactUrl(runUrl, debugArtifactId);
