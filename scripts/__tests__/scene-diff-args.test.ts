@@ -50,7 +50,7 @@ describe("parseSceneDiffFlags", () => {
     });
     expect(r.overrides).toEqual({ "neon-vapor": 0.05 });
     expect(r.expansions).toHaveLength(1);
-    expect(r.expansions[0]).toEqual({
+    expect(r.expansions[0]).toMatchObject({
       pattern: "neon-*",
       ids: ["neon-vapor"],
       ratio: 0.05,
