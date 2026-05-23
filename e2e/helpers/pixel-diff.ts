@@ -60,6 +60,12 @@ function parseSceneDiffs(raw: string | undefined): Record<string, number> {
 }
 
 const SCENE_OVERRIDES = parseSceneDiffs(process.env.SCENE_DIFF_RATIOS);
+// Per-scene chrome overrides (from `--chrome-scene-diff <id|glob>=<ratio>`).
+// Globs are expanded at the CLI layer in scripts/_helpers/scene-diff-args.ts,
+// so by the time we read CHROME_SCENE_DIFF_RATIOS all keys are literal ids.
+const CHROME_SCENE_OVERRIDES = parseSceneDiffs(
+  process.env.CHROME_SCENE_DIFF_RATIOS,
+);
 
 /** Use this for inline maxDiffPixelRatio: env wins, otherwise the spec's value. */
 export function diffRatio(inline = DEFAULT_PIXEL_DIFF_RATIO): number {
@@ -78,9 +84,13 @@ export function sceneDiffRatio(sceneId: string, fallback: number): number {
 /** Chrome screenshot threshold. Separate axis from sceneDiffRatio so a
  *  reviewer can tighten chrome gates while still tolerating shader jitter
  *  in the masked scene layer. Precedence: PIXEL_DIFF_RATIO (global hard
- *  override) → CHROME_DIFF_RATIO (env) → per-scene → fallback. */
+ *  override) → CHROME_SCENE_DIFF_RATIOS (per-scene chrome override, from
+ *  --chrome-scene-diff) → CHROME_DIFF_RATIO (global chrome env) →
+ *  SCENE_DIFF_RATIOS (per-scene masked-layer override, legacy fallback) →
+ *  registry/inline fallback. */
 export function chromeDiffRatio(sceneId: string, fallback: number): number {
   if (Number.isFinite(PARSED)) return PARSED;
+  if (sceneId in CHROME_SCENE_OVERRIDES) return CHROME_SCENE_OVERRIDES[sceneId];
   if (Number.isFinite(CHROME_PARSED)) return CHROME_PARSED;
   if (sceneId in SCENE_OVERRIDES) return SCENE_OVERRIDES[sceneId];
   return fallback;
@@ -94,4 +104,10 @@ export function sceneDiffOverride(sceneId: string): number | undefined {
 /** Exposed for diagnostics — was --chrome-diff / CHROME_DIFF_RATIO set? */
 export function chromeDiffOverride(): number | undefined {
   return Number.isFinite(CHROME_PARSED) ? CHROME_PARSED : undefined;
+}
+
+/** Exposed for diagnostics — was a per-scene --chrome-scene-diff set
+ *  for this id? Lets specs annotate the resolved value in the CI summary. */
+export function chromeSceneDiffOverride(sceneId: string): number | undefined {
+  return CHROME_SCENE_OVERRIDES[sceneId];
 }

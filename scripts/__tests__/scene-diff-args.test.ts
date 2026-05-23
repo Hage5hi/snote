@@ -50,7 +50,7 @@ describe("parseSceneDiffFlags", () => {
     });
     expect(r.overrides).toEqual({ "neon-vapor": 0.05 });
     expect(r.expansions).toHaveLength(1);
-    expect(r.expansions[0]).toEqual({
+    expect(r.expansions[0]).toMatchObject({
       pattern: "neon-*",
       ids: ["neon-vapor"],
       ratio: 0.05,
@@ -150,14 +150,104 @@ describe("parseSceneDiffFlags", () => {
       "neon-vapor": 0.05,
     });
   });
+
+  // ---- Precedence: multiple flags overlapping the same scene id ----
+  //
+  // The rule is "last flag wins" across literal + wildcard combinations.
+  // These tests pin that behaviour so a future refactor of the parser
+  // can't silently change the order in which overrides are folded in.
+  it("last --scene-diff wins when two literal flags target the same id", () => {
+    const r = parseSceneDiffFlags(
+      [
+        "--scene-diff", "neon-vapor=0.03",
+        "--scene-diff", "neon-vapor=0.07",
+      ],
+      { knownSceneIds: KNOWN },
+    );
+    expect(r.overrides["neon-vapor"]).toBe(0.07);
+  });
+
+  it("a later literal --scene-diff overrides an earlier wildcard match", () => {
+    const r = parseSceneDiffFlags(
+      [
+        "--scene-diff", "neon-*=0.05",
+        "--scene-diff", "neon-vapor=0.09",
+      ],
+      { knownSceneIds: KNOWN },
+    );
+    expect(r.overrides["neon-vapor"]).toBe(0.09);
+    // The wildcard expansion is still reported so the CI summary can
+    // show what *would* have applied — but the resolved ratio is the
+    // later, more-specific flag.
+    expect(r.expansions[0]).toMatchObject({
+      pattern: "neon-*",
+      ids: ["neon-vapor"],
+      ratio: 0.05,
+    });
+  });
+
+  it("a later wildcard --scene-diff overrides an earlier literal", () => {
+    const r = parseSceneDiffFlags(
+      [
+        "--scene-diff", "neon-vapor=0.09",
+        "--scene-diff", "neon-*=0.05",
+      ],
+      { knownSceneIds: KNOWN },
+    );
+    expect(r.overrides["neon-vapor"]).toBe(0.05);
+  });
+
+  it("last wildcard wins when two overlapping wildcards target the same ids", () => {
+    const r = parseSceneDiffFlags(
+      [
+        "--scene-diff", "*=0.01",
+        "--scene-diff", "neon-*=0.05",
+      ],
+      { knownSceneIds: KNOWN },
+    );
+    // `neon-vapor` was matched by both; the later `neon-*` wins.
+    expect(r.overrides["neon-vapor"]).toBe(0.05);
+    // Other scenes only matched by the earlier `*` keep its value.
+    expect(r.overrides["obsidian-ink"]).toBe(0.01);
+  });
+
+  // ---- --chrome-scene-diff (per-scene chrome threshold via globs) ----
+  it("parses --chrome-scene-diff into chromeOverrides + env", () => {
+    const r = parseSceneDiffFlags(
+      ["--chrome-scene-diff", "neon-*=0.02"],
+      { knownSceneIds: KNOWN },
+    );
+    expect(r.chromeOverrides).toEqual({ "neon-vapor": 0.02 });
+    expect(r.overrides).toEqual({}); // does NOT cross-pollute the scene axis
+    expect(JSON.parse(r.env.CHROME_SCENE_DIFF_RATIOS!)).toEqual({
+      "neon-vapor": 0.02,
+    });
+    const exp = r.expansions.find((e) => e.pattern === "neon-*");
+    expect(exp?.axis).toBe("chrome");
+  });
+
+  it("--chrome-scene-diff and --scene-diff do not overwrite each other", () => {
+    const r = parseSceneDiffFlags(
+      [
+        "--scene-diff", "neon-vapor=0.09",
+        "--chrome-scene-diff", "neon-vapor=0.02",
+      ],
+      { knownSceneIds: KNOWN },
+    );
+    expect(r.overrides["neon-vapor"]).toBe(0.09);
+    expect(r.chromeOverrides["neon-vapor"]).toBe(0.02);
+  });
 });
 
 describe("SCENE_DIFF_HELP", () => {
   it("documents wildcard quoting", () => {
     expect(SCENE_DIFF_HELP).toContain("--scene-diff");
     expect(SCENE_DIFF_HELP).toContain("--chrome-diff");
+    expect(SCENE_DIFF_HELP).toContain("--chrome-scene-diff");
     expect(SCENE_DIFF_HELP).toContain("--strict-scene-diff");
     // The quoted glob example is the one reviewers most often get wrong.
     expect(SCENE_DIFF_HELP).toMatch(/"neon-\*=0\.05"/);
+    // Precedence rule is stated so reviewers don't have to read the parser.
+    expect(SCENE_DIFF_HELP).toMatch(/LAST flag/);
   });
 });

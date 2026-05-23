@@ -207,6 +207,7 @@ interface SceneDiffExpansionEntry {
   pattern: string;
   ids: string[];
   ratio: number;
+  axis?: "scene" | "chrome";
 }
 
 /** Read the sidecar log written by scripts/_helpers/scene-diff-args.ts so
@@ -224,20 +225,40 @@ function loadExpansions(path: string | undefined): SceneDiffExpansionEntry[] {
   }
 }
 
-function fmtExpansions(expansions: SceneDiffExpansionEntry[]): string {
-  if (expansions.length === 0) return "";
-  const rows = expansions
+/** Render the wildcard expansion table, focused on what reviewers actually
+ *  need to look at. Rules:
+ *    - No expansions OR no failures → render nothing (keeps green runs tidy).
+ *    - Otherwise prefer expansions that touched a failing scene id; fall
+ *      back to all expansions if none of them intersect the failures
+ *      (still useful context: shows the override config that was active). */
+function fmtExpansions(
+  expansions: SceneDiffExpansionEntry[],
+  failures: Failure[],
+): string {
+  if (expansions.length === 0 || failures.length === 0) return "";
+  const failingScenes = new Set(
+    failures.map((f) => f.scene).filter((s): s is string => Boolean(s)),
+  );
+  const relevant = failingScenes.size
+    ? expansions.filter((e) => e.ids.some((id) => failingScenes.has(id)))
+    : [];
+  const shown = relevant.length > 0 ? relevant : expansions;
+  const scope =
+    relevant.length > 0
+      ? `patterns that touched a failing scene (${relevant.length} of ${expansions.length})`
+      : `all active patterns (${expansions.length})`;
+  const rows = shown
     .map(
       (e) =>
-        `| \`${e.pattern}\` | ${e.ratio} | ${e.ids.map((id) => `\`${id}\``).join(", ")} |`,
+        `| \`${e.pattern}\` | ${e.axis ?? "scene"} | ${e.ratio} | ${e.ids.map((id) => `\`${id}\``).join(", ")} |`,
     )
     .join("\n");
   return [
     "",
-    "<details><summary>Scene-diff wildcard expansions</summary>",
+    `<details><summary>Scene-diff wildcard expansions — ${scope}</summary>`,
     "",
-    "| Pattern | Ratio | Expanded scene ids |",
-    "|---|---|---|",
+    "| Pattern | Axis | Ratio | Expanded scene ids |",
+    "|---|---|---|---|",
     rows,
     "",
     "</details>",
@@ -255,8 +276,9 @@ function fmtMd(
   expansions: SceneDiffExpansionEntry[] = [],
 ): string {
   if (failures.length === 0) {
-    const head = "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
-    return head + fmtExpansions(expansions);
+    // Green run: skip the expansion table entirely — reviewers don't need
+    // to audit overrides on a passing build.
+    return "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
   }
   const reportUrl = artifactUrl(runUrl, reportArtifactId);
   const debugUrl = artifactUrl(runUrl, debugArtifactId);
@@ -351,7 +373,7 @@ function fmtMd(
   lines.push("</details>");
   // Append wildcard expansion table (if any) so reviewers can see exactly
   // which scenes a `neon-*=0.05` flag actually applied to.
-  return lines.join("\n") + "\n" + fmtExpansions(expansions);
+  return lines.join("\n") + "\n" + fmtExpansions(expansions, failures);
 }
 
 
@@ -389,7 +411,7 @@ const expansions = loadExpansions(expansionsPath);
 let md: string;
 let failures: Failure[] = [];
 if (!existsSync(file)) {
-  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n${fmtExpansions(expansions)}`;
+  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n`;
 } else {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));

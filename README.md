@@ -119,6 +119,49 @@ git commit --no-verify -m "wip: …"
 CI will still run the same check on the PR, so don't ship code that
 relies on bypassing.
 
+## Visual regression CLI — `--scene-diff` / `--chrome-diff`
+
+The Playwright scene specs accept two independent pixel-diff threshold
+axes, plumbed through the `e2e:*:changed` wrapper scripts and into the
+`SCENE_DIFF_RATIOS`, `CHROME_DIFF_RATIO`, and `CHROME_SCENE_DIFF_RATIOS`
+env vars that `e2e/helpers/pixel-diff.ts` reads.
+
+| Flag | What it controls | Repeatable | Glob? |
+|---|---|---|---|
+| `--scene-diff <id\|glob>=<ratio>` | Masked scene layer + hit-test specs | Yes | Yes |
+| `--chrome-diff <ratio>` | Chrome screenshot (Header / slug input / Recents), global | No | No |
+| `--chrome-scene-diff <id\|glob>=<ratio>` | Chrome screenshot, per scene | Yes | Yes |
+| `--strict-scene-diff` | Exit non-zero on unknown id / empty glob | — | — |
+
+Always **quote globs** so the shell doesn't try to expand them against
+your working directory:
+
+```sh
+# Loosen one scene
+bun run test:e2e:update:changed --scene-diff neon-vapor=0.05
+
+# Tighten chrome globally while keeping shader scenes loose
+bun run test:e2e:changed --chrome-diff 0.015 --scene-diff "neon-*=0.05"
+
+# Tune a whole family + override one member tighter
+bun run test:e2e:changed \
+  --scene-diff "ethereal-*=0.04" \
+  --scene-diff "obsidian-ink=0.012"
+
+# Per-scene chrome thresholds via glob
+bun run test:e2e:changed --chrome-scene-diff "neon-*=0.02"
+
+# Fail loudly on a typo during a baseline update
+bun run test:e2e:update:changed --strict-scene-diff --scene-diff neon-vapr=0.05
+```
+
+Precedence when multiple flags overlap the same scene id is **last
+flag wins** — a later literal overrides an earlier wildcard match and
+vice versa. The CI summary renders a `Scene-diff wildcard expansions`
+table only when failures are present, focused on patterns that touched
+a failing scene.
+
 ## License
 
 Private.
+
