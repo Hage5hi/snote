@@ -276,8 +276,9 @@ function fmtMd(
   expansions: SceneDiffExpansionEntry[] = [],
 ): string {
   if (failures.length === 0) {
-    const head = "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
-    return head + fmtExpansions(expansions);
+    // Green run: skip the expansion table entirely — reviewers don't need
+    // to audit overrides on a passing build.
+    return "### Playwright E2E — all green\n\nNo failing tests in this run.\n";
   }
   const reportUrl = artifactUrl(runUrl, reportArtifactId);
   const debugUrl = artifactUrl(runUrl, debugArtifactId);
@@ -372,7 +373,7 @@ function fmtMd(
   lines.push("</details>");
   // Append wildcard expansion table (if any) so reviewers can see exactly
   // which scenes a `neon-*=0.05` flag actually applied to.
-  return lines.join("\n") + "\n" + fmtExpansions(expansions);
+  return lines.join("\n") + "\n" + fmtExpansions(expansions, failures);
 }
 
 
@@ -410,7 +411,7 @@ const expansions = loadExpansions(expansionsPath);
 let md: string;
 let failures: Failure[] = [];
 if (!existsSync(file)) {
-  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n${fmtExpansions(expansions)}`;
+  md = `### Playwright E2E — no JSON report\n\n\`${file}\` not found. Likely the run was aborted before the JSON reporter wrote its output.\n`;
 } else {
   try {
     const report: Report = JSON.parse(readFileSync(file, "utf8"));
