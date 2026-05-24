@@ -4,6 +4,7 @@ import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SceneToggle } from "@/components/SceneToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { getPinned, getRecents, removeRecent, togglePin, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
@@ -202,6 +203,7 @@ export default function Home() {
           <span className="font-semibold tracking-tight">Syrin Notes</span>
         </div>
         <div className="flex items-center gap-1">
+          <SceneToggle />
           <LanguageToggle />
           <ThemeToggle />
         </div>

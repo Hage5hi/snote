@@ -1,10 +1,11 @@
-// GLSL fragment shader — "Cyber Linh Khí".
+// GLSL fragment shader — "Cyber Linh Khí" v2.
 //
-// Design intent: a DEEP near-black night with rare, soft jade/cyan fog
-// drifting through a small portion of the canvas. Large slow blobs.
-// The shader is only ever shown in dark mode (the theme switcher forces
-// next-themes to "dark" when this scene is active), so we drop the light
-// branch entirely.
+// Deep near-black night with slow jade/cyan linh-khí currents. Compared to v1
+// this version uses two-pass domain warping to bend fog into long flowing
+// currents (vs. round blobs), adds a faint chromatic-shift highlight on the
+// brightest peaks, and a static dither grain to kill OLED banding.
+//
+// Dark-mode only; the registry pins next-themes to "dark" when active.
 export const CYBER_LINH_KHI_FRAG = /* glsl */ `
 precision mediump float;
 
@@ -42,39 +43,71 @@ float snoise(vec2 v) {
   return 130.0 * dot(m, g);
 }
 
-// Single big-octave + gentle warp — large, slow shapes.
-float bigFog(vec2 p, float t) {
-  vec2 warp = vec2(snoise(p * 0.4 + t * 0.15),
-                   snoise(p * 0.4 - t * 0.12)) * 0.35;
-  return snoise(p * 0.55 + warp);
+// Two-pass domain warp produces long flowing currents instead of round blobs.
+float currentFog(vec2 p, float t) {
+  vec2 w1 = vec2(snoise(p * 0.35 + t * 0.12),
+                 snoise(p * 0.35 - t * 0.10)) * 0.55;
+  vec2 w2 = vec2(snoise((p + w1) * 0.55 + t * 0.18),
+                 snoise((p + w1) * 0.55 - t * 0.14)) * 0.35;
+  return snoise((p + w2) * 0.7 + vec2(0.0, t * 0.05));
+}
+
+// Cheap hash for static dither — kills banding on OLED without rendering grain
+// frame-by-frame (it stays put with the pixel position).
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
 }
 
 void main() {
   vec2 uv = gl_FragCoord.xy / u_resolution.xy;
   vec2 p  = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / min(u_resolution.x, u_resolution.y);
 
-  float t = u_time * 0.45; // even slower
+  float t = u_time * 0.40;
+  float n = currentFog(p, t);
 
-  float n = bigFog(p, t);
+  // Tight window — jade only on the brightest 18% of pixels.
+  float fog = smoothstep(0.42, 0.95, n);
 
-  // Tight smoothstep so jade only shows on the highest noise peaks
-  // (~15–20% of pixels). Everything else stays near-black.
-  float fog = smoothstep(0.45, 0.95, n);
-
-  // Palette: deep midnight base, faint jade highlight.
-  vec3 base = vec3(0.006, 0.012, 0.018); // ~#01030a
+  // Palette: deep midnight base, jade highlight + faint cyan rim.
+  vec3 base = vec3(0.005, 0.011, 0.018); // ~#01030a
   vec3 jade = vec3(0.078, 0.722, 0.651); // #14b8a6
+  vec3 cyan = vec3(0.376, 0.886, 0.831); // #5eead4
 
-  // Cap jade intensity hard so it never overwhelms.
-  vec3 col = base + jade * (fog * 0.35);
+  // Sample neighbouring noise to fake a 1px chromatic split on the peaks —
+  // gives the brightest fog a subtle jade->cyan gradient like wet stone.
+  float nC = currentFog(p + vec2(0.004, 0.0), t);
+  float fogC = smoothstep(0.42, 0.95, nC);
 
-  // Subtle bottom-edge glow only.
+  vec3 col = base
+    + jade * (fog  * 0.32)
+    + cyan * (fogC * 0.18);
+
+  // Slow drifting "ember motes" — six tiny pulses that float across the frame.
+  // Position seeded by index so they keep their identity across frames.
+  for (int i = 0; i < 6; i++) {
+    float fi = float(i);
+    vec2 c = vec2(
+      sin(t * 0.31 + fi * 1.7) * 0.55,
+      cos(t * 0.27 + fi * 2.3) * 0.32
+    );
+    float d = length(p - c);
+    float pulse = 0.5 + 0.5 * sin(t * 0.9 + fi * 1.3);
+    col += jade * (exp(-d * 95.0) * (0.18 + 0.22 * pulse));
+  }
+
+  // Subtle bottom glow only.
   float glow = pow(max(0.0, 0.4 - uv.y), 2.0) * 0.18;
   col += jade * glow;
 
-  // Strong vignette keeps center crisp + edges darker.
-  float vig = smoothstep(1.15, 0.30, length(p));
-  col *= mix(0.45, 1.0, vig);
+  // Vignette keeps centre crisp.
+  float vig = smoothstep(1.20, 0.30, length(p));
+  col *= mix(0.42, 1.0, vig);
+
+  // Static dither grain — 1.5/255 amplitude is enough to break colour bands
+  // on OLED without being perceptible as noise.
+  col += (hash21(gl_FragCoord.xy) - 0.5) * 0.006;
 
   gl_FragColor = vec4(col, 1.0);
 }

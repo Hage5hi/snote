@@ -1,166 +1,97 @@
+# Kế hoạch: Tách nút Scene + nâng cấp 6 theme
 
-# Plan — Syrin Notes Bling & Theme Selector
+## Phần A — Tách UI: Scene picker thành nút riêng
 
-Mục tiêu: Dropdown "Theme" tinh tế trên Home, kiến trúc Scene Registry mở rộng cho cả 6 theme trong `theme.txt`, build sẵn duy nhất **Cyber Linh Khí** (OGL + Simplex Noise, cyan/jade) — chỉ load shader khi user chủ động chọn. Polish Home an toàn, không vượt bundle gate, không chạm NotePage / Editor / Preview / SW cache.
+**Thay đổi:**
+- `ThemeToggle` quay về đúng vai trò: chỉ Sáng / Tối / Theo hệ thống (3 mục, icon Sun/Moon hiện tại). Bỏ toàn bộ logic scene khỏi component này.
+- Tạo `SceneToggle` mới (`src/components/SceneToggle.tsx`): nút icon riêng (icon `Sparkles` từ lucide), dropdown chỉ hiển thị 6 scene + mục "Mặc định" (none). Mỗi mục giữ nguyên swatch gradient + label + mô tả như hiện tại. Khi chọn scene có `forceColorScheme`, vẫn ép next-themes theo (giữ nguyên hành vi).
+- **Chỉ hiển thị ở Home** (`/`): `SceneToggle` ẩn ở các route khác. Trong `Topbar.tsx` (editor) không render `SceneToggle`.
+- Trong `src/pages/Home.tsx` đặt thứ tự nút (phải→trái): `ThemeToggle` (sáng/tối/hệ thống) → `LanguageToggle` → **`SceneToggle` (mới, đứng TRƯỚC LanguageToggle theo yêu cầu)**.
+  - Đúng yêu cầu: "gom 6 theme ra 1 nút trước hiện trước nút Chọn ngôn ngữ".
+- Thêm key i18n: `scene.toggle.aria`, `scene.toggle.label`, `scene.section.label` (vi/en).
+- Cập nhật test `ThemeToggle.i18n.test.tsx` (giờ chỉ assert 3 mục color) và thêm test mới `SceneToggle.i18n.test.tsx`.
 
-## 1. Kiến trúc hai trục theme
+## Phần B — Nâng cấp 6 theme
 
-Tách bạch 2 axes — quan trọng để 6 scenes sau này tương thích cả light & dark mà không tạo combinatorial explosion:
+Triết lý chung: giữ nguyên contract `SceneProps`, FPS cap, pause-on-hidden, fallback WebGL — chỉ làm đẹp hơn về thị giác. Mỗi scene có một "wow moment" rõ rệt và bảng màu cô đọng hơn. Tất cả vẫn tôn trọng `prefers-reduced-motion` và `pixelDiffRatio` đã set.
 
-```text
-Color scheme axis  (next-themes)     →  light | dark | system
-Scene axis         (mới, tự quản)    →  none | cyber-linh-khi | ...
-```
+### 1. Cyber Linh Khí — "Khí jade chảy"
+- Thêm domain warping 2 lớp (fBm warp warp) tạo dải khí cuộn dài thay vì blob tròn.
+- Thêm "ember motes": 6–8 đốm jade rất nhỏ trôi chậm (sin/cos drift, alpha pulse) phủ lên fog → tạo cảm giác linh khí có hạt.
+- Thêm subtle chromatic shift: tách kênh G/B 0.5px ở vùng peak → ánh ngọc bích hơn.
+- Vignette mềm hơn (cubic ease), thêm grain tĩnh 8% để khử banding trên OLED.
 
-- `next-themes` giữ nguyên cho light/dark (đã wired sẵn cả app, Editor/Preview dùng).
-- Scene axis lưu ở `localStorage["home.scene"]`, default = `"none"`. Chỉ ảnh hưởng route `/` (Home) — các route khác bỏ qua hoàn toàn.
+### 2. Ethereal Aurora — "Dải pastel mơ màng"
+- Đổi sang **curl-noise ribbons** (3 dải): mỗi dải là một hàm sin(p.x*freq + fbm(p,t)) với độ rộng feather. Pha lệch nhau → chuyển động interweaving thật.
+- Bảng màu lock: indigo deep #1a0a3a → lavender #b794f4 → rose mist #fbcfe8 → mint glow #a7f3d0. Mix theo độ cao dải.
+- Thêm "star dust": noise threshold 0.985 → vài chục điểm sáng tĩnh nhấp nháy chậm.
+- Bottom glow xanh teal nhẹ tạo cảm giác chân trời cực quang.
 
-## 2. Scene Registry (extensibility hook)
+### 3. Obsidian Ink — "Mực loang trên giấy"
+- Giấy: thêm **paper grain texture** procedural (hash noise alpha 4%) + 1 lớp fiber lines mảnh chéo.
+- Mực: chuyển từ radial gradient tròn → **shape có cạnh răng cưa** dùng turbulence offset trên đường tròn (perlin-perturbed circle) → dáng loang thật.
+- Thêm **wet edge**: viền tối hơn 8% ở rìa blot (dark ring) như mực ướt vừa khô.
+- Spawn rare "drip": 1/4 blot có 1 vệt dài 30–80px xuống dưới (Bezier mảnh dần) → wow moment.
+- Bảng màu giấy ấm hơn: base #f4f0e6, sumi ink #1a1410.
 
-File mới: `src/components/home/scenes/registry.ts`
+### 4. Digital Constellation — "Mạng sao số"
+- Tăng lên 110 điểm, thêm **3 lớp parallax** thật (z-bands gần/giữa/xa) với tốc độ khác nhau.
+- Links: chỉ vẽ trong cùng z-band hoặc band kề → giảm noise, hình thành cụm rõ.
+- Thêm **pulse waves**: mỗi 7s, một điểm random phát sóng tròn lan ra, các link trong bán kính sáng lên rồi tắt dần. (1 wave active tại một thời điểm.)
+- Bảng màu: base gradient #06091a → #0c1530, sao cyan-white #dbe9ff, accent link #6ea8ff khi pulse.
+- Subtle starfield tĩnh background (50 dot 1px alpha rất thấp) cho cảm giác sâu.
 
-```ts
-export interface SceneDef {
-  id: string;                              // "cyber-linh-khi"
-  label: string;                           // i18n key hoặc literal
-  swatch: [string, string];                // 2 hex cho preview chip trong dropdown
-  enabled: boolean;                        // false = hiện "Coming soon", disabled
-  load?: () => Promise<{ default: React.ComponentType<SceneProps> }>;
-}
-export const SCENE_REGISTRY: SceneDef[] = [
-  { id: "none",            label: "scene.none",            swatch: [...], enabled: true },
-  { id: "cyber-linh-khi",  label: "scene.cyber_linh_khi",  swatch: ["#0a2a26","#5eead4"], enabled: true,
-    load: () => import("./CyberLinhKhi") },
-  { id: "ethereal-aurora",  ..., enabled: false },   // 5 entries locked, 1-line add later
-  { id: "digital-constellation", ..., enabled: false },
-  { id: "obsidian-ink",     ..., enabled: false },
-  { id: "neon-vapor",       ..., enabled: false },
-  { id: "terminal-boot",    ..., enabled: false },
-];
-```
+### 5. Neon Vapor — "Phố Neon"
+- Phối lại palette vaporwave thật sự: deep purple #1a0533 → hot magenta #ff2e93 → cyan #00d9ff → soft pink #ffb3d9.
+- Thay scanlines hiện tại (sin gl_FragCoord.y) bằng **CRT scanlines + chromatic aberration** nhẹ ở mép.
+- Thêm **horizon sun**: một bán nguyệt gradient hot pink→cyan ở y=0.42 với các đường ngang cắt (Tron-grid feel).
+- Thêm **grid floor** dưới horizon: perspective lines hội tụ về tâm, fade theo khoảng cách (procedural, không texture).
+- Bloom giả lập bằng pow(col, 1.1) + add lại 0.15 highlights.
 
-Thêm theme mới về sau = (1) đổi `enabled: true` (2) thêm `load: () => import("./X")` (3) tạo file scene tương ứng. Không touch ThemeToggle, không touch Home, không touch Vite config.
+### 6. Terminal Boot — "Quét CRT phosphor"
+- Glyph set: thêm chữ Hán/Hangul + Latin nhỏ → đa dạng hơn katakana.
+- **Head glow**: ký tự đầu mỗi cột không chỉ trắng-xanh mà có halo (vẽ 2 lần, lần 2 alpha 0.3, blur giả bằng shadowBlur 6).
+- **Boot text overlay**: mờ ở giữa canvas, cuộn từng dòng "BOOT OK / MEM 64K / LOAD KERNEL..." (~12 dòng, fade out sau 8s khi mount, không lặp) — wow moment khởi động.
+- Thêm **scanline overlay** ngang full-canvas (alpha 4%) + **vignette CRT** cong nhẹ ở 4 góc.
+- Đôi lúc (1/60 frame) flicker toàn màn hình bằng overlay alpha 6% — hồn vía CRT cũ.
+- Tăng FPS cap lên 24fps (mượt hơn) nhưng vẫn lightweight.
 
-Hook: `src/hooks/use-scene-theme.ts` — `useSceneTheme(): { scene, setScene, def }`, đọc/ghi localStorage, broadcast qua `storage` event (đồng bộ multi-tab giống `pinned` đã có).
+## Phần C — Tài sản & registry
 
-## 3. ThemeToggle → DropdownMenu tinh tế
+- Cập nhật swatch trong `SCENE_REGISTRY` cho khớp palette mới (giúp preview chip trong dropdown sát thật hơn):
+  - cyber-linh-khi: `#01030a` → `#5eead4`
+  - ethereal-aurora: `#1a0a3a` → `#fbcfe8`
+  - obsidian-ink: `#f4f0e6` → `#1a1410`
+  - digital-constellation: `#06091a` → `#dbe9ff`
+  - neon-vapor: `#1a0533` → `#00d9ff`
+  - terminal-boot: `#020402` → `#beffc8`
+- `pixelDiffRatio` / `chromeDiffRatio`: giữ nguyên giá trị hiện tại; nếu visual regression test fail sẽ điều chỉnh +0.005 từng scene (chỉ scene fail).
 
-File: `src/components/ThemeToggle.tsx` (refactor surgical, giữ vị trí header).
+## Phần D — Kiểm chứng
 
-UX:
-```text
-[ ◐ ]  ← trigger: icon hiện tại + nhỏ caret xuống
-   │
-   ├── COLOR
-   │   ◯ Light    [Sun icon]
-   │   ● Dark     [Moon icon]
-   │   ◯ System   [Monitor icon]
-   ├── ─────────────
-   ├── BACKGROUND SCENE  (chỉ render khi route = "/")
-   │   ● None — minimal
-   │   ◯ Cyber Linh Khí   [▮▮ cyan swatch]
-   │   ◯ Ethereal Aurora  [▮▮]  Coming soon (disabled)
-   │   ◯ ...
-```
+1. Build sạch (TS, ESLint).
+2. Chạy `e2e/home-scenes-visual.spec.ts`; nếu fail do nâng cấp thị giác → cập nhật baseline cho scene tương ứng.
+3. Kiểm thủ công 6 scene trên `/`: chuyển qua lại, không flicker, fade-in mượt, không leak WebGL context.
+4. Kiểm `SceneToggle` chỉ hiện ở `/`, không hiện ở `/note/:slug`.
+5. Kiểm `ThemeToggle` (icon Sun/Moon) chỉ còn 3 mục.
 
-Implementation: dùng `@radix-ui/react-dropdown-menu` đã có sẵn trong deps + `DropdownMenuRadioGroup` cho 2 nhóm. Không thêm dep. Render Scene group có điều kiện `useLocation().pathname === "/"` để dropdown ngắn gọn ở các route khác.
+## Chi tiết kỹ thuật
 
-i18n: thêm keys vào file locale (`theme.color.*`, `scene.*`, `scene.coming_soon`).
+**File mới:**
+- `src/components/SceneToggle.tsx`
+- `src/components/__tests__/SceneToggle.i18n.test.tsx`
 
-## 4. SceneHost (lazy mount, guards)
+**File sửa:**
+- `src/components/ThemeToggle.tsx` (gỡ scene logic, còn 3 mục)
+- `src/pages/Home.tsx` (thêm `<SceneToggle />` trước `<LanguageToggle />`)
+- `src/components/__tests__/ThemeToggle.i18n.test.tsx`
+- `src/i18n/index.ts` (3 key mới × vi/en)
+- `src/components/home/scenes/cyber-linh-khi.frag.ts`
+- `src/components/home/scenes/ethereal-aurora.frag.ts`
+- `src/components/home/scenes/neon-vapor.frag.ts`
+- `src/components/home/scenes/ObsidianInk.tsx`
+- `src/components/home/scenes/DigitalConstellation.tsx`
+- `src/components/home/scenes/TerminalBoot.tsx`
+- `src/components/home/scenes/registry.ts` (cập nhật swatch)
 
-File: `src/components/home/SceneHost.tsx`
-
-- Đọc `scene` từ `useSceneTheme()`. Nếu `"none"` → return null (zero cost).
-- Lookup `SCENE_REGISTRY`, gọi `def.load()` qua `React.lazy` → render `<Suspense fallback={null}>`.
-- Guards (đúng brief section 3.2): chạy trước cả `load()`:
-  - `prefers-reduced-motion: reduce` → revert scene về `"none"` + toast nhẹ.
-  - `document.documentElement.classList.contains("eink")` → revert.
-  - `navigator.hardwareConcurrency < 4` hoặc `saveData` / `slow-2g` → revert, nhớ choice để không re-prompt.
-- Pause render loop khi `visibilitychange` → hidden (truyền vào scene component).
-- Wrapper: `pointer-events-none absolute inset-0 -z-10`.
-
-## 5. Cyber Linh Khí scene (file scene đầu tiên)
-
-File: `src/components/home/scenes/CyberLinhKhi.tsx` + `cyber-linh-khi.frag.ts` (GLSL string).
-
-- Lib: **OGL** (`ogl@^1.0.11`, ~20KB gz) — thêm 1 dep duy nhất, đúng brief.
-- Setup: full-viewport WebGL quad, fragment shader Simplex Noise 2D (snoise function inline trong GLSL).
-- Uniforms: `u_time` (multiplier 0.0008, cực chậm), `u_resolution`, `u_dpr` (cap 1.5), `u_isDark` (đổi base color giữa light/dark).
-- Color palette: jade `#14b8a6` → cyan `#5eead4` → rêu tối `#03110f`. Light theme: tăng luminance base + giảm opacity overlay để text vẫn AAA-readable.
-- rAF loop với throttle 30fps (`if (now - last < 33) skip`), dừng khi tab hidden, dispose context khi unmount.
-- WebGL feature detect: `if (!gl) → return null, log warn` (Hero3D vẫn an toàn).
-- Edge case: WebGL context lost → listen `webglcontextlost`, dispose, revert scene về `"none"`.
-
-## 6. Vite chunking + Bundle gate
-
-`vite.config.ts` — thêm vào `manualChunks` và `resolveDependencies` (sau các rule hiện có):
-
-```ts
-// Mỗi scene → chunk riêng, không lên modulepreload
-if (id.includes("/src/components/home/scenes/CyberLinhKhi")) return "scene-cyber-linh-khi";
-if (id.includes("/ogl/") || id.includes("node_modules/ogl")) return "ogl-vendor";
-
-// resolveDependencies filter (sửa regex hiện có):
-!/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley|scene-|ogl-vendor)-/.test(dep)
-```
-
-`scripts/check-bundle-size.ts` — thêm:
-
-```ts
-{ prefix: "ogl-vendor-",            label: "ogl-vendor",            maxGz: 22_000 },
-{ prefix: "scene-cyber-linh-khi-",  label: "scene-cyber-linh-khi",  maxGz: 8_000  },
-// FORBIDDEN_IN_PRELOAD += ["ogl-vendor", "scene-"]
-```
-
-SceneHost + Registry + ThemeToggle dropdown phải nằm trong entry — tổng ước ~2-3 KB gz tăng thêm (Radix DropdownMenu đã có sẵn, chỉ thêm code orchestration nhỏ). Vẫn dưới ngưỡng 75 KB entry và 250 KB initial total.
-
-## 7. Visual polish Home (an toàn, no-FPS-cost)
-
-Chỉ CSS / Tailwind, không thêm JS animation lib:
-
-- **Hero typography**: H1 hiện tại `text-3xl md:text-4xl` → thêm `bg-gradient-to-br from-foreground to-foreground/60 bg-clip-text text-transparent` (text gradient tinh tế, hoạt động cả 2 mode). Tracking `-tracking-tight`.
-- **Entrance animation**: `motion-safe:animate-fade-in` cho H1 + form + recents (stagger bằng `animation-delay` inline). Dùng keyframe `fade-in` đã khai báo sẵn trong `tailwind.config.ts`, 0 extra CSS.
-- **Slug input**: thêm soft glow on focus — `focus-within:shadow-[0_0_0_3px_hsl(var(--primary)/0.12)]` thay vì ring cứng.
-- **Pinned/Recent items**: nâng hover transition hiện có (đã có `motion-safe:hover:-translate-y-px`) thêm `hover:shadow-[0_2px_8px_-2px_hsl(var(--primary)/0.15)]`.
-- **Empty state**: nâng nhẹ icon container — gradient ring `ring-1 ring-border bg-gradient-to-b from-background to-muted/30`.
-
-Tất cả gate qua `motion-safe:` để tôn trọng reduced-motion. Không animation chạy liên tục → 0 FPS cost.
-
-## 8. Files & changes
-
-```text
-NEW    src/hooks/use-scene-theme.ts
-NEW    src/components/home/SceneHost.tsx
-NEW    src/components/home/scenes/registry.ts
-NEW    src/components/home/scenes/CyberLinhKhi.tsx
-NEW    src/components/home/scenes/cyber-linh-khi.frag.ts
-EDIT   src/components/ThemeToggle.tsx            (button → DropdownMenu)
-EDIT   src/pages/Home.tsx                        (mount <SceneHost/>, polish classes)
-EDIT   src/i18n/<locale files>                   (thêm theme.* + scene.* keys, EN + VI)
-EDIT   vite.config.ts                            (manualChunks + resolveDependencies)
-EDIT   scripts/check-bundle-size.ts              (rules + FORBIDDEN_IN_PRELOAD)
-EDIT   package.json                              (add "ogl": "^1.0.11")
-EDIT   docs/architecture.md                      (1 section: Scene Registry)
-NEW    src/components/home/__tests__/SceneHost.test.tsx  (smoke: guards revert, none → null)
-```
-
-KHÔNG chạm: `NotePage*`, `SplitView`, `RawView`, `SharePage`, `Editor.tsx`, `Preview.tsx`, `useTheme` callers trong editor, SW config, `next-themes` provider.
-
-## 9. Verification gate
-
-1. `bun run build:check` PASS — `ogl-vendor` và `scene-cyber-linh-khi` KHÔNG có trong modulepreload, total ≤ 250KB.
-2. Mở `/` không chọn theme → DevTools Network: KHÔNG thấy `scene-cyber-linh-khi-*.js` hay `ogl-vendor-*.js`.
-3. Chọn "Cyber Linh Khí" trong dropdown → 2 chunks load, shader render, Performance tab: rAF ~30fps, không long task >50ms.
-4. Toggle light ↔ dark khi scene đang chạy → màu shader update đúng (`u_isDark`).
-5. Reload `/scratch` (NotePage) → KHÔNG load scene chunk.
-6. DevTools → Rendering → emulate `prefers-reduced-motion: reduce` → chọn scene → revert về None + scene chunk vẫn không load.
-7. Tab inactive → rAF pause (CPU profile flat). Tab visible → resume.
-8. Unit test smoke PASS.
-
-## 10. Open questions (sẽ hỏi nếu chạm tới)
-
-- Label tiếng Việt vs tiếng Anh cho scene names trong dropdown? **Default**: i18n keys, EN + VI cùng "Cyber Linh Khí" (tên riêng giữ nguyên VN).
-- Chính sách khi user đã chọn scene rồi vào `prefers-reduced-motion`? **Default**: revert silent, không toast (tránh annoy).
-- 5 theme còn lại hiện disabled — show "Coming soon" badge hay ẩn? **Default**: show disabled với badge — để bạn thấy roadmap.
-
+**Không đụng:** `SceneHost.tsx`, `use-scene-theme.ts`, `SceneProps` contract, vite manual chunks, CI scripts.
