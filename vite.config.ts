@@ -55,8 +55,17 @@ export default defineConfig(({ mode }) => ({
     VitePWA({
       // Keep the existing public/manifest.webmanifest as-is.
       manifest: false,
-      registerType: "autoUpdate",
-      injectRegister: "auto",
+      // Switched from "autoUpdate" → "prompt" so we control the activation
+      // moment from the app shell: src/lib/pwa-update.ts shows a toast with an
+      // explicit "Update" button and only swaps to the new SW after the user
+      // accepts. Avoids the "silent stale tab" trap where autoUpdate claims
+      // the new SW but the page in memory still runs old JS until the user
+      // happens to refresh — which previously forced users to clear cookies /
+      // site-data to actually get the new version, losing recents + pins.
+      registerType: "prompt",
+      // We register the SW ourselves in src/main.tsx so we can wire onNeedRefresh
+      // / onOfflineReady into the i18n + toast layer.
+      injectRegister: false,
       // SW only activates in production builds — preview iframes stay clean.
       devOptions: { enabled: false },
       workbox: {
@@ -71,7 +80,14 @@ export default defineConfig(({ mode }) => ({
         ],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // Bumped from 5 MB → 8 MB so a large vendor chunk (e.g. a future
+        // mermaid/katex bump) can’t silently break precache install and
+        // leave the new SW stuck in "redundant" state, which is one of the
+        // root causes of users marooned on an old build.
+        maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
+        // Drop old Workbox precache entries on activate so disk usage stays
+        // bounded and stale assets can’t be served by accident.
+        cleanupOutdatedCaches: true,
       },
     }),
   ].filter(Boolean),

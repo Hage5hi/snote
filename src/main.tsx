@@ -9,6 +9,12 @@ createRoot(document.getElementById("root")!).render(
   </HelmetProvider>,
 );
 
+// Register the PWA service worker and show a persistent toast when a new
+// version is available. Loaded lazily so the SW + workbox-window glue stay
+// out of the eager entry chunk (keeps the bundle-size gate happy and
+// doesn't block first paint). See src/lib/pwa-update.ts for the rationale.
+void import("./lib/pwa-update").then((m) => m.registerAppUpdater());
+
 // Web Vitals — log to console for DevTools observation in any environment.
 import("web-vitals").then(({ onINP, onLCP, onCLS }) => {
   const log = (name: string) => (m: { value: number }) =>

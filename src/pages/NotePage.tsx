@@ -21,6 +21,7 @@ import { maybeSaveSnapshot, recordOnSuddenDelete } from "@/lib/snapshots";
 import { useZenMode } from "@/hooks/use-zen-mode";
 import { useTypewriterMode } from "@/hooks/use-typewriter-mode";
 import { usePreviewVisible } from "@/hooks/use-preview-visible";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useScrollSyncEnabled } from "@/hooks/use-scroll-sync-enabled";
 import { useScrollSync } from "@/hooks/use-scroll-sync";
 import { useFocusLine } from "@/hooks/use-focus-line";
@@ -59,10 +60,20 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const validSlug = SLUG_RE.test(slug);
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
   const { visible: showPreview, setVisible: setShowPreview } = usePreviewVisible();
+  // On narrow viewports (< 900 px) the editor + preview are NOT shown
+  // side-by-side. Instead, the preview toggle swaps the visible pane between
+  // editor and rendered markdown. `showPreview` keeps the same semantic
+  // meaning ("user wants to see the preview") and is the only piece of state
+  // we need — layout logic below derives both modes from it.
+  const narrow = useNarrowViewport();
+  const showEditorPane = !narrow || !showPreview;
+  const showPreviewPane = showPreview;
   const { enabled: scrollSync, toggle: toggleScrollSync } = useScrollSyncEnabled();
   const [editorScrollEl, setEditorScrollEl] = useState<HTMLElement | null>(null);
   const [previewScrollEl, setPreviewScrollEl] = useState<HTMLElement | null>(null);
-  useScrollSync(editorScrollEl, previewScrollEl, scrollSync && showPreview);
+  // Scroll sync only makes sense when BOTH panes are visible at the same
+  // time. On narrow viewports only one pane is rendered, so disable.
+  useScrollSync(editorScrollEl, previewScrollEl, scrollSync && showPreview && !narrow);
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { goal } = useWordGoal(slug);
@@ -337,11 +348,19 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           onTogglePagination={togglePagination}
           compact
         />
-        <div className="flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0">
-          <div className="flex-1 min-h-0 min-w-0">
-            <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" vim={vim} />
-          </div>
-          {showPreview && (
+        <div
+          className={
+            narrow
+              ? "flex flex-1 min-h-0 flex-col"
+              : "flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0"
+          }
+        >
+          {showEditorPane && (
+            <div className="flex-1 min-h-0 min-w-0">
+              <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" vim={vim} />
+            </div>
+          )}
+          {showPreviewPane && (
             <div className="flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30">
               <Preview doc={doc} />
             </div>
@@ -396,18 +415,26 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         onTogglePagination={togglePagination}
       />
 
-      <main className="relative flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0">
-        <div className={showPreview ? "flex-1 min-h-0 min-w-0" : "flex-1 min-w-0"}>
-          <Editor
-            ref={editorRef}
-            doc={doc}
-            awareness={provider.awareness}
-            className="h-full overflow-auto"
-            onScrollEl={setEditorScrollEl}
-            vim={vim}
-          />
-        </div>
-        {showPreview && (
+      <main
+        className={
+          narrow
+            ? "relative flex flex-1 min-h-0 flex-col"
+            : "relative flex flex-1 min-h-0 flex-col divide-y divide-border md:flex-row md:divide-x md:divide-y-0"
+        }
+      >
+        {showEditorPane && (
+          <div className={showPreviewPane && !narrow ? "flex-1 min-h-0 min-w-0" : "flex-1 min-w-0"}>
+            <Editor
+              ref={editorRef}
+              doc={doc}
+              awareness={provider.awareness}
+              className="h-full overflow-auto"
+              onScrollEl={setEditorScrollEl}
+              vim={vim}
+            />
+          </div>
+        )}
+        {showPreviewPane && (
           <div
             ref={setPreviewScrollEl}
             className={`flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}
