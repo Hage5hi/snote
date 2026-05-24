@@ -1,17 +1,17 @@
-// GLSL fragment shader — "Ethereal Aurora".
+// GLSL fragment shader — "Ethereal Aurora" v2.
 //
-// Three drifting pastel light bands stacked vertically, warped by curl-ish
-// simplex noise. Soft additive blend so they never clip into pure white;
-// a generous vignette pulls the eye toward the centered hero copy.
+// Three interweaving aurora ribbons with locked pastel palette
+// (indigo/lavender/rose-mist/mint glow), a sparse static "star dust" layer
+// for depth, and a faint teal horizon glow so the bottom edge feels like a
+// real polar sky rather than a flat gradient.
 //
-// Tuned for dark mode only — ThemeToggle pins next-themes to "dark" when this
-// scene is active. The `u_isDark` uniform is kept for API parity.
+// Dark-mode only; the registry pins next-themes to "dark" when active.
 export const ETHEREAL_AURORA_FRAG = /* glsl */ `
 precision mediump float;
 
 uniform float u_time;
 uniform vec2  u_resolution;
-uniform float u_isDark;
+uniform float u_isDark; // parity only
 
 // --- Simplex noise (Ashima / Stefan Gustavson, public domain) ---
 vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -43,11 +43,21 @@ float snoise(vec2 v) {
   return 130.0 * dot(m, g);
 }
 
-// Soft horizontal aurora ribbon centered on yc, thickness s.
-float ribbon(vec2 p, float yc, float s, float t, float wobble) {
-  float warp = snoise(vec2(p.x * 1.4, t * 0.6 + wobble)) * 0.22;
-  float d = abs(p.y - yc - warp);
-  return exp(-d * d / (2.0 * s * s));
+float hash21(vec2 p) {
+  p = fract(p * vec2(123.34, 456.21));
+  p += dot(p, p + 45.32);
+  return fract(p.x * p.y);
+}
+
+// Curl-style ribbon: sine spine + fBm warp. Returns 0..1 ribbon intensity.
+float ribbon(vec2 p, float yc, float thickness, float t, float wobble, float freq) {
+  // Warped spine: vertical position drifts with noise over time.
+  float w = snoise(vec2(p.x * 1.1 + wobble, t * 0.55 + wobble * 0.4)) * 0.28
+          + snoise(vec2(p.x * 2.7 - wobble * 0.7, t * 0.32)) * 0.10;
+  float spine = yc + sin(p.x * freq + t * 0.7 + wobble) * 0.06 + w;
+  float d = abs(p.y - spine);
+  // Soft gaussian falloff for feathered edge.
+  return exp(-d * d / (2.0 * thickness * thickness));
 }
 
 void main() {
@@ -56,30 +66,44 @@ void main() {
 
   float t = u_time * 0.55;
 
-  // Deep midnight base — slight purple shift toward the top.
-  vec3 base = mix(vec3(0.020, 0.012, 0.040), vec3(0.046, 0.020, 0.071), uv.y);
+  // Base: deep indigo at the top fading to a warmer plum lower down.
+  vec3 baseTop = vec3(0.025, 0.012, 0.060); // ~#06031f
+  vec3 baseBot = vec3(0.060, 0.030, 0.090); // ~#0f0d17 with violet
+  vec3 base = mix(baseBot, baseTop, smoothstep(0.0, 1.0, uv.y));
 
-  // Three ribbons, each a different pastel.
-  float b1 = ribbon(p, 0.18 + sin(t * 0.21) * 0.05, 0.22, t, 0.0);
-  float b2 = ribbon(p, -0.05 + cos(t * 0.17) * 0.06, 0.18, t, 4.7);
-  float b3 = ribbon(p, -0.28 + sin(t * 0.13 + 1.1) * 0.04, 0.26, t, 9.3);
+  // Three locked-palette ribbons (top → bottom).
+  float b1 = ribbon(p,  0.20, 0.22, t, 0.0, 1.3);
+  float b2 = ribbon(p, -0.04, 0.18, t, 4.7, 1.8);
+  float b3 = ribbon(p, -0.28, 0.26, t, 9.3, 1.0);
 
-  vec3 pink   = vec3(0.984, 0.812, 0.906); // #fbcfe8
-  vec3 violet = vec3(0.655, 0.545, 0.980); // #a78bfa
-  vec3 cyan   = vec3(0.482, 0.910, 0.961); // #7be7f5
+  vec3 lavender = vec3(0.718, 0.580, 0.957); // #b794f4
+  vec3 rose     = vec3(0.984, 0.812, 0.906); // #fbcfe8
+  vec3 mint     = vec3(0.655, 0.953, 0.816); // #a7f3d0
+  vec3 indigo   = vec3(0.380, 0.275, 0.890); // #6147e3 highlight
 
   vec3 col = base;
-  col += pink   * b1 * 0.55;
-  col += violet * b2 * 0.50;
-  col += cyan   * b3 * 0.45;
+  col += rose     * b1 * 0.55;
+  col += lavender * b2 * 0.52;
+  col += mint     * b3 * 0.46;
+  // Indigo edge glow where ribbons overlap — gives interweave depth.
+  col += indigo   * (b1 * b2 + b2 * b3) * 0.35;
 
-  // Sparse highlight grains for depth.
-  float grain = snoise(p * 7.0 + t * 0.4);
-  col += vec3(0.9, 0.8, 1.0) * smoothstep(0.65, 0.95, grain) * 0.08;
+  // Star dust — sparse pinpoints (~3% of pixels) twinkling very slowly.
+  float starN = snoise(p * 38.0);
+  float star = smoothstep(0.92, 1.00, starN);
+  float twinkle = 0.6 + 0.4 * sin(t * 1.2 + starN * 11.0);
+  col += vec3(0.95, 0.92, 1.00) * star * twinkle * 0.55;
 
-  // Vignette so center copy is the brightest part of the frame.
+  // Teal horizon glow — sells the polar-sky vibe.
+  float horizon = exp(-pow((uv.y - 0.05) * 4.0, 2.0));
+  col += vec3(0.20, 0.85, 0.78) * horizon * 0.10;
+
+  // Vignette so centre copy is the brightest part of frame.
   float vig = smoothstep(1.20, 0.30, length(p));
   col *= mix(0.55, 1.0, vig);
+
+  // Anti-banding dither.
+  col += (hash21(gl_FragCoord.xy) - 0.5) * 0.006;
 
   gl_FragColor = vec4(col, 1.0);
 }
