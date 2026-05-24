@@ -20,14 +20,18 @@ interface Rule {
 // Thresholds: Phase 7 baseline + ~10-15% headroom for normal feature work.
 // When exceeded, either fix code or bump threshold (PR review).
 const CHUNK_RULES: Rule[] = [
-  // Entry threshold was raised from 45KB to 75KB in Phase 9 (perf PR #3).
-  // PR #3 collapsed the previously-manual `chunk-a8f3` (which had been
-  // absorbing shared utilities like `use-toast` and shadcn primitives) into
-  // the entry chunk where Rollup correctly places shared code. The entry
-  // is now ~72KB gz, but the OVERALL initial route is ~30KB lighter (the
-  // entire 740KB `mermaid-vendor` no longer leaks into the eager graph).
+  // Entry threshold was raised from 45KB to 75KB in Phase 9 (perf PR #3),
+  // then bumped to 82KB after the PWA update banner work added
+  // `virtual:pwa-register` glue, a few new i18n strings, and the narrow-
+  // viewport hook to the eager graph. Before this PR the gate was
+  // ACCIDENTALLY pointing at the lazy vim chunk (also called `index-…`
+  // because the upstream package's main file is `index.js`) and silently
+  // passing while the true entry sat around 76KB. The entry-resolution
+  // logic below now reads the actual `<script type="module">` URL from
+  // `dist/index.html` instead of `find()`-ing the first `index-` file in
+  // arbitrary dirent order, which surfaced the misalignment.
   // The total-initial-route gate below remains the real protection.
-  { prefix: "index-", label: "entry", maxGz: 75_000 },
+  { prefix: "index-", label: "entry", maxGz: 82_000 },
   { prefix: "react-vendor-", label: "react-vendor", maxGz: 68_000 },
   { prefix: "supabase-vendor-", label: "supabase-vendor", maxGz: 58_000 },
   { prefix: "radix-vendor-", label: "radix-vendor", maxGz: 35_000 },
@@ -85,6 +89,14 @@ function main(): number {
   const html = readFileSync(HTML, "utf-8");
   const preloadChunks = parsePreloadChunks(html);
   const assetFiles = readdirSync(ASSETS).filter((f) => f.endsWith(".js"));
+  // The real entry is whatever `<script type="module" src="…">` index.html
+  // ships. `readdirSync` returns dirent order (htree on ext4), so a naive
+  // `assetFiles.find(starts-with-index-)` can hit either the entry chunk
+  // or a sibling `index-…` chunk depending on file hashes. Always resolve
+  // the entry from the HTML to keep the gate deterministic.
+  const entryFromHtml = html.match(
+    /<script[^>]*type="module"[^>]*src="\/assets\/(index-[^"]+)"/,
+  )?.[1];
 
   let failed = 0;
   console.log("=== Bundle size gate ===\n");
@@ -92,7 +104,10 @@ function main(): number {
   // Check 1: Per-chunk thresholds.
   console.log("Chunk size checks:");
   for (const rule of CHUNK_RULES) {
-    const match = assetFiles.find((f) => f.startsWith(rule.prefix));
+    const match =
+      rule.label === "entry" && entryFromHtml
+        ? assetFiles.find((f) => f === entryFromHtml)
+        : assetFiles.find((f) => f.startsWith(rule.prefix));
     if (!match) {
       console.log(`  ⊘ ${rule.label}: chunk not found (skipped)`);
       continue;
@@ -110,7 +125,10 @@ function main(): number {
   // Check 2: Initial route total (entry + preloaded chunks).
   console.log("\nInitial route total:");
   let initTotal = 0;
-  const entryMatch = assetFiles.find((f) => f.startsWith("index-"));
+  const entryMatch =
+    entryFromHtml && assetFiles.includes(entryFromHtml)
+      ? entryFromHtml
+      : assetFiles.find((f) => f.startsWith("index-"));
   if (entryMatch) initTotal += gzSize(join(ASSETS, entryMatch));
   for (const chunk of preloadChunks) {
     if (existsSync(join(ASSETS, chunk))) {
