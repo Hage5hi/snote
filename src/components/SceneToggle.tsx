@@ -39,7 +39,7 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
     setScene(def.id);
   };
 
-  const entries = SCENE_REGISTRY; // includes the "none" entry at index 0
+  const entries = SCENE_REGISTRY.filter((e) => e.id !== SCENE_NONE);
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
@@ -54,53 +54,40 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
           <Sparkles className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
+      <DropdownMenuContent align="end" className="w-56">
         <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           {t("theme.scene.label")}
         </DropdownMenuLabel>
         <DropdownMenuRadioGroup value={scene} onValueChange={select}>
-          {entries.map((e, idx) => {
+          {entries.map((e) => {
             const label = t(e.labelKey as Parameters<typeof t>[0]);
-            const desc = e.descKey ? t(e.descKey as Parameters<typeof t>[0]) : "";
-            const isNone = e.id === SCENE_NONE;
             return (
-              <div key={e.id}>
-                {idx === 1 && <DropdownMenuSeparator />}
-                <DropdownMenuRadioItem
-                  value={e.id}
-                  disabled={!e.enabled}
-                  aria-label={desc ? `${label} — ${desc}` : label}
-                  className="gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
-                >
-                  <span
-                    aria-hidden="true"
-                    className="inline-block h-3.5 w-6 shrink-0 rounded-sm ring-1 ring-border"
-                    style={{
-                      background: isNone
-                        ? `linear-gradient(135deg, hsl(var(--background)), hsl(var(--muted)))`
-                        : `linear-gradient(135deg, ${e.swatch[0]}, ${e.swatch[1]})`,
-                    }}
-                  />
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex items-center gap-1 truncate text-sm">
-                      {label}
-                      {!e.enabled && (
-                        <span className="ml-1 rounded bg-muted px-1 py-px text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
-                          {t("scene.coming_soon")}
-                        </span>
-                      )}
+              <DropdownMenuRadioItem
+                key={e.id}
+                value={e.id}
+                disabled={!e.enabled}
+                aria-label={label}
+                className="gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              >
+                <span
+                  aria-hidden="true"
+                  className="inline-block h-3.5 w-6 shrink-0 rounded-sm ring-1 ring-border"
+                  style={{
+                    background: `linear-gradient(135deg, ${e.swatch[0]}, ${e.swatch[1]})`,
+                  }}
+                />
+                <span className="flex min-w-0 flex-1 items-center gap-1 truncate text-sm">
+                  {label}
+                  {!e.enabled && (
+                    <span className="ml-1 rounded bg-muted px-1 py-px text-[9px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {t("scene.coming_soon")}
                     </span>
-                    {desc && (
-                      <span className="truncate text-[11px] text-muted-foreground">
-                        {desc}
-                      </span>
-                    )}
-                  </span>
-                  {scene === e.id && e.enabled && (
-                    <Check className="ml-auto h-3.5 w-3.5 text-primary" />
                   )}
-                </DropdownMenuRadioItem>
-              </div>
+                </span>
+                {scene === e.id && e.enabled && (
+                  <Check className="ml-auto h-3.5 w-3.5 text-primary" />
+                )}
+              </DropdownMenuRadioItem>
             );
           })}
         </DropdownMenuRadioGroup>
@@ -108,5 +95,6 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
     </DropdownMenu>
   );
 });
+
 
 SceneToggle.displayName = "SceneToggle";
