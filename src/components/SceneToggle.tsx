@@ -8,9 +8,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { SCENE_NONE, SCENE_REGISTRY } from "@/components/home/scenes/registry";
 import { useI18n } from "@/i18n";
