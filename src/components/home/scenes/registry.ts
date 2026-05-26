@@ -64,7 +64,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     id: "cyber-linh-khi",
     labelKey: "scene.cyber_linh_khi.label",
     descKey: "scene.cyber_linh_khi.desc",
-    swatch: ["#0a2a26", "#5eead4"],
+    swatch: ["#01030a", "#5eead4"],
     enabled: true,
     load: () => import("./CyberLinhKhi"),
     forceColorScheme: "dark",
