@@ -1,5 +1,12 @@
 // Topbar: brand + counters + per-note icons + Note/Mode/Export/Help dropdowns + theme.
 // Inspired by Replit's topbar — text-label menus replace the dense icon row.
+//
+// Responsive layout:
+//   - Wide (≥ 900 px): single 44 px row with everything inline.
+//   - Narrow (< 900 px): wraps to two rows so the 14+ controls fit without
+//     horizontal overflow. Row 1 (44 px) keeps brand + theme + the preview
+//     toggle pinned to the right so it is ALWAYS visible. Row 2 (36 px)
+//     holds the per-note icons and the four dropdown menus.
 import { useEffect, useState } from "react";
 import * as Y from "yjs";
 import { Button } from "@/components/ui/button";
@@ -23,6 +30,7 @@ import { ExportMenu } from "./ExportMenu";
 import { NoteMenu } from "./NoteMenu";
 import { ModeMenu } from "./ModeMenu";
 import { HelpMenu } from "./HelpMenu";
+import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useI18n } from "@/i18n";
 
 
@@ -81,6 +89,7 @@ export function Topbar({
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const narrow = useNarrowViewport();
   const { t } = useI18n();
 
   const copyAll = async () => {
@@ -116,73 +125,134 @@ export function Topbar({
   return (
     <>
       {zen && !compact && <div className="zen-hover-zone" aria-hidden />}
-      <header className="zen-topbar sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <TopbarBrand
-          slug={slug}
-          doc={doc}
-          isEncrypted={isEncrypted}
-          provider={provider}
-        />
-
-        <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
-          <WordCountTrigger
-            slug={slug}
-            words={wordCount}
-            chars={charCount}
-            onOpen={() => setGoalOpen(true)}
-          />
-
-          <PresenceDots users={users} />
-
-          <PinButton slug={slug} />
-
-          <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
-
-          <ShareDialog slug={slug} isEncrypted={isEncrypted} />
-
-          <ViewControls
-            showPreview={showPreview}
-            onTogglePreview={onTogglePreview}
-            scrollSync={scrollSync}
-            onToggleScrollSync={onToggleScrollSync}
-          />
-
-          <Separator orientation="vertical" className="mx-1 h-5" />
-
-          <NoteMenu
-            onOpenRename={() => setRenameOpen(true)}
-            onOpenDuplicate={() => setDuplicateOpen(true)}
-            onOpenGoal={() => setGoalOpen(true)}
-            onOpenHistory={() => setHistoryOpen(true)}
-            onCopyAll={copyAll}
-          />
-
-          {!compact && (
-            <ModeMenu
-              zen={zen}
-              onToggleZen={onToggleZen}
-              typewriter={typewriter}
-              onToggleTypewriter={onToggleTypewriter}
-              focusLine={focusLine}
-              onToggleFocusLine={onToggleFocusLine}
-              paginated={paginated}
-              onTogglePagination={onTogglePagination}
+      {narrow ? (
+        <header className="zen-topbar sticky top-0 z-30 flex flex-col border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          {/* Row 1: brand + theme + preview toggle (always visible, never
+              pushed off-screen by the menus on row 2). */}
+          <div className="flex h-11 items-center gap-2 px-2">
+            <TopbarBrand
+              slug={slug}
+              doc={doc}
+              isEncrypted={isEncrypted}
+              provider={provider}
             />
-          )}
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {!compact && <ThemeToggle />}
+              <ViewControls
+                showPreview={showPreview}
+                onTogglePreview={onTogglePreview}
+                scrollSync={scrollSync}
+                onToggleScrollSync={onToggleScrollSync}
+              />
+            </div>
+          </div>
+          {/* Row 2: per-note actions + dropdown menus. Narrower height so the
+              total stack stays close to one row of vertical space. */}
+          <div className="flex h-9 items-center gap-1 border-t border-border/40 px-2">
+            <WordCountTrigger
+              slug={slug}
+              words={wordCount}
+              chars={charCount}
+              onOpen={() => setGoalOpen(true)}
+            />
+            <PresenceDots users={users} />
+            <PinButton slug={slug} />
+            <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
+            <ShareDialog slug={slug} isEncrypted={isEncrypted} />
+            <div className="ml-auto flex shrink-0 items-center gap-0.5">
+              <NoteMenu
+                onOpenRename={() => setRenameOpen(true)}
+                onOpenDuplicate={() => setDuplicateOpen(true)}
+                onOpenGoal={() => setGoalOpen(true)}
+                onOpenHistory={() => setHistoryOpen(true)}
+                onCopyAll={copyAll}
+              />
+              {!compact && (
+                <ModeMenu
+                  zen={zen}
+                  onToggleZen={onToggleZen}
+                  typewriter={typewriter}
+                  onToggleTypewriter={onToggleTypewriter}
+                  focusLine={focusLine}
+                  onToggleFocusLine={onToggleFocusLine}
+                  paginated={paginated}
+                  onTogglePagination={onTogglePagination}
+                />
+              )}
+              <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
+              {!compact && <HelpMenu onOpenShortcuts={() => setShortcutsOpen(true)} />}
+            </div>
+          </div>
+        </header>
+      ) : (
+        <header className="zen-topbar sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+          <TopbarBrand
+            slug={slug}
+            doc={doc}
+            isEncrypted={isEncrypted}
+            provider={provider}
+          />
 
-          <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
+          <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
+            <WordCountTrigger
+              slug={slug}
+              words={wordCount}
+              chars={charCount}
+              onOpen={() => setGoalOpen(true)}
+            />
 
-          {!compact && (
-            <>
-              <HelpMenu onOpenShortcuts={() => setShortcutsOpen(true)} />
+            <PresenceDots users={users} />
 
-              <Separator orientation="vertical" className="mx-1 h-5" />
+            <PinButton slug={slug} />
 
-              <ThemeToggle />
-            </>
-          )}
-        </div>
-      </header>
+            <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
+
+            <ShareDialog slug={slug} isEncrypted={isEncrypted} />
+
+            <ViewControls
+              showPreview={showPreview}
+              onTogglePreview={onTogglePreview}
+              scrollSync={scrollSync}
+              onToggleScrollSync={onToggleScrollSync}
+            />
+
+            <Separator orientation="vertical" className="mx-1 h-5" />
+
+            <NoteMenu
+              onOpenRename={() => setRenameOpen(true)}
+              onOpenDuplicate={() => setDuplicateOpen(true)}
+              onOpenGoal={() => setGoalOpen(true)}
+              onOpenHistory={() => setHistoryOpen(true)}
+              onCopyAll={copyAll}
+            />
+
+            {!compact && (
+              <ModeMenu
+                zen={zen}
+                onToggleZen={onToggleZen}
+                typewriter={typewriter}
+                onToggleTypewriter={onToggleTypewriter}
+                focusLine={focusLine}
+                onToggleFocusLine={onToggleFocusLine}
+                paginated={paginated}
+                onTogglePagination={onTogglePagination}
+              />
+            )}
+
+            <ExportMenu slug={slug} getContent={getContent} isEncrypted={isEncrypted} />
+
+            {!compact && (
+              <>
+                <HelpMenu onOpenShortcuts={() => setShortcutsOpen(true)} />
+
+                <Separator orientation="vertical" className="mx-1 h-5" />
+
+                <ThemeToggle />
+              </>
+            )}
+          </div>
+        </header>
+      )}
 
       <HistoryDialog
         slug={slug}

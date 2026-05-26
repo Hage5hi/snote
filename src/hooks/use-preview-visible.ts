@@ -1,16 +1,25 @@
 import { useCallback, useEffect, useState } from "react";
 
-// Show the Markdown preview pane by default for new users; persist the user's
-// choice per device/browser so we don't nag them to re-toggle every session.
+// Persist the preview-pane visibility per device/browser so we don't nag the
+// user to re-toggle every session.
+//
+// First-visit defaults:
+//   - Wide viewport (≥ 900 px): preview ON — both panes fit side-by-side, so
+//     showing the rendered output up front is helpful.
+//   - Narrow viewport (< 900 px): preview OFF — only one pane shows at a
+//     time, and a brand-new note has nothing to render. Landing on the
+//     editor lets the user start typing immediately.
+// After the first toggle the stored "1"/"0" wins regardless of viewport.
 const KEY = "notes:preview-visible";
 
 export function usePreviewVisible() {
   const [visible, setVisible] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     const raw = window.localStorage.getItem(KEY);
-    // First-time users → default ON. After the first toggle the stored value
-    // ("1" / "0") wins, so returning-users keep whatever they picked.
-    if (raw === null) return true;
+    if (raw === null) {
+      const narrow = window.matchMedia("(max-width: 899px)").matches;
+      return !narrow;
+    }
     return raw === "1";
   });
 
