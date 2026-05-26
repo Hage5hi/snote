@@ -95,7 +95,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     id: "digital-constellation",
     labelKey: "scene.digital_constellation.label",
     descKey: "scene.digital_constellation.desc",
-    swatch: ["#1e293b", "#cbd5e1"],
+    swatch: ["#06091a", "#dbe9ff"],
     enabled: true,
     load: () => import("./DigitalConstellation"),
     forceColorScheme: "dark",
