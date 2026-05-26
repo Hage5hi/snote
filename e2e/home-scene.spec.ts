@@ -52,7 +52,7 @@ async function seed(
 }
 
 const themeAria = { en: "Theme settings", vi: "Cài đặt giao diện" } as const;
-const cyberLabel = { en: /Cyber Linh Kh/, vi: /Cyber Linh Kh/ } as const;
+const cyberLabel = { en: /Jade Chi/, vi: /Jade Chi/ } as const;
 const lightLabel = { en: /^Light$/, vi: /^Sáng$/ } as const;
 const darkLabel = { en: /^Dark$/, vi: /^Tối$/ } as const;
 

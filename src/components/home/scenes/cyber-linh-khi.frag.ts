@@ -1,10 +1,10 @@
-// GLSL fragment shader — "Cyber Linh Khí".
+// GLSL fragment shader — "Jade Chi".
 //
-// Design intent: a DEEP near-black night with rare, soft jade/cyan fog
-// drifting through a small portion of the canvas. Large slow blobs.
-// The shader is only ever shown in dark mode (the theme switcher forces
-// next-themes to "dark" when this scene is active), so we drop the light
-// branch entirely.
+// Design intent: deep near-black void with 2–3 long jade chi energy bands
+// that flow, warp and curl across the canvas. Domain-warped fBm gives the
+// bands structure (not cloud-blob mush), and a soft sin-based shimmer adds
+// a subtle ngọc-bích lifeblood pulse. Dark-only — ThemeToggle pins
+// next-themes to "dark" when this scene is active.
 export const CYBER_LINH_KHI_FRAG = /* glsl */ `
 precision mediump float;
 
@@ -42,39 +42,67 @@ float snoise(vec2 v) {
   return 130.0 * dot(m, g);
 }
 
-// Single big-octave + gentle warp — large, slow shapes.
-float bigFog(vec2 p, float t) {
-  vec2 warp = vec2(snoise(p * 0.4 + t * 0.15),
-                   snoise(p * 0.4 - t * 0.12)) * 0.35;
-  return snoise(p * 0.55 + warp);
+// fBm — 4 octaves, low lacunarity → large coherent structure.
+float fbm(vec2 p) {
+  float v = 0.0;
+  float a = 0.55;
+  for (int i = 0; i < 4; i++) {
+    v += a * snoise(p);
+    p *= 2.1;
+    a *= 0.55;
+  }
+  return v;
 }
 
 void main() {
   vec2 uv = gl_FragCoord.xy / u_resolution.xy;
   vec2 p  = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / min(u_resolution.x, u_resolution.y);
 
-  float t = u_time * 0.45; // even slower
+  float t = u_time * 0.18; // very slow drift — chi flows, doesn't rush.
 
-  float n = bigFog(p, t);
+  // 2-pass domain warp: bend the field into long ribbons instead of blobs.
+  vec2 q  = vec2(fbm(p * 0.9 + vec2(0.0, t)),
+                 fbm(p * 0.9 + vec2(5.2, -t)));
+  vec2 r  = vec2(fbm(p * 0.9 + 1.6 * q + vec2(1.7, 9.2) + 0.15 * t),
+                 fbm(p * 0.9 + 1.6 * q + vec2(8.3, 2.8) - 0.13 * t));
+  float field = fbm(p * 0.9 + 1.4 * r);
 
-  // Tight smoothstep so jade only shows on the highest noise peaks
-  // (~15–20% of pixels). Everything else stays near-black.
-  float fog = smoothstep(0.45, 0.95, n);
+  // Horizontal flow band: 2–3 long bands cutting across the canvas, warped
+  // by the field itself so they curl naturally.
+  float band = 1.0 - abs(sin(p.y * 1.35 + r.x * 1.8 + t * 0.6));
+  band = pow(band, 0.55);
 
-  // Palette: deep midnight base, faint jade highlight.
-  vec3 base = vec3(0.006, 0.012, 0.018); // ~#01030a
-  vec3 jade = vec3(0.078, 0.722, 0.651); // #14b8a6
+  // Combine: chi only blooms where field peaks AND band is strong.
+  float chi = smoothstep(0.05, 0.85, field * 0.5 + 0.5) * band;
+  chi = pow(chi, 1.2);
 
-  // Cap jade intensity hard so it never overwhelms.
-  vec3 col = base + jade * (fog * 0.35);
+  // Palette — deep void → jade peak.
+  vec3 base = vec3(0.003, 0.008, 0.014); // ~#01030a
+  vec3 jade = vec3(0.122, 0.776, 0.561); // ~#1fc68f
+  vec3 mint = vec3(0.369, 0.917, 0.788); // ~#5eead4
 
-  // Subtle bottom-edge glow only.
-  float glow = pow(max(0.0, 0.4 - uv.y), 2.0) * 0.18;
+  vec3 col = base;
+  col += jade * chi * 0.55;
+  // Highlight tip — only the brightest peaks get the bright mint shimmer.
+  float peak = smoothstep(0.6, 0.95, chi);
+  col += mint * peak * 0.45;
+
+  // Subtle jade shimmer: low-amplitude pulse only where chi is present.
+  float shimmer = sin(t * 4.2 + p.x * 3.0 + r.y * 5.0) * 0.5 + 0.5;
+  col.g += chi * shimmer * 0.06;
+  col.b += chi * shimmer * 0.025;
+
+  // Soft bottom edge glow.
+  float glow = pow(max(0.0, 0.32 - uv.y), 2.0) * 0.18;
   col += jade * glow;
 
-  // Strong vignette keeps center crisp + edges darker.
-  float vig = smoothstep(1.15, 0.30, length(p));
-  col *= mix(0.45, 1.0, vig);
+  // Vignette — keep center for hero copy, pull edges to void.
+  float vig = smoothstep(1.20, 0.28, length(p));
+  col *= mix(0.42, 1.0, vig);
+
+  // Dither / grain to kill banding on OLED.
+  float grain = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  col += (grain - 0.5) * 0.018;
 
   gl_FragColor = vec4(col, 1.0);
 }
