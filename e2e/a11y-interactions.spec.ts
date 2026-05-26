@@ -42,7 +42,7 @@ async function seed(page: Page, lang: "en" | "vi") {
 const themeAria = { en: "Theme settings", vi: "Cài đặt giao diện" } as const;
 const lightLabel = { en: /^Light$/, vi: /^Sáng$/ } as const;
 const darkLabel = { en: /^Dark$/, vi: /^Tối$/ } as const;
-const cyberLabel = { en: /Cyber Linh Kh/, vi: /Cyber Linh Kh/ } as const;
+const cyberLabel = { en: /Jade Chi/, vi: /Jade Chi/ } as const;
 const langAria = { en: /Language|language/i, vi: /Ngôn ngữ|ngon ngu/i } as const;
 
 test("axe: no new violations after switching theme options (en)", async ({ page }, info) => {
