@@ -74,7 +74,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     id: "ethereal-aurora",
     labelKey: "scene.ethereal_aurora.label",
     descKey: "scene.ethereal_aurora.desc",
-    swatch: ["#2d1b4e", "#fbcfe8"],
+    swatch: ["#0a0518", "#fbcfe8"],
     enabled: true,
     load: () => import("./EtherealAurora"),
     forceColorScheme: "dark",
