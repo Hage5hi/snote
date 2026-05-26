@@ -116,7 +116,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     id: "terminal-boot",
     labelKey: "scene.terminal_boot.label",
     descKey: "scene.terminal_boot.desc",
-    swatch: ["#020202", "#00ff66"],
+    swatch: ["#020402", "#beffc8"],
     enabled: true,
     load: () => import("./TerminalBoot"),
     forceColorScheme: "dark",
