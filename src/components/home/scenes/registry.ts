@@ -84,7 +84,7 @@ export const SCENE_REGISTRY: SceneDef[] = [
     id: "obsidian-ink",
     labelKey: "scene.obsidian_ink.label",
     descKey: "scene.obsidian_ink.desc",
-    swatch: ["#f5f5f4", "#1c1917"],
+    swatch: ["#f5f0e6", "#1a1410"],
     enabled: true,
     load: () => import("./ObsidianInk"),
     forceColorScheme: "light",
