@@ -1,145 +1,83 @@
-# Hoàn thiện theme system — 5 scene + đổi tên + token cleanup
+# Upgrade Plan — Obsidian Ink & Zodiac Constellation
 
-Phạm vi: đổi tên 5 scene theo prompt, nâng cấp visual cho 5 scene (Jade Chi, Cực Quang Mộng, Mực Hắc Diệu, Cung Hoàng Đạo, Terminal Boot). **Neon Vapor giữ nguyên** (không nằm trong feedback). Không thêm tính năng. Isolation `/` ↔ `/:slug` và guardrails WebGL là bất khả xâm phạm.
+Only `src/components/home/scenes/ObsidianInk.tsx` and `src/components/home/scenes/DigitalConstellation.tsx` change. No edits to registry, i18n, SceneHost, Home.tsx, theme hooks, or CSS tokens. The `lightweight: true` flag, `forceColorScheme`, paused gating, `onReady` callback, ResizeObserver lifecycle, and `aria-hidden` host wrapper all stay identical.
 
-## A. Đổi tên + thứ tự (registry + i18n)
+---
 
-`SCENE_REGISTRY` giữ ID kỹ thuật cũ (tránh vỡ localStorage `home.scene` của user hiện tại, vỡ visual baseline E2E, vỡ token blocks trong `index.css`). **Chỉ đổi label hiển thị** qua i18n. Thứ tự dropdown sắp lại đúng prompt:
+## 1. Obsidian Ink — soft sumi diffusion
 
-1. `cyber-linh-khi`           → EN "Jade Chi"          / VI "Jade Chi"
-2. `ethereal-aurora`          → EN "Ethereal Aurora"   / VI "Cực Quang Mộng"
-3. `obsidian-ink`             → EN "Obsidian Ink"      / VI "Mực Hắc Diệu"
-4. `digital-constellation`    → EN "Zodiac Constellation" / VI "Cung Hoàng Đạo"
-5. `neon-vapor`               → giữ nguyên label hiện tại
-6. `terminal-boot`            → EN "Terminal Boot" / VI "Terminal Boot"
+**Goal:** replace the current polygon + 3-ring "contour" blot (which reads as topographic banding) with smooth radial diffusion that bleeds organically and darkens on overlap, on a paper-textured ground.
 
-Sửa `src/i18n/index.ts` (`scene.*.label` + `scene.*.desc` cho 4 scene đổi tên). Cập nhật snapshot test `SceneToggle.i18n.test.tsx` nếu cần. Sắp lại `SCENE_REGISTRY` array đúng thứ tự trên (mục `none` đứng đầu).
+**Algorithm (Canvas2D, no WebGL):**
 
-## B. Token refactor (chốt cuối)
+- **Paper ground (one-time offscreen):** keep the existing `buildPaperTexture` (grain + fibers) and the warm corner washes — those already read well. Tone the base from `#f5f0e6` slightly warmer/cooler only if needed during QA; do not rebuild.
+- **Blot model — replace polygon with layered radial gradients:**
+  - Each blot has: `x, y, baseR, bornAt, seed, vertices` (kept), drop `drip` ring stroke logic.
+  - Render each blot as **6–8 stacked radial gradients** (`ctx.createRadialGradient`) at slightly jittered centers (≤ `0.15*baseR` offset) and slightly varying radii (`0.85*baseR` … `1.9*baseR`). Each gradient: dark center `rgba(20,16,12, a)` → fully transparent at edge. Alphas taper from ~`0.35` (innermost, smallest) to ~`0.03` (outermost, widest). Sum produces a smooth, non-banded falloff — no visible contour steps.
+  - **Edge fiber bleed:** for each blot, draw 14–22 tiny radial gradient "tendrils" at the rim. Each tendril = a small radial gradient (`r ≈ 0.08*baseR`) placed at angle `θ` on a perturbed radius `baseR * (1 + 0.18 * fbm(θ, seed))`, with low alpha (~`0.10`). Use a 2-octave value-noise/`mulberry32`-driven `fbm(θ)` so the rim looks like capillary action into paper fibers — irregular but continuous, never spiky.
+  - **Drip:** keep optional 20% drip as today, but render it via the same stacked-radial technique along a Bezier (5–7 small radial gradient stamps along the curve, alpha tapering).
+- **Multiply blend for overlap darkening:** wrap the entire blot pass in `ctx.globalCompositeOperation = "multiply"` (already partly used) and ensure each gradient stamp commits under multiply. Overlapping blots will compound naturally like real ink.
+- **Fade-in / fade-out / TTL:** keep existing `FADE_IN_MS`, `FADE_OUT_MS`, `BLOT_TTL_MS`, `MAX_BLOTS`, `SPAWN_INTERVAL_MS`, multiplied into per-stamp alpha (one global `alphaMul`).
+- Delete: `blotPolygon`, `tracePolygon`, wet-edge polygon stroke, taper-stroke drip block (replaced by radial-stamp drip).
 
-Token infra đã có sẵn (`[data-home-root][data-scene="..."]` blocks trong `src/index.css`, Home.tsx dùng inline `style={{ background: "var(--home-...)" }}`). Việc cần làm:
+**Performance:**
+- Keep `FRAME_MS = 1000/18` (already well under 30fps cap).
+- Stacked gradients are cheap; total stamps per frame ≈ `MAX_BLOTS (7) * (8 body + 18 fiber) ≈ 180`, all small. Acceptable on integrated GPUs.
+- DPR cap stays `1.5`.
 
-1. Audit `Home.tsx` tìm class Tailwind màu cứng còn sót (`text-teal-*`, `border-cyan-*`, `bg-black/40`, ...). Theo kiểm tra hiện tại Home.tsx đã dùng vars; chỉ cần xác nhận và thay nếu còn sót.
-2. Bổ sung 3 token chuẩn hoá cho mọi scene block (nếu thiếu): `--home-accent`, `--home-accent-soft`, `--home-hairline`. Dùng làm alias trỏ tới giá trị đã có (`--home-row-hover-ring`, `--home-recents-divider`, ...) để các scene block đồng nhất API.
-3. Chạy `bun run check:home-isolation` xác nhận không leak.
+---
 
-## C. Nâng cấp 5 scene
+## 2. Zodiac Constellation — living star map with parallax
 
-### C1. Jade Chi — `cyber-linh-khi.frag.ts` (force dark)
+**Goal:** keep the 12 hand-drawn zodiac shapes (they read instantly) but embed them inside a deep, parallax starfield with dynamically pulsing connection lines, so it feels like an animated celestial map instead of clip-art.
 
-Vấn đề: hiện ra như "cloud blobs". Sửa shader theo hướng "dải khí cuộn":
+**Layer model (back → front):**
 
-- **Domain warp 2 pass**: `p = p + 0.6 * fbm(p + fbm(p))` → bẻ field thành dải dài thay vì cụm tròn.
-- **Flow band mask**: dùng `band = abs(sin(p.y * 1.4 + warp.x * 2.0))` lấy power 0.5 → tạo 2–3 dải ngang cuộn dọc canvas.
-- **Tăng noise scale** (giảm tần số): octave 4 thay 5, lacunarity 2.1, gain 0.55 → cấu trúc to hơn, ít hạt nhỏ.
-- **Base sâu hơn**: `#01030a` (gần đen) thay base hiện tại; jade peak `hsl(168 85% 55%)` chỉ chạm ở đỉnh dải (`smoothstep(0.55, 0.85, band)`).
-- **Shimmer**: `sin(time*0.7 + p.x*3.0) * 0.04` cộng vào kênh G ở vùng peak → ngọc bích lấp lánh chậm.
-- **Vignette + grain 6%** giữ nguyên.
+1. **Deep background gradient** — keep current `#06091a` → `#0c1530`.
+2. **Far starfield (parallax z=0.3):** ~220 stars, 1px, alpha `0.08–0.22`, very slight pointer drift (`2px * mx,my`). Twinkle: per-star phase `sin(t * 0.6 + phase)` modulating alpha by ±25%.
+3. **Mid starfield (parallax z=0.6):** ~110 stars, 1–1.5px, alpha `0.18–0.40`, drift `5px`. Stronger twinkle ±35%.
+4. **Drifting dust (parallax z=0.8):** ~30 slowly drifting motes, very faint (`alpha ≤ 0.08`), tiny velocity (~0.04 px/frame), wrap on edges. Adds subtle flow.
+5. **Zodiac layer (parallax z=1.0):** the 12 constellations, drift `10–14px`. Keep `ZODIAC` data, `placeAll`, jittered grid, rotation, and `name` labels.
 
-Swatch update: `["#01030a", "#5eead4"]`.
+Replace the current 3-band `PARALLAX_OFFSET[zBand]` with this true 4-layer system (zodiacs all share the front layer; the depth now comes from the 3 background layers below them).
 
-### C2. Cực Quang Mộng — `ethereal-aurora.frag.ts` (force dark)
+**Live connection lines (per zodiac edge):**
+- Compute a per-edge phase from `(constellationIndex * 7 + edgeIndex) * 0.91`.
+- Per-frame edge intensity: `glow = 0.55 + 0.45 * sin(t * 0.0011 + phase)` → modulates stroke alpha (`0.18 → 0.55`) and lineWidth (`0.55 → 1.05`). Each constellation breathes at its own cadence, never all in sync.
+- Stars at vertices: base halo radius modulated by a slower `sin(t * 0.0006 + phase) * 0.5 + 0.5` → subtle "ancient diagram pulsing" feel.
+- Existing periodic full-constellation pulse stays — but lower peak (`pulseAmt * 0.8`) so it layers over the new ambient breathing instead of dominating.
 
-Vấn đề: "chưa mộng cho lắm". Sửa:
+**Pointer interaction:**
+- Keep the smoothed `mx,my` (lerp 0.08). Use it as parallax driver for all 4 layers (back to front, magnitude scales with z).
+- Additional micro-interaction: each constellation's rotation gets a tiny `±0.03 rad` offset proportional to `(mx,my)` and the constellation's screen position relative to center → whole field "tilts" subtly with the cursor. No per-edge mouse hit-testing (too costly + would break 30fps budget).
 
-- **Base tối hơn**: `#0a0518` (deep indigo near-black) thay vì pha tím sáng hiện tại.
-- **Slow drift**: chia `iTime` xuống 0.35× (hiện ~0.6×). Tốc độ FBM giảm → cảm giác trôi mơ.
-- **Soft pastel bands (3 lớp curl-noise)**: width feather 0.18 (rộng hơn), saturation -15% (`mix(color, vec3(luma), 0.15)`) → màu nhạt, ethereal.
-- **Deeper blend**: dùng `screen` blend giữa 3 dải thay `add` → màu tan vào nhau, không bệt.
-- **Sparkle noise**: `hash(floor(p*120.))` threshold > 0.992 → ~30 điểm sáng tĩnh nhấp nháy chậm (`sin(time*0.4 + hash*6.28)*0.5+0.5`), alpha tối đa 0.6. Tạo "stardust mộng".
-- **Bottom teal glow** giữ.
+**Performance & budget:**
+- Keep `FRAME_MS = 1000/30` and `dpr ≤ 1.5`.
+- Stars rendered as `fillRect(x,y,1,1)` or `arc` for mid layer; do **not** use radial gradients per-star for the background layers (too expensive at 220+110 count). Reserve radial gradients only for the 12*~7 ≈ 84 zodiac vertex halos.
+- Pre-seed starfields on resize (same pattern as today).
+- Twinkle uses one `sin` per star per frame — ~360 sin calls/frame, negligible.
 
-Swatch: `["#0a0518", "#fbcfe8"]`.
+---
 
-### C3. Mực Hắc Diệu — `ObsidianInk.tsx` (force light, Canvas2D)
+## Guardrails (unchanged, re-verify after edit)
 
-Vấn đề: blot trông như "vi khuẩn". Viết lại thuật toán hoàn toàn — **bỏ noisy circles**, dùng **structured SDF ink diffusion**:
+- `scripts/check-home-theme-isolation.ts` still passes (no scene-token leaks).
+- Both files keep `lightweight: true` semantics (no change required — flag lives in `registry.ts` which we don't touch).
+- `prefers-reduced-motion` honoured by SceneHost upstream — internal loops still respect `pausedRef`.
+- WebGL fallback unaffected (both scenes are Canvas2D).
+- Vitest suite untouched; visual E2E baselines for these two scenes will need refresh after merge (call out, do not regenerate in this plan).
 
-- **Blot shape**: mỗi blot là polygon SDF gồm 8–12 điểm đặt trên đường tròn, mỗi điểm offset bằng `radius * (0.85 + 0.3 * valueNoise(angle*2, seed))` → cạnh răng có cấu trúc, không nhiễu chấm.
-- **Multi-radius diffusion rings**: vẽ 3 lớp đồng tâm với alpha giảm dần (core 0.92, mid 0.45, halo 0.18) và radius nhân (1.0, 1.35, 1.9) → tạo gradient khuếch tán giấy.
-- **Wet edge dark ring**: vòng alpha 0.12 tối hơn 8% ở `radius * 1.05` → viền ướt vừa khô.
-- **Paper grain**: lớp procedural noise alpha 4% pre-render 1 lần vào offscreen canvas, blit mỗi frame (không tính lại).
-- **Fiber lines**: 40 line mảnh chéo random, alpha 3%, pre-render cùng grain.
-- **Drip (rare)**: 1/5 blot spawn 1 vệt Bezier dài 40–90px xuống dưới, taper alpha.
-- **Spawn cadence**: 1 blot mới mỗi 2.5–4s, max 7 blot đồng thời, fade-out sau 12s.
-- Giữ FPS cap 12, pause-on-hidden, reduced-motion → render 1 static frame.
+## Files touched
 
-Palette giấy ấm hơn: bg `#f5f0e6`, ink `#1a1410`. Token block `obsidian-ink` trong index.css cập nhật ăn theo. Swatch: `["#f5f0e6", "#1a1410"]`.
+- `src/components/home/scenes/ObsidianInk.tsx` — rewrite blot renderer; keep paper texture + lifecycle.
+- `src/components/home/scenes/DigitalConstellation.tsx` — add multi-layer starfield, time-based edge pulsing, expanded parallax; keep zodiac data + placement.
 
-### C4. Cung Hoàng Đạo — `DigitalConstellation.tsx` (force dark, Canvas2D)
+## QA checklist
 
-Bỏ random points, vẽ **12 chòm sao Hoàng Đạo thật**:
-
-- **Dữ liệu**: 12 chòm (Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces). Mỗi chòm là array 5–9 điểm (x,y normalized 0–1) + array các cặp `[i,j]` cho cạnh nối. Toạ độ tự định nghĩa stylized, không cần chính xác thiên văn — đủ nhận diện hình tượng (ví dụ Leo có "sickle" 6 sao, Scorpio đuôi cong 9 sao).
-- **Layout**: scatter 12 chòm trên canvas dạng grid lệch (4×3 hoặc spiral), mỗi chòm có anchor + scale 0.10–0.16 viewport, rotation jitter ±10°.
-- **Render**: 
-  - Stars: vẽ tròn 1.5–3px màu `#dbe9ff`, halo radial gradient 8px alpha 0.4.
-  - Edges: đường nối `hsl(215 60% 70% / 0.25)`, width 0.7px.
-  - Tên chòm (latin nhỏ, font-mono 9px, alpha 0.25) đặt cạnh anchor.
-- **Parallax mouse drift**: 3 z-layer (4/4/4 chòm), offset = `mouse * [4px, 9px, 16px]`, lerp 0.08 mỗi frame.
-- **Pulse**: mỗi 8s random 1 chòm, các star + edge của chòm đó pulse brightness theo `sin` 1.2s, decay → "kích hoạt cung hoàng đạo".
-- **Background**: gradient `#06091a → #0c1530` + 60 starfield dot tĩnh 1px alpha 0.25.
-- Pointer-events: none. Pause-on-hidden, reduced-motion → static (pulse off, parallax off).
-
-Swatch: `["#06091a", "#dbe9ff"]`.
-
-### C5. Terminal Boot — `TerminalBoot.tsx` (force dark, Canvas2D)
-
-Thêm "high-quality details":
-
-- **Blinking cursor**: track cột cuối cùng vừa render; vẽ block `█` ở vị trí ký tự cuối + 1, màu phosphor `#beffc8`, on/off mỗi 530ms.
-- **Analog scanline grid**: overlay sau khi render glyphs — horizontal lines mỗi 3px alpha 6%, + faint vertical lines mỗi 2px alpha 2.5% → CRT grid rõ nhưng không chói.
-- **Vignette CRT** cong 4 góc (đã có thì giữ).
-- **Boot text overlay**: 12 dòng `BOOT OK / MEM 64K / LOAD KERNEL / ...` cuộn 1 lần khi mount, fade out sau 8s (không lặp).
-- **Glyph set mở rộng**: thêm Hangul + một số CJK strokes ngoài katakana.
-- **Head glow halo**: ký tự đầu mỗi cột vẽ 2 lần (lần 2 alpha 0.3, `shadowBlur 6`).
-- **FPS cap 24** (hiện 18 hoặc 20 — tăng).
-
-Token block `terminal-boot`: đảm bảo `--home-mono-family` set monospace cứng (đã có). Confirm Home UI dùng `font-mono` qua var khi scene này active. Swatch: `["#020402", "#beffc8"]`.
-
-### C6. Neon Vapor — **không đổi** (không có feedback trong prompt).
-
-## D. Guardrails (giữ nguyên, verify)
-
-- `prefers-reduced-motion`: tất cả scene → 1 static frame, không rAF loop.
-- `eink` media query: SceneHost trả null.
-- `hardwareConcurrency < 4` + không `lightweight`: SceneHost trả null (Jade Chi, Cực Quang Mộng, Neon Vapor bị chặn; Mực Hắc Diệu, Cung Hoàng Đạo, Terminal Boot lightweight=true vẫn chạy).
-- Pause-on-hidden qua `paused` prop.
-- WebGL fallback `e2e/webgl-fallback.spec.ts` phải pass.
-- Vitest hiện hành phải pass (SceneHost test, i18n test, ThemeToggle test, SceneToggle test).
-
-## E. Visual regression baselines
-
-`e2e/home-scenes-visual.spec.ts` chắc chắn fail cho 5 scene đã đổi. Sau khi build sạch:
-1. Chạy local: `bun run e2e:scenes` (hoặc playwright update-snapshots cho file đó).
-2. Update baseline cho `cyber-linh-khi`, `ethereal-aurora`, `obsidian-ink`, `digital-constellation`, `terminal-boot`.
-3. Giữ nguyên baseline `neon-vapor` + `none`.
-4. Nếu một scene fail vì AA jitter rìa, nâng `pixelDiffRatio` thêm +0.005 (chỉ scene đó).
-
-## F. File touch list
-
-**Sửa:**
-- `src/i18n/index.ts` (label + desc 4 scene đổi tên × vi/en)
-- `src/components/home/scenes/registry.ts` (thứ tự + swatch mới cho 5 scene)
-- `src/components/home/scenes/cyber-linh-khi.frag.ts`
-- `src/components/home/scenes/ethereal-aurora.frag.ts`
-- `src/components/home/scenes/ObsidianInk.tsx` (rewrite blot algorithm)
-- `src/components/home/scenes/DigitalConstellation.tsx` (rewrite → 12 chòm)
-- `src/components/home/scenes/TerminalBoot.tsx` (thêm cursor + scanline grid + glyph set + halo)
-- `src/index.css` (cập nhật giá trị token cho 5 scene để khớp palette mới; thêm alias `--home-accent` nếu cần)
-- `src/components/__tests__/SceneToggle.i18n.test.tsx` (label snapshot mới)
-- E2E baselines của 5 scene
-
-**Không đụng:** `SceneHost.tsx`, `use-scene-theme.ts`, `Home.tsx` (trừ khi audit phát hiện màu cứng còn sót), `ThemeToggle.tsx`, `NeonVapor.tsx` + `neon-vapor.frag.ts`, scripts isolation, vite chunks.
-
-## G. Verification checklist
-
-1. `bun run check:home-isolation` pass.
-2. `bun run test` (vitest) pass — đặc biệt i18n coverage + SceneToggle snapshot.
-3. Build TS+ESLint sạch.
-4. Manual `/`: chuyển 6 scene liên tiếp, không flicker, không leak WebGL context (`webgl-lost` không fire), fade-in mượt.
-5. Manual `/note/test`: không có `data-scene`, không có token `--home-*`, không bị ảnh hưởng bởi scene đang active.
-6. Reduced-motion ON: mỗi scene render 1 frame tĩnh, không rAF.
-7. E2E `home-scenes-visual` + `webgl-fallback` + `i18n` pass với baselines mới.
-
-Used the redesign skill.
+1. `bun run check:home-isolation` → pass.
+2. Manual `/` with each of the two scenes selected:
+   - Obsidian: no visible contour rings; overlapping blots clearly darker than singles; rim looks fibrous, not polygonal; paper grain visible.
+   - Zodiac: pointer move produces visible depth shift; star layers twinkle independently; zodiac edges breathe at different cadences; periodic full pulse still fires.
+3. Toggle `prefers-reduced-motion` (DevTools rendering tab) → animation freezes (SceneHost responsibility, just verify nothing regressed).
+4. DevTools Performance: confirm both scenes stay ≤ ~33ms frame time on a mid-tier laptop (30fps cap for Zodiac, 18fps for Obsidian).
+5. Switch to `/note/test` → confirm no scene tokens or canvases leak.

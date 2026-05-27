@@ -1,10 +1,10 @@
 // Mực Hắc Diệu (Obsidian Ink) — light-mode Canvas2D scene.
 //
-// Structured sumi-e ink blots diffusing into warm paper. Each blot is a
-// star-shaped polygon (8–12 perturbed vertices on a circle) rendered as
-// three concentric diffusion rings + a wet edge + an occasional drip. Paper
-// grain and fiber lines are pre-rendered once into an offscreen canvas and
-// blitted each frame so the loop stays cheap.
+// Soft sumi-e ink diffusion. Each blot is rendered as a stack of jittered
+// radial gradients (smooth falloff, no contour banding) plus a ring of tiny
+// "fiber" gradient stamps perturbed by 2-octave value noise, so the rim
+// bleeds into the paper irregularly. Blots paint under `multiply` blend, so
+// overlapping blots compound darker — like real ink on washi.
 //
 // `lightweight: true` in the registry so it bypasses hardwareConcurrency<4.
 // ThemeToggle pins next-themes to "light" when this scene is active.
@@ -16,20 +16,22 @@ const MAX_BLOTS = 7;
 const SPAWN_INTERVAL_MS = 3200;
 const FADE_IN_MS = 1600;
 const FADE_OUT_MS = 1800;
-const BLOT_TTL_MS = 14000;        // lifetime before fade-out begins
+const BLOT_TTL_MS = 14000;
+
+const BODY_LAYERS = 7;            // stacked radial gradients per blot body
+const FIBER_COUNT = 18;           // rim tendril stamps per blot
+const DRIP_STAMPS = 6;            // radial stamps along a drip bezier
 
 interface Blot {
-  x: number;         // 0..1 in normalized canvas space
-  y: number;         // 0..1
+  x: number;         // 0..1 normalized
+  y: number;         // 0..1 normalized
   radius: number;    // 0..1 of min(w,h)
-  bornAt: number;    // performance.now()
-  seed: number;      // per-blot rng seed (deterministic shape)
-  drip: boolean;     // 1/5 chance — has a downward tail
-  vertices: number;  // 8..12 polygon points
+  bornAt: number;
+  seed: number;
+  drip: boolean;
 }
 
 function mulberry32(seed: number) {
-  // Returns a stateful rng so we can advance through deterministic samples.
   let s = seed >>> 0;
   return () => {
     s = (s + 0x6d2b79f5) >>> 0;
@@ -40,34 +42,41 @@ function mulberry32(seed: number) {
   };
 }
 
-/** Pre-compute the perturbed polygon for a blot once (cached on the object). */
-function blotPolygon(b: Blot, baseR: number): { x: number; y: number }[] {
-  const rng = mulberry32(b.seed);
-  // Skip the first few samples so seed=0 doesn't bias.
-  rng(); rng();
-  const pts: { x: number; y: number }[] = [];
-  for (let i = 0; i < b.vertices; i++) {
-    const a = (i / b.vertices) * Math.PI * 2;
-    // Structured edge noise: smooth perturbation per vertex.
-    const jitter = 0.78 + rng() * 0.40; // 0.78..1.18 — gentle, no spikes
-    const r = baseR * jitter;
-    pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r });
-  }
-  return pts;
+/** Cheap 1D value-noise over angle θ (radians), seeded per blot. 2 octaves. */
+function makeAngularFbm(seed: number): (theta: number) => number {
+  // Pre-sample a small lookup table per octave; smoothstep between samples.
+  const N1 = 12, N2 = 24;
+  const rng = mulberry32(seed ^ 0x9e3779b1);
+  const t1: number[] = []; for (let i = 0; i < N1; i++) t1.push(rng() * 2 - 1);
+  const t2: number[] = []; for (let i = 0; i < N2; i++) t2.push(rng() * 2 - 1);
+  const sample = (tbl: number[], theta: number) => {
+    const n = tbl.length;
+    const x = ((theta / (Math.PI * 2)) % 1 + 1) % 1 * n;
+    const i = Math.floor(x);
+    const f = x - i;
+    const a = tbl[i % n];
+    const b = tbl[(i + 1) % n];
+    const u = f * f * (3 - 2 * f);
+    return a * (1 - u) + b * u;
+  };
+  return (theta: number) => sample(t1, theta) * 0.65 + sample(t2, theta * 1.3 + 1.7) * 0.35;
 }
 
-function tracePolygon(ctx: CanvasRenderingContext2D, cx: number, cy: number, pts: { x: number; y: number }[], scale: number) {
+/** Paint a single soft radial stamp. */
+function radialStamp(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number, r: number,
+  centerAlpha: number,
+) {
+  if (r <= 0.5 || centerAlpha <= 0.002) return;
+  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+  g.addColorStop(0,    `rgba(20, 16, 12, ${centerAlpha.toFixed(3)})`);
+  g.addColorStop(0.55, `rgba(20, 16, 12, ${(centerAlpha * 0.35).toFixed(3)})`);
+  g.addColorStop(1,    "rgba(20, 16, 12, 0)");
+  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.moveTo(cx + pts[0].x * scale, cy + pts[0].y * scale);
-  // Quadratic curves through midpoints → smooth, paper-natural diffusion edges.
-  for (let i = 0; i < pts.length; i++) {
-    const cur = pts[i];
-    const nxt = pts[(i + 1) % pts.length];
-    const mx = (cur.x + nxt.x) * 0.5;
-    const my = (cur.y + nxt.y) * 0.5;
-    ctx.quadraticCurveTo(cx + cur.x * scale, cy + cur.y * scale, cx + mx * scale, cy + my * scale);
-  }
-  ctx.closePath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawBlot(ctx: CanvasRenderingContext2D, b: Blot, w: number, h: number, now: number) {
@@ -76,65 +85,68 @@ function drawBlot(ctx: CanvasRenderingContext2D, b: Blot, w: number, h: number, 
   const fadeOut = age > BLOT_TTL_MS
     ? Math.max(0, 1 - (age - BLOT_TTL_MS) / FADE_OUT_MS)
     : 1;
-  const easedIn = 1 - Math.pow(1 - fadeIn, 3);
-  const alphaMul = easedIn * fadeOut;
-  if (alphaMul <= 0.001) return;
+  const eased = 1 - Math.pow(1 - fadeIn, 3);
+  const alphaMul = eased * fadeOut;
+  if (alphaMul <= 0.002) return;
 
   const cx = b.x * w;
   const cy = b.y * h;
-  const baseR = b.radius * Math.min(w, h) * (0.92 + 0.08 * easedIn);
-  const poly = blotPolygon(b, 1);
+  const baseR = b.radius * Math.min(w, h) * (0.92 + 0.08 * eased);
 
-  // Three concentric diffusion rings: core, mid, halo.
-  // Each is the same polygon scaled up, painted with successively lower alpha.
-  const rings = [
-    { scale: 1.00 * baseR, color: `rgba(26, 20, 16, ${(0.85 * alphaMul).toFixed(3)})` },
-    { scale: 1.35 * baseR, color: `rgba(26, 20, 16, ${(0.32 * alphaMul).toFixed(3)})` },
-    { scale: 1.85 * baseR, color: `rgba(26, 20, 16, ${(0.14 * alphaMul).toFixed(3)})` },
-  ];
-  // Paint halo → mid → core so darker layers stack on top.
-  for (let i = rings.length - 1; i >= 0; i--) {
-    ctx.fillStyle = rings[i].color;
-    tracePolygon(ctx, cx, cy, poly, rings[i].scale);
-    ctx.fill();
+  const rng = mulberry32(b.seed);
+  rng(); rng();
+  const fbm = makeAngularFbm(b.seed);
+
+  // --- Body: stacked radial gradients with jittered centers/radii ---
+  // Innermost stamps are small + dark; outermost are wide + faint. Sum
+  // produces a smooth falloff (no visible contour bands).
+  for (let i = 0; i < BODY_LAYERS; i++) {
+    const t = i / (BODY_LAYERS - 1); // 0..1
+    const ox = (rng() - 0.5) * baseR * 0.30;
+    const oy = (rng() - 0.5) * baseR * 0.30;
+    // Radius grows from 0.55 → 1.9 baseR, slight per-stamp jitter.
+    const r = baseR * (0.55 + t * 1.35) * (0.92 + rng() * 0.16);
+    // Alpha tapers from ~0.38 (small/dark center) → ~0.04 (wide halo).
+    const a = (0.38 - t * 0.34) * alphaMul;
+    radialStamp(ctx, cx + ox, cy + oy, r, a);
   }
 
-  // Wet-edge dark ring: a slightly larger polygon stroked thin, darker than
-  // the core. Gives the "just-dried sumi" look.
-  ctx.lineWidth = 1.2;
-  ctx.strokeStyle = `rgba(12, 9, 7, ${(0.18 * alphaMul).toFixed(3)})`;
-  tracePolygon(ctx, cx, cy, poly, 1.05 * baseR);
-  ctx.stroke();
+  // --- Edge fiber bleed: tendrils perturbed by angular fbm ---
+  for (let i = 0; i < FIBER_COUNT; i++) {
+    const theta = (i / FIBER_COUNT) * Math.PI * 2 + rng() * 0.18;
+    const noise = fbm(theta);                       // -1..1
+    const rimR = baseR * (1.0 + 0.22 * noise);      // bleed in/out of edge
+    const fx = cx + Math.cos(theta) * rimR;
+    const fy = cy + Math.sin(theta) * rimR;
+    const stampR = baseR * (0.10 + rng() * 0.06);
+    const a = (0.11 + Math.max(0, noise) * 0.06) * alphaMul;
+    radialStamp(ctx, fx, fy, stampR, a);
+  }
 
-  // Drip — Bezier tail descending below the blot.
+  // --- Optional drip: bezier of small radial stamps, alpha tapering down ---
   if (b.drip) {
-    const rng = mulberry32(b.seed ^ 0xa11ce);
-    const dripLen = baseR * (1.6 + rng() * 1.8);
-    const sway = (rng() - 0.5) * baseR * 0.8;
-    const dripX = cx + (rng() - 0.5) * baseR * 0.4;
-    const dripY = cy + baseR * 0.85;
-    const cp1x = dripX + sway;
-    const cp1y = dripY + dripLen * 0.4;
-    const cp2x = dripX + sway * 0.5;
-    const cp2y = dripY + dripLen * 0.75;
-    const endX = dripX + sway * 0.2;
-    const endY = dripY + dripLen;
-
-    // Three taper strokes — width drops along the drip.
-    const taperSteps = 4;
-    for (let i = 0; i < taperSteps; i++) {
-      const tt = i / (taperSteps - 1);
-      ctx.lineWidth = (1.0 - tt * 0.7) * 2.2;
-      ctx.strokeStyle = `rgba(26, 20, 16, ${((0.28 - tt * 0.20) * alphaMul).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.moveTo(dripX, dripY);
-      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
-      ctx.stroke();
+    const drng = mulberry32(b.seed ^ 0xa11ce);
+    const dripLen = baseR * (1.6 + drng() * 1.8);
+    const sway = (drng() - 0.5) * baseR * 0.8;
+    const x0 = cx + (drng() - 0.5) * baseR * 0.3;
+    const y0 = cy + baseR * 0.8;
+    const cp1x = x0 + sway,         cp1y = y0 + dripLen * 0.40;
+    const cp2x = x0 + sway * 0.5,   cp2y = y0 + dripLen * 0.75;
+    const x1 = x0 + sway * 0.2,     y1 = y0 + dripLen;
+    for (let i = 0; i < DRIP_STAMPS; i++) {
+      const t = i / (DRIP_STAMPS - 1);
+      const it = 1 - t;
+      // Cubic bezier point.
+      const bx = it*it*it*x0 + 3*it*it*t*cp1x + 3*it*t*t*cp2x + t*t*t*x1;
+      const by = it*it*it*y0 + 3*it*it*t*cp1y + 3*it*t*t*cp2y + t*t*t*y1;
+      const r = baseR * (0.22 - t * 0.14);
+      const a = (0.26 - t * 0.20) * alphaMul;
+      radialStamp(ctx, bx, by, r, a);
     }
   }
 }
 
-/** Build the paper texture (grain + diagonal fibers) into an offscreen canvas. */
+/** Pre-build paper grain + diagonal fibers into an offscreen canvas. */
 function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement | OffscreenCanvas {
   const cw = Math.max(1, Math.floor(w * dpr));
   const ch = Math.max(1, Math.floor(h * dpr));
@@ -145,7 +157,6 @@ function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement
   if (!octx) return off as HTMLCanvasElement;
   octx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  // Grain: per-pixel low-alpha speckle in two tones.
   const img = octx.createImageData(cw, ch);
   for (let i = 0; i < img.data.length; i += 4) {
     const v = Math.random();
@@ -153,11 +164,10 @@ function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement
     img.data[i]     = dark ? 70 : 230;
     img.data[i + 1] = dark ? 62 : 222;
     img.data[i + 2] = dark ? 50 : 200;
-    img.data[i + 3] = (Math.random() * 14) | 0; // 0..14 alpha
+    img.data[i + 3] = (Math.random() * 14) | 0;
   }
   octx.putImageData(img, 0, 0);
 
-  // Diagonal fibers — thin lines at random offsets.
   octx.strokeStyle = "rgba(110, 95, 75, 0.045)";
   octx.lineWidth = 0.6;
   for (let i = 0; i < 60; i++) {
@@ -174,10 +184,8 @@ function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement
 
 export default function ObsidianInk({ paused, onReady }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const pausedRef = useRef(paused);
-  pausedRef.current = paused;
-  const onReadyRef = useRef(onReady);
-  onReadyRef.current = onReady;
+  const pausedRef = useRef(paused); pausedRef.current = paused;
+  const onReadyRef = useRef(onReady); onReadyRef.current = onReady;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -195,11 +203,8 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
     }
 
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-    let w = 1;
-    let h = 1;
-    let rafId = 0;
-    let lastFrame = 0;
-    let nextSpawn = 0;
+    let w = 1, h = 1;
+    let rafId = 0, lastFrame = 0, nextSpawn = 0;
     let nextSeed = Math.floor(Math.random() * 0xffffff);
     let paperTexture: HTMLCanvasElement | OffscreenCanvas | null = null;
 
@@ -214,7 +219,6 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
       paperTexture = buildPaperTexture(w, h, dpr);
     };
     resize();
-
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
@@ -223,15 +227,13 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
       const rng = mulberry32(seed);
       const onLeft = rng() < 0.5;
       blots.push({
-        x: onLeft ? rng() * 0.30 : 0.70 + rng() * 0.28,
+        x: onLeft ? rng() * 0.32 : 0.68 + rng() * 0.30,
         y: 0.08 + rng() * 0.78,
         radius: 0.10 + rng() * 0.10,
         bornAt: now,
         seed,
         drip: rng() < 0.20,
-        vertices: 8 + Math.floor(rng() * 5), // 8..12
       });
-      // Prune blots that have fully faded out.
       while (blots.length > 0 && now - blots[0].bornAt > BLOT_TTL_MS + FADE_OUT_MS) {
         blots.shift();
       }
@@ -239,44 +241,32 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
     };
 
     const start = performance.now();
-    // Seed a few blots so the first frame already has content.
     for (let i = 0; i < 3; i++) spawnBlot(start - FADE_IN_MS - i * 600);
     nextSpawn = start + SPAWN_INTERVAL_MS;
 
     const tick = (now: number) => {
-      if (pausedRef.current) {
-        rafId = requestAnimationFrame(tick);
-        return;
-      }
-      if (now - lastFrame < FRAME_MS) {
-        rafId = requestAnimationFrame(tick);
-        return;
-      }
+      if (pausedRef.current) { rafId = requestAnimationFrame(tick); return; }
+      if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
 
-      // Warm paper background.
+      // Warm paper base.
       ctx.fillStyle = "#f5f0e6";
       ctx.fillRect(0, 0, w, h);
 
-      // Soft corner washes — gives the paper subtle depth.
+      // Corner washes.
       const wash1 = ctx.createRadialGradient(w * 0.2, h * 0.15, 0, w * 0.2, h * 0.15, Math.max(w, h) * 0.7);
       wash1.addColorStop(0, "rgba(214, 198, 168, 0.22)");
       wash1.addColorStop(1, "rgba(214, 198, 168, 0)");
-      ctx.fillStyle = wash1;
-      ctx.fillRect(0, 0, w, h);
-
+      ctx.fillStyle = wash1; ctx.fillRect(0, 0, w, h);
       const wash2 = ctx.createRadialGradient(w * 0.85, h * 0.9, 0, w * 0.85, h * 0.9, Math.max(w, h) * 0.6);
       wash2.addColorStop(0, "rgba(180, 160, 130, 0.16)");
       wash2.addColorStop(1, "rgba(180, 160, 130, 0)");
-      ctx.fillStyle = wash2;
-      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = wash2; ctx.fillRect(0, 0, w, h);
 
-      // Paper grain + fibers — pre-rendered, just blit.
-      if (paperTexture) {
-        ctx.drawImage(paperTexture as CanvasImageSource, 0, 0, w, h);
-      }
+      // Paper grain + fibers.
+      if (paperTexture) ctx.drawImage(paperTexture as CanvasImageSource, 0, 0, w, h);
 
-      // Ink blots — multiply blend so they bleed into the paper.
+      // Ink blots — multiply blend so overlap compounds darker.
       ctx.globalCompositeOperation = "multiply";
       for (const b of blots) drawBlot(ctx, b, w, h, now);
       ctx.globalCompositeOperation = "source-over";
@@ -286,11 +276,7 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
         nextSpawn = now + SPAWN_INTERVAL_MS + (Math.random() - 0.5) * 1200;
       }
 
-      if (onReadyRef.current) {
-        onReadyRef.current();
-        onReadyRef.current = undefined;
-      }
-
+      if (onReadyRef.current) { onReadyRef.current(); onReadyRef.current = undefined; }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
@@ -298,11 +284,7 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
     return () => {
       cancelAnimationFrame(rafId);
       ro.disconnect();
-      try {
-        host.removeChild(canvas);
-      } catch {
-        /* already detached */
-      }
+      try { host.removeChild(canvas); } catch { /* noop */ }
     };
   }, []);
 
