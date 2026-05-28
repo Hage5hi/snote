@@ -1,31 +1,33 @@
 // Mực Hắc Diệu (Obsidian Ink) — light-mode Canvas2D scene.
 //
-// Soft sumi-e ink diffusion. Each blot is rendered as a stack of jittered
-// radial gradients (smooth falloff, no contour banding) plus a ring of tiny
-// "fiber" gradient stamps perturbed by 2-octave value noise, so the rim
-// bleeds into the paper irregularly. Blots paint under `multiply` blend, so
-// overlapping blots compound darker — like real ink on washi.
+// Sumi-e ink diffusion. Each blot is a stack of irregular, fbm-distorted
+// closed polygons (NOT radial gradients, NOT dot rings). Layers paint under
+// `multiply` blend so overlapping low-alpha ink compounds darker — like
+// real ink bleeding into Xuan paper. A high-frequency monochromatic grain
+// overlay sits between the warm washes and the ink so blots read as
+// soaking *into* the paper.
 //
 // `lightweight: true` in the registry so it bypasses hardwareConcurrency<4.
 // ThemeToggle pins next-themes to "light" when this scene is active.
 import { useEffect, useRef } from "react";
 import type { SceneProps } from "./registry";
 
-const FRAME_MS = 1000 / 18;       // ink barely moves
+const FRAME_MS = 1000 / 15;
 const MAX_BLOTS = 7;
 const SPAWN_INTERVAL_MS = 3200;
 const FADE_IN_MS = 1600;
 const FADE_OUT_MS = 1800;
 const BLOT_TTL_MS = 14000;
 
-const BODY_LAYERS = 7;            // stacked radial gradients per blot body
-const FIBER_COUNT = 18;           // rim tendril stamps per blot
-const DRIP_STAMPS = 6;            // radial stamps along a drip bezier
+const STEPS = 96;            // angle samples per blob path
+const LAYERS = 14;           // capillary-bleed layers per blot
+const CORE_LAYERS = 2;       // small dark wet-centre layers
+const DRIP_LAYERS = 6;
 
 interface Blot {
-  x: number;         // 0..1 normalized
-  y: number;         // 0..1 normalized
-  radius: number;    // 0..1 of min(w,h)
+  x: number;
+  y: number;
+  radius: number;
   bornAt: number;
   seed: number;
   drip: boolean;
@@ -42,40 +44,59 @@ function mulberry32(seed: number) {
   };
 }
 
-/** Cheap 1D value-noise over angle θ (radians), seeded per blot. 2 octaves. */
-function makeAngularFbm(seed: number): (theta: number) => number {
-  // Pre-sample a small lookup table per octave; smoothstep between samples.
-  const N1 = 12, N2 = 24;
-  const rng = mulberry32(seed ^ 0x9e3779b1);
-  const t1: number[] = []; for (let i = 0; i < N1; i++) t1.push(rng() * 2 - 1);
-  const t2: number[] = []; for (let i = 0; i < N2; i++) t2.push(rng() * 2 - 1);
-  const sample = (tbl: number[], theta: number) => {
-    const n = tbl.length;
-    const x = ((theta / (Math.PI * 2)) % 1 + 1) % 1 * n;
-    const i = Math.floor(x);
-    const f = x - i;
-    const a = tbl[i % n];
-    const b = tbl[(i + 1) % n];
-    const u = f * f * (3 - 2 * f);
-    return a * (1 - u) + b * u;
-  };
-  return (theta: number) => sample(t1, theta) * 0.65 + sample(t2, theta * 1.3 + 1.7) * 0.35;
+// --- 2D value noise + fbm, seeded per blot ----------------------------------
+function hash2(ix: number, iy: number, seed: number): number {
+  let h = (ix * 374761393) ^ (iy * 668265263) ^ (seed * 2147483647);
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = Math.imul(h, 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+function vnoise2(x: number, y: number, seed: number): number {
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx);
+  const uy = fy * fy * (3 - 2 * fy);
+  const a = hash2(ix,     iy,     seed);
+  const b = hash2(ix + 1, iy,     seed);
+  const c = hash2(ix,     iy + 1, seed);
+  const d = hash2(ix + 1, iy + 1, seed);
+  return (a * (1 - ux) + b * ux) * (1 - uy) + (c * (1 - ux) + d * ux) * uy;
+}
+function fbm2(x: number, y: number, seed: number): number {
+  let v = 0, amp = 0.5, freq = 1;
+  for (let i = 0; i < 4; i++) {
+    v += amp * (vnoise2(x * freq, y * freq, seed + i * 91) * 2 - 1);
+    freq *= 2.07;
+    amp *= 0.5;
+  }
+  return v; // ~-1..1
 }
 
-/** Paint a single soft radial stamp. */
-function radialStamp(
+/** Draw a closed noise-distorted blob path. */
+function fillBlobPath(
   ctx: CanvasRenderingContext2D,
-  cx: number, cy: number, r: number,
-  centerAlpha: number,
+  cx: number, cy: number, baseR: number,
+  seed: number, freq: number, stretchDown: number,
+  fill: string,
 ) {
-  if (r <= 0.5 || centerAlpha <= 0.002) return;
-  const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-  g.addColorStop(0,    `rgba(20, 16, 12, ${centerAlpha.toFixed(3)})`);
-  g.addColorStop(0.55, `rgba(20, 16, 12, ${(centerAlpha * 0.35).toFixed(3)})`);
-  g.addColorStop(1,    "rgba(20, 16, 12, 0)");
-  ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  for (let i = 0; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const theta = t * Math.PI * 2;
+    const ct = Math.cos(theta), st = Math.sin(theta);
+    // Seamless across θ by sampling fbm on the unit circle.
+    const n1 = fbm2(ct * freq,        st * freq,        seed);
+    const n2 = fbm2(ct * freq * 2.1,  st * freq * 2.1,  seed + 1) * 0.5;
+    const distort = 1 + 0.55 * n1 + 0.25 * n2;
+    // Optional downward stretch for drips.
+    const tongue = stretchDown > 0 ? 1 + stretchDown * Math.max(0, -st) : 1;
+    const r = baseR * distort * tongue;
+    const x = cx + ct * r;
+    const y = cy + st * r;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = fill;
   ctx.fill();
 }
 
@@ -92,61 +113,55 @@ function drawBlot(ctx: CanvasRenderingContext2D, b: Blot, w: number, h: number, 
   const cx = b.x * w;
   const cy = b.y * h;
   const baseR = b.radius * Math.min(w, h) * (0.92 + 0.08 * eased);
+  const jitter = mulberry32(b.seed ^ 0x51ab1e);
 
-  const rng = mulberry32(b.seed);
-  rng(); rng();
-  const fbm = makeAngularFbm(b.seed);
+  const stretch = b.drip ? 1.6 : 0;
 
-  // --- Body: stacked radial gradients with jittered centers/radii ---
-  // Innermost stamps are small + dark; outermost are wide + faint. Sum
-  // produces a smooth falloff (no visible contour bands).
-  for (let i = 0; i < BODY_LAYERS; i++) {
-    const t = i / (BODY_LAYERS - 1); // 0..1
-    const ox = (rng() - 0.5) * baseR * 0.30;
-    const oy = (rng() - 0.5) * baseR * 0.30;
-    // Radius grows from 0.55 → 1.9 baseR, slight per-stamp jitter.
-    const r = baseR * (0.55 + t * 1.35) * (0.92 + rng() * 0.16);
-    // Alpha tapers from ~0.38 (small/dark center) → ~0.04 (wide halo).
-    const a = (0.38 - t * 0.34) * alphaMul;
-    radialStamp(ctx, cx + ox, cy + oy, r, a);
+  // Capillary bleed: each layer is a *different* fbm-distorted shape.
+  // Alpha tapers from 0.05 (innermost) → 0.018 (outermost).
+  for (let i = 0; i < LAYERS; i++) {
+    const t = i / (LAYERS - 1);
+    const scale = 1.0 + i * 0.045;
+    const freq = 1.6 + i * 0.07;
+    const ox = (jitter() - 0.5) * baseR * 0.16;
+    const oy = (jitter() - 0.5) * baseR * 0.16;
+    const a = (0.05 - t * 0.032) * alphaMul;
+    fillBlobPath(
+      ctx, cx + ox, cy + oy, baseR * scale,
+      b.seed + i * 17, freq, stretch,
+      `rgba(15, 12, 10, ${a.toFixed(3)})`,
+    );
   }
 
-  // --- Edge fiber bleed: tendrils perturbed by angular fbm ---
-  for (let i = 0; i < FIBER_COUNT; i++) {
-    const theta = (i / FIBER_COUNT) * Math.PI * 2 + rng() * 0.18;
-    const noise = fbm(theta);                       // -1..1
-    const rimR = baseR * (1.0 + 0.22 * noise);      // bleed in/out of edge
-    const fx = cx + Math.cos(theta) * rimR;
-    const fy = cy + Math.sin(theta) * rimR;
-    const stampR = baseR * (0.10 + rng() * 0.06);
-    const a = (0.11 + Math.max(0, noise) * 0.06) * alphaMul;
-    radialStamp(ctx, fx, fy, stampR, a);
+  // Wet-centre cores — small darker irregular blobs, no gradient.
+  for (let i = 0; i < CORE_LAYERS; i++) {
+    const ox = (jitter() - 0.5) * baseR * 0.08;
+    const oy = (jitter() - 0.5) * baseR * 0.08;
+    fillBlobPath(
+      ctx, cx + ox, cy + oy, baseR * (0.38 + i * 0.08),
+      b.seed + 503 + i * 31, 2.2 + i * 0.4, 0,
+      `rgba(15, 12, 10, ${(0.06 * alphaMul).toFixed(3)})`,
+    );
   }
 
-  // --- Optional drip: bezier of small radial stamps, alpha tapering down ---
+  // Drip tongue: same blob distortion, just elongated downward.
   if (b.drip) {
-    const drng = mulberry32(b.seed ^ 0xa11ce);
-    const dripLen = baseR * (1.6 + drng() * 1.8);
-    const sway = (drng() - 0.5) * baseR * 0.8;
-    const x0 = cx + (drng() - 0.5) * baseR * 0.3;
-    const y0 = cy + baseR * 0.8;
-    const cp1x = x0 + sway,         cp1y = y0 + dripLen * 0.40;
-    const cp2x = x0 + sway * 0.5,   cp2y = y0 + dripLen * 0.75;
-    const x1 = x0 + sway * 0.2,     y1 = y0 + dripLen;
-    for (let i = 0; i < DRIP_STAMPS; i++) {
-      const t = i / (DRIP_STAMPS - 1);
-      const it = 1 - t;
-      // Cubic bezier point.
-      const bx = it*it*it*x0 + 3*it*it*t*cp1x + 3*it*t*t*cp2x + t*t*t*x1;
-      const by = it*it*it*y0 + 3*it*it*t*cp1y + 3*it*t*t*cp2y + t*t*t*y1;
-      const r = baseR * (0.22 - t * 0.14);
-      const a = (0.26 - t * 0.20) * alphaMul;
-      radialStamp(ctx, bx, by, r, a);
+    const dy = baseR * 0.45;
+    for (let i = 0; i < DRIP_LAYERS; i++) {
+      const t = i / (DRIP_LAYERS - 1);
+      const scale = 0.55 - t * 0.30;
+      const a = (0.045 - t * 0.030) * alphaMul;
+      if (a <= 0.002) continue;
+      fillBlobPath(
+        ctx, cx + (jitter() - 0.5) * baseR * 0.1, cy + dy + t * baseR * 0.6,
+        baseR * scale, b.seed + 911 + i * 13, 2.0, 1.2,
+        `rgba(15, 12, 10, ${a.toFixed(3)})`,
+      );
     }
   }
 }
 
-/** Pre-build paper grain + diagonal fibers into an offscreen canvas. */
+/** Pre-build Xuan paper grain (monochromatic high-freq speckle, 2 passes). */
 function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement | OffscreenCanvas {
   const cw = Math.max(1, Math.floor(w * dpr));
   const ch = Math.max(1, Math.floor(h * dpr));
@@ -155,30 +170,36 @@ function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement
     : Object.assign(document.createElement("canvas"), { width: cw, height: ch });
   const octx = (off as HTMLCanvasElement).getContext("2d") as CanvasRenderingContext2D | null;
   if (!octx) return off as HTMLCanvasElement;
-  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   const img = octx.createImageData(cw, ch);
+  // Pass 1: dense fine grain.
   for (let i = 0; i < img.data.length; i += 4) {
     const v = Math.random();
     const dark = v < 0.5;
     img.data[i]     = dark ? 70 : 230;
     img.data[i + 1] = dark ? 62 : 222;
     img.data[i + 2] = dark ? 50 : 200;
-    img.data[i + 3] = (Math.random() * 14) | 0;
+    img.data[i + 3] = (Math.random() * 22) | 0;
+  }
+  // Pass 2: sparser warm speckle on top.
+  for (let i = 0; i < img.data.length; i += 4) {
+    if (Math.random() > 0.25) continue;
+    const dark = Math.random() < 0.6;
+    const a = (Math.random() * 10) | 0;
+    // Composite onto existing pixel (source-over alpha mix).
+    const sa = a / 255;
+    const sr = dark ? 90 : 240;
+    const sg = dark ? 78 : 228;
+    const sb = dark ? 60 : 210;
+    const da = img.data[i + 3] / 255;
+    const outA = sa + da * (1 - sa);
+    if (outA <= 0) continue;
+    img.data[i]     = (sr * sa + img.data[i]     * da * (1 - sa)) / outA;
+    img.data[i + 1] = (sg * sa + img.data[i + 1] * da * (1 - sa)) / outA;
+    img.data[i + 2] = (sb * sa + img.data[i + 2] * da * (1 - sa)) / outA;
+    img.data[i + 3] = (outA * 255) | 0;
   }
   octx.putImageData(img, 0, 0);
-
-  octx.strokeStyle = "rgba(110, 95, 75, 0.045)";
-  octx.lineWidth = 0.6;
-  for (let i = 0; i < 60; i++) {
-    const y0 = Math.random() * h;
-    const x0 = -20;
-    const len = w + 40;
-    octx.beginPath();
-    octx.moveTo(x0, y0);
-    octx.lineTo(x0 + len, y0 + (Math.random() - 0.5) * h * 0.6);
-    octx.stroke();
-  }
   return off as HTMLCanvasElement;
 }
 
@@ -263,7 +284,7 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
       wash2.addColorStop(1, "rgba(180, 160, 130, 0)");
       ctx.fillStyle = wash2; ctx.fillRect(0, 0, w, h);
 
-      // Paper grain + fibers.
+      // Paper grain — drawn BEFORE ink so blots sit "in" the grain.
       if (paperTexture) ctx.drawImage(paperTexture as CanvasImageSource, 0, 0, w, h);
 
       // Ink blots — multiply blend so overlap compounds darker.

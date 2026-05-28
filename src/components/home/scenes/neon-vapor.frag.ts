@@ -63,10 +63,10 @@ void main() {
   float skyT = smoothstep(horizonY, 1.0, uv.y);
   vec3 sky = mix(deepPurple, midnight, skyT);
 
-  // Drifting fog above the horizon.
+  // Drifting fog above the horizon (toned down so stars read crisp).
   vec2 p = vec2(uv.x * aspect, uv.y);
   float n1 = fbm(p * 2.2 + vec2(u_time * 0.05, u_time * 0.03));
-  sky = mix(sky, softPink * 0.5 + deepPurple * 0.5, n1 * 0.35 * skyT);
+  sky = mix(sky, softPink * 0.5 + deepPurple * 0.5, n1 * 0.18 * skyT);
 
   // Horizon sun — a flat-topped half-disc with magenta→cyan gradient and a
   // few horizontal cut bands (classic synthwave sun).
@@ -85,9 +85,19 @@ void main() {
   // Bloom-ish halo around the sun.
   sky += hotPink * exp(-sunR * 2.8) * 0.35 * step(horizonY - 0.02, uv.y);
 
-  // Sparse star pinpoints (high-noise threshold) in the upper sky.
-  float starN = noise(p * 110.0);
-  sky += vec3(1.0) * smoothstep(0.95, 1.0, starN) * skyT * 0.6;
+  // Crisp star pinpricks — high-threshold hash, no continuous noise.
+  // One ~1px lit pixel per qualifying cell. Twinkle modulates alpha only,
+  // so edges stay sharp (no smudge / soft halo).
+  vec2 starUV = uv * vec2(aspect, 1.0) * 220.0;
+  vec2 starCell = floor(starUV);
+  float starHash = fract(sin(dot(starCell, vec2(12.9898, 78.233))) * 43758.5453);
+  float starMask = step(0.997, starHash);
+  vec2 cellF = fract(starUV);
+  float pin = step(0.42, cellF.x) * step(cellF.x, 0.58)
+            * step(0.42, cellF.y) * step(cellF.y, 0.58);
+  float twinkle = 0.6 + 0.4 * sin(u_time * 1.8 + starHash * 31.4);
+  sky += vec3(1.0) * starMask * pin * twinkle * skyT;
+
 
   // --- GRID FLOOR -----------------------------------------------------------
   // Perspective-corrected XZ grid below horizon. y' grows as we approach

@@ -1,83 +1,89 @@
-# Upgrade Plan — Obsidian Ink & Zodiac Constellation
+# Plan — Obsidian Ink rewrite + crisp stars
 
-Only `src/components/home/scenes/ObsidianInk.tsx` and `src/components/home/scenes/DigitalConstellation.tsx` change. No edits to registry, i18n, SceneHost, Home.tsx, theme hooks, or CSS tokens. The `lightweight: true` flag, `forceColorScheme`, paused gating, `onReady` callback, ResizeObserver lifecycle, and `aria-hidden` host wrapper all stay identical.
+Touches only 2 files. No registry, i18n, CSS, or test changes.
 
----
+## 1. `src/components/home/scenes/ObsidianInk.tsx` — full rewrite
 
-## 1. Obsidian Ink — soft sumi diffusion
+Throw out the current "stacked radial gradients + 18 rim tendrils" approach. It produces the symmetric bacteria / orbiting-dot look the user is rejecting. Replace with a true noise-distorted blob renderer.
 
-**Goal:** replace the current polygon + 3-ring "contour" blot (which reads as topographic banding) with smooth radial diffusion that bleeds organically and darkens on overlap, on a paper-textured ground.
+### Blot model
+Each blot is rendered as N filled, irregular closed paths — NOT radial gradients, NOT dot stamps.
 
-**Algorithm (Canvas2D, no WebGL):**
+- **Path generation**: sample `STEPS = 96` angles around the center. For each angle θ, compute distorted radius:
+  ```
+  r(θ) = baseR * (1 + 0.55 * fbm2(cos θ, sin θ, seed) + 0.25 * fbm2(2·cos θ, 2·sin θ, seed+1))
+  ```
+  where `fbm2` is 4-octave 2D value-noise sampled on a unit circle (so it's seamless across θ=0/2π). Output range roughly `0.45·baseR … 1.7·baseR` — guarantees asymmetric amoeba contours, no possible ring symmetry.
+- **Layered capillary bleed**: stack `LAYERS = 14` of these paths.
+  - Layer i scale: `1.0 + i * 0.045` (each slightly larger).
+  - Layer i regenerates the path with `seed + i * 17` and a slightly different noise frequency, so each contour is a *different* irregular shape — not concentric copies.
+  - Per-layer center jitter: `±baseR * 0.08`.
+  - Fill alpha per layer: linearly from `0.05` at the core down to `0.018` at the outermost, exactly in the requested 0.02–0.05 band.
+- **Inner dark core**: 2 extra small noise-distorted paths at `0.4·baseR` with alpha `0.06` for the darkest "wet" center. No gradient, just flat dark fill — multiply compounding does the falloff.
+- **Color**: flat `rgba(15, 12, 10, α)` — let multiply blend do the work.
+- **Optional drip (20%)**: replace bezier-of-radial-stamps with a single elongated noise-distorted path: stretch `r(θ)` by `1 + 1.6 * max(0, -sin θ)` so the blob grows a tongue downward, then layer 6× same as body.
 
-- **Paper ground (one-time offscreen):** keep the existing `buildPaperTexture` (grain + fibers) and the warm corner washes — those already read well. Tone the base from `#f5f0e6` slightly warmer/cooler only if needed during QA; do not rebuild.
-- **Blot model — replace polygon with layered radial gradients:**
-  - Each blot has: `x, y, baseR, bornAt, seed, vertices` (kept), drop `drip` ring stroke logic.
-  - Render each blot as **6–8 stacked radial gradients** (`ctx.createRadialGradient`) at slightly jittered centers (≤ `0.15*baseR` offset) and slightly varying radii (`0.85*baseR` … `1.9*baseR`). Each gradient: dark center `rgba(20,16,12, a)` → fully transparent at edge. Alphas taper from ~`0.35` (innermost, smallest) to ~`0.03` (outermost, widest). Sum produces a smooth, non-banded falloff — no visible contour steps.
-  - **Edge fiber bleed:** for each blot, draw 14–22 tiny radial gradient "tendrils" at the rim. Each tendril = a small radial gradient (`r ≈ 0.08*baseR`) placed at angle `θ` on a perturbed radius `baseR * (1 + 0.18 * fbm(θ, seed))`, with low alpha (~`0.10`). Use a 2-octave value-noise/`mulberry32`-driven `fbm(θ)` so the rim looks like capillary action into paper fibers — irregular but continuous, never spiky.
-  - **Drip:** keep optional 20% drip as today, but render it via the same stacked-radial technique along a Bezier (5–7 small radial gradient stamps along the curve, alpha tapering).
-- **Multiply blend for overlap darkening:** wrap the entire blot pass in `ctx.globalCompositeOperation = "multiply"` (already partly used) and ensure each gradient stamp commits under multiply. Overlapping blots will compound naturally like real ink.
-- **Fade-in / fade-out / TTL:** keep existing `FADE_IN_MS`, `FADE_OUT_MS`, `BLOT_TTL_MS`, `MAX_BLOTS`, `SPAWN_INTERVAL_MS`, multiplied into per-stamp alpha (one global `alphaMul`).
-- Delete: `blotPolygon`, `tracePolygon`, wet-edge polygon stroke, taper-stroke drip block (replaced by radial-stamp drip).
+### Multiply blending
+Keep `ctx.globalCompositeOperation = "multiply"` wrapping the whole blot pass. Critical so overlapping low-α layers (within one blot AND between blots) compound darker — that's the entire mechanism for capillary realism.
 
-**Performance:**
-- Keep `FRAME_MS = 1000/18` (already well under 30fps cap).
-- Stacked gradients are cheap; total stamps per frame ≈ `MAX_BLOTS (7) * (8 body + 18 fiber) ≈ 180`, all small. Acceptable on integrated GPUs.
-- DPR cap stays `1.5`.
+### Paper grain — keep & strengthen
+Current `buildPaperTexture` is fine in concept. Tweak:
+- Per-pixel noise alpha range from `0..14` → `0..22` (more visible grain).
+- Drop the diagonal-fiber strokes (too "drawn"). Replace with a second high-frequency speckle pass at 25% density, slightly warmer tone, alpha 0..10. Result: pure Xuan-paper tooth, no visible structure.
+- Draw paper texture **after** the warm washes but **before** ink. Ink is drawn over grain with multiply, so ink visually sits *in* the grain (as requested).
 
----
+### Counts & guardrails
+- `STEPS=96`, `LAYERS=14`, `MAX_BLOTS=7` → ~9,800 path vertices/frame. Still well under budget at `FRAME_MS = 1000/15` (slow down from 18→15 fps since ink barely moves and paths are heavier).
+- DPR cap stays at 1.5.
+- `lightweight: true` semantic preserved.
+- `prefers-reduced-motion` honoured (spawning halts, existing blots hold).
 
-## 2. Zodiac Constellation — living star map with parallax
+### Deleted code
+- `radialStamp()` helper.
+- `makeAngularFbm()` (replaced by 2D fbm).
+- `BODY_LAYERS`, `FIBER_COUNT`, `DRIP_STAMPS` constants.
+- The entire fiber-tendril loop (this is the "ring of dots").
 
-**Goal:** keep the 12 hand-drawn zodiac shapes (they read instantly) but embed them inside a deep, parallax starfield with dynamically pulsing connection lines, so it feels like an animated celestial map instead of clip-art.
+### New helpers
+- `fbm2(x, y, seed)` — 4-octave value noise on a 2D grid, hash-based, seeded.
+- `buildBlobPath(ctx, cx, cy, baseR, seed, freq, stretch?)` — emits a closed `Path2D`-equivalent via `moveTo`/`lineTo` over 96 angle samples.
 
-**Layer model (back → front):**
+## 2. `src/components/home/scenes/neon-vapor.frag.ts` — star rewrite only
 
-1. **Deep background gradient** — keep current `#06091a` → `#0c1530`.
-2. **Far starfield (parallax z=0.3):** ~220 stars, 1px, alpha `0.08–0.22`, very slight pointer drift (`2px * mx,my`). Twinkle: per-star phase `sin(t * 0.6 + phase)` modulating alpha by ±25%.
-3. **Mid starfield (parallax z=0.6):** ~110 stars, 1–1.5px, alpha `0.18–0.40`, drift `5px`. Stronger twinkle ±35%.
-4. **Drifting dust (parallax z=0.8):** ~30 slowly drifting motes, very faint (`alpha ≤ 0.08`), tiny velocity (~0.04 px/frame), wrap on edges. Adds subtle flow.
-5. **Zodiac layer (parallax z=1.0):** the 12 constellations, drift `10–14px`. Keep `ZODIAC` data, `placeAll`, jittered grid, rotation, and `name` labels.
+Lines 88–90 currently do:
+```glsl
+float starN = noise(p * 110.0);
+sky += vec3(1.0) * smoothstep(0.95, 1.0, starN) * skyT * 0.6;
+```
+That's continuous bilinear-interpolated value noise thresholded — produces fuzzy blobs ("smudgy"). Replace with the user-specified crisp hash:
 
-Replace the current 3-band `PARALLAX_OFFSET[zBand]` with this true 4-layer system (zodiacs all share the front layer; the depth now comes from the 3 background layers below them).
+```glsl
+// Crisp star pinpricks — high-threshold hash, no interpolation.
+vec2 starUV = uv * vec2(aspect, 1.0) * 220.0;
+vec2 starCell = floor(starUV);
+float starHash = fract(sin(dot(starCell, vec2(12.9898, 78.233))) * 43758.5453);
+float starMask = step(0.997, starHash);
+// Twinkle: per-star phase from same hash, modulates alpha only, edges stay sharp.
+float twinkle = 0.6 + 0.4 * sin(u_time * 1.8 + starHash * 31.4);
+// Confine the bright pixel to a small sub-cell so it's a true pinprick (~1px).
+vec2 cellF = fract(starUV);
+float pin = step(0.42, cellF.x) * step(cellF.x, 0.58)
+          * step(0.42, cellF.y) * step(cellF.y, 0.58);
+sky += vec3(1.0) * starMask * pin * twinkle * skyT;
+```
 
-**Live connection lines (per zodiac edge):**
-- Compute a per-edge phase from `(constellationIndex * 7 + edgeIndex) * 0.91`.
-- Per-frame edge intensity: `glow = 0.55 + 0.45 * sin(t * 0.0011 + phase)` → modulates stroke alpha (`0.18 → 0.55`) and lineWidth (`0.55 → 1.05`). Each constellation breathes at its own cadence, never all in sync.
-- Stars at vertices: base halo radius modulated by a slower `sin(t * 0.0006 + phase) * 0.5 + 0.5` → subtle "ancient diagram pulsing" feel.
-- Existing periodic full-constellation pulse stays — but lower peak (`pulseAmt * 0.8`) so it layers over the new ambient breathing instead of dominating.
+Effect: exactly one ~1px crisp pixel per qualifying cell, twinkles via alpha only, no soft halo, no gradient. Density tuned by the `0.997` threshold (≈0.3% of cells light up).
 
-**Pointer interaction:**
-- Keep the smoothed `mx,my` (lerp 0.08). Use it as parallax driver for all 4 layers (back to front, magnitude scales with z).
-- Additional micro-interaction: each constellation's rotation gets a tiny `±0.03 rad` offset proportional to `(mx,my)` and the constellation's screen position relative to center → whole field "tilts" subtly with the cursor. No per-edge mouse hit-testing (too costly + would break 30fps budget).
+### Also remove smudge sources
+- Line 69 `sky = mix(sky, softPink * 0.5 + deepPurple * 0.5, n1 * 0.35 * skyT);` — keep but reduce factor `0.35 → 0.18`. The drifting fog is currently strong enough to read as "dirty haze behind stars". Lighter fog → cleaner sky.
+- Bloom halo around sun (line 86) is fine, it's localized.
 
-**Performance & budget:**
-- Keep `FRAME_MS = 1000/30` and `dpr ≤ 1.5`.
-- Stars rendered as `fillRect(x,y,1,1)` or `arc` for mid layer; do **not** use radial gradients per-star for the background layers (too expensive at 220+110 count). Reserve radial gradients only for the 12*~7 ≈ 84 zodiac vertex halos.
-- Pre-seed starfields on resize (same pattern as today).
-- Twinkle uses one `sin` per star per frame — ~360 sin calls/frame, negligible.
+`DigitalConstellation` is NOT shared — it already uses discrete `fillRect(x,y,1,1)` for background stars (crisp). No change needed there. (Earlier in this chat the user previously approved its current state.)
 
----
+## Verification
+- Manual visual check at `/` for both light theme (Obsidian Ink) and Neon Vapor.
+- `npm run check:home-theme-isolation` (40/40 must still pass).
+- E2E visual baselines for these two scenes will need refresh after merge — flag to user, do not auto-update.
 
-## Guardrails (unchanged, re-verify after edit)
-
-- `scripts/check-home-theme-isolation.ts` still passes (no scene-token leaks).
-- Both files keep `lightweight: true` semantics (no change required — flag lives in `registry.ts` which we don't touch).
-- `prefers-reduced-motion` honoured by SceneHost upstream — internal loops still respect `pausedRef`.
-- WebGL fallback unaffected (both scenes are Canvas2D).
-- Vitest suite untouched; visual E2E baselines for these two scenes will need refresh after merge (call out, do not regenerate in this plan).
-
-## Files touched
-
-- `src/components/home/scenes/ObsidianInk.tsx` — rewrite blot renderer; keep paper texture + lifecycle.
-- `src/components/home/scenes/DigitalConstellation.tsx` — add multi-layer starfield, time-based edge pulsing, expanded parallax; keep zodiac data + placement.
-
-## QA checklist
-
-1. `bun run check:home-isolation` → pass.
-2. Manual `/` with each of the two scenes selected:
-   - Obsidian: no visible contour rings; overlapping blots clearly darker than singles; rim looks fibrous, not polygonal; paper grain visible.
-   - Zodiac: pointer move produces visible depth shift; star layers twinkle independently; zodiac edges breathe at different cadences; periodic full pulse still fires.
-3. Toggle `prefers-reduced-motion` (DevTools rendering tab) → animation freezes (SceneHost responsibility, just verify nothing regressed).
-4. DevTools Performance: confirm both scenes stay ≤ ~33ms frame time on a mid-tier laptop (30fps cap for Zodiac, 18fps for Obsidian).
-5. Switch to `/note/test` → confirm no scene tokens or canvases leak.
+## Out of scope
+Other 3 scenes, CSS tokens, registry, i18n, SceneHost, Home.tsx, tests.
