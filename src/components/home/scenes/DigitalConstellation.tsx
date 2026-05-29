@@ -252,11 +252,16 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
       if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
 
-      const bg = ctx.createLinearGradient(0, 0, 0, h);
-      bg.addColorStop(0, "#06091a");
-      bg.addColorStop(1, "#0c1530");
-      ctx.fillStyle = bg;
-      ctx.fillRect(0, 0, w, h);
+      // Blit cached background + watermark glyphs + labels in one drawImage.
+      if (staticLayer) {
+        ctx.drawImage(staticLayer as CanvasImageSource, 0, 0, w, h);
+      } else {
+        const bg = ctx.createLinearGradient(0, 0, 0, h);
+        bg.addColorStop(0, "#06091a");
+        bg.addColorStop(1, "#0c1530");
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, w, h);
+      }
 
       const tSec = now * 0.001;
       const bgDrift = tSec * BG_DRIFT_PX_PER_SEC;
@@ -287,9 +292,9 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
         ctx.fillRect(wrapX(d.x + bgDrift * 0.75), d.y, 1, 1);
       }
 
-      // --- Zodiacs pinned to grid cells ---
+      // --- Zodiacs pinned to grid cells (dynamic edges + vertex stars only;
+      //     watermark glyphs + labels are baked into the static layer). ---
       const scl = cellMin * 0.32;
-      const glyphSize = Math.round(cellMin * 0.45);
 
       for (let i = 0; i < ZODIAC.length; i++) {
         const z = ZODIAC[i];
@@ -303,17 +308,10 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
         const phase = (i * 1.7) % (Math.PI * 2);
         const breath = 0.2 + 0.6 * (0.5 + 0.5 * Math.sin(tSec * (Math.PI * 2) / period + phase));
 
-        // 1) Glyph watermark, behind everything.
-        ctx.fillStyle = `rgba(180, 200, 240, ${(0.04 + 0.05 * breath).toFixed(3)})`;
-        ctx.font = `${glyphSize}px "Apple Symbols", "Segoe UI Symbol", serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(z.glyph, cx, cy);
-
-        // 2) Screen-space star positions.
+        // Screen-space star positions.
         const screenPts = z.pts.map(([lx, ly]) => ({ x: cx + lx * scl, y: cy + ly * scl }));
 
-        // 3) Edges with per-edge micro-twinkle layered under the breath.
+        // Edges with per-edge micro-twinkle layered under the breath.
         for (let ei = 0; ei < z.edges.length; ei++) {
           const [a, b] = z.edges[ei];
           const ph = (i * 7 + ei) * 0.91;
@@ -327,7 +325,7 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
           ctx.stroke();
         }
 
-        // 4) Vertex stars with halos.
+        // Vertex stars with halos.
         for (let vi = 0; vi < screenPts.length; vi++) {
           const sp = screenPts[vi];
           const ph = (i * 11 + vi) * 1.37;
@@ -347,17 +345,6 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
           ctx.arc(sp.x, sp.y, baseR, 0, Math.PI * 2);
           ctx.fill();
         }
-
-        // 5) Two-line label below the figure.
-        const labelY = cy + scl * 0.6;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        ctx.fillStyle = `rgba(190, 210, 240, ${(0.25 + breath * 0.30).toFixed(3)})`;
-        ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-        ctx.fillText(z.name, cx, labelY);
-        ctx.fillStyle = `rgba(170, 200, 240, ${(0.18 + breath * 0.22).toFixed(3)})`;
-        ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
-        ctx.fillText(z.range, cx, labelY + 12);
       }
 
       if (onReadyRef.current) { onReadyRef.current(); onReadyRef.current = undefined; }
