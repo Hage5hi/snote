@@ -419,7 +419,7 @@ export const dict = {
     "scene.cyber_linh_khi.desc": "Flowing bands of jade chi",
     "scene.ethereal_aurora.label": "Ethereal Aurora",
     "scene.ethereal_aurora.desc": "Dreamy pastel veils with stardust",
-    "scene.digital_constellation.label": "Zodiac Constellation",
+    "scene.digital_constellation.label": "Zodiac Map",
     "scene.digital_constellation.desc": "The 12 zodiac constellations with parallax drift",
     "scene.neon_vapor.label": "Neon Horizon",
     "scene.neon_vapor.desc": "Magenta-cyan fog city",
