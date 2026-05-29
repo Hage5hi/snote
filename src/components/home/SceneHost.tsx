@@ -60,7 +60,7 @@ function shouldBlockScene(def: SceneDef | undefined): boolean {
 }
 
 export default function SceneHost() {
-  const { scene, setScene } = useSceneTheme();
+  const { scene, committedScene, setScene } = useSceneTheme();
   const { resolvedTheme } = useTheme();
   const isDark = resolvedTheme === "dark";
   const [paused, setPaused] = useState(
@@ -77,9 +77,13 @@ export default function SceneHost() {
   // is the contract the perf tests enforce.
   const blocked = scene !== SCENE_NONE && shouldBlockScene(def);
 
-  // Revert the user's choice once (post-commit) so the dropdown reflects it.
+  // Revert the user's *committed* choice once (post-commit) so the dropdown
+  // reflects it. NEVER fire when the user is merely previewing on hover —
+  // that would wipe their saved scene back to "none" just because their
+  // current hover target happens to be guard-blocked.
   useEffect(() => {
     if (!blocked) return;
+    if (committedScene === SCENE_NONE) return;
     if (revertedRef.current) return;
     revertedRef.current = true;
     try {
@@ -88,7 +92,7 @@ export default function SceneHost() {
       /* ignore */
     }
     setScene(SCENE_NONE);
-  }, [blocked, setScene]);
+  }, [blocked, committedScene, setScene]);
 
   // Reset ready state whenever we switch scenes.
   useEffect(() => {
