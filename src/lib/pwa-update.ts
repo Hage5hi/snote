@@ -16,16 +16,20 @@
 //      an explicit "Update" button. The user keeps full control — no auto
 //      reload, no data wipe.
 //   4. We also poll `registration.update()` hourly so long-running PWA tabs
-//      (standalone install) eventually notice updates.
+//      (standalone install) eventually notice updates, plus we re-check
+//      whenever the tab regains focus / visibility so the preview iframe
+//      doesn't sit on a stale build.
 
 import { registerSW } from "virtual:pwa-register";
 import { toast as sonnerToast } from "sonner";
-import { detectLang, dict, type Lang } from "@/i18n";
+import { detectLang, dict, STORAGE_KEY, type Lang } from "@/i18n";
 
 // Re-check for a new SW every hour. Short enough that a user who leaves the
 // PWA open all day still picks updates up the same session; long enough not
 // to thrash on flaky networks.
 const UPDATE_POLL_INTERVAL_MS = 60 * 60 * 1000;
+
+const TOAST_ID = "pwa-update-toast";
 
 type FlatDict = Record<string, string>;
 
@@ -40,36 +44,65 @@ export function registerAppUpdater(): void {
   // No SW is generated in dev builds (devOptions.enabled: false), so skip.
   if (import.meta.env.DEV) return;
 
-  // Snapshot at registration time. detectLang() reads localStorage; if the
-  // user later switches language the existing toast still reads OK because
-  // it's only the title/buttons.
-  const lang = detectLang();
+  let updateAvailable = false;
+
+  const showToast = (updateSW: (reload?: boolean) => Promise<void>) => {
+    // Read language fresh each time so the toast matches the user's
+    // *current* selection, not whatever was set when the SW registered.
+    const lang = detectLang();
+    sonnerToast(tr(lang, "update.title"), {
+      id: TOAST_ID,
+      description: tr(lang, "update.description"),
+      // Stay visible until the user decides. Sonner treats Infinity as
+      // "never auto-dismiss".
+      duration: Infinity,
+      action: {
+        label: tr(lang, "update.btn_reload"),
+        onClick: () => {
+          // updateSW(true) posts SKIP_WAITING to the waiting SW and reloads
+          // the page once the new SW takes control. No data is cleared —
+          // IndexedDB (Yjs), localStorage (recents/pins/theme), and any
+          // Supabase session all survive the reload.
+          void updateSW(true);
+        },
+      },
+    });
+  };
 
   const updateSW = registerSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
+      // Check immediately so a freshly opened preview tab that's been left
+      // open across deploys doesn't have to wait an hour to notice.
+      registration.update().catch(() => {});
       window.setInterval(() => {
         // Silent: any network failure here is fine, we'll try again next tick.
         registration.update().catch(() => {});
       }, UPDATE_POLL_INTERVAL_MS);
-    },
-    onNeedRefresh() {
-      sonnerToast(tr(lang, "update.title"), {
-        description: tr(lang, "update.description"),
-        // Stay visible until the user decides. Sonner treats Infinity as
-        // "never auto-dismiss".
-        duration: Infinity,
-        action: {
-          label: tr(lang, "update.btn_reload"),
-          onClick: () => {
-            // updateSW(true) posts SKIP_WAITING to the waiting SW and reloads
-            // the page once the new SW takes control. No data is cleared —
-            // IndexedDB (Yjs), localStorage (recents/pins/theme), and any
-            // Supabase session all survive the reload.
-            void updateSW(true);
-          },
-        },
+      // Re-check whenever the tab becomes visible again (catches the
+      // "preview iframe was hidden during deploy" case).
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          registration.update().catch(() => {});
+        }
       });
     },
+    onNeedRefresh() {
+      updateAvailable = true;
+      showToast(updateSW);
+    },
+  });
+
+  // If the user switches language while the update toast is visible, re-show
+  // it with the new translations.
+  window.addEventListener("storage", (e) => {
+    if (e.key === STORAGE_KEY && updateAvailable) {
+      showToast(updateSW);
+    }
+  });
+  // Same-tab language changes don't fire `storage`; provider dispatches this
+  // custom event so we can refresh the toast in place.
+  window.addEventListener("i18n:lang-changed", () => {
+    if (updateAvailable) showToast(updateSW);
   });
 }
