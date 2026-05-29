@@ -1,9 +1,9 @@
-// Cung Hoàng Đạo (Zodiac Constellation) — multi-layered starfield Canvas2D scene.
+// Cung Hoàng Đạo (Zodiac Map) — autonomous starfield Canvas2D scene.
 //
-// Four parallax layers (far stars, mid stars, dust, zodiacs) drift with the
-// pointer to create depth. Each zodiac edge breathes on its own sine phase
-// so the network feels alive; a slower periodic full-constellation pulse
-// still fires every ~8s. Background stars twinkle independently.
+// No pointer interaction. Background stars twinkle on their own sine phases;
+// each of the 12 zodiacs breathes asynchronously (~35s period); the whole
+// sky drifts horizontally (sidereal drift) with a tiny vertical bob so the
+// celestial sphere feels alive without any user input.
 //
 // `lightweight: true` so it bypasses hardwareConcurrency<4.
 // ThemeToggle pins next-themes to "dark" when this scene is active.
@@ -11,18 +11,18 @@ import { useEffect, useRef } from "react";
 import type { SceneProps } from "./registry";
 
 const FRAME_MS = 1000 / 30;
-const PULSE_INTERVAL_MS = 7800;
-const PULSE_DUR_MS = 1600;
 
 const FAR_STARS = 220;
 const MID_STARS = 110;
 const DUST_COUNT = 30;
 
-// Parallax magnitudes (px) per layer.
-const PX_FAR = 3;
-const PX_MID = 6;
-const PX_DUST = 9;
-const PX_ZODIAC = 14;
+// Sidereal drift: ~4 px/sec at base layer ≈ one screen-width per ~6 min.
+// Each layer scales this to fake parallax depth without mouse input.
+const DRIFT_PX_PER_SEC = 4;
+const DRIFT_K_FAR = 0.4;
+const DRIFT_K_MID = 0.55;
+const DRIFT_K_DUST = 0.75;
+const DRIFT_K_ZODIAC = 1.0;
 
 interface Constellation {
   name: string;
@@ -66,7 +66,6 @@ interface Placed {
 
 interface Star { x: number; y: number; a: number; phase: number; }
 interface Dust { x: number; y: number; a: number; vx: number; vy: number; }
-interface PulseState { index: number; startedAt: number; }
 
 function placeAll(): Placed[] {
   const grid: { x: number; y: number }[] = [];
@@ -113,12 +112,9 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
     let rafId = 0, lastFrame = 0;
 
     const placed = placeAll();
-    let targetMx = 0, targetMy = 0, mx = 0, my = 0;
     let farStars: Star[] = [];
     let midStars: Star[] = [];
     let dust: Dust[] = [];
-    let nextPulse = performance.now() + PULSE_INTERVAL_MS;
-    let pulse: PulseState | null = null;
 
     const resize = () => {
       w = host.clientWidth || 1;
@@ -157,20 +153,13 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    const onPointer = (e: PointerEvent) => {
-      const rect = host.getBoundingClientRect();
-      targetMx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      targetMy = ((e.clientY - rect.top) / rect.height) * 2 - 1;
-    };
-    window.addEventListener("pointermove", onPointer, { passive: true });
+    // Seamless horizontal wrap helper.
+    const wrapX = (x: number) => ((x % w) + w) % w;
 
     const tick = (now: number) => {
       if (pausedRef.current) { rafId = requestAnimationFrame(tick); return; }
       if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
-
-      mx += (targetMx - mx) * 0.08;
-      my += (targetMy - my) * 0.08;
 
       // Deep space gradient.
       const bg = ctx.createLinearGradient(0, 0, 0, h);
@@ -181,73 +170,71 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
 
       const tSec = now * 0.001;
 
-      // --- Layer 1: far stars (twinkle ±25%, faint parallax) ---
-      const farOx = -PX_FAR * mx, farOy = -PX_FAR * my;
-      for (const s of farStars) {
-        const tw = 1 + 0.25 * Math.sin(tSec * 0.6 + s.phase);
-        const a = Math.max(0, Math.min(1, s.a * tw));
-        ctx.fillStyle = `rgba(219, 233, 255, ${a.toFixed(3)})`;
-        ctx.fillRect(s.x + farOx, s.y + farOy, 1, 1);
+      // Autonomous sidereal drift — same for every layer scaled by depth.
+      const driftBase = tSec * DRIFT_PX_PER_SEC;
+      const driftY = Math.sin(tSec * 0.04) * 6;
+
+      // --- Layer 1: far stars (twinkle ±25%, slowest drift) ---
+      {
+        const dx = driftBase * DRIFT_K_FAR;
+        for (const s of farStars) {
+          const tw = 1 + 0.25 * Math.sin(tSec * 0.6 + s.phase);
+          const a = Math.max(0, Math.min(1, s.a * tw));
+          ctx.fillStyle = `rgba(219, 233, 255, ${a.toFixed(3)})`;
+          ctx.fillRect(wrapX(s.x + dx), s.y + driftY, 1, 1);
+        }
       }
 
-      // --- Layer 2: mid stars (twinkle ±35%, more parallax, slightly bigger) ---
-      const midOx = -PX_MID * mx, midOy = -PX_MID * my;
-      for (const s of midStars) {
-        const tw = 1 + 0.35 * Math.sin(tSec * 0.9 + s.phase);
-        const a = Math.max(0, Math.min(1, s.a * tw));
-        ctx.fillStyle = `rgba(225, 236, 255, ${a.toFixed(3)})`;
-        const sz = 1 + (Math.sin(s.phase) > 0.3 ? 0.5 : 0);
-        ctx.fillRect(s.x + midOx, s.y + midOy, sz, sz);
+      // --- Layer 2: mid stars (twinkle ±35%, slightly bigger) ---
+      {
+        const dx = driftBase * DRIFT_K_MID;
+        for (const s of midStars) {
+          const tw = 1 + 0.35 * Math.sin(tSec * 0.9 + s.phase);
+          const a = Math.max(0, Math.min(1, s.a * tw));
+          ctx.fillStyle = `rgba(225, 236, 255, ${a.toFixed(3)})`;
+          const sz = 1 + (Math.sin(s.phase) > 0.3 ? 0.5 : 0);
+          ctx.fillRect(wrapX(s.x + dx), s.y + driftY, sz, sz);
+        }
       }
 
       // --- Layer 3: drifting dust ---
-      const dustOx = -PX_DUST * mx, dustOy = -PX_DUST * my;
-      for (const d of dust) {
-        d.x += d.vx; d.y += d.vy;
-        if (d.x < 0) d.x += w; else if (d.x > w) d.x -= w;
-        if (d.y < 0) d.y += h; else if (d.y > h) d.y -= h;
-        ctx.fillStyle = `rgba(180, 200, 240, ${d.a.toFixed(3)})`;
-        ctx.fillRect(d.x + dustOx, d.y + dustOy, 1, 1);
+      {
+        const dx = driftBase * DRIFT_K_DUST;
+        for (const d of dust) {
+          d.x += d.vx; d.y += d.vy;
+          if (d.x < 0) d.x += w; else if (d.x > w) d.x -= w;
+          if (d.y < 0) d.y += h; else if (d.y > h) d.y -= h;
+          ctx.fillStyle = `rgba(180, 200, 240, ${d.a.toFixed(3)})`;
+          ctx.fillRect(wrapX(d.x + dx), d.y + driftY, 1, 1);
+        }
       }
 
-      // Pulse scheduling (preserved).
-      if (now >= nextPulse && !pulse) {
-        pulse = { index: Math.floor(Math.random() * placed.length), startedAt: now };
-        nextPulse = now + PULSE_INTERVAL_MS + Math.random() * 2000;
-      }
-      const pulseAge = pulse ? (now - pulse.startedAt) / PULSE_DUR_MS : 1;
-      if (pulse && pulseAge >= 1) pulse = null;
-
-      // --- Layer 4: zodiacs (full parallax + cursor tilt) ---
-      const zOx = -PX_ZODIAC * mx, zOy = -PX_ZODIAC * my;
+      // --- Layer 4: zodiacs with async breathing + drift ---
+      const zDrift = driftBase * DRIFT_K_ZODIAC;
       const minDim = Math.min(w, h);
 
-      placed.forEach((p, i) => {
-        const cx = p.ax * w + zOx;
-        const cy = p.ay * h + zOy;
-        // Tilt the constellation slightly based on its position relative to centre.
-        const tilt = (p.ax - 0.5) * my * 0.06 - (p.ay - 0.5) * mx * 0.06;
-        const rot = p.rot + tilt;
+      const drawConstellation = (p: Placed, i: number, cxBase: number) => {
+        const cx = cxBase;
+        const cy = p.ay * h + driftY;
         const scl = p.scale * minDim;
-        const cos = Math.cos(rot), sin = Math.sin(rot);
+        const cos = Math.cos(p.rot), sin = Math.sin(p.rot);
 
         const screenPts = p.con.pts.map(([lx, ly]) => ({
           x: cx + (lx * cos - ly * sin) * scl,
           y: cy + (lx * sin + ly * cos) * scl,
         }));
 
-        const isPulsing = pulse?.index === i;
-        const pulseAmt = isPulsing
-          ? Math.sin(pulseAge * Math.PI) * (1 - pulseAge * 0.4) * 0.8
-          : 0;
+        // Slow per-constellation breath: ~35 s period, async per zodiac.
+        const conBreath = 0.5 + 0.5 * Math.sin(tSec * 0.18 + i * 1.7);
+        const conGlow = 0.55 + 0.45 * conBreath;
 
-        // Edges with per-edge breathing.
+        // Edges with per-edge micro-twinkle layered under the slow breath.
         for (let ei = 0; ei < p.con.edges.length; ei++) {
           const [a, b] = p.con.edges[ei];
           const phase = (i * 7 + ei) * 0.91;
-          const glow = 0.5 + 0.5 * Math.sin(tSec * 1.1 + phase);
-          const alpha = 0.18 + glow * 0.30 + pulseAmt * 0.35;
-          const width = 0.55 + glow * 0.45 + pulseAmt * 0.9;
+          const tw = 0.5 + 0.5 * Math.sin(tSec * 1.1 + phase);
+          const alpha = (0.18 + tw * 0.30) * conGlow;
+          const width = (0.55 + tw * 0.45) * (0.7 + 0.3 * conBreath);
           ctx.lineWidth = width;
           ctx.strokeStyle = `rgba(170, 200, 240, ${alpha.toFixed(3)})`;
           ctx.beginPath();
@@ -256,31 +243,46 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
           ctx.stroke();
         }
 
-        // Stars at vertices — slow halo breathing.
+        // Stars at vertices — halo modulated by constellation breath.
         for (let vi = 0; vi < screenPts.length; vi++) {
           const sp = screenPts[vi];
           const phase = (i * 11 + vi) * 1.37;
           const breath = 0.5 + 0.5 * Math.sin(tSec * 0.6 + phase);
-          const baseR = 1.7 + 0.5 * breath + pulseAmt * 1.4;
+          const baseR = 1.7 + 0.5 * breath;
           const haloR = baseR * 4.5;
+          const haloA = (0.30 + breath * 0.18) * conGlow;
           const halo = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, haloR);
-          halo.addColorStop(0, `rgba(219, 233, 255, ${(0.30 + breath * 0.18 + pulseAmt * 0.45).toFixed(3)})`);
+          halo.addColorStop(0, `rgba(219, 233, 255, ${haloA.toFixed(3)})`);
           halo.addColorStop(1, "rgba(219, 233, 255, 0)");
           ctx.fillStyle = halo;
           ctx.beginPath();
           ctx.arc(sp.x, sp.y, haloR, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = `rgba(235, 244, 255, ${(0.90 + pulseAmt * 0.10).toFixed(3)})`;
+          ctx.fillStyle = `rgba(235, 244, 255, ${(0.78 + conBreath * 0.22).toFixed(3)})`;
           ctx.beginPath();
           ctx.arc(sp.x, sp.y, baseR, 0, Math.PI * 2);
           ctx.fill();
         }
 
         // Label.
-        ctx.fillStyle = `rgba(170, 200, 240, ${(0.22 + pulseAmt * 0.4).toFixed(3)})`;
+        ctx.fillStyle = `rgba(170, 200, 240, ${(0.18 + conBreath * 0.18).toFixed(3)})`;
         ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
         ctx.textBaseline = "top";
         ctx.fillText(p.con.name, cx + scl * 0.35, cy + scl * 0.40);
+      };
+
+      placed.forEach((p, i) => {
+        const rawCx = p.ax * w + zDrift;
+        const cx = wrapX(rawCx);
+        const halfSpan = p.scale * minDim * 0.6; // ~ bounding radius
+        drawConstellation(p, i, cx);
+        // Draw a wrapped copy when the constellation straddles the seam,
+        // so it eases off one edge while easing onto the other.
+        if (cx < halfSpan) {
+          drawConstellation(p, i, cx + w);
+        } else if (cx > w - halfSpan) {
+          drawConstellation(p, i, cx - w);
+        }
       });
 
       if (onReadyRef.current) { onReadyRef.current(); onReadyRef.current = undefined; }
@@ -291,7 +293,6 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
     return () => {
       cancelAnimationFrame(rafId);
       ro.disconnect();
-      window.removeEventListener("pointermove", onPointer);
       try { host.removeChild(canvas); } catch { /* noop */ }
     };
   }, []);
