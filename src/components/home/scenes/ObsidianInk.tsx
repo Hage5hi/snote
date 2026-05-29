@@ -161,8 +161,10 @@ function drawBlot(ctx: CanvasRenderingContext2D, b: Blot, w: number, h: number, 
   }
 }
 
-/** Pre-build Xuan paper grain (monochromatic high-freq speckle, 2 passes). */
-function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement | OffscreenCanvas {
+/** Pre-build full Xuan paper background: warm base + corner washes + grain.
+ *  Rebuilt only on resize. Eliminates the per-frame gradient + 2 rectangle
+ *  fills + grain blit chain (was the dominant non-ink cost). */
+function buildPaperBackground(w: number, h: number, dpr: number): HTMLCanvasElement | OffscreenCanvas {
   const cw = Math.max(1, Math.floor(w * dpr));
   const ch = Math.max(1, Math.floor(h * dpr));
   const off = typeof OffscreenCanvas !== "undefined"
@@ -170,7 +172,25 @@ function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement
     : Object.assign(document.createElement("canvas"), { width: cw, height: ch });
   const octx = (off as HTMLCanvasElement).getContext("2d") as CanvasRenderingContext2D | null;
   if (!octx) return off as HTMLCanvasElement;
+  octx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+  // 1) Warm paper base.
+  octx.fillStyle = "#f5f0e6";
+  octx.fillRect(0, 0, w, h);
+
+  // 2) Corner washes.
+  const wash1 = octx.createRadialGradient(w * 0.2, h * 0.15, 0, w * 0.2, h * 0.15, Math.max(w, h) * 0.7);
+  wash1.addColorStop(0, "rgba(214, 198, 168, 0.22)");
+  wash1.addColorStop(1, "rgba(214, 198, 168, 0)");
+  octx.fillStyle = wash1; octx.fillRect(0, 0, w, h);
+  const wash2 = octx.createRadialGradient(w * 0.85, h * 0.9, 0, w * 0.85, h * 0.9, Math.max(w, h) * 0.6);
+  wash2.addColorStop(0, "rgba(180, 160, 130, 0.16)");
+  wash2.addColorStop(1, "rgba(180, 160, 130, 0)");
+  octx.fillStyle = wash2; octx.fillRect(0, 0, w, h);
+
+  // 3) Xuan paper grain (monochromatic high-freq speckle, 2 passes), drawn
+  //    directly at device-pixel resolution so the speckle stays crisp.
+  octx.setTransform(1, 0, 0, 1, 0, 0);
   const img = octx.createImageData(cw, ch);
   // Pass 1: dense fine grain.
   for (let i = 0; i < img.data.length; i += 4) {
@@ -186,7 +206,6 @@ function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement
     if (Math.random() > 0.25) continue;
     const dark = Math.random() < 0.6;
     const a = (Math.random() * 10) | 0;
-    // Composite onto existing pixel (source-over alpha mix).
     const sa = a / 255;
     const sr = dark ? 90 : 240;
     const sg = dark ? 78 : 228;
@@ -199,7 +218,16 @@ function buildPaperTexture(w: number, h: number, dpr: number): HTMLCanvasElement
     img.data[i + 2] = (sb * sa + img.data[i + 2] * da * (1 - sa)) / outA;
     img.data[i + 3] = (outA * 255) | 0;
   }
-  octx.putImageData(img, 0, 0);
+  // Composite the grain ImageData onto an intermediate canvas, then blit
+  // back using source-over so it lays *on top* of the warm wash.
+  const grainCanvas = typeof OffscreenCanvas !== "undefined"
+    ? new OffscreenCanvas(cw, ch)
+    : Object.assign(document.createElement("canvas"), { width: cw, height: ch });
+  const gctx = (grainCanvas as HTMLCanvasElement).getContext("2d") as CanvasRenderingContext2D | null;
+  if (gctx) {
+    gctx.putImageData(img, 0, 0);
+    octx.drawImage(grainCanvas as CanvasImageSource, 0, 0);
+  }
   return off as HTMLCanvasElement;
 }
 
