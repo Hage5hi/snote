@@ -147,6 +147,59 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
     let midStars: Star[] = [];
     let dust: Dust[] = [];
 
+    // Static layer — bg gradient + watermark glyphs + mono labels. Rebuilt
+    // only on resize; blitted via drawImage each frame. Eliminates ~36 text
+    // rasterisations per frame (12 glyphs + 24 labels), which is the
+    // dominant cost on low-end devices.
+    let staticLayer: HTMLCanvasElement | OffscreenCanvas | null = null;
+
+    const buildStaticLayer = () => {
+      const cw = Math.max(1, Math.floor(w * dpr));
+      const ch = Math.max(1, Math.floor(h * dpr));
+      const off = typeof OffscreenCanvas !== "undefined"
+        ? new OffscreenCanvas(cw, ch)
+        : Object.assign(document.createElement("canvas"), { width: cw, height: ch });
+      const sctx = (off as HTMLCanvasElement).getContext("2d") as CanvasRenderingContext2D | null;
+      if (!sctx) { staticLayer = null; return; }
+      sctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Background gradient.
+      const bg = sctx.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, "#06091a");
+      bg.addColorStop(1, "#0c1530");
+      sctx.fillStyle = bg;
+      sctx.fillRect(0, 0, w, h);
+
+      // Pre-render glyph watermarks + labels per cell at a fixed alpha. We
+      // deliberately drop the subtle "breath" on text — its modulation is
+      // imperceptible (~0.04..0.09 alpha) and not worth the per-frame cost.
+      const glyphSize = Math.round(cellMin * 0.45);
+      const scl = cellMin * 0.32;
+      for (let i = 0; i < ZODIAC.length; i++) {
+        const z = ZODIAC[i];
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cx = (col + 0.5) * cellW;
+        const cy = (row + 0.5) * cellH;
+
+        sctx.fillStyle = "rgba(180, 200, 240, 0.065)";
+        sctx.font = `${glyphSize}px "Apple Symbols", "Segoe UI Symbol", serif`;
+        sctx.textAlign = "center";
+        sctx.textBaseline = "middle";
+        sctx.fillText(z.glyph, cx, cy);
+
+        const labelY = cy + scl * 0.6;
+        sctx.textBaseline = "top";
+        sctx.fillStyle = "rgba(190, 210, 240, 0.42)";
+        sctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        sctx.fillText(z.name, cx, labelY);
+        sctx.fillStyle = "rgba(170, 200, 240, 0.32)";
+        sctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        sctx.fillText(z.range, cx, labelY + 12);
+      }
+      staticLayer = off as HTMLCanvasElement;
+    };
+
     const resize = () => {
       w = host.clientWidth || 1;
       h = host.clientHeight || 1;
@@ -186,6 +239,7 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
           vy: (Math.random() - 0.5) * 0.08,
         });
       }
+      buildStaticLayer();
     };
     resize();
     const ro = new ResizeObserver(resize);
