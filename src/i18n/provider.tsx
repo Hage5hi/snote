@@ -24,6 +24,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     } catch {
       // ignore
     }
+    // Notify same-tab listeners (e.g. PWA update toast) — `storage` events
+    // only fire across tabs, not within the tab that wrote the value.
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("i18n:lang-changed", { detail: l }));
+    }
   }, []);
 
   // First visit: try IP-based geolocation to refine the initial language.
