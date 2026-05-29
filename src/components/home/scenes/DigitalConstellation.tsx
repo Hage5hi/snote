@@ -1,12 +1,13 @@
-// Cung Hoàng Đạo (Zodiac Map) — autonomous starfield Canvas2D scene.
+// Cung Hoàng Đạo (Zodiac Map) — fixed-grid celestial scene.
 //
-// No pointer interaction. Background stars twinkle on their own sine phases;
-// each of the 12 zodiacs breathes asynchronously (~35s period); the whole
-// sky drifts horizontally (sidereal drift) with a tiny vertical bob so the
-// celestial sphere feels alive without any user input.
+// 12 zodiacs are anchored to a responsive grid (4×3 landscape, 3×4 portrait)
+// so nothing ever clips off the viewport. Each constellation breathes on its
+// own sine phase (~[0.2, 0.8] opacity) — fully async, organic. Behind each
+// figure sits a faint Unicode glyph watermark; below it, a mono label with
+// the abbreviation and date range. Only the background dust + faint stars
+// drift slowly; the zodiacs themselves are pinned.
 //
-// `lightweight: true` so it bypasses hardwareConcurrency<4.
-// ThemeToggle pins next-themes to "dark" when this scene is active.
+// 30fps cap, `lightweight: true`, no pointer interaction.
 import { useEffect, useRef } from "react";
 import type { SceneProps } from "./registry";
 
@@ -15,77 +16,106 @@ const FRAME_MS = 1000 / 30;
 const FAR_STARS = 220;
 const MID_STARS = 110;
 const DUST_COUNT = 30;
-
-// Sidereal drift: ~4 px/sec at base layer ≈ one screen-width per ~6 min.
-// Each layer scales this to fake parallax depth without mouse input.
-const DRIFT_PX_PER_SEC = 4;
-const DRIFT_K_FAR = 0.4;
-const DRIFT_K_MID = 0.55;
-const DRIFT_K_DUST = 0.75;
-const DRIFT_K_ZODIAC = 1.0;
+const BG_DRIFT_PX_PER_SEC = 1; // very slow ambient drift for bg layers only
 
 interface Constellation {
-  name: string;
+  name: string;       // 3-letter abbreviation
+  glyph: string;      // Unicode astrological symbol
+  range: string;      // date range, DD/MM - DD/MM
   pts: [number, number][];
   edges: [number, number][];
 }
 
-const ZODIAC: Constellation[] = [
-  { name: "ARI", pts: [[-0.4,0.2],[-0.15,0.05],[0.1,-0.1],[0.3,-0.05],[0.4,0.15]],
-    edges: [[0,1],[1,2],[2,3],[3,4]] },
-  { name: "TAU", pts: [[-0.4,-0.3],[-0.2,0.0],[0.0,0.15],[0.2,0.0],[0.4,-0.3],[0.0,-0.25],[-0.1,-0.4]],
-    edges: [[0,1],[1,2],[2,3],[3,4],[1,5],[3,5],[5,6]] },
-  { name: "GEM", pts: [[-0.25,-0.35],[-0.25,-0.1],[-0.25,0.15],[-0.25,0.35],[0.25,-0.35],[0.25,-0.1],[0.25,0.15],[0.25,0.35]],
-    edges: [[0,1],[1,2],[2,3],[4,5],[5,6],[6,7],[1,5],[2,6]] },
-  { name: "CNC", pts: [[-0.3,-0.25],[0.0,-0.05],[0.3,-0.25],[0.0,0.25],[-0.15,0.35],[0.15,0.35]],
-    edges: [[0,1],[2,1],[1,3],[3,4],[3,5]] },
-  { name: "LEO", pts: [[-0.4,0.25],[-0.25,0.35],[-0.05,0.30],[0.05,0.10],[-0.05,-0.10],[0.20,-0.20],[0.40,-0.10]],
-    edges: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[3,5]] },
-  { name: "VIR", pts: [[-0.45,-0.05],[-0.20,0.0],[-0.05,0.20],[0.10,-0.05],[0.30,0.10],[0.45,-0.15],[0.05,-0.25]],
-    edges: [[0,1],[1,2],[1,3],[3,4],[4,5],[3,6]] },
-  { name: "LIB", pts: [[-0.40,0.10],[0.0,-0.25],[0.40,0.10],[-0.25,0.30],[0.25,0.30]],
-    edges: [[0,1],[1,2],[0,3],[2,4],[0,2]] },
-  { name: "SCO", pts: [[-0.45,-0.20],[-0.30,-0.05],[-0.10,0.05],[0.10,0.05],[0.25,-0.05],[0.35,-0.20],[0.30,-0.35],[0.15,-0.40],[0.0,-0.30]],
-    edges: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8]] },
-  { name: "SGR", pts: [[-0.40,0.20],[-0.15,0.05],[0.0,-0.10],[0.20,-0.05],[0.40,0.10],[0.10,0.30],[-0.10,0.30]],
-    edges: [[0,1],[1,2],[2,3],[3,4],[1,5],[3,6],[5,6]] },
-  { name: "CAP", pts: [[-0.40,-0.10],[-0.15,0.10],[0.10,0.05],[0.30,-0.10],[0.40,-0.30],[0.15,-0.30]],
-    edges: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,0]] },
-  { name: "AQR", pts: [[-0.45,0.15],[-0.20,-0.10],[0.0,0.10],[0.20,-0.10],[0.45,0.15],[-0.10,0.30],[0.30,0.30]],
-    edges: [[0,1],[1,2],[2,3],[3,4],[1,5],[3,6]] },
-  { name: "PSC", pts: [[-0.45,0.20],[-0.30,0.05],[-0.15,0.10],[0.0,0.0],[0.20,-0.10],[0.40,-0.20],[0.30,-0.05]],
-    edges: [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,4]] },
+// Hand-authored topologies, normalised to roughly [-0.5, 0.5] on both axes.
+// Each is recentered on its centroid at runtime so the figure draws centered
+// inside its grid cell regardless of authoring drift.
+const ZODIAC_RAW: Constellation[] = [
+  {
+    name: "ARI", glyph: "♈", range: "21/3 - 19/4",
+    pts: [[-0.45, 0.15], [-0.15, 0.0], [0.15, -0.15], [0.45, -0.05]],
+    edges: [[0, 1], [1, 2], [2, 3]],
+  },
+  {
+    name: "TAU", glyph: "♉", range: "20/4 - 20/5",
+    // Hyades V + Aldebaran + two horn tips (Elnath, Zeta Tau)
+    pts: [[-0.45, 0.0], [-0.2, 0.1], [0.0, -0.1], [0.0, 0.25], [0.4, -0.35], [0.45, 0.2]],
+    edges: [[0, 1], [1, 2], [1, 3], [2, 4], [3, 5]],
+  },
+  {
+    name: "GEM", glyph: "♊", range: "21/5 - 21/6",
+    // Twin stick figures Castor / Pollux
+    pts: [[-0.25, -0.4], [0.1, -0.4], [-0.25, -0.15], [0.1, -0.15],
+          [-0.3, 0.15], [0.15, 0.15], [-0.4, 0.4], [0.3, 0.4]],
+    edges: [[0, 2], [2, 4], [4, 6], [1, 3], [3, 5], [5, 7], [2, 3]],
+  },
+  {
+    name: "CNC", glyph: "♋", range: "22/6 - 22/7",
+    pts: [[-0.3, -0.3], [0.3, -0.3], [0.0, 0.0], [-0.1, 0.3], [0.2, 0.35]],
+    edges: [[0, 2], [1, 2], [2, 3], [2, 4]],
+  },
+  {
+    name: "LEO", glyph: "♌", range: "23/7 - 22/8",
+    // Sickle (reversed ?) + hindquarters triangle ending at Denebola
+    pts: [[-0.4, -0.15], [-0.3, -0.3], [-0.15, -0.35], [-0.05, -0.25],
+          [-0.1, -0.05], [-0.25, 0.1], [0.1, 0.05], [0.4, 0.1], [0.25, -0.15]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 6]],
+  },
+  {
+    name: "VIR", glyph: "♍", range: "23/8 - 22/9",
+    pts: [[-0.45, -0.2], [-0.2, -0.1], [0.05, 0.0], [0.3, 0.1],
+          [0.0, -0.3], [-0.1, 0.25], [0.25, -0.25], [0.45, -0.05]],
+    edges: [[0, 1], [1, 2], [2, 3], [1, 4], [2, 5], [4, 6], [6, 7]],
+  },
+  {
+    name: "LIB", glyph: "♎", range: "23/9 - 23/10",
+    pts: [[-0.4, 0.0], [0.0, -0.3], [0.4, 0.0], [0.0, 0.3]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 0]],
+  },
+  {
+    name: "SCO", glyph: "♏", range: "24/10 - 21/11",
+    // Claws + curving body + curling stinger
+    pts: [[-0.45, -0.3], [-0.45, -0.05], [-0.45, 0.15], [-0.2, 0.05],
+          [0.0, 0.1], [0.15, 0.15], [0.3, 0.05], [0.4, -0.1],
+          [0.35, -0.25], [0.2, -0.3], [0.1, -0.2]],
+    edges: [[0, 3], [1, 3], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 9], [9, 10]],
+  },
+  {
+    name: "SGR", glyph: "♐", range: "22/11 - 21/12",
+    // The "teapot" asterism
+    pts: [[-0.4, 0.0], [-0.25, -0.2], [0.05, -0.25], [0.3, -0.1],
+          [0.35, 0.15], [0.1, 0.2], [-0.2, 0.2], [0.3, 0.3]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 0], [4, 7]],
+  },
+  {
+    name: "CAP", glyph: "♑", range: "22/12 - 19/1",
+    pts: [[-0.45, -0.15], [-0.2, 0.1], [0.05, 0.2], [0.3, 0.15], [0.45, -0.05], [0.0, -0.25]],
+    edges: [[0, 5], [5, 4], [4, 3], [3, 2], [2, 1], [1, 0]],
+  },
+  {
+    name: "AQR", glyph: "♒", range: "20/1 - 18/2",
+    pts: [[-0.4, -0.2], [-0.15, -0.1], [0.1, -0.15], [0.05, 0.05],
+          [-0.1, 0.2], [0.25, 0.2], [0.4, 0.35]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 4], [3, 5], [5, 6]],
+  },
+  {
+    name: "PSC", glyph: "♓", range: "19/2 - 20/3",
+    // Two fish joined by a V cord
+    pts: [[-0.45, 0.15], [-0.3, 0.05], [-0.15, 0.15], [-0.3, 0.25],
+          [0.0, 0.1], [0.2, 0.0], [0.35, -0.15], [0.4, -0.35], [0.25, -0.3]],
+    edges: [[0, 1], [1, 2], [2, 3], [3, 1], [2, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 6]],
+  },
 ];
 
-interface Placed {
-  con: Constellation;
-  ax: number; ay: number;
-  scale: number;
-  rot: number;
-}
+// Recenter every constellation on its centroid → guarantees the figure
+// sits visually centred inside its cell.
+const ZODIAC: Constellation[] = ZODIAC_RAW.map((c) => {
+  const cx = c.pts.reduce((s, p) => s + p[0], 0) / c.pts.length;
+  const cy = c.pts.reduce((s, p) => s + p[1], 0) / c.pts.length;
+  return { ...c, pts: c.pts.map(([x, y]) => [x - cx, y - cy] as [number, number]) };
+});
 
 interface Star { x: number; y: number; a: number; phase: number; }
 interface Dust { x: number; y: number; a: number; vx: number; vy: number; }
-
-function placeAll(): Placed[] {
-  const grid: { x: number; y: number }[] = [];
-  for (let row = 0; row < 3; row++) {
-    for (let col = 0; col < 4; col++) {
-      grid.push({ x: 0.10 + col * 0.27, y: 0.12 + row * 0.32 });
-    }
-  }
-  return ZODIAC.map((con, i) => {
-    const rng = (s: number) => (Math.sin(s * 13.37 + i * 1.91) * 0.5 + 0.5);
-    const cell = grid[i];
-    return {
-      con,
-      ax: cell.x + (rng(1) - 0.5) * 0.04,
-      ay: cell.y + (rng(2) - 0.5) * 0.05,
-      scale: 0.11 + rng(3) * 0.04,
-      rot: (rng(4) - 0.5) * 0.35,
-    };
-  });
-}
 
 export default function DigitalConstellation({ paused, onReady }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
@@ -109,9 +139,10 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
 
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     let w = 1, h = 1;
+    let cols = 4, rows = 3;
+    let cellW = 1, cellH = 1, cellMin = 1;
     let rafId = 0, lastFrame = 0;
 
-    const placed = placeAll();
     let farStars: Star[] = [];
     let midStars: Star[] = [];
     let dust: Dust[] = [];
@@ -122,6 +153,13 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      // Landscape → 4×3, portrait → 3×4. 12 cells either way.
+      if (w >= h) { cols = 4; rows = 3; }
+      else        { cols = 3; rows = 4; }
+      cellW = w / cols;
+      cellH = h / rows;
+      cellMin = Math.min(cellW, cellH);
 
       farStars = [];
       for (let i = 0; i < FAR_STARS; i++) {
@@ -153,7 +191,6 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
     const ro = new ResizeObserver(resize);
     ro.observe(host);
 
-    // Seamless horizontal wrap helper.
     const wrapX = (x: number) => ((x % w) + w) % w;
 
     const tick = (now: number) => {
@@ -161,7 +198,6 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
       if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
 
-      // Deep space gradient.
       const bg = ctx.createLinearGradient(0, 0, 0, h);
       bg.addColorStop(0, "#06091a");
       bg.addColorStop(1, "#0c1530");
@@ -169,73 +205,67 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
       ctx.fillRect(0, 0, w, h);
 
       const tSec = now * 0.001;
+      const bgDrift = tSec * BG_DRIFT_PX_PER_SEC;
 
-      // Autonomous sidereal drift — same for every layer scaled by depth.
-      const driftBase = tSec * DRIFT_PX_PER_SEC;
-      const driftY = Math.sin(tSec * 0.04) * 6;
-
-      // --- Layer 1: far stars (twinkle ±25%, slowest drift) ---
-      {
-        const dx = driftBase * DRIFT_K_FAR;
-        for (const s of farStars) {
-          const tw = 1 + 0.25 * Math.sin(tSec * 0.6 + s.phase);
-          const a = Math.max(0, Math.min(1, s.a * tw));
-          ctx.fillStyle = `rgba(219, 233, 255, ${a.toFixed(3)})`;
-          ctx.fillRect(wrapX(s.x + dx), s.y + driftY, 1, 1);
-        }
+      // --- Background layer 1: far stars ---
+      for (const s of farStars) {
+        const tw = 1 + 0.25 * Math.sin(tSec * 0.6 + s.phase);
+        const a = Math.max(0, Math.min(1, s.a * tw));
+        ctx.fillStyle = `rgba(219, 233, 255, ${a.toFixed(3)})`;
+        ctx.fillRect(wrapX(s.x + bgDrift * 0.4), s.y, 1, 1);
       }
 
-      // --- Layer 2: mid stars (twinkle ±35%, slightly bigger) ---
-      {
-        const dx = driftBase * DRIFT_K_MID;
-        for (const s of midStars) {
-          const tw = 1 + 0.35 * Math.sin(tSec * 0.9 + s.phase);
-          const a = Math.max(0, Math.min(1, s.a * tw));
-          ctx.fillStyle = `rgba(225, 236, 255, ${a.toFixed(3)})`;
-          const sz = 1 + (Math.sin(s.phase) > 0.3 ? 0.5 : 0);
-          ctx.fillRect(wrapX(s.x + dx), s.y + driftY, sz, sz);
-        }
+      // --- Background layer 2: mid stars ---
+      for (const s of midStars) {
+        const tw = 1 + 0.35 * Math.sin(tSec * 0.9 + s.phase);
+        const a = Math.max(0, Math.min(1, s.a * tw));
+        ctx.fillStyle = `rgba(225, 236, 255, ${a.toFixed(3)})`;
+        const sz = 1 + (Math.sin(s.phase) > 0.3 ? 0.5 : 0);
+        ctx.fillRect(wrapX(s.x + bgDrift * 0.55), s.y, sz, sz);
       }
 
-      // --- Layer 3: drifting dust ---
-      {
-        const dx = driftBase * DRIFT_K_DUST;
-        for (const d of dust) {
-          d.x += d.vx; d.y += d.vy;
-          if (d.x < 0) d.x += w; else if (d.x > w) d.x -= w;
-          if (d.y < 0) d.y += h; else if (d.y > h) d.y -= h;
-          ctx.fillStyle = `rgba(180, 200, 240, ${d.a.toFixed(3)})`;
-          ctx.fillRect(wrapX(d.x + dx), d.y + driftY, 1, 1);
-        }
+      // --- Background layer 3: dust ---
+      for (const d of dust) {
+        d.x += d.vx; d.y += d.vy;
+        if (d.x < 0) d.x += w; else if (d.x > w) d.x -= w;
+        if (d.y < 0) d.y += h; else if (d.y > h) d.y -= h;
+        ctx.fillStyle = `rgba(180, 200, 240, ${d.a.toFixed(3)})`;
+        ctx.fillRect(wrapX(d.x + bgDrift * 0.75), d.y, 1, 1);
       }
 
-      // --- Layer 4: zodiacs with async breathing + drift ---
-      const zDrift = driftBase * DRIFT_K_ZODIAC;
-      const minDim = Math.min(w, h);
+      // --- Zodiacs pinned to grid cells ---
+      const scl = cellMin * 0.32;
+      const glyphSize = Math.round(cellMin * 0.45);
 
-      const drawConstellation = (p: Placed, i: number, cxBase: number) => {
-        const cx = cxBase;
-        const cy = p.ay * h + driftY;
-        const scl = p.scale * minDim;
-        const cos = Math.cos(p.rot), sin = Math.sin(p.rot);
+      for (let i = 0; i < ZODIAC.length; i++) {
+        const z = ZODIAC[i];
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const cx = (col + 0.5) * cellW;
+        const cy = (row + 0.5) * cellH;
 
-        const screenPts = p.con.pts.map(([lx, ly]) => ({
-          x: cx + (lx * cos - ly * sin) * scl,
-          y: cy + (lx * sin + ly * cos) * scl,
-        }));
+        // Async breathing in [0.2, 0.8]
+        const period = 6 + (i % 5); // 6..10 s
+        const phase = (i * 1.7) % (Math.PI * 2);
+        const breath = 0.2 + 0.6 * (0.5 + 0.5 * Math.sin(tSec * (Math.PI * 2) / period + phase));
 
-        // Slow per-constellation breath: ~35 s period, async per zodiac.
-        const conBreath = 0.5 + 0.5 * Math.sin(tSec * 0.18 + i * 1.7);
-        const conGlow = 0.55 + 0.45 * conBreath;
+        // 1) Glyph watermark, behind everything.
+        ctx.fillStyle = `rgba(180, 200, 240, ${(0.04 + 0.05 * breath).toFixed(3)})`;
+        ctx.font = `${glyphSize}px "Apple Symbols", "Segoe UI Symbol", serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(z.glyph, cx, cy);
 
-        // Edges with per-edge micro-twinkle layered under the slow breath.
-        for (let ei = 0; ei < p.con.edges.length; ei++) {
-          const [a, b] = p.con.edges[ei];
-          const phase = (i * 7 + ei) * 0.91;
-          const tw = 0.5 + 0.5 * Math.sin(tSec * 1.1 + phase);
-          const alpha = (0.18 + tw * 0.30) * conGlow;
-          const width = (0.55 + tw * 0.45) * (0.7 + 0.3 * conBreath);
-          ctx.lineWidth = width;
+        // 2) Screen-space star positions.
+        const screenPts = z.pts.map(([lx, ly]) => ({ x: cx + lx * scl, y: cy + ly * scl }));
+
+        // 3) Edges with per-edge micro-twinkle layered under the breath.
+        for (let ei = 0; ei < z.edges.length; ei++) {
+          const [a, b] = z.edges[ei];
+          const ph = (i * 7 + ei) * 0.91;
+          const tw = 0.5 + 0.5 * Math.sin(tSec * 1.1 + ph);
+          const alpha = (0.20 + tw * 0.30) * breath;
+          ctx.lineWidth = 0.6 + tw * 0.4;
           ctx.strokeStyle = `rgba(170, 200, 240, ${alpha.toFixed(3)})`;
           ctx.beginPath();
           ctx.moveTo(screenPts[a].x, screenPts[a].y);
@@ -243,14 +273,14 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
           ctx.stroke();
         }
 
-        // Stars at vertices — halo modulated by constellation breath.
+        // 4) Vertex stars with halos.
         for (let vi = 0; vi < screenPts.length; vi++) {
           const sp = screenPts[vi];
-          const phase = (i * 11 + vi) * 1.37;
-          const breath = 0.5 + 0.5 * Math.sin(tSec * 0.6 + phase);
-          const baseR = 1.7 + 0.5 * breath;
+          const ph = (i * 11 + vi) * 1.37;
+          const micro = 0.5 + 0.5 * Math.sin(tSec * 0.6 + ph);
+          const baseR = 1.6 + 0.5 * micro;
           const haloR = baseR * 4.5;
-          const haloA = (0.30 + breath * 0.18) * conGlow;
+          const haloA = (0.30 + micro * 0.18) * breath;
           const halo = ctx.createRadialGradient(sp.x, sp.y, 0, sp.x, sp.y, haloR);
           halo.addColorStop(0, `rgba(219, 233, 255, ${haloA.toFixed(3)})`);
           halo.addColorStop(1, "rgba(219, 233, 255, 0)");
@@ -258,32 +288,23 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
           ctx.beginPath();
           ctx.arc(sp.x, sp.y, haloR, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = `rgba(235, 244, 255, ${(0.78 + conBreath * 0.22).toFixed(3)})`;
+          ctx.fillStyle = `rgba(235, 244, 255, ${(0.55 + breath * 0.35).toFixed(3)})`;
           ctx.beginPath();
           ctx.arc(sp.x, sp.y, baseR, 0, Math.PI * 2);
           ctx.fill();
         }
 
-        // Label.
-        ctx.fillStyle = `rgba(170, 200, 240, ${(0.18 + conBreath * 0.18).toFixed(3)})`;
-        ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        // 5) Two-line label below the figure.
+        const labelY = cy + scl * 0.6;
+        ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillText(p.con.name, cx + scl * 0.35, cy + scl * 0.40);
-      };
-
-      placed.forEach((p, i) => {
-        const rawCx = p.ax * w + zDrift;
-        const cx = wrapX(rawCx);
-        const halfSpan = p.scale * minDim * 0.6; // ~ bounding radius
-        drawConstellation(p, i, cx);
-        // Draw a wrapped copy when the constellation straddles the seam,
-        // so it eases off one edge while easing onto the other.
-        if (cx < halfSpan) {
-          drawConstellation(p, i, cx + w);
-        } else if (cx > w - halfSpan) {
-          drawConstellation(p, i, cx - w);
-        }
-      });
+        ctx.fillStyle = `rgba(190, 210, 240, ${(0.25 + breath * 0.30).toFixed(3)})`;
+        ctx.font = "10px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        ctx.fillText(z.name, cx, labelY);
+        ctx.fillStyle = `rgba(170, 200, 240, ${(0.18 + breath * 0.22).toFixed(3)})`;
+        ctx.font = "9px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace";
+        ctx.fillText(z.range, cx, labelY + 12);
+      }
 
       if (onReadyRef.current) { onReadyRef.current(); onReadyRef.current = undefined; }
       rafId = requestAnimationFrame(tick);
