@@ -255,7 +255,7 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
     let w = 1, h = 1;
     let rafId = 0, lastFrame = 0, nextSpawn = 0;
     let nextSeed = Math.floor(Math.random() * 0xffffff);
-    let paperTexture: HTMLCanvasElement | OffscreenCanvas | null = null;
+    let paperBackground: HTMLCanvasElement | OffscreenCanvas | null = null;
 
     const blots: Blot[] = [];
 
@@ -265,7 +265,7 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      paperTexture = buildPaperTexture(w, h, dpr);
+      paperBackground = buildPaperBackground(w, h, dpr);
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -298,22 +298,13 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
       if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
 
-      // Warm paper base.
-      ctx.fillStyle = "#f5f0e6";
-      ctx.fillRect(0, 0, w, h);
-
-      // Corner washes.
-      const wash1 = ctx.createRadialGradient(w * 0.2, h * 0.15, 0, w * 0.2, h * 0.15, Math.max(w, h) * 0.7);
-      wash1.addColorStop(0, "rgba(214, 198, 168, 0.22)");
-      wash1.addColorStop(1, "rgba(214, 198, 168, 0)");
-      ctx.fillStyle = wash1; ctx.fillRect(0, 0, w, h);
-      const wash2 = ctx.createRadialGradient(w * 0.85, h * 0.9, 0, w * 0.85, h * 0.9, Math.max(w, h) * 0.6);
-      wash2.addColorStop(0, "rgba(180, 160, 130, 0.16)");
-      wash2.addColorStop(1, "rgba(180, 160, 130, 0)");
-      ctx.fillStyle = wash2; ctx.fillRect(0, 0, w, h);
-
-      // Paper grain — drawn BEFORE ink so blots sit "in" the grain.
-      if (paperTexture) ctx.drawImage(paperTexture as CanvasImageSource, 0, 0, w, h);
+      // Single blit for paper base + washes + grain (all cached on resize).
+      if (paperBackground) {
+        ctx.drawImage(paperBackground as CanvasImageSource, 0, 0, w, h);
+      } else {
+        ctx.fillStyle = "#f5f0e6";
+        ctx.fillRect(0, 0, w, h);
+      }
 
       // Ink blots — multiply blend so overlap compounds darker.
       ctx.globalCompositeOperation = "multiply";
