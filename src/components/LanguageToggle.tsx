@@ -1,5 +1,7 @@
 // Language switcher: dropdown listing all supported languages.
-import { Check, Languages } from "lucide-react";
+// Uses SVG flags (Flag component) so countries render consistently across
+// Windows/Linux/macOS/iOS/Android — Windows has no native flag emoji font.
+import { Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,6 +12,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Flag } from "@/components/Flag";
 import { LANG_NAMES, SUPPORTED_LANGS, useI18n, type Lang } from "@/i18n";
 
 export function LanguageToggle() {
@@ -25,14 +28,14 @@ export function LanguageToggle() {
               className="h-8 gap-1.5 px-2 text-xs font-medium"
               aria-label={t("lang.label")}
             >
-              <Languages className="h-3.5 w-3.5" />
+              <Flag lang={lang} size={18} />
               <span className="uppercase">{lang}</span>
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
         <TooltipContent side="bottom">{t("lang.choose")}</TooltipContent>
       </Tooltip>
-      <DropdownMenuContent align="end" className="w-44">
+      <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel className="text-[11px] uppercase tracking-wider text-muted-foreground">
           {t("lang.label")}
         </DropdownMenuLabel>
@@ -41,9 +44,9 @@ export function LanguageToggle() {
           <DropdownMenuItem
             key={l}
             onClick={() => setLang(l)}
-            className="flex items-center gap-2"
+            className="flex items-center gap-2.5"
           >
-            <span aria-hidden>{LANG_NAMES[l].flag}</span>
+            <Flag lang={l} size={20} />
             <span>{LANG_NAMES[l].native}</span>
             {lang === l && <Check className="ml-auto h-3.5 w-3.5" />}
           </DropdownMenuItem>
