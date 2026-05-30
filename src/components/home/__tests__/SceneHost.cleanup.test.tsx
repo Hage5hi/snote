@@ -190,5 +190,7 @@ describe("SceneHost — cleanup & cancellation contract", () => {
       expect(last.signal).not.toBe(firstSignal);
       expect(last.signal?.aborted).toBe(false);
     });
+  });
 });
+
 
