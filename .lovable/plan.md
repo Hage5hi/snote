@@ -1,52 +1,67 @@
-# Plan: Balance + accurize all 12 zodiac asterisms
+# Plan
 
-## Scope
+## 1. Topbar: replace "Help" dropdown with direct Shortcuts trigger
 
-Edit a **single file**: `src/components/home/scenes/DigitalConstellation.tsx`.
+`src/components/note/topbar/HelpMenu.tsx` currently renders a `<DropdownMenu>` with two items: "Keyboard shortcuts & tips" (opens dialog) and the "Split view" hint block. Since Split view is already explained inside the Shortcuts dialog itself (`shortcuts.tip.split_*`), the dropdown is redundant.
 
-Only the `ZODIAC_RAW` array (lines ~32–107) is touched — specifically the `pts` and `edges` of each entry. Everything else stays as-is:
-- 4×3 / 3×4 grid layout, centroid recentering, `cellMin * 0.32` scale
-- Unicode glyph watermarks, mono labels (name + date range)
-- 30fps cap, sine-wave breathing, per-edge twinkle, halo render
-- Background dust/stars layers
+Change:
+- Convert `HelpMenu` into a single `Button` that calls `onOpenShortcuts` directly — no DropdownMenu, no chevron.
+- Label: short text + keyboard icon so it stays scannable. Use a new i18n key `menu.shortcuts` ("Shortcuts" / "Phím tắt" / "ショートカット" / etc.), with `t("help.shortcuts")` as the `aria-label`/tooltip for accessibility.
+- Keep the `?` keyboard shortcut hint badge on the right (or move to a tooltip) so users know the key still works.
+- Topbar wiring stays the same (`<HelpMenu onOpenShortcuts={…} />`).
+- Remove the now-unused `help.split_label` / `help.split_hint` keys — they only existed for the dropdown body. Drop their usage in HelpMenu; leave the keys in the dict in case other code references them (will check & purge if unreferenced).
 
-Authoring space stays roughly `[-0.5, 0.5]` on both axes (runtime recenters on centroid, so small drift is forgiving).
+Tests to update: `e2e/i18n-export-help.spec.ts` and `e2e/i18n-modes.spec.ts` currently click the localized "Help" button and assert the Split-view text. Update them to click the new Shortcuts trigger and assert the dialog opens (heading from `shortcuts.title`).
 
-## Per-constellation target shapes & star counts
+## 2. Add German (DE) + Portuguese (PT)
 
-| Sign | Shape brief | Stars |
-|---|---|---|
-| ARI | Bent/crooked horn line | 5 |
-| TAU | Hyades **V** (face) + 2 long upward horn lines to Elnath / ζ Tau | 10 |
-| GEM | Two stick figures (head, torso, joined-hand arms, 2 legs each) | 14 |
-| CNC | Central small box with branching legs (inverted-Y feel) | 7 |
-| LEO | Sickle (backward `?`) on left, joined to hindquarters triangle ending at Denebola | 11 |
-| VIR | Boxy 4-point torso, 2 arm branches, 2 leg branches, long line down to Spica | 13 |
-| LIB | Triangle resting on a wider base line (scale/diamond) | 7 |
-| SCO | Top claws fan (3 stars) → bent body chain → curling tail + stinger | 15 |
-| SGR | Classic **Teapot** (body quad, handle, spout, lid) | 8 |
-| CAP | Large distorted arrowhead / triangle (sea-goat) | 11 |
-| AQR | Small jar polygon + 2 parallel zig-zag wave streams | 13 |
-| PSC | Two circlets (4-pt + 5-pt polygons) joined by a wide **V** cord | 15 |
+`src/i18n/index.ts`:
+- `Lang` type → add `"de" | "pt"`.
+- `SUPPORTED_LANGS` → append `"de"`, `"pt"`.
+- `LANG_NAMES` → `de: { native: "Deutsch", flag: "🇩🇪" }`, `pt: { native: "Português", flag: "🇵🇹" }`.
+- `COUNTRY_LANG`: DE/AT → `de`; PT/BR/AO/MZ/CV/GW/ST/TL → `pt`. (CH stays `fr` to avoid breaking existing tests.)
+- `detectFromNavigator`: add `de`/`pt` branches before the `en` fallback.
+- `dict.de` and `dict.pt`: full translation of every key from `dict.en` (≈345 keys each), idiomatic and length-conscious so menu rows don't wrap.
 
-All counts land inside the user's 8–16 target band except ARI (5, ram is canonically tiny) and CNC (7, crab is canonically sparse) — both standard astronomical figures. Confirm in clarifying note if these need padding to 8.
+Language selector (`src/components/LanguageToggle.tsx`) iterates `SUPPORTED_LANGS` already → automatically shows the two new entries with no code change.
 
-## Authoring rules
+## 3. Full i18n audit — wrap remaining hardcoded strings
 
-1. Coords in `[-0.5, 0.5]`; centroid auto-recenter handles balance drift.
-2. Edges are index pairs into `pts`, ordered for stroke-friendly twinkle sequencing.
-3. Keep each figure roughly square so 4×3 and 3×4 cell aspects both look right.
-4. No new helpers, no API changes, no edits outside the `ZODIAC_RAW` literal.
+Run `bun run scripts/i18n-audit.ts` (already wired) and fix every reachable user-facing string. Known offenders from `reports/i18n-audit.json` that ship to users:
+
+- `src/components/DonateButton.tsx` line 59 → `aria-label` should use `t("donate.aria")` (new key).
+- `src/components/note/OutlineSidebar.tsx` line 96 → `aria-label="Outline"` → `t("outline.aria")` (new key; reuse `brand.outline` value if appropriate).
+- `src/lib/markdown/preview-worker.ts` lines 45/48 → "Đang tải biểu đồ…" / "Đang tải công thức…" inlined in worker HTML. Worker has no React context, so accept a labels prop from the client (`{ loadingChart, loadingFormula }`) passed when posting the render request; main thread resolves via `t()`. Add keys `preview.loading_chart`, `preview.loading_formula`.
+- shadcn primitives (`breadcrumb.tsx`, `pagination.tsx`, `katex.ts` title) — unused in current product surfaces; add them to `.lintrc-i18n-allowlist.json` with reasons (library defaults, not user-visible copy) instead of churning shadcn internals.
+- `src/hooks/use-sync-status.ts` & `mermaid-cache.ts` Vietnamese hits are code comments — translate comments to English to satisfy the audit and keep the codebase consistent.
+
+After fixes, re-run `bun run scripts/i18n-audit.ts` and `bun run i18n:allowlist` and confirm both pass with zero unjustified hits.
+
+## 4. Translations — quality bar
+
+Every dict entry in `de` and `pt` must be a natural, idiomatic phrase a native UI writer would use — never a literal word-for-word port of English. Concrete rules:
+
+- Keep length within ~120% of the English string; rewrite, don't transliterate, when a literal would overflow buttons/menu rows.
+- Preserve placeholders verbatim (`{slug}`, `{n}`, `{bytes}`, `{code}`, `{when}`, `{ts}`, `{chars}`, `{page}`, `{total}`).
+- Match register of existing locales: friendly-imperative for buttons/toasts ("Speichern", "Salvar"), descriptive for tooltips, microcopy for help text.
+- Sweep the other 7 locales for entries added since their last review (any English string still present in a non-`en` dict gets rewritten in-language). This is bounded by the diff vs. `dict.en` — only stale leftovers need touching.
+
+## 5. State persistence — verify, don't rewrite
+
+`I18nProvider` already: writes `localStorage["lang"]`, sets `localStorage["lang.ip_detected"]="1"` on manual choice (skipping the IP probe forever after), syncs across tabs via the `storage` event, fires a same-tab `i18n:lang-changed` CustomEvent, and skips IP detection when a saved value exists. No code changes needed; existing tests in `src/i18n/__tests__/i18n.test.tsx` already cover these paths — we'll just add coverage for `de`/`pt` (navigator detection + country mapping).
 
 ## Verification
 
-1. TypeScript build (auto-run by harness) — the change is data-only inside a typed literal.
-2. Visual QA in preview at user's viewport (1169×883): open `/note/...`, confirm each cell shows the intended asterism and no vertex clips its cell.
-3. No e2e baseline refresh needed — repo has no committed visual snapshots for `digital-constellation`; existing `pixelDiffRatio: 0.02` continues to apply.
+- `bun run build` (typecheck must pass — new langs added to union).
+- Vitest: `bunx vitest run src/i18n` — coverage test will require every key present in `de`/`pt`.
+- `bun run scripts/i18n-audit.ts` → 0 unjustified hits.
+- `bun run i18n:allowlist` → green.
+- Playwright: `bunx playwright test e2e/i18n-export-help.spec.ts e2e/i18n-modes.spec.ts e2e/i18n-shortcuts.spec.ts` after updating Help expectations.
+- Manual: open `/`, switch to Deutsch then Português in the dropdown, refresh, confirm persistence; click new Shortcuts button → dialog opens.
 
-## Out of scope (explicitly NOT touching)
+## Out of scope
 
-- Grid math, `resize()`, static-layer caching, watermarks, labels
-- Star/dust/halo rendering, breathing/twinkle math, FPS cap
-- i18n strings, scene registry entry, scene metadata
-- Any file other than `src/components/home/scenes/DigitalConstellation.tsx`
+- Restyling the topbar beyond replacing the Help dropdown with a Shortcuts button.
+- Refactoring shadcn primitives' English defaults (allowlisted instead).
+- Translating long-form docs (`README.md`, `docs/*`, `public/llms.txt`) — keys-only product surface.
+- Backend/edge-function copy (toasts originate client-side).

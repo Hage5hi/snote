@@ -23,41 +23,41 @@ type Case = {
   exportItem: RegExp;
   copyUrlItem: RegExp;
   copyUrlToast: RegExp;
-  splitHint: RegExp;
+  dialogHeading: RegExp;
 };
 
 const cases: Case[] = [
   {
     lang: "en",
-    helpTrigger: /^Help$/,
+    helpTrigger: /Keyboard shortcuts/i,
     exportItem: /^Download \.md/,
     copyUrlItem: /Copy note URL/i,
     copyUrlToast: /URL copied/i,
-    splitHint: /Split view/i,
+    dialogHeading: /Shortcuts/i,
   },
   {
     lang: "vi",
-    helpTrigger: /Trợ giúp/,
+    helpTrigger: /Phím tắt/i,
     exportItem: /Tải \.md/,
     copyUrlItem: /Copy URL note/i,
     copyUrlToast: /Đã copy URL/,
-    splitHint: /Xem chia đôi/i,
+    dialogHeading: /Phím tắt/i,
   },
   {
     lang: "fr",
-    helpTrigger: /Aide/,
+    helpTrigger: /raccourci/i,
     exportItem: /Télécharger \.md/i,
     copyUrlItem: /Copier l['']URL/i,
     copyUrlToast: /URL copiée|copié/i,
-    splitHint: /Vue partagée/i,
+    dialogHeading: /Raccourcis|raccourci/i,
   },
   {
     lang: "ja",
-    helpTrigger: /ヘルプ/,
+    helpTrigger: /ショートカット|キーボード/,
     exportItem: /\.md をダウンロード/,
     copyUrlItem: /URL をコピー/,
     copyUrlToast: /URL.*コピー/,
-    splitHint: /分割表示/,
+    dialogHeading: /ショートカット/,
   },
 ];
 
@@ -73,14 +73,13 @@ for (const c of cases) {
       };
     });
 
-    // Help menu — localized trigger and content.
+    // Help/Shortcuts trigger opens the shortcuts dialog directly (no dropdown).
     await page.getByRole("button", { name: c.helpTrigger }).first().click();
-    await expect(page.getByText(c.splitHint).first()).toBeVisible();
-    // Close menu by pressing Escape.
+    await expect(page.getByRole("heading", { name: c.dialogHeading }).first()).toBeVisible();
     await page.keyboard.press("Escape");
 
     // Export menu — localized items.
-    await page.getByRole("button", { name: /^Export$|Exportar|Exporter|エクスポート|导出|내보내기/ }).first().click();
+    await page.getByRole("button", { name: /^Export$|Exportar|Exporter|エクスポート|导出|내보내기|Exportieren/ }).first().click();
     await expect(page.getByRole("menuitem", { name: c.exportItem }).first()).toBeVisible();
 
     // Copy URL toast in current language.
@@ -88,3 +87,4 @@ for (const c of cases) {
     await expect(page.getByText(c.copyUrlToast).first()).toBeVisible({ timeout: 5000 });
   });
 }
+

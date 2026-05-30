@@ -20,10 +20,14 @@ const IP_DETECTED_KEY = "lang.ip_detected";
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  // Pin navigator language so tests don't depend on the host machine's locale
+  // (e.g. CI defaulting to de-DE would now match our supported "de").
+  vi.stubGlobal("navigator", { language: "en-US", languages: ["en-US"] });
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe("i18n dict", () => {
@@ -54,11 +58,14 @@ describe("i18n dict", () => {
   });
 
   it("detectFromNavigator falls back to en when no match", () => {
-    vi.stubGlobal("navigator", { language: "de-DE", languages: ["de-DE"] });
+    vi.stubGlobal("navigator", { language: "ru-RU", languages: ["ru-RU"] });
     expect(detectFromNavigator()).toBe("en");
     vi.stubGlobal("navigator", { language: "ja-JP", languages: ["ja-JP", "en"] });
     expect(detectFromNavigator()).toBe("ja");
-    vi.unstubAllGlobals();
+    vi.stubGlobal("navigator", { language: "de-DE", languages: ["de-DE"] });
+    expect(detectFromNavigator()).toBe("de");
+    vi.stubGlobal("navigator", { language: "pt-BR", languages: ["pt-BR"] });
+    expect(detectFromNavigator()).toBe("pt");
   });
 
   it("detectLang prefers saved value over navigator", () => {

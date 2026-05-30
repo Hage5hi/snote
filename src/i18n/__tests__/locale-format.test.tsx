@@ -13,6 +13,8 @@ const bcp47: Record<string, string> = {
   ko: "ko-KR",
   fr: "fr-FR",
   es: "es-ES",
+  de: "de-DE",
+  pt: "pt-PT",
 };
 
 describe("locale-aware formatting", () => {
