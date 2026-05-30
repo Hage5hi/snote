@@ -10,7 +10,7 @@ import { CYBER_LINH_KHI_FRAG, CYBER_LINH_KHI_VERT } from "./cyber-linh-khi.frag"
 const FRAME_MS = 1000 / 30; // 30fps target
 const TIME_SCALE = 0.0008;  // "u_time * tiny" — very slow turbulence
 
-export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
+export default function CyberLinhKhi({ paused, isDark, onReady, signal }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const isDarkRef = useRef(isDark);
   isDarkRef.current = isDark;
@@ -22,6 +22,9 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    // Bail before any GL allocation if the host already aborted us
+    // (race: SceneHost unmounted between scene-switch and effect-run).
+    if (signal?.aborted) return;
 
     let renderer: Renderer | null = null;
     let program: Program | null = null;
@@ -86,7 +89,7 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
 
     const start = performance.now();
     const tick = (now: number) => {
-      if (lost) return;
+      if (lost || signal?.aborted) return;
       if (pausedRef.current) {
         rafId = requestAnimationFrame(tick);
         return;
@@ -100,7 +103,7 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
         program.uniforms.u_time.value = (now - start) * TIME_SCALE;
         program.uniforms.u_isDark.value = isDarkRef.current ? 1 : 0;
         renderer.render({ scene: mesh });
-        if (onReadyRef.current) {
+        if (onReadyRef.current && !signal?.aborted) {
           onReadyRef.current();
           onReadyRef.current = undefined;
         }
@@ -108,9 +111,12 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
+    const onAbort = () => { cancelAnimationFrame(rafId); };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     return () => {
       cancelAnimationFrame(rafId);
+      signal?.removeEventListener("abort", onAbort);
       ro.disconnect();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       try {
@@ -121,6 +127,9 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
       // OGL doesn't ship an explicit dispose; force context loss to free GPU.
       releaseWebGLContext(gl, canvas, "cyber-linh-khi");
     };
+    // signal identity is stable per mount (SceneHost mints once per scene);
+    // intentionally excluded from deps so we don't re-run the entire setup.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
