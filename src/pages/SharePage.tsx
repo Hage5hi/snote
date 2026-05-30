@@ -193,11 +193,29 @@ export default function SharePage() {
     );
   }
 
+  return <ShareReady head={head} doc={state.doc} t={t} />;
+}
+
+function ShareReady({ head, doc, t }: { head: React.ReactNode; doc: Y.Doc; t: ReturnType<typeof useI18n>["t"] }) {
+  const { scene } = useSceneTheme();
+  const hasScene = scene !== "none";
   return (
     <>
       {head}
-      <div className="flex min-h-svh flex-col bg-background">
-        <header className="sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 text-sm backdrop-blur supports-[backdrop-filter]:bg-background/80">
+      <AppShell className="flex min-h-svh flex-col">
+        <header
+          className={
+            "sticky top-0 z-30 flex h-11 items-center gap-2 border-b px-3 text-sm " +
+            (hasScene
+              ? "motion-safe:backdrop-blur-md"
+              : "border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80")
+          }
+          style={
+            hasScene
+              ? { background: "var(--home-chrome-bg)", borderColor: "var(--home-chrome-border)" }
+              : undefined
+          }
+        >
           <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label={t("share.back_home_aria")}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
@@ -205,9 +223,9 @@ export default function SharePage() {
           <span className="font-mono text-xs text-muted-foreground">{t("share.read_only")}</span>
         </header>
         <div className="flex-1 overflow-auto bg-muted/30">
-          <Preview doc={state.doc} />
+          <Preview doc={doc} />
         </div>
-      </div>
+      </AppShell>
     </>
   );
 }
