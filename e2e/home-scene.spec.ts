@@ -276,11 +276,11 @@ test("Cyber Linh Khí persists across reload with no delay", async ({ page }) =>
   await page.getByRole("button", { name: themeAria.en }).click();
   await page.getByRole("menuitemradio", { name: cyberLabel.en }).click();
 
-  await expect(page.locator("[data-home-root][data-theme='cyber']")).toBeVisible();
+  await expect(page.locator("[data-app-root][data-theme='cyber']")).toBeVisible();
   await expect(page.locator("[data-scene-ready]")).toHaveCount(1);
 
   await page.reload({ waitUntil: "domcontentloaded" });
-  await expect(page.locator("[data-home-root][data-theme='cyber']")).toBeVisible();
+  await expect(page.locator("[data-app-root][data-theme='cyber']")).toBeVisible();
   await expect(page.locator("[data-scene-ready]")).toHaveCount(1);
 
   const stored = await page.evaluate(() => localStorage.getItem("home.scene"));
@@ -291,7 +291,7 @@ test("Cyber Linh Khí persists across reload with no delay", async ({ page }) =>
 // 5. CSS isolation — round-trip / → /:slug → / → /:slug must stay clean.
 // ---------------------------------------------------------------------------
 async function assertNoCyberLeak(page: Page) {
-  await expect(page.locator("[data-home-root]")).toHaveCount(0);
+  await expect(page.locator("[data-app-root]")).toHaveCount(0);
   await expect(page.locator("[data-theme='cyber']")).toHaveCount(0);
   await expect(page.locator("[data-scene-ready]")).toHaveCount(0);
 
@@ -321,7 +321,7 @@ async function assertNoCyberLeak(page: Page) {
 test("Cyber styling does not leak onto /:slug (round-trip nav + reload)", async ({ page }) => {
   await seed(page, { lang: "en", scene: "cyber-linh-khi", theme: "dark" });
   await page.goto("/");
-  await expect(page.locator("[data-home-root][data-theme='cyber']")).toBeVisible();
+  await expect(page.locator("[data-app-root][data-theme='cyber']")).toBeVisible();
 
   const slug = `e2e-leak-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -332,7 +332,7 @@ test("Cyber styling does not leak onto /:slug (round-trip nav + reload)", async 
 
   // 2. Back to Home — sanity, cyber returns.
   await page.goto("/");
-  await expect(page.locator("[data-home-root][data-theme='cyber']")).toBeVisible();
+  await expect(page.locator("[data-app-root][data-theme='cyber']")).toBeVisible();
 
   // 3. Forward to /:slug again — still clean.
   await page.goto(`/${slug}`);

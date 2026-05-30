@@ -133,7 +133,7 @@ export default function SceneHost() {
         <SceneComponent paused={paused} isDark={isDark} onReady={handleReady} />
       </Suspense>
       {/* Edge masks — pulled from per-scene tokens defined on
-          [data-home-root][data-scene=...]. Keeps Header + Recents legible
+          [data-app-root][data-scene=...]. Keeps Header + Recents legible
           without painting a hard letterbox bar. */}
       <div
         className="absolute inset-x-0 top-0 h-24"

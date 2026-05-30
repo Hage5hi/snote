@@ -112,7 +112,7 @@ for (const { id: scene, threshold, chromeFallback } of SCENES) {
       await page.waitForTimeout(1000);
 
       // 1. data-scene attribute is set on the home root.
-      const root = page.locator("[data-home-root]").first();
+      const root = page.locator("[data-app-root]").first();
       await expect(root).toHaveAttribute("data-scene", scene);
 
       // 2. --home-title-grad token resolves to a real gradient.
@@ -144,7 +144,7 @@ for (const { id: scene, threshold, chromeFallback } of SCENES) {
 test("every enabled scene can be selected at runtime", async ({ page }) => {
   await seedScene(page, "en", "cyber-linh-khi");
   await page.goto("/");
-  const root = page.locator("[data-home-root]").first();
+  const root = page.locator("[data-app-root]").first();
   await expect(root).toHaveAttribute("data-scene", "cyber-linh-khi");
 
   // Cycle scenes via localStorage + reload (more reliable than driving the

@@ -1,10 +1,10 @@
 // AppShell — shared scene-aware wrapper for top-level routes.
 //
-// Sets the `data-home-root` + `data-scene` attributes that drive the per-scene
-// CSS variables in index.css ([data-home-root][data-scene="<id>"] { --home-* }),
+// Sets the `data-app-root` + `data-scene` attributes that drive the per-scene
+// CSS variables in index.css ([data-app-root][data-scene="<id>"] { --home-* }),
 // and mounts <SceneHost /> behind the content when a scene is active.
 //
-// The `data-home-root` name is a historical leftover from when scenes lived
+// The `data-app-root` name is a historical leftover from when scenes lived
 // only on Home — kept as-is to avoid a churny rename across index.css. It now
 // effectively means "scene-aware app surface".
 //
@@ -30,7 +30,7 @@ export function AppShell({ children, className, transparentBody = true }: AppShe
   const hasScene = scene !== "none";
   return (
     <div
-      data-home-root="true"
+      data-app-root="true"
       data-scene={hasScene ? scene : undefined}
       className={cn(
         "relative isolate",

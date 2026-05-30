@@ -7,7 +7,7 @@
 // way data-scene can end up as "none".
 //
 // Acceptance:
-//   1. data-scene attribute on [data-home-root] becomes "" or "none" — i.e.
+//   1. data-scene attribute on [data-app-root] becomes "" or "none" — i.e.
 //      no scene is mounted.
 //   2. No "Uncaught" / WebGL-related errors hit the console (we tolerate
 //      a single warning about WebGL being unavailable).
@@ -60,7 +60,7 @@ test("WebGL unavailable → scene falls back to none without console errors", as
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(400);
 
-  const root = page.locator("[data-home-root]").first();
+  const root = page.locator("[data-app-root]").first();
   await expect(root).toBeVisible();
 
   // SceneHost should have detected the absence of WebGL and either left
