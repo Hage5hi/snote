@@ -11,6 +11,8 @@ import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
 
@@ -56,6 +58,32 @@ function onIdle(cb: () => void) {
   const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => number }).requestIdleCallback;
   if (ric) ric(cb);
   else window.setTimeout(cb, 200);
+}
+
+// Heavy editor modules — warmed only when intent is signaled (slug input,
+// hovering a recent) AND the device looks capable. Idempotent.
+let editorWarmed = false;
+function prefetchEditor() {
+  if (editorWarmed) return;
+  editorWarmed = true;
+  void import("@/pages/NotePage");
+  void import("yjs");
+  void import("y-indexeddb");
+  void import("y-codemirror.next");
+  void import("@codemirror/lang-markdown");
+  void import("marked");
+  void import("dompurify");
+}
+
+function canPrefetchEditor(isMobile: boolean): boolean {
+  if (isMobile) return false;
+  if (typeof navigator === "undefined") return false;
+  const conn = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (conn?.saveData) return false;
+  if (conn?.effectiveType && ["2g", "slow-2g", "3g"].includes(conn.effectiveType)) return false;
+  const mem = (navigator as { deviceMemory?: number }).deviceMemory ?? 8;
+  if (mem < 4) return false;
+  return true;
 }
 
 export default function Home() {
