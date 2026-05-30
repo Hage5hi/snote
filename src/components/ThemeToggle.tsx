@@ -63,10 +63,11 @@ export const ThemeToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
         <DropdownMenuLabel className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
           {t("theme.color.label")}
         </DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={select}>
+        <DropdownMenuRadioGroup value={radioValue} onValueChange={select}>
           {COLOR_ENTRIES.map((e) => {
             const label = t(e.labelKey as Parameters<typeof t>[0]);
             const Icon = e.icon;
+            const checked = !sceneActive && theme === e.id;
             return (
               <DropdownMenuRadioItem
                 key={e.id}
@@ -76,7 +77,7 @@ export const ThemeToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
               >
                 <Icon className="h-3.5 w-3.5" />
                 <span className="flex-1 text-sm">{label}</span>
-                {theme === e.id && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
+                {checked && <Check className="ml-auto h-3.5 w-3.5 text-primary" />}
               </DropdownMenuRadioItem>
             );
           })}
