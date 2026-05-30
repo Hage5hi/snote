@@ -427,6 +427,10 @@ export const dict = {
     "scene.obsidian_ink.desc": "Structured sumi ink diffusing on paper",
     "scene.terminal_boot.label": "Terminal Boot",
     "scene.terminal_boot.desc": "Phosphor CRT scanlines",
+    "scene.preview.announcing": "Previewing {name}",
+    "scene.preview.committed": "Applied {name}",
+    "scene.preview.reverted": "Preview cancelled",
+    "scene.preview.hint": "Hover to preview, click to apply",
   },
   vi: {
     "home.tagline": "Note online, đồng bộ tức thì.",
@@ -780,6 +784,10 @@ export const dict = {
     "scene.obsidian_ink.desc": "Mực sumi khuếch tán có cấu trúc trên giấy",
     "scene.terminal_boot.label": "Terminal Boot",
     "scene.terminal_boot.desc": "Qu\u00e9t CRT phosphor",
+    "scene.preview.announcing": "Đang xem trước {name}",
+    "scene.preview.committed": "Đã áp dụng {name}",
+    "scene.preview.reverted": "Đã hủy xem trước",
+    "scene.preview.hint": "Di chuột để xem trước, bấm để áp dụng",
   },
   zh: {
     "home.tagline": "在线笔记，即时同步。",
@@ -1128,6 +1136,10 @@ export const dict = {
     "scene.obsidian_ink.desc": "结构化的墨在纸上扩散",
     "scene.terminal_boot.label": "终端启动",
     "scene.terminal_boot.desc": "磷光 CRT 扫描线",
+    "scene.preview.announcing": "正在预览 {name}",
+    "scene.preview.committed": "已应用 {name}",
+    "scene.preview.reverted": "已取消预览",
+    "scene.preview.hint": "悬停预览，点击应用",
   },
   ja: {
     "home.tagline": "オンラインメモ、即時同期。",
@@ -1476,6 +1488,10 @@ export const dict = {
     "scene.obsidian_ink.desc": "紙の上に広がる構造化された墨",
     "scene.terminal_boot.label": "ターミナルブート",
     "scene.terminal_boot.desc": "蛍光CRTスキャンライン",
+    "scene.preview.announcing": "{name} をプレビュー中",
+    "scene.preview.committed": "{name} を適用しました",
+    "scene.preview.reverted": "プレビューを取り消しました",
+    "scene.preview.hint": "ホバーでプレビュー、クリックで適用",
   },
   ko: {
     "home.tagline": "온라인 노트, 즉시 동기화.",
@@ -1823,6 +1839,10 @@ export const dict = {
     "scene.obsidian_ink.desc": "종이 위에 구조적으로 번지는 먹",
     "scene.terminal_boot.label": "터미널 부트",
     "scene.terminal_boot.desc": "인광 CRT 스캔라인",
+    "scene.preview.announcing": "{name} 미리보기 중",
+    "scene.preview.committed": "{name} 적용됨",
+    "scene.preview.reverted": "미리보기 취소됨",
+    "scene.preview.hint": "마우스를 올려 미리보기, 클릭하여 적용",
   },
   fr: {
     "home.tagline": "Notes en ligne, synchronisées instantanément.",
@@ -2170,6 +2190,10 @@ export const dict = {
     "scene.obsidian_ink.desc": "Encre sumi structurée diffusant sur papier",
     "scene.terminal_boot.label": "Terminal Boot",
     "scene.terminal_boot.desc": "Lignes de balayage CRT phosphore",
+    "scene.preview.announcing": "Aperçu de {name}",
+    "scene.preview.committed": "{name} appliquée",
+    "scene.preview.reverted": "Aperçu annulé",
+    "scene.preview.hint": "Survolez pour prévisualiser, cliquez pour appliquer",
   },
   es: {
     "home.tagline": "Notas online, sincronizadas al instante.",
@@ -2517,6 +2541,10 @@ export const dict = {
     "scene.obsidian_ink.desc": "Tinta sumi estructurada difundiéndose en papel",
     "scene.terminal_boot.label": "Terminal Boot",
     "scene.terminal_boot.desc": "Líneas de escaneo CRT fósforo",
+    "scene.preview.announcing": "Vista previa de {name}",
+    "scene.preview.committed": "{name} aplicada",
+    "scene.preview.reverted": "Vista previa cancelada",
+    "scene.preview.hint": "Pasa el cursor para previsualizar, haz clic para aplicar",
   },
 } as const;
 
