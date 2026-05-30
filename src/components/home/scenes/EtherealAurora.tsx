@@ -4,6 +4,7 @@
 import { useEffect, useRef } from "react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 import type { SceneProps } from "./registry";
+import { releaseWebGLContext } from "../SceneHost";
 import { ETHEREAL_AURORA_FRAG, ETHEREAL_AURORA_VERT } from "./ethereal-aurora.frag";
 
 const FRAME_MS = 1000 / 30;
@@ -116,8 +117,7 @@ export default function EtherealAurora({ paused, isDark, onReady }: SceneProps) 
       } catch {
         /* already detached */
       }
-      const ext = gl.getExtension("WEBGL_lose_context");
-      ext?.loseContext();
+      releaseWebGLContext(gl, canvas, "ethereal-aurora");
     };
   }, []);
 

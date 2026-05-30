@@ -4,6 +4,7 @@
 import { useEffect, useRef } from "react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 import type { SceneProps } from "./registry";
+import { releaseWebGLContext } from "../SceneHost";
 import { CYBER_LINH_KHI_FRAG, CYBER_LINH_KHI_VERT } from "./cyber-linh-khi.frag";
 
 const FRAME_MS = 1000 / 30; // 30fps target
@@ -118,8 +119,7 @@ export default function CyberLinhKhi({ paused, isDark, onReady }: SceneProps) {
         /* already detached */
       }
       // OGL doesn't ship an explicit dispose; force context loss to free GPU.
-      const ext = gl.getExtension("WEBGL_lose_context");
-      ext?.loseContext();
+      releaseWebGLContext(gl, canvas, "cyber-linh-khi");
     };
   }, []);
 
