@@ -101,6 +101,7 @@ export const dict = {
     // Topbar brand
     "brand.home": "Home",
     "brand.copy_url": "Copy URL",
+    "brand.copy_content": "Copy content",
     "brand.outline": "Outline",
 
     // Note menu
@@ -464,6 +465,7 @@ export const dict = {
 
     "brand.home": "Trang chủ",
     "brand.copy_url": "Copy URL",
+    "brand.copy_content": "Sao chép nội dung",
     "brand.outline": "Mục lục",
 
     "menu.note": "Note",
@@ -821,6 +823,7 @@ export const dict = {
 
     "brand.home": "首页",
     "brand.copy_url": "复制 URL",
+    "brand.copy_content": "复制内容",
     "brand.outline": "大纲",
     "menu.note": "笔记",
     "note.rename": "重命名…",
@@ -1173,6 +1176,7 @@ export const dict = {
 
     "brand.home": "ホーム",
     "brand.copy_url": "URL をコピー",
+    "brand.copy_content": "内容をコピー",
     "brand.outline": "アウトライン",
     "menu.note": "ノート",
     "note.rename": "名前を変更…",
@@ -1524,6 +1528,7 @@ export const dict = {
     "lang.choose": "언어 선택",
     "brand.home": "홈",
     "brand.copy_url": "URL 복사",
+    "brand.copy_content": "내용 복사",
     "brand.outline": "개요",
     "menu.note": "노트",
     "note.rename": "이름 변경…",
@@ -1875,6 +1880,7 @@ export const dict = {
     "lang.choose": "Choisir la langue",
     "brand.home": "Accueil",
     "brand.copy_url": "Copier l'URL",
+    "brand.copy_content": "Copier le contenu",
     "brand.outline": "Plan",
     "menu.note": "Note",
     "note.rename": "Renommer…",
@@ -2226,6 +2232,7 @@ export const dict = {
     "lang.choose": "Elegir idioma",
     "brand.home": "Inicio",
     "brand.copy_url": "Copiar URL",
+    "brand.copy_content": "Copiar contenido",
     "brand.outline": "Esquema",
     "menu.note": "Nota",
     "note.rename": "Renombrar…",
