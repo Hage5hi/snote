@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { Renderer, Program, Mesh, Triangle } from "ogl";
 import type { SceneProps } from "./registry";
+import { releaseWebGLContext } from "../SceneHost";
 import { NEON_VAPOR_FRAG, NEON_VAPOR_VERT } from "./neon-vapor.frag";
 
 const FRAME_MS = 1000 / 30;
@@ -93,8 +94,7 @@ export default function NeonVapor({ paused, onReady }: SceneProps) {
       ro.disconnect();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       try { host.removeChild(canvas); } catch { /* noop */ }
-      const ext = gl.getExtension("WEBGL_lose_context");
-      ext?.loseContext();
+      releaseWebGLContext(gl, canvas, "neon-vapor");
     };
   }, []);
 
