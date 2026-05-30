@@ -10,7 +10,7 @@ import { ETHEREAL_AURORA_FRAG, ETHEREAL_AURORA_VERT } from "./ethereal-aurora.fr
 const FRAME_MS = 1000 / 30;
 const TIME_SCALE = 0.0005; // even slower than CyberLinhKhi — dreamier drift
 
-export default function EtherealAurora({ paused, isDark, onReady }: SceneProps) {
+export default function EtherealAurora({ paused, isDark, onReady, signal }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const isDarkRef = useRef(isDark);
   isDarkRef.current = isDark;
@@ -22,6 +22,7 @@ export default function EtherealAurora({ paused, isDark, onReady }: SceneProps) 
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    if (signal?.aborted) return;
 
     let renderer: Renderer | null = null;
     let program: Program | null = null;
@@ -85,7 +86,7 @@ export default function EtherealAurora({ paused, isDark, onReady }: SceneProps) 
 
     const start = performance.now();
     const tick = (now: number) => {
-      if (lost) return;
+      if (lost || signal?.aborted) return;
       if (pausedRef.current) {
         rafId = requestAnimationFrame(tick);
         return;
@@ -99,7 +100,7 @@ export default function EtherealAurora({ paused, isDark, onReady }: SceneProps) 
         program.uniforms.u_time.value = (now - start) * TIME_SCALE;
         program.uniforms.u_isDark.value = isDarkRef.current ? 1 : 0;
         renderer.render({ scene: mesh });
-        if (onReadyRef.current) {
+        if (onReadyRef.current && !signal?.aborted) {
           onReadyRef.current();
           onReadyRef.current = undefined;
         }
@@ -107,9 +108,12 @@ export default function EtherealAurora({ paused, isDark, onReady }: SceneProps) 
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
+    const onAbort = () => { cancelAnimationFrame(rafId); };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     return () => {
       cancelAnimationFrame(rafId);
+      signal?.removeEventListener("abort", onAbort);
       ro.disconnect();
       canvas.removeEventListener("webglcontextlost", onContextLost);
       try {
@@ -119,6 +123,7 @@ export default function EtherealAurora({ paused, isDark, onReady }: SceneProps) 
       }
       releaseWebGLContext(gl, canvas, "ethereal-aurora");
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
