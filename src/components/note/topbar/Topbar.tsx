@@ -93,6 +93,8 @@ export function Topbar({
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const narrow = useNarrowViewport();
+  const isMobile = useIsMobile();
+  const showSceneToggle = !compact && !isMobile;
   const { t } = useI18n();
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
@@ -152,7 +154,7 @@ export function Topbar({
               getContent={getContent}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              {!compact && <SceneToggle />}
+              {showSceneToggle && <SceneToggle />}
               {!compact && <ThemeToggle />}
               <ViewControls
                 showPreview={showPreview}
