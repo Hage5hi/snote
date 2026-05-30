@@ -38,6 +38,11 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
   // Clear "Applied X" / "Preview cancelled" messages after a short window so
   // screen readers don't re-announce stale text on focus changes.
   const clearTimerRef = useRef<number | null>(null);
+  // Set when select() commits — suppresses the "Preview cancelled" message
+  // that handleOpenChange would otherwise emit when the menu auto-closes
+  // after a click. Without this, screen readers hear "Applied X" overwritten
+  // by "Preview cancelled" before it can be voiced.
+  const justCommittedRef = useRef(false);
 
   const prefersReducedMotion =
     typeof window !== "undefined" &&
@@ -60,6 +65,7 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
     const label = def ? t(def.labelKey as Parameters<typeof t>[0]) : id;
     if (id === SCENE_NONE) {
       setScene(SCENE_NONE);
+      justCommittedRef.current = true;
       setAnnouncement(t("scene.preview.committed", { name: label }));
       scheduleClear();
       return;
@@ -67,6 +73,7 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
     if (!def || !def.enabled) return;
     if (def.forceColorScheme) setTheme(def.forceColorScheme);
     setScene(def.id);
+    justCommittedRef.current = true;
     setAnnouncement(t("scene.preview.committed", { name: label }));
     scheduleClear();
   };
@@ -94,8 +101,11 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
       setOpen(next);
       if (!next) {
         previewScene(null);
-        // Only announce a cancel if a preview was actually showing.
-        // setAnnouncement(""); leaves the last applied message visible briefly.
+        if (justCommittedRef.current) {
+          // Keep the "Applied X" announcement that select() just set.
+          justCommittedRef.current = false;
+          return;
+        }
         setAnnouncement(t("scene.preview.reverted"));
         scheduleClear();
       } else {
