@@ -58,11 +58,14 @@ describe("i18n dict", () => {
   });
 
   it("detectFromNavigator falls back to en when no match", () => {
-    vi.stubGlobal("navigator", { language: "de-DE", languages: ["de-DE"] });
+    vi.stubGlobal("navigator", { language: "ru-RU", languages: ["ru-RU"] });
     expect(detectFromNavigator()).toBe("en");
     vi.stubGlobal("navigator", { language: "ja-JP", languages: ["ja-JP", "en"] });
     expect(detectFromNavigator()).toBe("ja");
-    vi.unstubAllGlobals();
+    vi.stubGlobal("navigator", { language: "de-DE", languages: ["de-DE"] });
+    expect(detectFromNavigator()).toBe("de");
+    vi.stubGlobal("navigator", { language: "pt-BR", languages: ["pt-BR"] });
+    expect(detectFromNavigator()).toBe("pt");
   });
 
   it("detectLang prefers saved value over navigator", () => {
