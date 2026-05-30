@@ -148,6 +148,7 @@ export function Topbar({
               doc={doc}
               isEncrypted={isEncrypted}
               provider={provider}
+              getContent={getContent}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {!compact && <SceneToggle />}
@@ -208,6 +209,7 @@ export function Topbar({
             doc={doc}
             isEncrypted={isEncrypted}
             provider={provider}
+            getContent={getContent}
           />
 
           <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
