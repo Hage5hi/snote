@@ -20,10 +20,14 @@ const IP_DETECTED_KEY = "lang.ip_detected";
 beforeEach(() => {
   localStorage.clear();
   vi.restoreAllMocks();
+  // Pin navigator language so tests don't depend on the host machine's locale
+  // (e.g. CI defaulting to de-DE would now match our supported "de").
+  vi.stubGlobal("navigator", { language: "en-US", languages: ["en-US"] });
 });
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
 });
 
 describe("i18n dict", () => {
