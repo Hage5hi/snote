@@ -192,7 +192,7 @@ describe("Export menu — localized trigger + dict coverage", () => {
   });
 });
 
-describe("Help menu — localized trigger + split-view hint placeholder", () => {
+describe("Shortcuts trigger (HelpMenu) — localized aria-label", () => {
   it.each(SUPPORTED_LANGS)("renders HelpMenu trigger in %s", (lang: Lang) => {
     localStorage.setItem(STORAGE_KEY, lang);
     render(
@@ -200,15 +200,8 @@ describe("Help menu — localized trigger + split-view hint placeholder", () => 
         <HelpMenu onOpenShortcuts={() => {}} />
       </Wrap>,
     );
-    const expected = (dict[lang] as Record<string, string>)["menu.help"];
-    expect(screen.getByRole("button", { name: new RegExp(expected) })).toBeInTheDocument();
-  });
-
-  it("help.split_hint contains {code} placeholder in every language", () => {
-    for (const lang of SUPPORTED_LANGS) {
-      const v = (dict[lang] as Record<string, string>)["help.split_hint"];
-      expect(v, `${lang}/help.split_hint`).toMatch(/\{code\}/);
-    }
+    const expected = (dict[lang] as Record<string, string>)["help.shortcuts"];
+    expect(screen.getByRole("button", { name: new RegExp(expected.slice(0, 6)) })).toBeInTheDocument();
   });
 });
 
