@@ -178,6 +178,9 @@ export default function Home() {
   // ydoc snapshot in one query so the eventual NotePage mount has zero
   // network waterfall.
   const prefetchSnapshot = (s: string) => {
+    // Hover/touch on a recent = clear signal the user is about to open a note.
+    // Warm the editor modules now (idempotent).
+    if (canPrefetchEditor(isMobile)) prefetchEditor();
     const key = `note-prefetch:${s}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
