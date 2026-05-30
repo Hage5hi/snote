@@ -21,7 +21,7 @@ const GLYPHS =
   "永和山川火水木金土日月星明心人之大小中下上山林森" +
   "0123456789<>/*+-=#$@%&{}[]";
 
-export default function TerminalBoot({ paused, onReady }: SceneProps) {
+export default function TerminalBoot({ paused, onReady, signal }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(paused); pausedRef.current = paused;
   const onReadyRef = useRef(onReady); onReadyRef.current = onReady;
@@ -29,6 +29,7 @@ export default function TerminalBoot({ paused, onReady }: SceneProps) {
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    if (signal?.aborted) return;
 
     const canvas = document.createElement("canvas");
     canvas.style.width = "100%";
@@ -77,6 +78,7 @@ export default function TerminalBoot({ paused, onReady }: SceneProps) {
     ro.observe(host);
 
     const tick = (now: number) => {
+      if (signal?.aborted) return;
       if (pausedRef.current) { rafId = requestAnimationFrame(tick); return; }
       if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
@@ -158,16 +160,20 @@ export default function TerminalBoot({ paused, onReady }: SceneProps) {
       ctx.fillStyle = vig;
       ctx.fillRect(0, 0, w, h);
 
-      if (onReadyRef.current) { onReadyRef.current(); onReadyRef.current = undefined; }
+      if (onReadyRef.current && !signal?.aborted) { onReadyRef.current(); onReadyRef.current = undefined; }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
+    const onAbort = () => { cancelAnimationFrame(rafId); };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     return () => {
       cancelAnimationFrame(rafId);
+      signal?.removeEventListener("abort", onAbort);
       ro.disconnect();
       try { host.removeChild(canvas); } catch { /* noop */ }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

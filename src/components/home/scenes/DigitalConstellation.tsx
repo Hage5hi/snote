@@ -222,7 +222,7 @@ const ZODIAC: Constellation[] = ZODIAC_RAW.map((c) => {
 interface Star { x: number; y: number; a: number; phase: number; }
 interface Dust { x: number; y: number; a: number; vx: number; vy: number; }
 
-export default function DigitalConstellation({ paused, onReady }: SceneProps) {
+export default function DigitalConstellation({ paused, onReady, signal }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(paused); pausedRef.current = paused;
   const onReadyRef = useRef(onReady); onReadyRef.current = onReady;
@@ -230,6 +230,7 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    if (signal?.aborted) return;
 
     const canvas = document.createElement("canvas");
     canvas.style.width = "100%";
@@ -353,6 +354,7 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
     const wrapX = (x: number) => ((x % w) + w) % w;
 
     const tick = (now: number) => {
+      if (signal?.aborted) return;
       if (pausedRef.current) { rafId = requestAnimationFrame(tick); return; }
       if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
@@ -452,16 +454,20 @@ export default function DigitalConstellation({ paused, onReady }: SceneProps) {
         }
       }
 
-      if (onReadyRef.current) { onReadyRef.current(); onReadyRef.current = undefined; }
+      if (onReadyRef.current && !signal?.aborted) { onReadyRef.current(); onReadyRef.current = undefined; }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
+    const onAbort = () => { cancelAnimationFrame(rafId); };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     return () => {
       cancelAnimationFrame(rafId);
+      signal?.removeEventListener("abort", onAbort);
       ro.disconnect();
       try { host.removeChild(canvas); } catch { /* noop */ }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
