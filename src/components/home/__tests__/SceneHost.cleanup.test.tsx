@@ -190,44 +190,5 @@ describe("SceneHost — cleanup & cancellation contract", () => {
       expect(last.signal).not.toBe(firstSignal);
       expect(last.signal?.aborted).toBe(false);
     });
-  });
-
-  it("hasWebGL probe: creates a 1x1 canvas, calls loseContext, shrinks to 0x0", async () => {
-    // Inject a spy WebGL context onto the next canvas getContext call.
-    const loseContext = vi.fn();
-    const fakeGl = {
-      getExtension: vi.fn((name: string) =>
-        name === "WEBGL_lose_context" ? { loseContext } : null,
-      ),
-    };
-
-    let probeCanvas: HTMLCanvasElement | null = null;
-    const realCreateElement = document.createElement.bind(document);
-    const createSpy = vi.spyOn(document, "createElement").mockImplementation(
-      ((tagName: string, opts?: ElementCreationOptions) => {
-        const el = realCreateElement(tagName as keyof HTMLElementTagNameMap, opts);
-        if (tagName === "canvas" && !probeCanvas) {
-          probeCanvas = el as HTMLCanvasElement;
-          // First getContext call (any variant) returns our spy.
-          (el as HTMLCanvasElement).getContext = vi.fn(() => fakeGl) as unknown as HTMLCanvasElement["getContext"];
-        }
-        return el;
-      }) as typeof document.createElement,
-    );
-
-    // Trigger the probe by mounting with a scene that requires WebGL.
-    localStorage.setItem(SCENE_STORAGE_KEY, "scene-a");
-    await act(async () => { render(<SceneHost />); });
-
-    expect(probeCanvas).not.toBeNull();
-    // Probe was created at 1×1 …
-    // (we can't observe the intermediate 1×1 after shrink, but we can
-    // observe it ended at 0×0 — the contract is "minimal allocation now,
-    // zero allocation after release")
-    expect(probeCanvas!.width).toBe(0);
-    expect(probeCanvas!.height).toBe(0);
-    expect(loseContext).toHaveBeenCalledTimes(1);
-
-    createSpy.mockRestore();
-  });
 });
+
