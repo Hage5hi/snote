@@ -34,19 +34,12 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent }: To
   const { t } = useI18n();
 
   const copyUrl = async () => {
-    // Canonical share host is the apex syrin.online. The app is also reachable
-    // via note.syrin.online and *.lovable.app, but copied URLs should always
-    // point at the short canonical form.
-    const { origin, hostname } = window.location;
-    const canonicalOrigin =
-      hostname === "syrin.online" ||
-      hostname === "note.syrin.online" ||
-      hostname.endsWith(".syrin.online")
-        ? "https://syrin.online"
-        : origin;
-    const url = `${canonicalOrigin}/${slug}`;
+    // Always canonicalize to https://syrin.online/<slug>, regardless of the
+    // current host (note.syrin.online, *.lovable.app, localhost, etc.).
+    // Preserve current query string and hash so shared links keep context.
+    const { search, hash } = window.location;
+    const url = `https://syrin.online/${slug}${search}${hash}`;
     await navigator.clipboard.writeText(url);
-    toast({ title: t("toast.copied_url"), description: url });
   };
 
   const copyContent = async () => {
