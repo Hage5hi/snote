@@ -16,6 +16,42 @@ import { useSceneTheme } from "@/hooks/use-scene-theme";
 
 const GUARD_FLAG_KEY = "home.scene.guard-reverted";
 
+// Dev-only logger so we can verify GPU contexts are actually released in the
+// browser console (look for "[SceneHost] released WebGL …"). Stripped in
+// production builds by the Vite dead-code path on `import.meta.env.DEV`.
+function logRelease(label: string) {
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.info(`[SceneHost] released WebGL context: ${label}`);
+  }
+}
+
+/** Force-release a WebGL context + free its associated canvas pixels. Safe
+ *  to call multiple times. Exported so scene components can share the same
+ *  cleanup path (see CyberLinhKhi / NeonVapor / EtherealAurora). */
+export function releaseWebGLContext(
+  gl: WebGLRenderingContext | WebGL2RenderingContext | null,
+  canvas?: HTMLCanvasElement | null,
+  label = "scene",
+) {
+  if (!gl) return;
+  try {
+    gl.getExtension("WEBGL_lose_context")?.loseContext();
+  } catch {
+    /* ignore */
+  }
+  if (canvas) {
+    // Shrinking to 0×0 prompts browsers to release the backing image buffer.
+    try {
+      canvas.width = 0;
+      canvas.height = 0;
+    } catch {
+      /* ignore */
+    }
+  }
+  logRelease(label);
+}
+
 // Cached WebGL probe — creating a context is expensive, so we do it once per
 // page load. Returns false on browsers without WebGL OR when the GPU process
 // has crashed and Chrome's blocklist is now refusing new contexts.
@@ -23,23 +59,27 @@ let webglAvailable: boolean | null = null;
 function hasWebGL(): boolean {
   if (webglAvailable !== null) return webglAvailable;
   if (typeof document === "undefined") return (webglAvailable = false);
+  let c: HTMLCanvasElement | null = null;
+  let gl: WebGLRenderingContext | null = null;
   try {
-    const c = document.createElement("canvas");
+    c = document.createElement("canvas");
     // Keep the probe canvas tiny so Chrome reserves minimal GPU memory.
     c.width = 1;
     c.height = 1;
-    const gl =
+    gl =
       (c.getContext("webgl2") as WebGLRenderingContext | null) ||
       (c.getContext("webgl") as WebGLRenderingContext | null) ||
       (c.getContext("experimental-webgl") as WebGLRenderingContext | null);
     webglAvailable = !!gl;
-    // Free the probe context immediately so GC can reclaim the canvas.
-    if (gl) gl.getExtension("WEBGL_lose_context")?.loseContext();
-    c.width = 0;
-    c.height = 0;
     return webglAvailable;
   } catch {
     return (webglAvailable = false);
+  } finally {
+    // Always free the probe — even on the success path — so the cached
+    // boolean is the only thing that survives this function.
+    releaseWebGLContext(gl, c, "probe");
+    c = null;
+    gl = null;
   }
 }
 
