@@ -476,13 +476,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           onPrev={() => flip(-1)}
           onNext={() => flip(1)}
         />
-      {paginated && (
-        <PageIndicator
-          page={page}
-          totalPages={totalPages}
-          onPrev={() => flip(-1)}
-          onNext={() => flip(1)}
-        />
       )}
     </AppShell>
   );
