@@ -1,10 +1,10 @@
 // Lightweight i18n. Auto-detects from saved choice → IP (async, in provider) → navigator language.
-// Supported languages: English, Vietnamese, Chinese (Simplified), Japanese, Korean, French, Spanish.
+// Supported languages: English, Vietnamese, Chinese (Simplified), Japanese, Korean, French, Spanish, German, Portuguese.
 import { createContext, useContext } from "react";
 
-export type Lang = "en" | "vi" | "zh" | "ja" | "ko" | "fr" | "es";
+export type Lang = "en" | "vi" | "zh" | "ja" | "ko" | "fr" | "es" | "de" | "pt";
 
-export const SUPPORTED_LANGS: Lang[] = ["en", "vi", "zh", "ja", "ko", "fr", "es"];
+export const SUPPORTED_LANGS: Lang[] = ["en", "vi", "zh", "ja", "ko", "fr", "es", "de", "pt"];
 
 export const LANG_NAMES: Record<Lang, { native: string; flag: string }> = {
   en: { native: "English", flag: "🇺🇸" },
@@ -14,6 +14,8 @@ export const LANG_NAMES: Record<Lang, { native: string; flag: string }> = {
   ko: { native: "한국어", flag: "🇰🇷" },
   fr: { native: "Français", flag: "🇫🇷" },
   es: { native: "Español", flag: "🇪🇸" },
+  de: { native: "Deutsch", flag: "🇩🇪" },
+  pt: { native: "Português", flag: "🇵🇹" },
 };
 
 export const STORAGE_KEY = "lang";
@@ -30,6 +32,8 @@ const COUNTRY_LANG: Record<string, Lang> = {
   KR: "ko",
   FR: "fr", BE: "fr", CH: "fr", LU: "fr", MC: "fr",
   ES: "es", MX: "es", AR: "es", CO: "es", CL: "es", PE: "es", VE: "es", EC: "es", GT: "es", CU: "es", BO: "es", DO: "es", HN: "es", PY: "es", SV: "es", NI: "es", CR: "es", PA: "es", UY: "es", PR: "es",
+  DE: "de", AT: "de", LI: "de",
+  PT: "pt", BR: "pt", AO: "pt", MZ: "pt", CV: "pt", GW: "pt", ST: "pt", TL: "pt",
 };
 
 export function countryToLang(country: string | undefined | null): Lang | null {
@@ -50,6 +54,8 @@ export function detectFromNavigator(): Lang {
     if (l.startsWith("ko")) return "ko";
     if (l.startsWith("fr")) return "fr";
     if (l.startsWith("es")) return "es";
+    if (l.startsWith("de")) return "de";
+    if (l.startsWith("pt")) return "pt";
     if (l.startsWith("en")) return "en";
   }
   return "en";
