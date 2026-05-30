@@ -101,8 +101,11 @@ export const SceneToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
       setOpen(next);
       if (!next) {
         previewScene(null);
-        // Only announce a cancel if a preview was actually showing.
-        // setAnnouncement(""); leaves the last applied message visible briefly.
+        if (justCommittedRef.current) {
+          // Keep the "Applied X" announcement that select() just set.
+          justCommittedRef.current = false;
+          return;
+        }
         setAnnouncement(t("scene.preview.reverted"));
         scheduleClear();
       } else {
