@@ -82,6 +82,42 @@ afterEach(() => {
 });
 
 describe("SceneHost — cleanup & cancellation contract", () => {
+  // NOTE: probe test MUST run first — `hasWebGL()` caches its result in a
+  // module-level variable, so subsequent mounts in this file will skip the
+  // createElement("canvas") path entirely.
+  it("hasWebGL probe: releases its WebGL context (loseContext + canvas 0x0)", async () => {
+    const loseContext = vi.fn();
+    const fakeGl = {
+      getExtension: vi.fn((name: string) =>
+        name === "WEBGL_lose_context" ? { loseContext } : null,
+      ),
+    };
+
+    let probeCanvas: HTMLCanvasElement | null = null;
+    const realCreateElement = document.createElement.bind(document);
+    const createSpy = vi.spyOn(document, "createElement").mockImplementation(
+      ((tagName: string, opts?: ElementCreationOptions) => {
+        const el = realCreateElement(tagName as keyof HTMLElementTagNameMap, opts);
+        if (tagName === "canvas" && !probeCanvas) {
+          probeCanvas = el as HTMLCanvasElement;
+          (el as HTMLCanvasElement).getContext = vi.fn(() => fakeGl) as unknown as HTMLCanvasElement["getContext"];
+        }
+        return el;
+      }) as typeof document.createElement,
+    );
+
+    localStorage.setItem(SCENE_STORAGE_KEY, "scene-a");
+    await act(async () => { render(<SceneHost />); });
+
+    expect(probeCanvas).not.toBeNull();
+    expect(loseContext).toHaveBeenCalledTimes(1);
+    // Canvas shrunk to 0×0 so the browser releases its backing buffer.
+    expect(probeCanvas!.width).toBe(0);
+    expect(probeCanvas!.height).toBe(0);
+
+    createSpy.mockRestore();
+  });
+
   it("hands the scene a non-aborted AbortSignal on mount", async () => {
     localStorage.setItem(SCENE_STORAGE_KEY, "scene-a");
     await act(async () => { render(<SceneHost />); });
