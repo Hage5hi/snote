@@ -269,7 +269,7 @@ export function Topbar({
 
                 <Separator orientation="vertical" className="mx-1 h-5" />
 
-                <SceneToggle />
+                {!isMobile && <SceneToggle />}
                 <ThemeToggle />
               </>
             )}
