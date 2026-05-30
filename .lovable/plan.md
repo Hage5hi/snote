@@ -1,67 +1,139 @@
-# Plan: SceneToggle UX polish + perf caching
+## Mục tiêu
 
-## Note on "Suggest task" (Lovable suggestions)
-Đây là gợi ý phía nền tảng Lovable (hiện ở khung chat), không phải code trong project. Nếu không thấy chip "Suggested tasks" nữa, đó là thay đổi UI/AB của Lovable — không sửa được từ repo. Mình bỏ qua mục này trong plan.
+1. **Unit test `previewScene`** — đảm bảo hover preview hoạt động & không persist.
+2. **A11y screen-reader announce** cho SceneToggle khi hover preview.
+3. **Mở rộng scene system** sang NotePage / SplitView / RawView / SharePage, dùng chung 1 localStorage key, chỉ tô chrome (topbar + viền), giữ editor/preview body legibility.
 
-## Audit của các đề xuất bạn đưa ra
+---
 
-| Đề xuất | Trạng thái hiện tại | Cần làm? |
-|---|---|---|
-| Route isolation (SceneToggle chỉ ở `/`) | ✅ Đã đúng — `<SceneToggle/>` chỉ render trong `src/pages/Home.tsx`, không có ở route nào khác | Không |
-| ThemeToggle reset scene → `none` | ✅ Đã có (`setScene(SCENE_NONE)` trong `ThemeToggle.select`) | Thêm 1 test bảo vệ |
-| Persistence localStorage | ✅ `useSceneTheme` đã đọc/ghi `home.scene` và đồng bộ qua `storage` + `scene-theme-change` | Không |
-| Bỏ "None" + bỏ description trong dropdown | ✅ Đã filter `SCENE_NONE`; description hiện đã KHÔNG render (chỉ label + swatch) | Không |
-| Keyboard nav | ✅ `DropdownMenuRadioGroup` (Radix) hỗ trợ sẵn ↑↓ Enter Esc | Không |
-| Đổi `Neon Vapor` → `Neon Horizon` | ✅ Toàn bộ 6 ngôn ngữ trong `i18n/index.ts` đều đã là "Neon Horizon" | Không |
-| Hover preview | ❌ Chưa có | **Làm** |
-| Tối ưu Obsidian Ink + Zodiac Map (offscreen cache) | ⚠️ Partial — Zodiac có cache symbols ở mức module, nhưng labels + watermark vẫn vẽ mỗi frame; Obsidian Ink rebuild gradient mỗi frame | **Làm** |
+## Phần 1 — Unit test `previewScene`
 
-Lưu ý chủ ý giữ nguyên:
-- **Scene id `neon-vapor`** (key registry/CSS/localStorage) giữ nguyên — chỉ label hiển thị là "Neon Horizon". Đổi id sẽ vỡ localStorage của user hiện tại, CSS `[data-scene="neon-vapor"]`, và snapshot tests. Đây là pattern chuẩn (id = stable slug, label = i18n).
-- Không xóa key i18n `scene.neon_vapor.*` vì cùng lý do.
+**File mới:** `src/hooks/__tests__/use-scene-theme.test.ts`
 
-## Việc sẽ làm
+Test các invariant của hook `useSceneTheme()`:
 
-### 1. Hover preview trong SceneToggle (`src/components/SceneToggle.tsx`)
-- Thêm state `hoverPreview: string | null`.
-- Trên mỗi `DropdownMenuRadioItem`: `onMouseEnter` / `onFocus` → `setHoverPreview(e.id)`; `onMouseLeave` / `onBlur` → `setHoverPreview(null)`.
-- Khi `open && hoverPreview && hoverPreview !== scene`: tạm thời `setScene(hoverPreview)` (không ghi đè localStorage cho preview).
-- Đóng menu mà không chọn → restore scene gốc.
+- `scene` mặc định = `"none"` khi localStorage trống.
+- `setScene("cyber-linh-khi")` → ghi vào localStorage + dispatch `scene-theme-change`.
+- `previewScene("ethereal-aurora")` → `scene` đổi, `committedScene` KHÔNG đổi, localStorage KHÔNG bị ghi.
+- `previewScene(null)` → revert `scene` về `committedScene`.
+- `setScene(x)` trong khi đang preview → clear preview, commit `x`, `scene === committedScene === x`.
+- Cross-instance sync: 2 instance của hook trong cùng tab thấy cùng giá trị preview (test qua dispatch event thủ công).
+- `storage` event từ tab khác (key=`home.scene`) cập nhật `committedScene`.
 
-Cách tiếp cận thực thi: lưu `committedSceneRef` khi mở menu; gọi `setScene` cho preview (vẫn ghi localStorage — chấp nhận, vì preview là tạm và sẽ ghi lại scene gốc khi đóng). Để tránh thrash localStorage, mở rộng `useSceneTheme` với `previewScene(id)` — set state in-memory + dispatch `scene-theme-change`, **không** ghi localStorage. Commit thật sự chỉ khi user click chọn (đi qua `setScene` cũ).
+Test mới sẽ thêm 1 assertion vào `SceneToggle.i18n.test.tsx` xác nhận hover (`fireEvent.mouseEnter` trên 1 menuitemradio) đổi DOM cue (xem Phần 2) mà KHÔNG ghi `home.scene`.
 
-Đụng chạm:
-- `src/hooks/use-scene-theme.ts`: thêm `previewScene(id | null)` — chỉ dispatch event in-memory; thêm `committedScene` (giá trị từ localStorage). SceneHost/Home tiếp tục đọc `scene` như cũ.
-- `src/components/SceneToggle.tsx`: dùng `previewScene` khi hover, `setScene` khi click, clear preview khi `onOpenChange(false)`.
-- Guard `prefers-reduced-motion`: skip preview để tránh nháy.
+---
 
-### 2. Test bảo vệ
-- `ThemeToggle.test`: chọn light/dark → assert `localStorage["home.scene"] === "none"`.
-- `SceneToggle.hover-preview.test`: hover item → scene state đổi; close menu không click → scene revert.
+## Phần 2 — A11y: announce label khi hover preview
 
-### 3. Tối ưu perf
+**Vấn đề hiện tại:** `previewScene(id)` chỉ đổi background, screen reader không biết. User mù không nhận được feedback rằng hover đang đổi scene.
 
-**Zodiac Map (`DigitalConstellation.tsx`)**
-- Tách render thành 2 layer: **static layer** (offscreen `OffscreenCanvas` hoặc `<canvas>` ẩn) chứa watermark symbols (♈︎–♓︎) + labels mono (CAP, "22/12 - 19/1"…) + lưới grid. Build 1 lần khi resize.
-- **Dynamic layer**: chỉ vẽ stars + edges với alpha "breathing" + background dust mỗi frame.
-- Mỗi frame: `clear → drawImage(staticCanvas, 0, 0) → vẽ dynamic`. Giảm ~60-70% chi phí text rendering.
-- Giữ throttle 30fps (`FRAME_MS = 1000/30`).
+**Giải pháp:**
 
-**Obsidian Ink (`ObsidianInk.tsx`)**
-- Cache paper-grain gradient + texture vào offscreen canvas khi resize (hiện rebuild gradient mỗi frame).
-- Cùng pattern: blit static layer + chỉ vẽ ink diffusion động.
-- Verify 30fps cap đã có; nếu chưa, thêm.
+a. Thêm `aria-live="polite"` region (visually hidden) trong `SceneToggle.tsx`. Khi `hoverPreview` đổi, region thông báo dạng `t("scene.previewing", { name })` (vd: "Previewing Cyber Linh Khí"). Khi commit hoặc revert → clear text.
 
-### 4. Verification
-- `npm run lint` + tests liên quan.
-- Manual: mở dropdown → hover từng scene → thấy background đổi → đóng dropdown không click → background quay lại scene cũ.
-- DevTools Performance: 1 frame trên Zodiac nên < 8ms ở 30fps cap (trước: ~12-15ms do text rendering).
+b. Thêm `aria-describedby` nối `DropdownMenuRadioItem` với một mô tả ngắn (`scene.preview.hint` = "Hover to preview, click to apply") để new user hiểu pattern.
 
-## File sẽ chỉnh
-- `src/hooks/use-scene-theme.ts` — thêm `previewScene`
-- `src/components/SceneToggle.tsx` — hover/focus preview
-- `src/components/home/scenes/DigitalConstellation.tsx` — tách static/dynamic layer
-- `src/components/home/scenes/ObsidianInk.tsx` — cache paper grain
-- Tests: `ThemeToggle.i18n.test.tsx` (mở rộng), `SceneToggle.hover-preview.test.tsx` (mới)
+c. i18n keys mới trong `src/i18n/index.ts` cho cả 6 locale:
+   - `scene.preview.announcing` — "Previewing {name}"
+   - `scene.preview.committed` — "Applied {name}"
+   - `scene.preview.reverted` — "Preview cancelled"
 
-Không đụng: registry, i18n strings, ThemeToggle logic, CSS scene tokens.
+d. Tôn trọng `prefers-reduced-motion`: đã có guard không preview, nhưng vẫn announce label khi hover (preview state vẫn track, chỉ skip visual transition). Cân nhắc: KHÔNG preview → KHÔNG announce. Giữ nguyên hành vi: reduced-motion = không preview = không announce (an toàn).
+
+e. Test mới: `SceneToggle.a11y.test.tsx` xác nhận live region tồn tại, render đúng text khi hover, clear khi `mouseLeave`/`close`.
+
+---
+
+## Phần 3 — Scene system cho note surfaces
+
+### Quyết định kiến trúc (đã chốt với bạn)
+
+- **Cả 6 scene** đều áp dụng (kể cả Terminal Boot, Neon Vapor).
+- **Chỉ tô chrome** (topbar + viền + watermark mép). Editor/Preview body giữ `bg-background` đặc → legibility tuyệt đối.
+- **Persistence dùng chung** localStorage key `home.scene` (rename concept thành "app scene" trong comments, không đổi key để không phá data hiện có).
+- **Tất cả surface** /:slug family: NotePage, SplitView, RawView, SharePage.
+- **Không áp scene** cho /note (AdminPanel) — admin surface phải neutral.
+
+### Thay đổi cụ thể
+
+**a. Đổi tên scope của isolation script**
+`scripts/check-home-theme-isolation.ts` → đổi target list. Cho phép `data-scene` + `data-app-root` + SceneHost xuất hiện trong NotePage/Editor/Preview surfaces, nhưng vẫn cấm chúng leak vào `AdminPanel.tsx`. Vẫn cấm hard-coded scene IDs (vd `"cyber-linh-khi"`) trong các surface không phải dispatcher/registry.
+
+**b. Component mới `<AppShell>` (hoặc rename `SceneHost` → reusable)**
+
+Tạo `src/components/app/AppShell.tsx` wrap children với:
+- `data-app-root="true"` + `data-scene={hasScene ? scene : undefined}`
+- Mount `<SceneHost />` nếu `hasScene`
+- Background = `bg-transparent` khi hasScene, ngược lại `bg-background`
+
+Home.tsx, NotePage.tsx, SplitView.tsx, RawView.tsx, SharePage.tsx đều bọc bằng `<AppShell>`.
+
+**c. CSS token rename: `--home-*` → `--app-*`**
+
+Trong `src/index.css`:
+- Đổi selector `[data-home-root]` → `[data-app-root]`
+- Rename biến `--home-chrome-bg/border/mask-top/...` → `--app-chrome-bg/...`
+- Giữ alias `--home-*` trong 1 release để backward-compat (Home.tsx vẫn đọc `var(--home-chrome-bg)` được).
+- Hoặc đơn giản hơn: đổi Home.tsx và các consumer cùng lúc, không cần alias.
+
+Chọn **không cần alias** vì đây là internal API, đổi 1 file `Home.tsx` + index.css là xong.
+
+**d. Topbar (note) ăn scene tokens**
+
+Trong `src/components/note/topbar/Topbar.tsx` (275 lines): khi `hasScene`, đổi:
+- `background` của bar → `var(--app-chrome-bg)`
+- `borderColor` → `var(--app-chrome-border)`
+- Thêm `motion-safe:backdrop-blur-md`
+
+Editor body wrapper, Preview body wrapper: **KHÔNG đổi** — giữ `bg-background`. Chỉ outer container của route trong suốt để SceneHost lộ ra ở viền (mask top/bottom đã có sẵn).
+
+**e. SceneToggle trên note surface**
+
+Thêm `<SceneToggle />` vào Topbar (cạnh existing ThemeToggle/LanguageToggle nếu có). Cho phép user đổi scene từ trong note luôn — không cần về Home.
+
+**f. SharePage / RawView**
+
+Surfaces này có topbar/chrome riêng đơn giản hơn. Wrap bằng AppShell, áp cùng tokens vào header của chúng. Không thêm SceneToggle (read-only surfaces, scene đã chọn từ Home/Note).
+
+**g. Cập nhật `shouldBlockScene`**
+
+SceneHost guard hiện chỉ check `eink`, `reduced-motion`, `low-end CPU`, `WebGL`, `saveData`. Áp cho note vẫn đúng — không đổi logic. Note có thêm yêu cầu: pause scene khi user đang typing dài? **Bỏ qua** — chrome opacity 0.4-0.6 + content body đặc đủ để không phân tâm.
+
+### Files thay đổi (Phần 3)
+
+```
+NEW   src/components/app/AppShell.tsx
+EDIT  src/index.css                              (rename --home-* → --app-*, selector)
+EDIT  src/pages/Home.tsx                         (bọc AppShell, dùng var(--app-*))
+EDIT  src/pages/NotePage.tsx                     (bọc AppShell)
+EDIT  src/pages/SplitView.tsx                    (bọc AppShell)
+EDIT  src/pages/RawView.tsx                      (bọc AppShell)
+EDIT  src/pages/SharePage.tsx                    (bọc AppShell)
+EDIT  src/components/note/topbar/Topbar.tsx      (ăn app-chrome tokens, thêm SceneToggle)
+EDIT  scripts/check-home-theme-isolation.ts      (chuyển từ chặn → chặn-trừ-AppShell, vẫn chặn cho AdminPanel)
+EDIT  e2e/helpers + e2e/home-scene.spec.ts       (nếu test dựa trên data-home-root → đổi data-app-root)
+```
+
+---
+
+## Risk & Test plan
+
+- **Risk 1: Editor performance** khi scene background animate phía sau. Mitigation: editor body có `bg-background` đặc → scene KHÔNG ảnh hưởng paint của editor pane (browser composite layer riêng).
+- **Risk 2: Vim mode hoặc Typewriter mode** vẽ overlay → có thể conflict z-index. Mitigation: SceneHost z-index = 0, content z-index = 10, đã đúng.
+- **Risk 3: Legacy test `check-home-theme-isolation`** sẽ fail. Mitigation: cập nhật script trong cùng PR.
+- **Risk 4: Visual regression** trên 6 scene × 4 surface = 24 snapshots mới. Mitigation: chỉ thêm snapshot cho NotePage (1 surface) × 6 scene = 6, giữ tightness.
+
+**Verify:**
+- `bun run check:home-isolation` pass (renamed/updated).
+- Vitest: tất cả test mới + cũ pass.
+- Manual: mở /:slug với từng scene → editor vẫn legible, topbar lộ scene; SceneToggle trong topbar đổi scene tức thì; hover preview vẫn chạy.
+- Axe: SceneToggle dropdown không sinh violation mới (re-run `e2e/a11y-interactions.spec.ts` style check).
+
+---
+
+## Thứ tự thực thi đề xuất
+
+1. Phần 1 (test `previewScene`) — nhỏ, isolated, dễ verify trước.
+2. Phần 2 (a11y announce) — chỉ động SceneToggle + i18n.
+3. Phần 3 (mở rộng scene) — lớn nhất, đổi nhiều file; làm cuối cùng, có test ở Phần 1 để bảo vệ regression.

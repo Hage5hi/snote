@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ShortcutHelp } from "@/components/ShortcutHelp";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { SceneToggle } from "@/components/SceneToggle";
+import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { PresenceDots, type PresenceUser } from "../PresenceDots";
 import { HistoryDialog } from "../HistoryDialog";
 import { LockButton } from "../LockButton";
@@ -91,6 +93,14 @@ export function Topbar({
   const [historyOpen, setHistoryOpen] = useState(false);
   const narrow = useNarrowViewport();
   const { t } = useI18n();
+  const { scene } = useSceneTheme();
+  const hasScene = scene !== "none";
+  const sceneHeaderStyle = hasScene
+    ? { background: "var(--home-chrome-bg)", borderColor: "var(--home-chrome-border)" }
+    : undefined;
+  const sceneHeaderClass = hasScene
+    ? "border-b motion-safe:backdrop-blur-md"
+    : "border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80";
 
   const copyAll = async () => {
     const text = getContent();
@@ -126,7 +136,10 @@ export function Topbar({
     <>
       {zen && !compact && <div className="zen-hover-zone" aria-hidden />}
       {narrow ? (
-        <header className="zen-topbar sticky top-0 z-30 flex flex-col border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <header
+          className={`zen-topbar sticky top-0 z-30 flex flex-col ${sceneHeaderClass}`}
+          style={sceneHeaderStyle}
+        >
           {/* Row 1: brand + theme + preview toggle (always visible, never
               pushed off-screen by the menus on row 2). */}
           <div className="flex h-11 items-center gap-2 px-2">
@@ -137,6 +150,7 @@ export function Topbar({
               provider={provider}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1">
+              {!compact && <SceneToggle />}
               {!compact && <ThemeToggle />}
               <ViewControls
                 showPreview={showPreview}
@@ -185,7 +199,10 @@ export function Topbar({
           </div>
         </header>
       ) : (
-        <header className="zen-topbar sticky top-0 z-30 flex h-11 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <header
+          className={`zen-topbar sticky top-0 z-30 flex h-11 items-center gap-2 px-3 ${sceneHeaderClass}`}
+          style={sceneHeaderStyle}
+        >
           <TopbarBrand
             slug={slug}
             doc={doc}
@@ -247,6 +264,7 @@ export function Topbar({
 
                 <Separator orientation="vertical" className="mx-1 h-5" />
 
+                <SceneToggle />
                 <ThemeToggle />
               </>
             )}

@@ -33,6 +33,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
+import { AppShell } from "@/components/app/AppShell";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
@@ -377,7 +378,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const noteDesc = `Note "${slug}" on Syrin Notes — realtime markdown, autosave, synced across devices.`;
 
   return (
-    <div className="flex h-svh flex-col bg-background">
+    <AppShell className="flex h-svh flex-col">
+
+
       <Helmet>
         <title>{noteTitle}</title>
         <meta name="description" content={noteDesc} />
@@ -474,6 +477,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           onNext={() => flip(1)}
         />
       )}
-    </div>
+    </AppShell>
   );
 }

@@ -4,6 +4,8 @@ import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { AppShell } from "@/components/app/AppShell";
+import { useSceneTheme } from "@/hooks/use-scene-theme";
 
 const NotePage = lazy(() => import("./NotePage"));
 
@@ -53,7 +55,29 @@ export default function SplitView() {
   }
 
   return (
-    <div className="flex h-svh flex-col bg-background">
+    <SplitViewBody left={left} right={right} syncScroll={syncScroll} setSyncScroll={setSyncScroll} leftRef={leftRef} rightRef={rightRef} />
+  );
+}
+
+function SplitViewBody({
+  left,
+  right,
+  syncScroll,
+  setSyncScroll,
+  leftRef,
+  rightRef,
+}: {
+  left: string;
+  right: string;
+  syncScroll: boolean;
+  setSyncScroll: (v: (b: boolean) => boolean) => void;
+  leftRef: React.RefObject<HTMLDivElement>;
+  rightRef: React.RefObject<HTMLDivElement>;
+}) {
+  const { scene } = useSceneTheme();
+  const hasScene = scene !== "none";
+  return (
+    <AppShell className="flex h-svh flex-col">
       <Helmet>
         <title>{`Split view: /${left} + /${right} — Syrin Notes`}</title>
         <meta name="description" content={`Compare two markdown notes side by side (/${left} and /${right}) with synced scrolling on Syrin Notes.`} />
@@ -66,7 +90,19 @@ export default function SplitView() {
         <meta name="twitter:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
         <meta name="twitter:description" content={`Compare two markdown notes side by side (/${left} and /${right}).`} />
       </Helmet>
-      <header className="flex h-11 shrink-0 items-center gap-3 border-b border-border bg-background/95 px-3 text-xs">
+      <header
+        className={
+          "flex h-11 shrink-0 items-center gap-3 border-b px-3 text-xs " +
+          (hasScene
+            ? "motion-safe:backdrop-blur-md"
+            : "border-border bg-background/95")
+        }
+        style={
+          hasScene
+            ? { background: "var(--home-chrome-bg)", borderColor: "var(--home-chrome-border)" }
+            : undefined
+        }
+      >
         <Tooltip>
           <TooltipTrigger asChild>
             {/* eslint-disable-next-line no-restricted-syntax -- universal nav icon */}
@@ -98,7 +134,7 @@ export default function SplitView() {
           </TooltipContent>
         </Tooltip>
       </header>
-      <main className="grid flex-1 min-h-0 grid-cols-1 md:grid-cols-2 divide-y md:divide-x md:divide-y-0 divide-border">
+      <main className="grid flex-1 min-h-0 grid-cols-1 md:grid-cols-2 divide-y md:divide-x md:divide-y-0 divide-border bg-background">
         <div ref={leftRef} className="min-h-0 overflow-hidden">
           <Suspense fallback={<div className="h-full bg-background" />}>
             <NotePage embedSlug={left} />
@@ -110,6 +146,6 @@ export default function SplitView() {
           </Suspense>
         </div>
       </main>
-    </div>
+    </AppShell>
   );
 }
