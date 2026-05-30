@@ -1,139 +1,77 @@
-## Mục tiêu
 
-1. **Unit test `previewScene`** — đảm bảo hover preview hoạt động & không persist.
-2. **A11y screen-reader announce** cho SceneToggle khi hover preview.
-3. **Mở rộng scene system** sang NotePage / SplitView / RawView / SharePage, dùng chung 1 localStorage key, chỉ tô chrome (topbar + viền), giữ editor/preview body legibility.
+## 1. Visual QA — 6 scene × NotePage (Task 1+3)
 
----
+Tạo `e2e/note-scenes-visual.spec.ts` (mirror của `home-scenes-visual.spec.ts`) nhưng nhắm vào `/qa-scene-note` (slug throwaway) thay vì `/`.
 
-## Phần 1 — Unit test `previewScene`
+Với mỗi scene trong `SCENE_REGISTRY` (enabled, ≠ none):
 
-**File mới:** `src/hooks/__tests__/use-scene-theme.test.ts`
+- **Desktop 1280×720**: seed `localStorage["home.scene"] = scene` → goto `/qa-note-scene` → wait `networkidle`.
+  - Assert `[data-app-root][data-scene="<id>"]` tồn tại.
+  - Assert `--home-chrome-bg` resolve được trên `<header>`.
+  - **Body solid check**: lấy `getComputedStyle(editorBody).backgroundColor`, assert alpha = 1 (không phải transparent). Pick element `.cm-editor` và `[data-preview-root]`.
+  - **Scene chỉ ở chrome**: hit-test pixel giữa editor area → `elementFromPoint` KHÔNG được trả về SceneHost canvas (`[data-scene-ready]`). Scene canvas phải bị che bởi editor body.
+  - Screenshot top-strip (header 0-44px) với mask `[data-scene-ready]` → baseline `note-scene-<id>-chrome.png`.
 
-Test các invariant của hook `useSceneTheme()`:
+- **Mobile 390×844**: cùng seed, viewport mobile.
+  - Assert topbar wrap thành 2 hàng (`.zen-topbar` có `flex-col`).
+  - **Anti-overlap**: lấy bounding box của `SceneToggle`, `ThemeToggle`, `ModeMenu`, `ExportMenu` button. Assert không cặp nào có `Math.max(a.x, b.x) < Math.min(a.x+a.w, b.x+b.w)` đồng thời cùng y-row (overlap). Cụ thể: SceneToggle phải ở row 1, ModeMenu/ExportMenu ở row 2 → so sánh `box.y` khác nhau ≥ 20px.
+  - Assert mọi tap target ≥ 36px (size="sm"/"icon" baseline của shadcn).
 
-- `scene` mặc định = `"none"` khi localStorage trống.
-- `setScene("cyber-linh-khi")` → ghi vào localStorage + dispatch `scene-theme-change`.
-- `previewScene("ethereal-aurora")` → `scene` đổi, `committedScene` KHÔNG đổi, localStorage KHÔNG bị ghi.
-- `previewScene(null)` → revert `scene` về `committedScene`.
-- `setScene(x)` trong khi đang preview → clear preview, commit `x`, `scene === committedScene === x`.
-- Cross-instance sync: 2 instance của hook trong cùng tab thấy cùng giá trị preview (test qua dispatch event thủ công).
-- `storage` event từ tab khác (key=`home.scene`) cập nhật `committedScene`.
+Chạy: `bunx playwright test e2e/note-scenes-visual.spec.ts --update-snapshots` lần đầu để gen baseline, commit, sau đó chạy lại bình thường.
 
-Test mới sẽ thêm 1 assertion vào `SceneToggle.i18n.test.tsx` xác nhận hover (`fireEvent.mouseEnter` trên 1 menuitemradio) đổi DOM cue (xem Phần 2) mà KHÔNG ghi `home.scene`.
+## 2. Test infra: data-home-root → data-app-root (Task 2)
 
----
+Rename attribute trên surface chung (AppShell). Home vẫn dùng cùng AppShell pattern, không còn phân biệt "home root".
 
-## Phần 2 — A11y: announce label khi hover preview
+**Files cập nhật:**
+- `src/components/app/AppShell.tsx`: `data-home-root` → `data-app-root`. Cập nhật comment đầu file.
+- `src/pages/Home.tsx`: tìm & replace `data-home-root="true"` → `data-app-root="true"` (cộng comment giải thích lịch sử bỏ đi).
+- `src/index.css`: tất cả selector `[data-home-root]` → `[data-app-root]` (giữ nguyên `[data-scene="..."]` phần sau).
+- `scripts/check-home-theme-isolation.ts`:
+  - `required[]`: `data-home-root` → `data-app-root`.
+  - `forbidden[]`: `data-home-root` → `data-app-root`.
+  - Đổi tên file/log: "Scene tokens isolated from AdminPanel" giữ nguyên message.
+- `e2e/home-scene.spec.ts`: tất cả `[data-home-root]` selector → `[data-app-root]` (5 chỗ ở section 4 & 5).
+- `e2e/home-scenes-visual.spec.ts`: `page.locator("[data-home-root]")` → `[data-app-root]` (1 chỗ ở dòng 115).
+- `e2e/note-scenes-visual.spec.ts` (file mới ở Task 1): dùng `data-app-root` ngay từ đầu.
 
-**Vấn đề hiện tại:** `previewScene(id)` chỉ đổi background, screen reader không biết. User mù không nhận được feedback rằng hover đang đổi scene.
+**Rename script (optional)**: `bun run check:home-isolation` để verify forbidden tokens không leak.
 
-**Giải pháp:**
+## 3. UI: tách Copy URL & Copy content (TopbarBrand)
 
-a. Thêm `aria-live="polite"` region (visually hidden) trong `SceneToggle.tsx`. Khi `hoverPreview` đổi, region thông báo dạng `t("scene.previewing", { name })` (vd: "Previewing Cyber Linh Khí"). Khi commit hoặc revert → clear text.
+File: `src/components/note/topbar/TopbarBrand.tsx`.
 
-b. Thêm `aria-describedby` nối `DropdownMenuRadioItem` với một mô tả ngắn (`scene.preview.hint` = "Hover to preview, click to apply") để new user hiểu pattern.
+**Trước:**
+- `/scratch` là `<span>` (chỉ hiển thị).
+- Nút Copy icon → copy `window.location.href`.
 
-c. i18n keys mới trong `src/i18n/index.ts` cho cả 6 locale:
-   - `scene.preview.announcing` — "Previewing {name}"
-   - `scene.preview.committed` — "Applied {name}"
-   - `scene.preview.reverted` — "Preview cancelled"
+**Sau:**
+- `/scratch` chuyển thành `<button>` với cùng style (font-mono, truncate). Click → copy URL `${window.location.origin}/${slug}` (dùng origin để luôn map đúng custom domain hiện tại — không hard-code `syrin.online`). Toast `t("toast.copied_url")`.
+  - Bọc Tooltip "Copy URL".
+  - Aria-label: `t("brand.copy_url")`.
+- Nút Copy icon → đổi behavior: copy **toàn bộ nội dung note**. Cần `getContent: () => string` prop mới (Topbar đã có sẵn từ `copyAll`, chỉ cần pass xuống TopbarBrand).
+  - Aria-label & tooltip: dùng key i18n mới `brand.copy_content` (thêm vào cả 7 locale, fallback "Copy content"/"Sao chép nội dung").
+  - Toast: tái sử dụng `t("toast.copied_note")` + `t("toast.copied_chars", { n })` (đã có).
+  - Nếu nội dung rỗng → toast `t("toast.note_empty")`.
+- Encrypted note: nút copy content vẫn hoạt động (copy bản plain text đang giải mã). Nếu `isEncrypted` và editor chưa unlock (`getContent()` trả "") → toast empty.
 
-d. Tôn trọng `prefers-reduced-motion`: đã có guard không preview, nhưng vẫn announce label khi hover (preview state vẫn track, chỉ skip visual transition). Cân nhắc: KHÔNG preview → KHÔNG announce. Giữ nguyên hành vi: reduced-motion = không preview = không announce (an toàn).
+**Topbar.tsx**: chuyển `copyAll` callback → pass `getContent` xuống `TopbarBrand`. Xóa shortcut Cmd/Ctrl+Shift+C khỏi Topbar nếu trùng — giữ nguyên (shortcut vẫn dùng `getContent` ở scope cha, không sao).
 
-e. Test mới: `SceneToggle.a11y.test.tsx` xác nhận live region tồn tại, render đúng text khi hover, clear khi `mouseLeave`/`close`.
-
----
-
-## Phần 3 — Scene system cho note surfaces
-
-### Quyết định kiến trúc (đã chốt với bạn)
-
-- **Cả 6 scene** đều áp dụng (kể cả Terminal Boot, Neon Vapor).
-- **Chỉ tô chrome** (topbar + viền + watermark mép). Editor/Preview body giữ `bg-background` đặc → legibility tuyệt đối.
-- **Persistence dùng chung** localStorage key `home.scene` (rename concept thành "app scene" trong comments, không đổi key để không phá data hiện có).
-- **Tất cả surface** /:slug family: NotePage, SplitView, RawView, SharePage.
-- **Không áp scene** cho /note (AdminPanel) — admin surface phải neutral.
-
-### Thay đổi cụ thể
-
-**a. Đổi tên scope của isolation script**
-`scripts/check-home-theme-isolation.ts` → đổi target list. Cho phép `data-scene` + `data-app-root` + SceneHost xuất hiện trong NotePage/Editor/Preview surfaces, nhưng vẫn cấm chúng leak vào `AdminPanel.tsx`. Vẫn cấm hard-coded scene IDs (vd `"cyber-linh-khi"`) trong các surface không phải dispatcher/registry.
-
-**b. Component mới `<AppShell>` (hoặc rename `SceneHost` → reusable)**
-
-Tạo `src/components/app/AppShell.tsx` wrap children với:
-- `data-app-root="true"` + `data-scene={hasScene ? scene : undefined}`
-- Mount `<SceneHost />` nếu `hasScene`
-- Background = `bg-transparent` khi hasScene, ngược lại `bg-background`
-
-Home.tsx, NotePage.tsx, SplitView.tsx, RawView.tsx, SharePage.tsx đều bọc bằng `<AppShell>`.
-
-**c. CSS token rename: `--home-*` → `--app-*`**
-
-Trong `src/index.css`:
-- Đổi selector `[data-home-root]` → `[data-app-root]`
-- Rename biến `--home-chrome-bg/border/mask-top/...` → `--app-chrome-bg/...`
-- Giữ alias `--home-*` trong 1 release để backward-compat (Home.tsx vẫn đọc `var(--home-chrome-bg)` được).
-- Hoặc đơn giản hơn: đổi Home.tsx và các consumer cùng lúc, không cần alias.
-
-Chọn **không cần alias** vì đây là internal API, đổi 1 file `Home.tsx` + index.css là xong.
-
-**d. Topbar (note) ăn scene tokens**
-
-Trong `src/components/note/topbar/Topbar.tsx` (275 lines): khi `hasScene`, đổi:
-- `background` của bar → `var(--app-chrome-bg)`
-- `borderColor` → `var(--app-chrome-border)`
-- Thêm `motion-safe:backdrop-blur-md`
-
-Editor body wrapper, Preview body wrapper: **KHÔNG đổi** — giữ `bg-background`. Chỉ outer container của route trong suốt để SceneHost lộ ra ở viền (mask top/bottom đã có sẵn).
-
-**e. SceneToggle trên note surface**
-
-Thêm `<SceneToggle />` vào Topbar (cạnh existing ThemeToggle/LanguageToggle nếu có). Cho phép user đổi scene từ trong note luôn — không cần về Home.
-
-**f. SharePage / RawView**
-
-Surfaces này có topbar/chrome riêng đơn giản hơn. Wrap bằng AppShell, áp cùng tokens vào header của chúng. Không thêm SceneToggle (read-only surfaces, scene đã chọn từ Home/Note).
-
-**g. Cập nhật `shouldBlockScene`**
-
-SceneHost guard hiện chỉ check `eink`, `reduced-motion`, `low-end CPU`, `WebGL`, `saveData`. Áp cho note vẫn đúng — không đổi logic. Note có thêm yêu cầu: pause scene khi user đang typing dài? **Bỏ qua** — chrome opacity 0.4-0.6 + content body đặc đủ để không phân tâm.
-
-### Files thay đổi (Phần 3)
-
+**i18n keys mới** (`src/i18n/index.ts`, 7 ngôn ngữ):
 ```
-NEW   src/components/app/AppShell.tsx
-EDIT  src/index.css                              (rename --home-* → --app-*, selector)
-EDIT  src/pages/Home.tsx                         (bọc AppShell, dùng var(--app-*))
-EDIT  src/pages/NotePage.tsx                     (bọc AppShell)
-EDIT  src/pages/SplitView.tsx                    (bọc AppShell)
-EDIT  src/pages/RawView.tsx                      (bọc AppShell)
-EDIT  src/pages/SharePage.tsx                    (bọc AppShell)
-EDIT  src/components/note/topbar/Topbar.tsx      (ăn app-chrome tokens, thêm SceneToggle)
-EDIT  scripts/check-home-theme-isolation.ts      (chuyển từ chặn → chặn-trừ-AppShell, vẫn chặn cho AdminPanel)
-EDIT  e2e/helpers + e2e/home-scene.spec.ts       (nếu test dựa trên data-home-root → đổi data-app-root)
+brand.copy_content
 ```
 
----
+## 4. Verification
 
-## Risk & Test plan
+```
+bun run check:home-isolation
+bunx vitest run
+bunx playwright test e2e/home-scene.spec.ts e2e/home-scenes-visual.spec.ts e2e/note-scenes-visual.spec.ts
+```
 
-- **Risk 1: Editor performance** khi scene background animate phía sau. Mitigation: editor body có `bg-background` đặc → scene KHÔNG ảnh hưởng paint của editor pane (browser composite layer riêng).
-- **Risk 2: Vim mode hoặc Typewriter mode** vẽ overlay → có thể conflict z-index. Mitigation: SceneHost z-index = 0, content z-index = 10, đã đúng.
-- **Risk 3: Legacy test `check-home-theme-isolation`** sẽ fail. Mitigation: cập nhật script trong cùng PR.
-- **Risk 4: Visual regression** trên 6 scene × 4 surface = 24 snapshots mới. Mitigation: chỉ thêm snapshot cho NotePage (1 surface) × 6 scene = 6, giữ tightness.
+Báo cáo số test pass/fail, screenshot diff nếu có.
 
-**Verify:**
-- `bun run check:home-isolation` pass (renamed/updated).
-- Vitest: tất cả test mới + cũ pass.
-- Manual: mở /:slug với từng scene → editor vẫn legible, topbar lộ scene; SceneToggle trong topbar đổi scene tức thì; hover preview vẫn chạy.
-- Axe: SceneToggle dropdown không sinh violation mới (re-run `e2e/a11y-interactions.spec.ts` style check).
+## Out of scope (per user rejection)
 
----
-
-## Thứ tự thực thi đề xuất
-
-1. Phần 1 (test `previewScene`) — nhỏ, isolated, dễ verify trước.
-2. Phần 2 (a11y announce) — chỉ động SceneToggle + i18n.
-3. Phần 3 (mở rộng scene) — lớn nhất, đổi nhiều file; làm cuối cùng, có test ở Phần 1 để bảo vệ regression.
+- ❌ Task 7 (override `prefers-reduced-motion`) — luôn tôn trọng OS flag.

@@ -172,7 +172,7 @@ export default function Home() {
   const isCyber = scene === "cyber-linh-khi";
   const motionSafe = "motion-safe:transition motion-safe:duration-150";
 
-  // Per-scene tokens come from index.css via [data-home-root][data-scene=...].
+  // Per-scene tokens come from index.css via [data-app-root][data-scene=...].
   // Default scene === "none" branch keeps its plain Tailwind classes so the
   // pristine light/dark layout stays byte-identical when no scene is active.
   const monoStyle = hasScene ? { fontFamily: "var(--home-mono-family)" } : undefined;
@@ -181,7 +181,7 @@ export default function Home() {
     <div
       data-scene={hasScene ? scene : undefined}
       data-theme={isCyber ? "cyber" : undefined}
-      data-home-root="true"
+      data-app-root="true"
       className={`relative isolate min-h-svh ${hasScene ? "bg-transparent" : "bg-background"}`}
     >
       {hasScene && <SceneHost />}

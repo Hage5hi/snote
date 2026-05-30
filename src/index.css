@@ -396,14 +396,14 @@
 
 /* ================== Home scene tokens (Phase 1) ==================
    The Home route exposes one set of CSS vars whose values are swapped per
-   `[data-home-root][data-scene="<id>"]`. This keeps Home.tsx free of per-scene
+   `[data-app-root][data-scene="<id>"]`. This keeps Home.tsx free of per-scene
    `isCyber ? ... : ...` branches and prevents any token from leaking into
    /:slug surfaces (NotePage/Editor/Preview) — those subtrees never get a
-   `data-home-root` ancestor.
+   `data-app-root` ancestor.
 
    Default values (scene === "none" OR no scene yet) mirror the existing
    light/dark theme so nothing changes for users who never pick a scene. */
-[data-home-root] {
+[data-app-root] {
   --home-chrome-bg: hsl(var(--background) / 0.8);
   --home-chrome-border: hsl(var(--border) / 0.6);
   --home-recents-bg: transparent;
@@ -423,7 +423,7 @@
   --home-title-grad: linear-gradient(135deg, hsl(var(--foreground)), hsl(var(--foreground) / 0.6));
 }
 
-[data-home-root][data-scene="cyber-linh-khi"] {
+[data-app-root][data-scene="cyber-linh-khi"] {
   --home-chrome-bg: hsl(0 0% 0% / 0.40);
   --home-chrome-border: hsl(190 50% 20% / 0.50);
   --home-recents-bg: hsl(0 0% 0% / 0.40);
@@ -443,7 +443,7 @@
   --home-title-grad: linear-gradient(135deg, hsl(172 90% 85%), hsl(187 95% 75%), hsl(172 80% 55%));
 }
 
-[data-home-root][data-scene="ethereal-aurora"] {
+[data-app-root][data-scene="ethereal-aurora"] {
   --home-chrome-bg: hsl(265 50% 10% / 0.45);
   --home-chrome-border: hsl(280 40% 35% / 0.35);
   --home-recents-bg: hsl(265 40% 8% / 0.45);
@@ -462,7 +462,7 @@
   --home-title-grad: linear-gradient(135deg, hsl(320 100% 92%), hsl(280 90% 80%), hsl(220 80% 75%));
 }
 
-[data-home-root][data-scene="obsidian-ink"] {
+[data-app-root][data-scene="obsidian-ink"] {
   /* Light-mode ink-on-paper. ThemeToggle pins next-themes=light alongside. */
   --home-chrome-bg: hsl(38 30% 96% / 0.80);
   --home-chrome-border: hsl(30 15% 60% / 0.40);
@@ -483,7 +483,7 @@
   --home-title-grad: linear-gradient(135deg, hsl(25 30% 15%), hsl(25 22% 28%), hsl(25 18% 42%));
 }
 
-[data-home-root][data-scene="digital-constellation"] {
+[data-app-root][data-scene="digital-constellation"] {
   /* Deep-space navy. Cool slate UI chrome that reads as star-chart paper. */
   --home-chrome-bg: hsl(220 40% 6% / 0.55);
   --home-chrome-border: hsl(215 30% 40% / 0.40);
@@ -503,7 +503,7 @@
   --home-title-grad: linear-gradient(135deg, hsl(215 35% 95%), hsl(210 50% 78%), hsl(215 40% 60%));
 }
 
-[data-home-root][data-scene="neon-vapor"] {
+[data-app-root][data-scene="neon-vapor"] {
   /* Vaporwave magenta/cyan. UI chrome leans deep violet for contrast. */
   --home-chrome-bg: hsl(280 50% 8% / 0.50);
   --home-chrome-border: hsl(320 70% 50% / 0.35);
@@ -523,7 +523,7 @@
   --home-title-grad: linear-gradient(135deg, hsl(320 100% 80%), hsl(280 80% 75%), hsl(190 90% 75%));
 }
 
-[data-home-root][data-scene="terminal-boot"] {
+[data-app-root][data-scene="terminal-boot"] {
   /* CRT phosphor. Pure-black chrome, phosphor-green accents, mono everything. */
   --home-chrome-bg: hsl(120 30% 3% / 0.65);
   --home-chrome-border: hsl(135 80% 40% / 0.35);

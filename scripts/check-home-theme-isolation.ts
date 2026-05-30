@@ -6,7 +6,7 @@
 // scene id).
 //
 // Run via `bun run check:home-isolation` (see package.json). CI fails fast if
-// any new code path drags a `data-scene`, `data-theme="cyber"`, `data-home-root`,
+// any new code path drags a `data-scene`, `data-theme="cyber"`, `data-app-root`,
 // `scene-theme-change` event, or `--home-*` CSS var into a /:slug surface.
 import { readFileSync } from "node:fs";
 
@@ -15,7 +15,7 @@ const NEUTRAL_SURFACES = ["src/pages/AdminPanel.tsx"];
 
 const home = readFileSync(HOME, "utf8");
 const required = [
-  "data-home-root",
+  "data-app-root",
   "data-scene={hasScene ? scene : undefined}",
   // Legacy attribute, still asserted so the i18n test + leak E2E keep
   // a stable hook to match on.
@@ -29,7 +29,7 @@ const forbidden = [
   "isCyber",
   'data-theme="cyber"',
   "data-theme={isCyber",
-  "data-home-root",
+  "data-app-root",
   "data-scene=",
   "scene-theme-change",
   "--home-chrome-bg",
