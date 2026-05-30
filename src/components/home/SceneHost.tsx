@@ -25,13 +25,18 @@ function hasWebGL(): boolean {
   if (typeof document === "undefined") return (webglAvailable = false);
   try {
     const c = document.createElement("canvas");
+    // Keep the probe canvas tiny so Chrome reserves minimal GPU memory.
+    c.width = 1;
+    c.height = 1;
     const gl =
       (c.getContext("webgl2") as WebGLRenderingContext | null) ||
       (c.getContext("webgl") as WebGLRenderingContext | null) ||
       (c.getContext("experimental-webgl") as WebGLRenderingContext | null);
     webglAvailable = !!gl;
-    // Free the probe context immediately.
+    // Free the probe context immediately so GC can reclaim the canvas.
     if (gl) gl.getExtension("WEBGL_lose_context")?.loseContext();
+    c.width = 0;
+    c.height = 0;
     return webglAvailable;
   } catch {
     return (webglAvailable = false);

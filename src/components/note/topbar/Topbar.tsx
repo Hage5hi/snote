@@ -33,6 +33,7 @@ import { NoteMenu } from "./NoteMenu";
 import { ModeMenu } from "./ModeMenu";
 import { HelpMenu } from "./HelpMenu";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useI18n } from "@/i18n";
 
 
