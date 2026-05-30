@@ -11,6 +11,8 @@ import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
 
@@ -58,6 +60,32 @@ function onIdle(cb: () => void) {
   else window.setTimeout(cb, 200);
 }
 
+// Heavy editor modules — warmed only when intent is signaled (slug input,
+// hovering a recent) AND the device looks capable. Idempotent.
+let editorWarmed = false;
+function prefetchEditor() {
+  if (editorWarmed) return;
+  editorWarmed = true;
+  void import("@/pages/NotePage");
+  void import("yjs");
+  void import("y-indexeddb");
+  void import("y-codemirror.next");
+  void import("@codemirror/lang-markdown");
+  void import("marked");
+  void import("dompurify");
+}
+
+function canPrefetchEditor(isMobile: boolean): boolean {
+  if (isMobile) return false;
+  if (typeof navigator === "undefined") return false;
+  const conn = (navigator as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (conn?.saveData) return false;
+  if (conn?.effectiveType && ["2g", "slow-2g", "3g"].includes(conn.effectiveType)) return false;
+  const mem = (navigator as { deviceMemory?: number }).deviceMemory ?? 8;
+  if (mem < 4) return false;
+  return true;
+}
+
 export default function Home() {
   const navigate = useNavigate();
   const { t } = useI18n();
@@ -67,6 +95,15 @@ export default function Home() {
   const [recents, setRecents] = useState<RecentNote[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
+  const isMobile = useIsMobile();
+  const { scene, committedScene, setScene } = useSceneTheme();
+
+  // Mobile: scenes are heavyweight WebGL/Canvas backgrounds that don't add
+  // value on small screens. Clear any persisted scene from a desktop session
+  // so SceneHost stays unmounted and zero GPU is allocated.
+  useEffect(() => {
+    if (isMobile && committedScene !== SCENE_NONE) setScene(SCENE_NONE);
+  }, [isMobile, committedScene, setScene]);
 
   useEffect(() => {
     setRecents(getRecents());
@@ -118,18 +155,15 @@ export default function Home() {
     };
   }, [slug]);
 
-  // Warm up heavy editor modules so opening a note feels instant.
+  // Warm up heavy editor modules ONLY when the device looks capable. On
+  // mobile / save-data / low-memory devices, skip — keeps the Home heap
+  // small across F5s and the user only pays when they actually open a note.
+  // Even on capable devices, defer 8s so first paint stays fast.
   useEffect(() => {
-    onIdle(() => {
-      void import("@/pages/NotePage");
-      void import("yjs");
-      void import("y-indexeddb");
-      void import("y-codemirror.next");
-      void import("@codemirror/lang-markdown");
-      void import("marked");
-      void import("dompurify");
-    });
-  }, []);
+    if (!canPrefetchEditor(isMobile)) return;
+    const id = window.setTimeout(() => onIdle(prefetchEditor), 8000);
+    return () => window.clearTimeout(id);
+  }, [isMobile]);
 
   const open = (s: string) => {
     const trimmed = s.trim();
@@ -144,6 +178,9 @@ export default function Home() {
   // ydoc snapshot in one query so the eventual NotePage mount has zero
   // network waterfall.
   const prefetchSnapshot = (s: string) => {
+    // Hover/touch on a recent = clear signal the user is about to open a note.
+    // Warm the editor modules now (idempotent).
+    if (canPrefetchEditor(isMobile)) prefetchEditor();
     const key = `note-prefetch:${s}`;
     if (sessionStorage.getItem(key)) return;
     sessionStorage.setItem(key, "1");
@@ -165,7 +202,6 @@ export default function Home() {
       });
   };
 
-  const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
   // Legacy attribute kept for backward-compat with the i18n test + isolation
   // script; new code should branch on `data-scene` instead.
@@ -203,7 +239,7 @@ export default function Home() {
           <span className="font-semibold tracking-tight">Syrin Notes</span>
         </div>
         <div className="flex items-center gap-1">
-          <SceneToggle />
+          {!isMobile && <SceneToggle />}
           <LanguageToggle />
           <ThemeToggle />
         </div>

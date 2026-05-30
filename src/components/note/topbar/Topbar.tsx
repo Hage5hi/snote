@@ -33,6 +33,7 @@ import { NoteMenu } from "./NoteMenu";
 import { ModeMenu } from "./ModeMenu";
 import { HelpMenu } from "./HelpMenu";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useI18n } from "@/i18n";
 
 
@@ -92,6 +93,8 @@ export function Topbar({
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const narrow = useNarrowViewport();
+  const isMobile = useIsMobile();
+  const showSceneToggle = !compact && !isMobile;
   const { t } = useI18n();
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
@@ -151,7 +154,7 @@ export function Topbar({
               getContent={getContent}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              {!compact && <SceneToggle />}
+              {showSceneToggle && <SceneToggle />}
               {!compact && <ThemeToggle />}
               <ViewControls
                 showPreview={showPreview}
@@ -266,7 +269,7 @@ export function Topbar({
 
                 <Separator orientation="vertical" className="mx-1 h-5" />
 
-                <SceneToggle />
+                {!isMobile && <SceneToggle />}
                 <ThemeToggle />
               </>
             )}

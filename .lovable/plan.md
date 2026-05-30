@@ -1,67 +1,80 @@
-# Plan
+## 1. Language persistence (verify + harden)
 
-## 1. Topbar: replace "Help" dropdown with direct Shortcuts trigger
+The current code in `src/i18n/provider.tsx` already writes the choice to `localStorage["lang"]` in `setLang` and reads it back via `detectLang()` on mount, so reload restores it. Two small hardening tweaks:
 
-`src/components/note/topbar/HelpMenu.tsx` currently renders a `<DropdownMenu>` with two items: "Keyboard shortcuts & tips" (opens dialog) and the "Split view" hint block. Since Split view is already explained inside the Shortcuts dialog itself (`shortcuts.tip.split_*`), the dropdown is redundant.
+- In `provider.tsx`, when the IP-geo fetch resolves, only apply the guessed language if `localStorage["lang"]` is still empty (race-safety if the user clicks a language during the 2.5s window).
+- Add a once-only fallback in `detectLang()`: if `localStorage` throws (private mode), fall back to `sessionStorage` so the choice at least survives within the tab.
 
-Change:
-- Convert `HelpMenu` into a single `Button` that calls `onOpenShortcuts` directly — no DropdownMenu, no chevron.
-- Label: short text + keyboard icon so it stays scannable. Use a new i18n key `menu.shortcuts` ("Shortcuts" / "Phím tắt" / "ショートカット" / etc.), with `t("help.shortcuts")` as the `aria-label`/tooltip for accessibility.
-- Keep the `?` keyboard shortcut hint badge on the right (or move to a tooltip) so users know the key still works.
-- Topbar wiring stays the same (`<HelpMenu onOpenShortcuts={…} />`).
-- Remove the now-unused `help.split_label` / `help.split_hint` keys — they only existed for the dropdown body. Drop their usage in HelpMenu; leave the keys in the dict in case other code references them (will check & purge if unreferenced).
+No schema/dictionary changes — language list stays at 9.
 
-Tests to update: `e2e/i18n-export-help.spec.ts` and `e2e/i18n-modes.spec.ts` currently click the localized "Help" button and assert the Split-view text. Update them to click the new Shortcuts trigger and assert the dialog opens (heading from `shortcuts.title`).
+## 2. LanguageToggle contrast & polish
 
-## 2. Add German (DE) + Portuguese (PT)
+Update `src/components/LanguageToggle.tsx`:
 
-`src/i18n/index.ts`:
-- `Lang` type → add `"de" | "pt"`.
-- `SUPPORTED_LANGS` → append `"de"`, `"pt"`.
-- `LANG_NAMES` → `de: { native: "Deutsch", flag: "🇩🇪" }`, `pt: { native: "Português", flag: "🇵🇹" }`.
-- `COUNTRY_LANG`: DE/AT → `de`; PT/BR/AO/MZ/CV/GW/ST/TL → `pt`. (CH stays `fr` to avoid breaking existing tests.)
-- `detectFromNavigator`: add `de`/`pt` branches before the `en` fallback.
-- `dict.de` and `dict.pt`: full translation of every key from `dict.en` (≈345 keys each), idiomatic and length-conscious so menu rows don't wrap.
+- Trigger button: bump text from `text-xs` → `text-[13px] font-semibold`, increase gap to `gap-2`, add `text-foreground` so the language code is high-contrast on both light/dark and on scene-tinted headers.
+- Flag: nudge size 18→20 in trigger, add a thin `ring-1 ring-foreground/15` (already in `Flag.tsx` — bump from `ring-border/40` → `ring-foreground/20` for visibility on busy scene backgrounds).
+- Dropdown row: keep flag 20px, body text `text-sm font-medium`, check icon `text-primary`.
+- Tooltip already covers the "Choose language" affordance — keep it.
 
-Language selector (`src/components/LanguageToggle.tsx`) iterates `SUPPORTED_LANGS` already → automatically shows the two new entries with no code change.
+## 3. Hide SceneToggle on mobile
 
-## 3. Full i18n audit — wrap remaining hardcoded strings
+In `src/pages/Home.tsx` header (the only place SceneToggle is rendered for app-wide use besides `Topbar`):
 
-Run `bun run scripts/i18n-audit.ts` (already wired) and fix every reachable user-facing string. Known offenders from `reports/i18n-audit.json` that ship to users:
+- Import `useIsMobile` from `@/hooks/use-mobile`.
+- Conditionally render `<SceneToggle />` only when `!isMobile`.
+- Also: when `isMobile` is true, force-clear any persisted scene once on mount (`setScene(SCENE_NONE)` if `committedScene !== "none"`) so mobile users don't carry a heavyweight WebGL scene from a desktop session.
+- Apply the same `!isMobile` guard in `src/components/note/topbar/Topbar.tsx` for the two `<SceneToggle />` usages (wide + narrow rows). On the narrow row it's already hidden behind `compact`; add the mobile guard regardless.
 
-- `src/components/DonateButton.tsx` line 59 → `aria-label` should use `t("donate.aria")` (new key).
-- `src/components/note/OutlineSidebar.tsx` line 96 → `aria-label="Outline"` → `t("outline.aria")` (new key; reuse `brand.outline` value if appropriate).
-- `src/lib/markdown/preview-worker.ts` lines 45/48 → "Đang tải biểu đồ…" / "Đang tải công thức…" inlined in worker HTML. Worker has no React context, so accept a labels prop from the client (`{ loadingChart, loadingFormula }`) passed when posting the render request; main thread resolves via `t()`. Add keys `preview.loading_chart`, `preview.loading_formula`.
-- shadcn primitives (`breadcrumb.tsx`, `pagination.tsx`, `katex.ts` title) — unused in current product surfaces; add them to `.lintrc-i18n-allowlist.json` with reasons (library defaults, not user-visible copy) instead of churning shadcn internals.
-- `src/hooks/use-sync-status.ts` & `mermaid-cache.ts` Vietnamese hits are code comments — translate comments to English to satisfy the audit and keep the codebase consistent.
+Scene rendering itself is already guarded by `committedScene !== "none"`, so once the toggle is hidden + cleared, `SceneHost` returns null and zero WebGL cost on mobile.
 
-After fixes, re-run `bun run scripts/i18n-audit.ts` and `bun run i18n:allowlist` and confirm both pass with zero unjustified hits.
+## 4. Memory growth on F5 — root cause + fix
 
-## 4. Translations — quality bar
+The biggest contributor to heap growth on each Home reload is `src/pages/Home.tsx` lines 122–132:
 
-Every dict entry in `de` and `pt` must be a natural, idiomatic phrase a native UI writer would use — never a literal word-for-word port of English. Concrete rules:
+```ts
+onIdle(() => {
+  void import("@/pages/NotePage");
+  void import("yjs");
+  void import("y-indexeddb");
+  void import("y-codemirror.next");
+  void import("@codemirror/lang-markdown");
+  void import("marked");
+  void import("dompurify");
+});
+```
 
-- Keep length within ~120% of the English string; rewrite, don't transliterate, when a literal would overflow buttons/menu rows.
-- Preserve placeholders verbatim (`{slug}`, `{n}`, `{bytes}`, `{code}`, `{when}`, `{ts}`, `{chars}`, `{page}`, `{total}`).
-- Match register of existing locales: friendly-imperative for buttons/toasts ("Speichern", "Salvar"), descriptive for tooltips, microcopy for help text.
-- Sweep the other 7 locales for entries added since their last review (any English string still present in a non-`en` dict gets rewritten in-language). This is bounded by the diff vs. `dict.en` — only stale leftovers need touching.
+These eagerly pull ~hundreds of KB of editor code into the JS heap on **every** Home visit — even if the user never opens a note. After F5, the same chunks are re-parsed and retained. On mobile + low-end devices this is the dominant cost.
 
-## 5. State persistence — verify, don't rewrite
+Changes:
 
-`I18nProvider` already: writes `localStorage["lang"]`, sets `localStorage["lang.ip_detected"]="1"` on manual choice (skipping the IP probe forever after), syncs across tabs via the `storage` event, fires a same-tab `i18n:lang-changed` CustomEvent, and skips IP detection when a saved value exists. No code changes needed; existing tests in `src/i18n/__tests__/i18n.test.tsx` already cover these paths — we'll just add coverage for `de`/`pt` (navigator detection + country mapping).
+- **Gate the warm-up.** Only prefetch when *all* are true:
+  - not mobile (`!useIsMobile()`),
+  - `navigator.connection?.saveData !== true`,
+  - `navigator.connection?.effectiveType` not in `{"2g","slow-2g","3g"}`,
+  - `navigator.deviceMemory ?? 8 >= 4`.
+- **Trigger lazily, not on idle.** Replace `onIdle` with: prefetch on the first of (a) user types into the slug input, (b) user hovers/touches a recent/pinned item, (c) 8s after first paint if still idle. This delays cost until intent is signaled.
+- Move the prefetch list into a single `prefetchEditor()` helper that is idempotent (guard with a module-level `let warmed = false`).
 
-## Verification
+Secondary cleanups:
 
-- `bun run build` (typecheck must pass — new langs added to union).
-- Vitest: `bunx vitest run src/i18n` — coverage test will require every key present in `de`/`pt`.
-- `bun run scripts/i18n-audit.ts` → 0 unjustified hits.
-- `bun run i18n:allowlist` → green.
-- Playwright: `bunx playwright test e2e/i18n-export-help.spec.ts e2e/i18n-modes.spec.ts e2e/i18n-shortcuts.spec.ts` after updating Help expectations.
-- Manual: open `/`, switch to Deutsch then Português in the dropdown, refresh, confirm persistence; click new Shortcuts button → dialog opens.
+- `src/components/home/SceneHost.tsx`: the cached `webglAvailable` probe creates a throwaway canvas every page load. Keep the probe but also `c.width = c.height = 1` before `getContext` to make Chrome reserve minimal GPU memory, and null out `c` after `loseContext` so GC can reclaim sooner.
+- `src/components/Flag.tsx`: 9 dropdown flags hit `flagcdn.com` on every open. Add `fetchpriority="low"` and only render the dropdown flags when the menu is open (gate the `SUPPORTED_LANGS.map(...)` behind the existing `DropdownMenuContent`, which is already portal-mounted on open — confirm by removing any preloading). Net: only the current-language flag in the trigger is fetched at idle.
+- `src/pages/Home.tsx`: the `useEffect` that subscribes to `storage` for pin sync is fine; no change.
+- No changes to scene shaders, scene tokens, or visual theming — visuals stay byte-identical.
 
-## Out of scope
+## 5. Verification
 
-- Restyling the topbar beyond replacing the Help dropdown with a Shortcuts button.
-- Refactoring shadcn primitives' English defaults (allowlisted instead).
-- Translating long-form docs (`README.md`, `docs/*`, `public/llms.txt`) — keys-only product surface.
-- Backend/edge-function copy (toasts originate client-side).
+- Manual: reload Home 5× with DevTools Memory panel; heap should plateau instead of grow per reload (warm-up no longer fires unprompted).
+- Manual: on mobile viewport (<768px), SceneToggle is absent and `data-scene` stays unset on `<div data-app-root>`.
+- Manual: switch language → F5 → language persists.
+- Existing tests: `src/i18n/__tests__/*`, `src/components/__tests__/SceneToggle.*`, `e2e/i18n.spec.ts`, `e2e/home-scene.spec.ts` — run unchanged; only the home prefetch test (if any) may need updating to the gated trigger.
+
+## Files touched
+
+- `src/i18n/provider.tsx` (race-safety on IP geo)
+- `src/i18n/index.ts` (sessionStorage fallback in `detectLang`)
+- `src/components/LanguageToggle.tsx` (contrast)
+- `src/components/Flag.tsx` (ring + fetchpriority)
+- `src/pages/Home.tsx` (mobile guard for SceneToggle, gated prefetch, clear scene on mobile)
+- `src/components/note/topbar/Topbar.tsx` (mobile guard for SceneToggle)
+- `src/components/home/SceneHost.tsx` (probe canvas cleanup)

@@ -67,7 +67,13 @@ export function detectLang(): Lang {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (isLang(saved)) return saved;
   } catch {
-    // ignore
+    // localStorage blocked (private mode / disabled cookies) — try sessionStorage
+    try {
+      const saved = sessionStorage.getItem(STORAGE_KEY);
+      if (isLang(saved)) return saved;
+    } catch {
+      // ignore
+    }
   }
   return detectFromNavigator();
 }

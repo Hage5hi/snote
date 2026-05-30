@@ -47,6 +47,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       .then((r) => (r.ok ? r.json() : null))
       .then((data: { country_code?: string } | null) => {
         if (cancelled || !data) return;
+        // Race-safety: if the user picked a language during the fetch window,
+        // their explicit choice wins over the IP guess.
+        try {
+          if (localStorage.getItem(STORAGE_KEY)) return;
+        } catch {
+          // ignore
+        }
         const guessed = countryToLang(data.country_code);
         if (guessed) {
           setLangState(guessed);
