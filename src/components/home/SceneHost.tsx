@@ -166,6 +166,38 @@ export default function SceneHost() {
     };
   }, []);
 
+  // Per-scene cancellation token. A new AbortController is minted whenever the
+  // user switches scene (or on first mount); the previous one is aborted so
+  // any in-flight scene setup — dynamic import resolution, asset fetch, shader
+  // compile waiters, fetch() with this signal — is signaled to stop
+  // immediately. Combined with `releaseWebGLContext` this guarantees no
+  // background work survives F5 / scene switch / unmount.
+  const abortRef = useRef<AbortController | null>(null);
+  if (abortRef.current === null) abortRef.current = new AbortController();
+  // Recreate the controller on scene change. Done in render (not effect) so
+  // the freshly-mounted lazy component receives the *new* signal, not the
+  // about-to-be-aborted one from the previous scene.
+  const prevSceneRef = useRef(scene);
+  if (prevSceneRef.current !== scene) {
+    try { abortRef.current.abort(); } catch { /* ignore */ }
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.info(`[SceneHost] aborted scene "${prevSceneRef.current}" — switching to "${scene}"`);
+    }
+    abortRef.current = new AbortController();
+    prevSceneRef.current = scene;
+  }
+  // Final abort on host unmount.
+  useEffect(() => {
+    return () => {
+      try { abortRef.current?.abort(); } catch { /* ignore */ }
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.info("[SceneHost] aborted active scene signal on unmount");
+      }
+    };
+  }, []);
+
   // Lazy component reference — keyed on scene id so switching scenes mounts a
   // fresh component (and gets the right chunk). Skipped entirely when blocked
   // by guards, so the dynamic import never fires.
@@ -177,6 +209,7 @@ export default function SceneHost() {
 
   const handleReady = useCallback(() => {
     if (!mountedRef.current) return;
+    if (abortRef.current?.signal.aborted) return;
     setReady(true);
   }, []);
 
@@ -193,7 +226,12 @@ export default function SceneHost() {
       data-scene-ready={ready ? "true" : "false"}
     >
       <Suspense fallback={null}>
-        <SceneComponent paused={paused} isDark={isDark} onReady={handleReady} />
+        <SceneComponent
+          paused={paused}
+          isDark={isDark}
+          onReady={handleReady}
+          signal={abortRef.current.signal}
+        />
       </Suspense>
       {/* Edge masks — pulled from per-scene tokens defined on
           [data-app-root][data-scene=...]. Keeps Header + Recents legible
