@@ -1,4 +1,9 @@
-// Verify that Home's scene-specific tokens never leak into NotePage/Editor/Preview.
+// Verify that scene tokens / SceneHost stay OUT of the AdminPanel surface.
+//
+// Scenes were previously Home-only; they now also wrap NotePage, SplitView,
+// and SharePage via <AppShell>. AdminPanel is the only public surface that
+// must stay neutral (no scene leakage, no SceneHost mount, no hard-coded
+// scene id).
 //
 // Run via `bun run check:home-isolation` (see package.json). CI fails fast if
 // any new code path drags a `data-scene`, `data-theme="cyber"`, `data-home-root`,
@@ -6,11 +11,7 @@
 import { readFileSync } from "node:fs";
 
 const HOME = "src/pages/Home.tsx";
-const NOTE_SURFACES = [
-  "src/pages/NotePage.tsx",
-  "src/components/note/Editor.tsx",
-  "src/components/note/Preview.tsx",
-];
+const NEUTRAL_SURFACES = ["src/pages/AdminPanel.tsx"];
 
 const home = readFileSync(HOME, "utf8");
 const required = [
@@ -37,7 +38,9 @@ const forbidden = [
   "--home-mask-bottom",
   "--home-title-grad",
   "--home-mono-family",
-  // Raw scene ids should never appear in a note surface.
+  "SceneHost",
+  "AppShell",
+  // Raw scene ids should never appear in a neutral surface.
   "cyber-linh-khi",
   "ethereal-aurora",
   "obsidian-ink",
@@ -46,13 +49,13 @@ const forbidden = [
   "terminal-boot",
 ];
 
-for (const file of NOTE_SURFACES) {
+for (const file of NEUTRAL_SURFACES) {
   const source = readFileSync(file, "utf8");
   for (const token of forbidden) {
     if (source.includes(token)) {
-      throw new Error(`${file} leaks Home scene token: ${token}`);
+      throw new Error(`${file} leaks scene token: ${token}`);
     }
   }
 }
 
-console.log("✓ Home scene tokens are isolated from NotePage/Editor/Preview");
+console.log("✓ Scene tokens are isolated from AdminPanel");
