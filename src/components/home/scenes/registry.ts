@@ -17,6 +17,13 @@ export interface SceneProps {
   /** Called once the shader has compiled + rendered its first frame.
    *  SceneHost uses this to fade the background in (avoids flicker). */
   onReady?: () => void;
+  /** Cancellation token. Aborted when SceneHost unmounts OR when the user
+   *  switches scene. Scenes MUST:
+   *    - skip `onReady` when `signal.aborted` (no setState after unmount)
+   *    - cancel any in-flight network requests started with this signal
+   *    - listen on `signal` to bail out of long-running setup early
+   *  Optional for backwards-compat with scenes that have no async work. */
+  signal?: AbortSignal;
 }
 
 export interface SceneDef {

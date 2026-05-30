@@ -231,7 +231,7 @@ function buildPaperBackground(w: number, h: number, dpr: number): HTMLCanvasElem
   return off as HTMLCanvasElement;
 }
 
-export default function ObsidianInk({ paused, onReady }: SceneProps) {
+export default function ObsidianInk({ paused, onReady, signal }: SceneProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const pausedRef = useRef(paused); pausedRef.current = paused;
   const onReadyRef = useRef(onReady); onReadyRef.current = onReady;
@@ -239,6 +239,7 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
+    if (signal?.aborted) return;
 
     const canvas = document.createElement("canvas");
     canvas.style.width = "100%";
@@ -294,6 +295,7 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
     nextSpawn = start + SPAWN_INTERVAL_MS;
 
     const tick = (now: number) => {
+      if (signal?.aborted) return;
       if (pausedRef.current) { rafId = requestAnimationFrame(tick); return; }
       if (now - lastFrame < FRAME_MS) { rafId = requestAnimationFrame(tick); return; }
       lastFrame = now;
@@ -316,16 +318,20 @@ export default function ObsidianInk({ paused, onReady }: SceneProps) {
         nextSpawn = now + SPAWN_INTERVAL_MS + (Math.random() - 0.5) * 1200;
       }
 
-      if (onReadyRef.current) { onReadyRef.current(); onReadyRef.current = undefined; }
+      if (onReadyRef.current && !signal?.aborted) { onReadyRef.current(); onReadyRef.current = undefined; }
       rafId = requestAnimationFrame(tick);
     };
     rafId = requestAnimationFrame(tick);
+    const onAbort = () => { cancelAnimationFrame(rafId); };
+    signal?.addEventListener("abort", onAbort, { once: true });
 
     return () => {
       cancelAnimationFrame(rafId);
+      signal?.removeEventListener("abort", onAbort);
       ro.disconnect();
       try { host.removeChild(canvas); } catch { /* noop */ }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
