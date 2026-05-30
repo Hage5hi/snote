@@ -95,6 +95,15 @@ export default function Home() {
   const [recents, setRecents] = useState<RecentNote[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
+  const isMobile = useIsMobile();
+  const { scene, committedScene, setScene } = useSceneTheme();
+
+  // Mobile: scenes are heavyweight WebGL/Canvas backgrounds that don't add
+  // value on small screens. Clear any persisted scene from a desktop session
+  // so SceneHost stays unmounted and zero GPU is allocated.
+  useEffect(() => {
+    if (isMobile && committedScene !== SCENE_NONE) setScene(SCENE_NONE);
+  }, [isMobile, committedScene, setScene]);
 
   useEffect(() => {
     setRecents(getRecents());
@@ -146,18 +155,15 @@ export default function Home() {
     };
   }, [slug]);
 
-  // Warm up heavy editor modules so opening a note feels instant.
+  // Warm up heavy editor modules ONLY when the device looks capable. On
+  // mobile / save-data / low-memory devices, skip — keeps the Home heap
+  // small across F5s and the user only pays when they actually open a note.
+  // Even on capable devices, defer 8s so first paint stays fast.
   useEffect(() => {
-    onIdle(() => {
-      void import("@/pages/NotePage");
-      void import("yjs");
-      void import("y-indexeddb");
-      void import("y-codemirror.next");
-      void import("@codemirror/lang-markdown");
-      void import("marked");
-      void import("dompurify");
-    });
-  }, []);
+    if (!canPrefetchEditor(isMobile)) return;
+    const id = window.setTimeout(() => onIdle(prefetchEditor), 8000);
+    return () => window.clearTimeout(id);
+  }, [isMobile]);
 
   const open = (s: string) => {
     const trimmed = s.trim();
