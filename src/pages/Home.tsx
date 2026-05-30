@@ -199,7 +199,6 @@ export default function Home() {
       });
   };
 
-  const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
   // Legacy attribute kept for backward-compat with the i18n test + isolation
   // script; new code should branch on `data-scene` instead.
