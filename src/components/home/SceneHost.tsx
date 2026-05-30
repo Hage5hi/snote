@@ -151,6 +151,21 @@ export default function SceneHost() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, []);
 
+  // Track mount state so the async scene-component's `onReady` callback can't
+  // set state on an unmounted host (e.g. when the user picks "none" while a
+  // scene is still compiling).
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      if (import.meta.env.DEV) {
+        // eslint-disable-next-line no-console
+        console.info("[SceneHost] unmounted — scene component will release its GL context");
+      }
+    };
+  }, []);
+
   // Lazy component reference — keyed on scene id so switching scenes mounts a
   // fresh component (and gets the right chunk). Skipped entirely when blocked
   // by guards, so the dynamic import never fires.
@@ -160,7 +175,10 @@ export default function SceneHost() {
     return lazy(def.load);
   }, [def, blocked]);
 
-  const handleReady = useCallback(() => setReady(true), []);
+  const handleReady = useCallback(() => {
+    if (!mountedRef.current) return;
+    setReady(true);
+  }, []);
 
   if (blocked || !def || def.id === SCENE_NONE || !SceneComponent) return null;
 
