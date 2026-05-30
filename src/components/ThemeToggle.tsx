@@ -28,9 +28,15 @@ const COLOR_ENTRIES: { id: ColorId; labelKey: string; icon: typeof Sun }[] = [
 
 export const ThemeToggle = forwardRef<HTMLButtonElement>((_props, ref) => {
   const { theme, setTheme } = useTheme();
-  const { setScene } = useSceneTheme();
+  const { scene, setScene } = useSceneTheme();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
+
+  // While a scene is active, no color row is "checked" — clicking any row
+  // both clears the scene and applies that colour scheme, so the dot/check
+  // would be misleading. Empty string = no radio item selected.
+  const sceneActive = scene !== SCENE_NONE;
+  const radioValue = sceneActive ? "" : (theme ?? "system");
 
   const select = (id: string) => {
     const entry = COLOR_ENTRIES.find((c) => c.id === id);
