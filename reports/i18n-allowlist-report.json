@@ -69,11 +69,11 @@
       "matchedSites": [
         {
           "file": "src/pages/NotePage.tsx",
-          "line": 388
+          "line": 391
         },
         {
           "file": "src/pages/NotePage.tsx",
-          "line": 392
+          "line": 395
         }
       ],
       "errors": []
@@ -105,7 +105,7 @@
       "matchedSites": [
         {
           "file": "src/pages/SharePage.tsx",
-          "line": 140
+          "line": 142
         }
       ],
       "errors": []
@@ -121,7 +121,7 @@
       "matchedSites": [
         {
           "file": "src/pages/SplitView.tsx",
-          "line": 61
+          "line": 85
         }
       ],
       "errors": []
@@ -137,7 +137,7 @@
       "matchedSites": [
         {
           "file": "src/pages/SplitView.tsx",
-          "line": 72
+          "line": 108
         }
       ],
       "errors": []
