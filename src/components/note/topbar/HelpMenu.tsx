@@ -1,14 +1,9 @@
-// Help dropdown: keyboard shortcuts + Split view hint.
-import { ChevronDown, Keyboard, Link2 } from "lucide-react";
+// Shortcuts trigger: a single button that opens the Keyboard shortcuts & tips dialog.
+// (Previously a Help dropdown that wrapped the same action plus a Split-view hint —
+//  the hint is already covered inside the dialog, so the dropdown was redundant.)
+import { Keyboard } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/i18n";
 
 interface HelpMenuProps {
@@ -17,36 +12,24 @@ interface HelpMenuProps {
 
 export function HelpMenu({ onOpenShortcuts }: HelpMenuProps) {
   const { t } = useI18n();
-  // Split the localized "Open URL {code} ..." string around the {code} placeholder
-  // so we can render the slug as a styled <code> element.
-  const splitHint = t("help.split_hint", { code: "§§CODE§§" }).split("§§CODE§§");
+  const label = t("shortcuts.title");
+  const longLabel = t("help.shortcuts");
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-sm font-normal">
-          {t("menu.help")}
-          <ChevronDown className="h-3 w-3 opacity-60" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <DropdownMenuItem onClick={onOpenShortcuts}>
-          <Keyboard className="h-3.5 w-3.5" /> {t("help.shortcuts")}
-          <span className="ml-auto text-[10px] text-muted-foreground">?</span>
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel className="flex items-center gap-2 text-xs">
-          <Link2 className="h-3.5 w-3.5" />
-          {t("help.split_label")}
-        </DropdownMenuLabel>
-        <DropdownMenuItem
-          className="text-xs text-muted-foreground"
-          onSelect={(e) => e.preventDefault()}
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 gap-1.5 px-2 text-sm font-normal"
+          onClick={onOpenShortcuts}
+          aria-label={longLabel}
         >
-          {splitHint[0]}
-          <code className="mx-1 font-mono">/a+b</code>
-          {splitHint[1] ?? ""}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <Keyboard className="h-3.5 w-3.5 opacity-70" />
+          <span className="hidden sm:inline">{label}</span>
+          <span className="ml-0.5 hidden text-[10px] text-muted-foreground sm:inline">?</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{longLabel}</TooltipContent>
+    </Tooltip>
   );
 }
