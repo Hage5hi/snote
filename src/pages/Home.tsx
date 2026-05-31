@@ -239,7 +239,11 @@ export default function Home() {
           <span className="font-semibold tracking-tight">Syrin Notes</span>
         </div>
         <div className="flex items-center gap-1">
-          {!isMobile && <SceneToggle />}
+          {!isMobile && (
+            <span className="hidden md:inline-flex">
+              <SceneToggle />
+            </span>
+          )}
           <LanguageToggle />
           <ThemeToggle />
         </div>
