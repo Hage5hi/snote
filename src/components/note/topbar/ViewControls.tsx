@@ -28,16 +28,10 @@ export function ViewControls({
   const { t } = useI18n();
   const narrow = useNarrowViewport();
 
-  // Icon choice: on narrow viewports the button is "switch panes" rather than
-  // "show/hide a panel", so a "view markdown / back to editor" pair reads more
-  // accurately than Eye / EyeOff.
-  const PreviewIcon = narrow
-    ? showPreview
-      ? Pencil
-      : FileText
-    : showPreview
-      ? EyeOff
-      : Eye;
+  // Icon: unified Eye/EyeOff across desktop and mobile for consistency.
+  // Tooltip wording still adapts to context (narrow = swap panes, wide =
+  // hide/show panel) so the behavior remains clear.
+  const PreviewIcon = showPreview ? EyeOff : Eye;
 
   const ariaLabel = narrow
     ? showPreview
