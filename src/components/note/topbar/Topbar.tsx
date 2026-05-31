@@ -154,7 +154,11 @@ export function Topbar({
               getContent={getContent}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              {showSceneToggle && <SceneToggle />}
+              {showSceneToggle && (
+                <span className="hidden md:inline-flex">
+                  <SceneToggle />
+                </span>
+              )}
               {!compact && <ThemeToggle />}
               <ViewControls
                 showPreview={showPreview}
