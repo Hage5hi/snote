@@ -154,7 +154,11 @@ export function Topbar({
               getContent={getContent}
             />
             <div className="ml-auto flex shrink-0 items-center gap-1">
-              {showSceneToggle && <SceneToggle />}
+              {showSceneToggle && (
+                <span className="hidden md:inline-flex">
+                  <SceneToggle />
+                </span>
+              )}
               {!compact && <ThemeToggle />}
               <ViewControls
                 showPreview={showPreview}
@@ -269,7 +273,11 @@ export function Topbar({
 
                 <Separator orientation="vertical" className="mx-1 h-5" />
 
-                {!isMobile && <SceneToggle />}
+                {!isMobile && (
+                  <span className="hidden md:inline-flex">
+                    <SceneToggle />
+                  </span>
+                )}
                 <ThemeToggle />
               </>
             )}

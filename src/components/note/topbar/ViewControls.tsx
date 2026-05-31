@@ -6,7 +6,7 @@
 // visible pane between editor and rendered markdown (handled in NotePage).
 // We update the tooltip + aria-label here to match, and hide the scroll-sync
 // button entirely on narrow viewports since there's only one pane to scroll.
-import { Eye, EyeOff, FileText, Link2, Link2Off, Pencil } from "lucide-react";
+import { Eye, EyeOff, Link2, Link2Off } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
@@ -28,16 +28,10 @@ export function ViewControls({
   const { t } = useI18n();
   const narrow = useNarrowViewport();
 
-  // Icon choice: on narrow viewports the button is "switch panes" rather than
-  // "show/hide a panel", so a "view markdown / back to editor" pair reads more
-  // accurately than Eye / EyeOff.
-  const PreviewIcon = narrow
-    ? showPreview
-      ? Pencil
-      : FileText
-    : showPreview
-      ? EyeOff
-      : Eye;
+  // Icon: unified Eye/EyeOff across desktop and mobile for consistency.
+  // Tooltip wording still adapts to context (narrow = swap panes, wide =
+  // hide/show panel) so the behavior remains clear.
+  const PreviewIcon = showPreview ? EyeOff : Eye;
 
   const ariaLabel = narrow
     ? showPreview
