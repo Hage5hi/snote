@@ -20,18 +20,23 @@ beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,
-    value: (query: string) => ({
-      matches: query.includes("max-width: 899px") ? narrow : false,
-      media: query,
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: (_: string, cb: Listener) => listeners.push(cb),
-      removeEventListener: (_: string, cb: Listener) => {
-        listeners = listeners.filter((l) => l !== cb);
-      },
-      dispatchEvent: () => false,
-    }),
+    value: (query: string) => {
+      const isNarrowQuery = query.includes("max-width: 899px");
+      return {
+        get matches() {
+          return isNarrowQuery ? narrow : false;
+        },
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: (_: string, cb: Listener) => listeners.push(cb),
+        removeEventListener: (_: string, cb: Listener) => {
+          listeners = listeners.filter((l) => l !== cb);
+        },
+        dispatchEvent: () => false,
+      };
+    },
   });
 });
 
