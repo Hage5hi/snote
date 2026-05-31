@@ -6,7 +6,7 @@
 // visible pane between editor and rendered markdown (handled in NotePage).
 // We update the tooltip + aria-label here to match, and hide the scroll-sync
 // button entirely on narrow viewports since there's only one pane to scroll.
-import { Eye, EyeOff, FileText, Link2, Link2Off, Pencil } from "lucide-react";
+import { Eye, EyeOff, Link2, Link2Off } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
