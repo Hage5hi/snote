@@ -273,7 +273,11 @@ export function Topbar({
 
                 <Separator orientation="vertical" className="mx-1 h-5" />
 
-                {!isMobile && <SceneToggle />}
+                {!isMobile && (
+                  <span className="hidden md:inline-flex">
+                    <SceneToggle />
+                  </span>
+                )}
                 <ThemeToggle />
               </>
             )}
