@@ -21,7 +21,6 @@ const GUARD_FLAG_KEY = "home.scene.guard-reverted";
 // production builds by the Vite dead-code path on `import.meta.env.DEV`.
 function logRelease(label: string) {
   if (import.meta.env.DEV) {
-    // eslint-disable-next-line no-console
     console.info(`[SceneHost] released WebGL context: ${label}`);
   }
 }
@@ -29,6 +28,7 @@ function logRelease(label: string) {
 /** Force-release a WebGL context + free its associated canvas pixels. Safe
  *  to call multiple times. Exported so scene components can share the same
  *  cleanup path (see CyberLinhKhi / NeonVapor / EtherealAurora). */
+// eslint-disable-next-line react-refresh/only-export-components -- shared GL cleanup helper intentionally co-located with the SceneHost component; splitting it into its own file would needlessly fragment the scene-cleanup contract.
 export function releaseWebGLContext(
   gl: WebGLRenderingContext | WebGL2RenderingContext | null,
   canvas?: HTMLCanvasElement | null,
@@ -160,7 +160,6 @@ export default function SceneHost() {
     return () => {
       mountedRef.current = false;
       if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
         console.info("[SceneHost] unmounted — scene component will release its GL context");
       }
     };
@@ -181,7 +180,6 @@ export default function SceneHost() {
   if (prevSceneRef.current !== scene) {
     try { abortRef.current.abort(); } catch { /* ignore */ }
     if (import.meta.env.DEV) {
-      // eslint-disable-next-line no-console
       console.info(`[SceneHost] aborted scene "${prevSceneRef.current}" — switching to "${scene}"`);
     }
     abortRef.current = new AbortController();
@@ -192,7 +190,6 @@ export default function SceneHost() {
     return () => {
       try { abortRef.current?.abort(); } catch { /* ignore */ }
       if (import.meta.env.DEV) {
-        // eslint-disable-next-line no-console
         console.info("[SceneHost] aborted active scene signal on unmount");
       }
     };
