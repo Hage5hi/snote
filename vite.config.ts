@@ -113,7 +113,7 @@ export default defineConfig(({ mode }) => ({
       resolveDependencies: (_filename, deps) =>
         deps.filter(
           (dep) =>
-            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley|scene-|ogl-vendor)-/.test(
+            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley|scene|ogl-vendor)-/.test(
               dep,
             ),
         ),
@@ -194,6 +194,30 @@ export default defineConfig(({ mode }) => ({
           }
           if (id.includes("/qrcode/")) {
             return "qrcode-vendor";
+          }
+          // Eager third-party libs used by the app shell (App.tsx providers,
+          // Topbar, Home, CommandPalette). Without an explicit chunk they
+          // default into the app entry chunk and push it over the bundle-size
+          // budget. They are all statically imported on first paint, so
+          // grouping them into one eager `vendor` chunk doesn't change what
+          // loads — it just moves stable third-party code out of the
+          // frequently-changing entry (better long-term caching) and keeps the
+          // entry under budget. NOTE: deliberately excludes `lucide-react`,
+          // which is tree-shaken per-icon — a blanket match would drag
+          // lazy-route-only icons into this eager chunk.
+          if (
+            id.includes("/tailwind-merge/") ||
+            id.includes("/clsx/") ||
+            id.includes("/class-variance-authority/") ||
+            id.includes("/@tanstack/") ||
+            id.includes("/sonner/") ||
+            id.includes("/react-helmet-async/") ||
+            id.includes("/react-fast-compare/") ||
+            id.includes("/shallowequal/") ||
+            id.includes("/invariant/") ||
+            id.includes("/cmdk/")
+          ) {
+            return "vendor";
           }
           // Phase 1: pre-declare chunks for heavy editor libs.
           // They are not imported anywhere yet — chunks stay empty until
