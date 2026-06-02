@@ -16,11 +16,12 @@ import { useCallback, useEffect, useState } from "react";
 // key. This guarantees the requested default (desktop on / mobile off) is
 // never "remembered wrong" because the user once toggled on the other device.
 const NARROW_QUERY = "(max-width: 899px)";
-const KEY_WIDE = "notes:preview-visible:wide";
-const KEY_NARROW = "notes:preview-visible:narrow";
+export const PREVIEW_KEY_WIDE = "notes:preview-visible:wide";
+export const PREVIEW_KEY_NARROW = "notes:preview-visible:narrow";
 // Legacy single-key storage from before the viewport split. Kept for one
-// migration read so existing users don't get reset.
-const LEGACY_KEY = "notes:preview-visible";
+// migration read so existing users don't get reset. Migrated to the wide key
+// (and then deleted) on first read so subsequent loads are stable.
+export const PREVIEW_KEY_LEGACY = "notes:preview-visible";
 
 function isNarrow(): boolean {
   if (typeof window === "undefined") return false;
@@ -28,26 +29,46 @@ function isNarrow(): boolean {
 }
 
 function storageKey(narrow: boolean): string {
-  return narrow ? KEY_NARROW : KEY_WIDE;
+  return narrow ? PREVIEW_KEY_NARROW : PREVIEW_KEY_WIDE;
+}
+
+// Strictly validate stored values: only "1" / "0" count. Anything else (a
+// corrupted write, a third-party extension, an old experiment) falls through
+// to the viewport-appropriate default rather than silently flipping state.
+function parseStored(raw: string | null): boolean | null {
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  return null;
 }
 
 function readInitial(narrow: boolean): boolean {
-  if (typeof window === "undefined") return !narrow;
+  const defaultForViewport = !narrow;
+  if (typeof window === "undefined") return defaultForViewport;
   try {
-    const raw = window.localStorage.getItem(storageKey(narrow));
-    if (raw !== null) return raw === "1";
-    // One-time migration: honor the legacy single key ONLY for the wide
+    const own = parseStored(window.localStorage.getItem(storageKey(narrow)));
+    if (own !== null) return own;
+    // Legacy migration: honor the legacy single key ONLY for the wide
     // viewport. We do NOT apply it to narrow, because the legacy default
     // there might have been an accidental "ON" that we now explicitly want
-    // to start as "OFF".
+    // to start as "OFF". Migrate the value into the new key and clear the
+    // legacy entry so subsequent reads are stable and the legacy slot can
+    // never re-introduce drift later.
     if (!narrow) {
-      const legacy = window.localStorage.getItem(LEGACY_KEY);
-      if (legacy !== null) return legacy === "1";
+      const legacy = parseStored(window.localStorage.getItem(PREVIEW_KEY_LEGACY));
+      if (legacy !== null) {
+        try {
+          window.localStorage.setItem(PREVIEW_KEY_WIDE, legacy ? "1" : "0");
+          window.localStorage.removeItem(PREVIEW_KEY_LEGACY);
+        } catch {
+          // Best-effort migration — fall through and just return the value.
+        }
+        return legacy;
+      }
     }
   } catch {
     // localStorage unavailable (private mode etc.) — fall through to default.
   }
-  return !narrow;
+  return defaultForViewport;
 }
 
 export function usePreviewVisible() {
