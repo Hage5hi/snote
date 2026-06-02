@@ -182,4 +182,29 @@ describe("usePreviewVisible — legacy migration", () => {
     const mobile = renderHook(() => usePreviewVisible());
     expect(mobile.result.current.visible).toBe(false);
   });
+
+  it("migrates legacy key into wide key and clears the legacy slot", () => {
+    window.localStorage.setItem("notes:preview-visible", "0");
+    narrow = false;
+    const { result } = renderHook(() => usePreviewVisible());
+    expect(result.current.visible).toBe(false);
+    expect(window.localStorage.getItem("notes:preview-visible:wide")).toBe("0");
+    expect(window.localStorage.getItem("notes:preview-visible")).toBeNull();
+  });
+});
+
+describe("usePreviewVisible — corrupted stored values fall back to default", () => {
+  it("ignores garbage in the wide key and uses default ON", () => {
+    window.localStorage.setItem("notes:preview-visible:wide", "yes");
+    narrow = false;
+    const { result } = renderHook(() => usePreviewVisible());
+    expect(result.current.visible).toBe(true);
+  });
+
+  it("ignores garbage in the narrow key and uses default OFF", () => {
+    window.localStorage.setItem("notes:preview-visible:narrow", "true");
+    narrow = true;
+    const { result } = renderHook(() => usePreviewVisible());
+    expect(result.current.visible).toBe(false);
+  });
 });
