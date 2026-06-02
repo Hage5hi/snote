@@ -62,6 +62,11 @@ writeSceneDiffExpansionsLog(SCENE_DIFF_EXPANSIONS, EXPANSIONS_LOG);
 const ALWAYS_RUN = [
   "e2e/webgl-fallback.spec.ts",
   "e2e/home-scene.spec.ts", // smoke + i18n + a11y on Cyber scene
+  // Preview-default-by-viewport guards the F5 / theme-switch regression
+  // we just fixed in usePreviewVisible. It must run on every PR, not only
+  // when a scene file changes, because the bug surface is the topbar +
+  // hook (not the renderer).
+  "e2e/preview-default-by-viewport.spec.ts",
 ];
 const VISUAL_SPEC = "e2e/home-scenes-visual.spec.ts";
 
