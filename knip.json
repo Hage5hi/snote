@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "scripts/**/*.ts",
+    "supabase/functions/*/index.ts",
+    "supabase/functions/_shared/**/*.ts",
+    "cloudflare-worker/worker.js",
+    "public/sw-kill.js"
+  ],
+  "project": [
+    "src/**/*.{ts,tsx}",
+    "scripts/**/*.ts",
+    "e2e/**/*.ts",
+    "supabase/functions/**/*.ts"
+  ],
+  "ignore": [
+    "src/components/ui/**",
+    "src/integrations/supabase/types.ts",
+    "src/integrations/lovable/**"
+  ],
+  "ignoreDependencies": [
+    "@vitest/coverage-v8"
+  ]
+}
