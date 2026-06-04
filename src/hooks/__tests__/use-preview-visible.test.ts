@@ -38,10 +38,72 @@ beforeEach(() => {
       };
     },
   });
+  __resetPreviewMigrationForTests();
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("usePreviewVisible — blocked / unavailable localStorage", () => {
+  function blockStorage() {
+    const throwIt = () => { throw new Error("SecurityError"); };
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        return {
+          getItem: throwIt,
+          setItem: throwIt,
+          removeItem: throwIt,
+          clear: throwIt,
+          key: throwIt,
+          length: 0,
+        } as unknown as Storage;
+      },
+    });
+  }
+
+  it("defaults ON on desktop when storage throws", () => {
+    blockStorage();
+    narrow = false;
+    const { result } = renderHook(() => usePreviewVisible());
+    expect(result.current.visible).toBe(true);
+  });
+
+  it("defaults OFF on mobile when storage throws", () => {
+    blockStorage();
+    narrow = true;
+    const { result } = renderHook(() => usePreviewVisible());
+    expect(result.current.visible).toBe(false);
+  });
+
+  it("toggle still works in-memory when storage is blocked", () => {
+    blockStorage();
+    narrow = false;
+    const { result } = renderHook(() => usePreviewVisible());
+    expect(result.current.visible).toBe(true);
+    act(() => result.current.toggle());
+    expect(result.current.visible).toBe(false);
+  });
+});
+
+describe("usePreviewVisible — legacy migration runs once", () => {
+  it("only migrates the legacy key on the first read", () => {
+    window.localStorage.setItem("notes:preview-visible", "0");
+    narrow = false;
+    const first = renderHook(() => usePreviewVisible());
+    expect(first.result.current.visible).toBe(false);
+    expect(window.localStorage.getItem("notes:preview-visible")).toBeNull();
+
+    // Manually re-add the legacy key — second hook instance must NOT
+    // re-trigger migration (guard prevents drift if old code re-writes it).
+    window.localStorage.setItem("notes:preview-visible", "1");
+    window.localStorage.removeItem("notes:preview-visible:wide");
+    const second = renderHook(() => usePreviewVisible());
+    // Legacy key is left untouched the second time; default ON wins.
+    expect(window.localStorage.getItem("notes:preview-visible")).toBe("1");
+    expect(second.result.current.visible).toBe(true);
+  });
 });
 
 describe("usePreviewVisible — default by viewport", () => {
