@@ -13,9 +13,15 @@ function setViewport(isNarrow: boolean) {
   for (const l of listeners) l();
 }
 
+const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
+
 beforeEach(() => {
   narrow = false;
   listeners = [];
+  // Restore real localStorage in case a prior test replaced it.
+  if (originalLocalStorageDescriptor) {
+    Object.defineProperty(window, "localStorage", originalLocalStorageDescriptor);
+  }
   window.localStorage.clear();
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -43,6 +49,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  if (originalLocalStorageDescriptor) {
+    Object.defineProperty(window, "localStorage", originalLocalStorageDescriptor);
+  }
 });
 
 describe("usePreviewVisible — blocked / unavailable localStorage", () => {
