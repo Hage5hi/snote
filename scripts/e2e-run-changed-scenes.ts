@@ -67,6 +67,7 @@ const ALWAYS_RUN = [
   // when a scene file changes, because the bug surface is the topbar +
   // hook (not the renderer).
   "e2e/preview-default-by-viewport.spec.ts",
+  "e2e/preview-multi-note-and-resize.spec.ts",
 ];
 const VISUAL_SPEC = "e2e/home-scenes-visual.spec.ts";
 
