@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import { usePreviewVisible } from "../use-preview-visible";
+import { usePreviewVisible, __resetPreviewMigrationForTests } from "../use-preview-visible";
 
 // Helpers to control the matchMedia mock per-test.
 type Listener = () => void;
