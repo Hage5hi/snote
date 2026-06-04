@@ -41,34 +41,59 @@ function parseStored(raw: string | null): boolean | null {
   return null;
 }
 
+// One-shot guard so we only log/attempt the legacy migration a single time
+// per page lifetime. After it runs (success or no-op) we never look at the
+// legacy key again, which guarantees no late drift and gives us a clear
+// dev-only signal if the migration is unexpectedly re-entered.
+let legacyMigrationAttempted = false;
+
+function tryMigrateLegacyToWide(): boolean | null {
+  if (legacyMigrationAttempted) return null;
+  legacyMigrationAttempted = true;
+  try {
+    const legacy = parseStored(window.localStorage.getItem(PREVIEW_KEY_LEGACY));
+    if (legacy === null) return null;
+    try {
+      window.localStorage.setItem(PREVIEW_KEY_WIDE, legacy ? "1" : "0");
+      window.localStorage.removeItem(PREVIEW_KEY_LEGACY);
+    } catch {
+      /* best-effort */
+    }
+    if (import.meta.env?.DEV) {
+      // eslint-disable-next-line no-console
+      console.debug("[preview-visible] migrated legacy key → wide", { value: legacy });
+    }
+    return legacy;
+  } catch {
+    return null;
+  }
+}
+
 function readInitial(narrow: boolean): boolean {
   const defaultForViewport = !narrow;
   if (typeof window === "undefined") return defaultForViewport;
   try {
     const own = parseStored(window.localStorage.getItem(storageKey(narrow)));
     if (own !== null) return own;
-    // Legacy migration: honor the legacy single key ONLY for the wide
-    // viewport. We do NOT apply it to narrow, because the legacy default
-    // there might have been an accidental "ON" that we now explicitly want
-    // to start as "OFF". Migrate the value into the new key and clear the
-    // legacy entry so subsequent reads are stable and the legacy slot can
-    // never re-introduce drift later.
-    if (!narrow) {
-      const legacy = parseStored(window.localStorage.getItem(PREVIEW_KEY_LEGACY));
-      if (legacy !== null) {
-        try {
-          window.localStorage.setItem(PREVIEW_KEY_WIDE, legacy ? "1" : "0");
-          window.localStorage.removeItem(PREVIEW_KEY_LEGACY);
-        } catch {
-          // Best-effort migration — fall through and just return the value.
-        }
-        return legacy;
-      }
-    }
   } catch {
-    // localStorage unavailable (private mode etc.) — fall through to default.
+    // localStorage unavailable / blocked (private mode, disabled cookies,
+    // SecurityError) — fall through to viewport-appropriate default.
+    return defaultForViewport;
+  }
+  // Legacy migration: honor the legacy single key ONLY for the wide
+  // viewport. Mobile ignores it entirely so an old accidental ON cannot
+  // re-introduce the "preview on mobile by default" bug.
+  if (!narrow) {
+    const migrated = tryMigrateLegacyToWide();
+    if (migrated !== null) return migrated;
   }
   return defaultForViewport;
+}
+
+// Test hook: reset the one-shot migration guard so unit tests can exercise
+// the migration path repeatedly without reloading the module.
+export function __resetPreviewMigrationForTests() {
+  legacyMigrationAttempted = false;
 }
 
 export function usePreviewVisible() {
