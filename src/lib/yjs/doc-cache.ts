@@ -14,32 +14,74 @@ import * as Y from "yjs";
 interface Entry {
   doc: Y.Doc;
   releasedAt: number;
-  destroyTimer: number | null;
+  destroyTimer: ReturnType<typeof setTimeout> | null;
 }
 
-// Conservative cap: keep at most 2 warm docs so we return memory to GC sooner
-// when the user opens many notes in a single session.
-const MAX = 2;
-// Shorter idle window (30s) before destroying a released doc. Re-opening the
-// note within this window is still instantaneous; after it, we just re-hydrate
-// from IndexedDB (local, fast).
-const IDLE_MS = 30_000;
+// Defaults. Production should rarely override; tests inject via __configure.
+const DEFAULT_MAX = 2;
+const DEFAULT_IDLE_MS = 30_000;
+
+// Validate config: any non-finite / non-positive value falls back silently
+// so a bad import-time env never breaks the cache in production.
+function sanitizeMax(n: unknown): number {
+  return typeof n === "number" && Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_MAX;
+}
+function sanitizeIdle(n: unknown): number {
+  return typeof n === "number" && Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_IDLE_MS;
+}
+
+// Read optional Vite env overrides at module load. Bad values fall back.
+function readEnvOverrides(): { max: number; idleMs: number } {
+  let max: unknown;
+  let idleMs: unknown;
+  try {
+    const env = (import.meta as { env?: Record<string, unknown> }).env ?? {};
+    max = Number(env.VITE_DOC_CACHE_MAX);
+    idleMs = Number(env.VITE_DOC_CACHE_IDLE_MS);
+  } catch {
+    /* ignore */
+  }
+  return { max: sanitizeMax(max), idleMs: sanitizeIdle(idleMs) };
+}
+
+let { max: MAX, idleMs: IDLE_MS } = readEnvOverrides();
 const cache = new Map<string, Entry>();
+
+// Debug logger. Off by default. Toggle by setting localStorage key
+// `debug:doc-cache` to "1", or via __setDebug(true) in tests.
+let debugEnabled = false;
+function readDebugFromStorage(): boolean {
+  try {
+    return typeof localStorage !== "undefined" && localStorage.getItem("debug:doc-cache") === "1";
+  } catch {
+    return false;
+  }
+}
+debugEnabled = readDebugFromStorage();
+
+let destroyCount = 0;
+function log(event: string, detail?: Record<string, unknown>) {
+  if (!debugEnabled) return;
+  // eslint-disable-next-line no-console
+  console.debug(`[doc-cache] ${event}`, { MAX, IDLE_MS, size: cache.size, destroyed: destroyCount, ...detail });
+}
 
 export function acquireDoc(slug: string): Y.Doc {
   const existing = cache.get(slug);
   if (existing) {
     if (existing.destroyTimer) {
-      window.clearTimeout(existing.destroyTimer);
+      clearTimeout(existing.destroyTimer);
       existing.destroyTimer = null;
     }
     existing.releasedAt = 0;
     cache.delete(slug);
     cache.set(slug, existing); // mark as most-recent
+    log("acquire:hit", { slug });
     return existing.doc;
   }
   const doc = new Y.Doc();
   cache.set(slug, { doc, releasedAt: 0, destroyTimer: null });
+  log("acquire:miss", { slug });
   trim();
   return doc;
 }
@@ -49,13 +91,16 @@ export function releaseDoc(slug: string) {
   const entry = cache.get(slug);
   if (!entry) return;
   entry.releasedAt = Date.now();
-  if (entry.destroyTimer) window.clearTimeout(entry.destroyTimer);
-  entry.destroyTimer = window.setTimeout(() => {
+  if (entry.destroyTimer) clearTimeout(entry.destroyTimer);
+  entry.destroyTimer = setTimeout(() => {
     const cur = cache.get(slug);
     if (!cur) return;
     cache.delete(slug);
     try { cur.doc.destroy(); } catch { /* ignore */ }
+    destroyCount++;
+    log("destroy:idle", { slug });
   }, IDLE_MS);
+  log("release", { slug });
 }
 
 function trim() {
@@ -65,8 +110,10 @@ function trim() {
     const entry = cache.get(oldest);
     cache.delete(oldest);
     if (entry) {
-      if (entry.destroyTimer) window.clearTimeout(entry.destroyTimer);
+      if (entry.destroyTimer) clearTimeout(entry.destroyTimer);
       try { entry.doc.destroy(); } catch { /* ignore */ }
+      destroyCount++;
+      log("destroy:trim", { slug: oldest });
     }
   }
 }
@@ -76,12 +123,17 @@ function trim() {
 // are still actively held by a NotePage (no destroyTimer, releasedAt === 0)
 // are left alone so the active page keeps working when the tab returns.
 function destroyReleased() {
+  let removed = 0;
   for (const [slug, entry] of cache) {
-    if (!entry.destroyTimer && entry.releasedAt === 0) continue; // in use
-    if (entry.destroyTimer) window.clearTimeout(entry.destroyTimer);
+    // In-use means: never released (releasedAt === 0) AND no pending destroy.
+    if (entry.destroyTimer === null && entry.releasedAt === 0) continue;
+    if (entry.destroyTimer) clearTimeout(entry.destroyTimer);
     try { entry.doc.destroy(); } catch { /* ignore */ }
     cache.delete(slug);
+    destroyCount++;
+    removed++;
   }
+  log("destroy:hidden", { removed });
 }
 
 if (typeof document !== "undefined") {
@@ -89,3 +141,38 @@ if (typeof document !== "undefined") {
     if (document.visibilityState === "hidden") destroyReleased();
   });
 }
+
+// ---- Test / debug surface ---------------------------------------------------
+// Not exported from the public package — only consumed by tests and the
+// debug toggle in devtools. Keeping the surface here (rather than a separate
+// module) avoids re-importing the singleton cache map.
+
+export const __docCacheInternals = {
+  /** Override config (tests). Pass partial to reset only what you need. */
+  configure(opts: { max?: number; idleMs?: number }) {
+    if (opts.max !== undefined) MAX = sanitizeMax(opts.max);
+    if (opts.idleMs !== undefined) IDLE_MS = sanitizeIdle(opts.idleMs);
+  },
+  reset() {
+    for (const [, entry] of cache) {
+      if (entry.destroyTimer) clearTimeout(entry.destroyTimer);
+      try { entry.doc.destroy(); } catch { /* ignore */ }
+    }
+    cache.clear();
+    destroyCount = 0;
+    const fresh = readEnvOverrides();
+    MAX = fresh.max;
+    IDLE_MS = fresh.idleMs;
+  },
+  setDebug(on: boolean) { debugEnabled = on; },
+  isDebug() { return debugEnabled; },
+  getConfig() { return { MAX, IDLE_MS }; },
+  getDestroyCount() { return destroyCount; },
+  size() { return cache.size; },
+  isWarm(slug: string) { return cache.has(slug); },
+  isReleased(slug: string) {
+    const e = cache.get(slug);
+    return e ? e.destroyTimer !== null : false;
+  },
+  fireVisibilityHidden() { destroyReleased(); },
+};
