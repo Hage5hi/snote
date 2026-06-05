@@ -68,6 +68,12 @@ const ALWAYS_RUN = [
   // hook (not the renderer).
   "e2e/preview-default-by-viewport.spec.ts",
   "e2e/preview-multi-note-and-resize.spec.ts",
+  // Two-tab + rapid-resize guards against doc-cache and preview-key drift.
+  "e2e/preview-multi-tab.spec.ts",
+  "e2e/preview-rapid-resize.spec.ts",
+  // Lazy CommandPalette: any regression that re-introduces cmdk into the
+  // eager shell breaks initial-load budget; keep this on every PR.
+  "e2e/command-palette-lazy.spec.ts",
 ];
 const VISUAL_SPEC = "e2e/home-scenes-visual.spec.ts";
 
