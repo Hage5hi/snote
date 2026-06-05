@@ -173,6 +173,17 @@ if (typeof document !== "undefined") {
   });
 }
 
+// Expose a metrics getter on `window` so Playwright specs and devtools can
+// snapshot lifecycle counters without importing the singleton. Gated to
+// dev / debug to keep prod globals clean. Tree-shaken in non-dev when the
+// flag is off (the condition itself is cheap and runs once).
+if (typeof window !== "undefined") {
+  const w = window as unknown as { __docCacheMetrics?: () => DocCacheMetrics };
+  if (import.meta.env?.DEV || debugEnabled) {
+    w.__docCacheMetrics = getDocCacheMetrics;
+  }
+}
+
 // ---- Test / debug surface ---------------------------------------------------
 // Not exported from the public package — only consumed by tests and the
 // debug toggle in devtools. Keeping the surface here (rather than a separate
