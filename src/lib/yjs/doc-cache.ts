@@ -105,11 +105,13 @@ export function acquireDoc(slug: string): Y.Doc {
     existing.releasedAt = 0;
     cache.delete(slug);
     cache.set(slug, existing); // mark as most-recent
+    acquireHitCount++;
     log("acquire:hit", { slug });
     return existing.doc;
   }
   const doc = new Y.Doc();
   cache.set(slug, { doc, releasedAt: 0, destroyTimer: null });
+  acquireMissCount++;
   log("acquire:miss", { slug });
   trim();
   return doc;
