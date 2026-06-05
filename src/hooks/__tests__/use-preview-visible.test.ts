@@ -279,3 +279,48 @@ describe("usePreviewVisible — corrupted stored values fall back to default", (
     expect(result.current.visible).toBe(false);
   });
 });
+
+describe("usePreviewVisible — QuotaExceededError on write", () => {
+  function makeQuotaStorage(): Storage {
+    const map = new Map<string, string>();
+    return {
+      get length() { return map.size; },
+      clear: () => map.clear(),
+      key: (i: number) => Array.from(map.keys())[i] ?? null,
+      getItem: (k: string) => map.get(k) ?? null,
+      removeItem: (k: string) => { map.delete(k); },
+      setItem: () => {
+        const err = new Error("QuotaExceededError");
+        err.name = "QuotaExceededError";
+        throw err;
+      },
+    } as unknown as Storage;
+  }
+
+  it("does not throw when persisting visibility hits quota", () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: () => makeQuotaStorage(),
+    });
+    narrow = false;
+    expect(() => {
+      const { result } = renderHook(() => usePreviewVisible());
+      act(() => result.current.toggle());
+      act(() => result.current.toggle());
+    }).not.toThrow();
+  });
+
+  it("falls back to viewport default and keeps toggle working in-memory under quota", () => {
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get: () => makeQuotaStorage(),
+    });
+    narrow = true;
+    const { result } = renderHook(() => usePreviewVisible());
+    expect(result.current.visible).toBe(false); // mobile default
+    act(() => result.current.toggle());
+    expect(result.current.visible).toBe(true);
+    act(() => result.current.toggle());
+    expect(result.current.visible).toBe(false);
+  });
+});
