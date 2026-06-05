@@ -202,6 +202,8 @@ export const __docCacheInternals = {
     }
     cache.clear();
     destroyCount = 0;
+    acquireHitCount = 0;
+    acquireMissCount = 0;
     const fresh = readEnvOverrides();
     MAX = fresh.max;
     IDLE_MS = fresh.idleMs;
@@ -210,6 +212,7 @@ export const __docCacheInternals = {
   isDebug() { return debugEnabled; },
   getConfig() { return { MAX, IDLE_MS }; },
   getDestroyCount() { return destroyCount; },
+  getMetrics: getDocCacheMetrics,
   size() { return cache.size; },
   isWarm(slug: string) { return cache.has(slug); },
   isReleased(slug: string) {
