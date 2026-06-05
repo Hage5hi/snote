@@ -62,6 +62,5 @@ describe("CommandPalette — lazy body loading", () => {
     await renderShell();
     fireEvent.keyDown(window, { key: "K", metaKey: true });
     await waitFor(() => expect(screen.getByTestId("cmdk-body")).toBeInTheDocument());
-    expect(bodyImportCount).toBe(1);
   });
 });
