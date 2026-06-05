@@ -60,10 +60,39 @@ function readDebugFromStorage(): boolean {
 debugEnabled = readDebugFromStorage();
 
 let destroyCount = 0;
+let acquireHitCount = 0;
+let acquireMissCount = 0;
 function log(event: string, detail?: Record<string, unknown>) {
   if (!debugEnabled) return;
   // eslint-disable-next-line no-console
   console.debug(`[doc-cache] ${event}`, { MAX, IDLE_MS, size: cache.size, destroyed: destroyCount, ...detail });
+}
+
+/**
+ * Stable snapshot of cache lifecycle counters. Exposed both as a named
+ * export and (in dev) on `window.__docCacheMetrics` so Playwright specs
+ * can read it without bundling test-only code into prod chunks.
+ */
+export interface DocCacheMetrics {
+  max: number;
+  idleMs: number;
+  size: number;
+  acquireHit: number;
+  acquireMiss: number;
+  destroyed: number;
+  debug: boolean;
+}
+
+export function getDocCacheMetrics(): DocCacheMetrics {
+  return {
+    max: MAX,
+    idleMs: IDLE_MS,
+    size: cache.size,
+    acquireHit: acquireHitCount,
+    acquireMiss: acquireMissCount,
+    destroyed: destroyCount,
+    debug: debugEnabled,
+  };
 }
 
 export function acquireDoc(slug: string): Y.Doc {
