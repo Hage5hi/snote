@@ -46,6 +46,19 @@ function parseStored(raw: string | null): boolean | null {
 // legacy key again, which guarantees no late drift and gives us a clear
 // dev-only signal if the migration is unexpectedly re-entered.
 let legacyMigrationAttempted = false;
+let legacyMigrationRanCount = 0;
+
+export interface PreviewVisibleMetrics {
+  migrationAttempted: boolean;
+  migrationRan: number;
+}
+
+export function getPreviewVisibleMetrics(): PreviewVisibleMetrics {
+  return {
+    migrationAttempted: legacyMigrationAttempted,
+    migrationRan: legacyMigrationRanCount,
+  };
+}
 
 function tryMigrateLegacyToWide(): boolean | null {
   if (legacyMigrationAttempted) return null;
@@ -59,6 +72,7 @@ function tryMigrateLegacyToWide(): boolean | null {
     } catch {
       /* best-effort */
     }
+    legacyMigrationRanCount++;
     if (import.meta.env?.DEV) {
       // eslint-disable-next-line no-console
       console.debug("[preview-visible] migrated legacy key → wide", { value: legacy });
@@ -94,6 +108,12 @@ function readInitial(narrow: boolean): boolean {
 // the migration path repeatedly without reloading the module.
 export function __resetPreviewMigrationForTests() {
   legacyMigrationAttempted = false;
+  legacyMigrationRanCount = 0;
+}
+
+if (typeof window !== "undefined" && import.meta.env?.DEV) {
+  const w = window as unknown as { __previewVisibleMetrics?: () => PreviewVisibleMetrics };
+  w.__previewVisibleMetrics = getPreviewVisibleMetrics;
 }
 
 export function usePreviewVisible() {
