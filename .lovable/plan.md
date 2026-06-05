@@ -1,37 +1,45 @@
-# Plan
+## Rà soát trước khi build
 
-## 1. Ẩn SceneToggle triệt để trên mobile (CSS-based)
+Có 8 yêu cầu, một số trùng/đụng với code đã có. Mình đề xuất scope như sau:
 
-Hiện tại `Home.tsx` và `Topbar.tsx` dùng `{!isMobile && <SceneToggle />}`. Vấn đề: `useIsMobile` khởi tạo `undefined` → render lần đầu coi như desktop → SceneToggle nhấp nháy hiện ra trước khi `useEffect` chạy. Trên mạng chậm hoặc khi user tap nhanh có thể mở được dropdown.
+### Sẽ làm
 
-**Cách fix:**
-- Bọc `<SceneToggle />` trong wrapper `<div className="hidden md:inline-flex">` (Tailwind breakpoint `md` = 768px, khớp với `MOBILE_BREAKPOINT`).
-- CSS chạy ngay từ render đầu, không phụ thuộc JS hydration → không còn flash.
-- Vẫn giữ guard JS `!isMobile` như layer phụ để đảm bảo không mount component cũng như effect `useEffect` clear scene về `none` trên mobile.
+1. **E2E hai tab cùng note** (`e2e/preview-multi-tab.spec.ts`)
+   - Mở cùng slug ở 2 browser context, toggle preview ở mỗi tab → state không lẫn (key viewport đã tách).
+   - F5 + chuyển tab (`visibilitychange`) → doc-cache không destroy doc đang hiển thị ở tab kia.
 
-Áp dụng ở:
-- `src/pages/Home.tsx` (dòng ~242)
-- `src/components/note/topbar/Topbar.tsx` (cả nhánh `narrow` và nhánh wide)
+2. **Unit test: localStorage quota/blocked**
+   - Mở rộng `use-preview-visible.test.ts`: mock `setItem` throw `QuotaExceededError` → hook không throw, fallback theo viewport, toggle vẫn chạy in-memory.
+   - Đã có nhánh blocked storage; thêm case quota.
 
-## 2. Đồng bộ icon preview Eye/EyeOff trên mọi viewport
+3. **Dev metrics export** (`src/lib/yjs/doc-cache.ts`)
+   - Export `getDocCacheMetrics()` trả `{ max, idleMs, migrateCount, destroyCount, acquireCount, currentSize }`.
+   - Bật qua `localStorage["debug:doc-cache"]="1"` đã có; chỉ thêm counter + getter, không log thêm.
+   - Tương tự `getPreviewMigrateMetrics()` trong `use-preview-visible.ts`.
 
-File: `src/components/note/topbar/ViewControls.tsx`
+4. **E2E rapid resize dài hơi** (`e2e/preview-rapid-resize.spec.ts`)
+   - Loop 50 lần resize desktop↔mobile + 3 lần F5; assert `acquireCount`/`destroyCount` ≤ ngưỡng hợp lý, preview state đúng theo viewport cuối.
 
-- Bỏ logic chọn `Pencil`/`FileText` cho narrow; luôn dùng `Eye` khi preview đang tắt, `EyeOff` khi đang bật — giống desktop (theo screenshot user cung cấp là icon chuẩn).
-- Tooltip + aria-label vẫn giữ wording khác nhau theo narrow/wide vì hành vi thực tế khác (mobile = đổi pane, desktop = ẩn/hiện panel) — giúp user hiểu đúng ngữ cảnh.
-- Kích thước icon mobile (h-5 w-5) và touch target (h-9 w-9) giữ nguyên.
+5. **Unit test lazy CommandPaletteBody** (`src/components/__tests__/CommandPalette.lazy.test.tsx`)
+   - Render `<CommandPalette/>` → body chưa mount (query DOM không thấy dialog).
+   - Fire `keydown Ctrl+K` → `await` Suspense resolve → dialog xuất hiện.
+   - Dùng `vi.mock('./CommandPaletteBody', ...)` để spy số lần import.
 
-## 3. Giữ nguyên logic preview default
+6. **E2E Ctrl/⌘+K sau F5** (`e2e/command-palette-lazy.spec.ts`)
+   - Load Home, assert network không có chunk chứa `cmdk` trước khi bấm phím.
+   - Bấm Ctrl+K, đo `performance.now()` từ keydown → dialog visible, assert < 800ms (ngưỡng nới rộng cho CI).
 
-Theo xác nhận: `use-preview-visible.ts` đã đúng (default ON cho ≥900px, OFF cho <900px lần đầu, sau đó nhớ localStorage). Không sửa.
+7. **Đo thời gian render palette lần đầu vs lần sau**
+   - Trong cùng spec ở (6): mở/đóng/mở lại, so sánh `firstOpenMs` vs `secondOpenMs` (lần sau phải nhanh hơn, không cần lazy).
 
-## Verification
+### KHÔNG làm (và lý do)
 
-- `bunx tsc --noEmit` pass.
-- Mở preview ở viewport mobile (375px): không thấy SceneToggle ngay từ frame đầu.
-- Mở note ở mobile và desktop: icon preview đều là Eye/EyeOff, tooltip wording riêng.
-- F5 nhiều lần trên mobile: SceneToggle không flash.
+- **"Focus trap + Tab/Escape cho CommandPalette"**: `CommandDialog` từ shadcn dùng Radix `Dialog`, đã có focus trap, restore focus, và Escape close sẵn. Thêm logic riêng sẽ chồng chéo và dễ vỡ a11y. Nếu bạn thấy bug cụ thể (vd Tab thoát khỏi dialog), cho mình repro thay vì viết trap mới.
 
-## Lưu ý
+### Ghi chú kỹ thuật
 
-Screenshot user gửi từ `note.syrin.online` (bản đã publish) — sau khi merge cần publish lại để domain custom thấy fix.
+- Metrics chỉ phơi ra qua `window.__docCacheMetrics` khi flag debug bật, không ảnh hưởng prod bundle (tree-shake bằng `if (import.meta.env.DEV || flag)`).
+- E2E rapid-resize sẽ chạy trong `ALWAYS_RUN` của `scripts/e2e-run-changed-scenes.ts` cùng với spec hai tab.
+- Không thêm dependency mới.
+
+OK đi theo scope này, hay bạn muốn mình vẫn viết focus trap thủ công cho CommandPalette?
