@@ -108,6 +108,12 @@ function readInitial(narrow: boolean): boolean {
 // the migration path repeatedly without reloading the module.
 export function __resetPreviewMigrationForTests() {
   legacyMigrationAttempted = false;
+  legacyMigrationRanCount = 0;
+}
+
+if (typeof window !== "undefined" && import.meta.env?.DEV) {
+  const w = window as unknown as { __previewVisibleMetrics?: () => PreviewVisibleMetrics };
+  w.__previewVisibleMetrics = getPreviewVisibleMetrics;
 }
 
 export function usePreviewVisible() {
