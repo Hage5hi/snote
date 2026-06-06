@@ -86,8 +86,10 @@ test.describe("Markdown preview + doc-cache — two tabs on same note", () => {
     const context = await browser.newContext();
     const slug = sharedSlug();
 
-    const tabA = await openTab(context, slug);
-    const tabB = await openTab(context, slug);
+    // Both tabs run on a controlled clock so any pending IDLE_MS destroy
+    // timer is observable and gated by `clock.runFor()`.
+    const tabA = await openTab(context, slug, DESKTOP, true);
+    const tabB = await openTab(context, slug, DESKTOP, true);
 
     // Wait for editor to be live in both.
     await expect(tabA.locator(".cm-content").first()).toBeVisible({ timeout: 10_000 });
@@ -107,8 +109,13 @@ test.describe("Markdown preview + doc-cache — two tabs on same note", () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
 
-    // Give the event a tick to propagate (it won't cross realms, but be safe).
-    await tabB.waitForTimeout(200);
+    // Advance tab B's clock by JUST UNDER the IDLE_MS deadline. If any
+    // destroy timer was (incorrectly) scheduled for tab B's still-mounted
+    // doc, it fires deterministically inside this window. Stopping 1ms
+    // short of IDLE_MS guarantees we never tip a *correctly* released
+    // doc into destruction during the test.
+    await tabB.clock.runFor(DOC_CACHE_IDLE_MS - 1);
+
 
     const after = await tabB.evaluate(() => {
       const w = window as unknown as { __docCacheMetrics?: () => { destroyed: number; size: number } };
