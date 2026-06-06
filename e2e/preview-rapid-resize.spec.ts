@@ -43,10 +43,17 @@ async function metrics(page: Page) {
   });
 }
 
+// IDLE_MS in doc-cache. Kept in sync with src/lib/yjs/doc-cache.ts.
+const DOC_CACHE_IDLE_MS = 30_000;
+
 test.describe("Markdown preview + doc-cache — rapid resize stability", () => {
   test("50 desktop↔mobile flips do not thrash the cache", async ({ page }) => {
     await page.setViewportSize(DESKTOP);
     await seed(page);
+    // Deterministic clock: any IDLE_MS destroy timer that resize would
+    // (incorrectly) schedule fires only when we advance time below — no
+    // wall-clock race.
+    await page.clock.install();
     await page.goto(notePath());
     await expect(page.locator(".cm-content").first()).toBeVisible({ timeout: 10_000 });
 
@@ -56,12 +63,16 @@ test.describe("Markdown preview + doc-cache — rapid resize stability", () => {
       await page.setViewportSize(i % 2 === 0 ? MOBILE : DESKTOP);
     }
 
+    // Advance just under IDLE_MS. If resize wrongly scheduled a destroy,
+    // it deterministically fires inside this window and bumps `destroyed`.
+    await page.clock.runFor(DOC_CACHE_IDLE_MS - 1);
+
     const after = await metrics(page);
     if (before && after) {
       // While the tab is actively viewing this note, the editor's doc must
-      // NEVER be destroyed by a layout-only viewport change. Zero tolerance:
-      // any destroy here means resize is touching the cache, which is the
-      // bug class we're guarding against.
+      // NEVER be destroyed by a layout-only viewport change. Zero tolerance
+      // and zero flake: we proved this across the full IDLE_MS window
+      // without waiting wall-clock seconds.
       expect(
         after.destroyed - before.destroyed,
         "doc-cache destroyed a doc during rapid resize while tab was active",
@@ -69,6 +80,8 @@ test.describe("Markdown preview + doc-cache — rapid resize stability", () => {
       expect(after.acquireMiss - before.acquireMiss).toBe(0);
     }
   });
+
+
 
 
   test("preview state after rapid resize matches the final viewport across F5", async ({ page }) => {
