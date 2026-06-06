@@ -58,13 +58,18 @@ test.describe("Markdown preview + doc-cache — rapid resize stability", () => {
 
     const after = await metrics(page);
     if (before && after) {
-      // Resize alone must NOT cause the editor's doc to be destroyed —
-      // we only change layout, not the slug. Allow tiny slack (≤1) in
-      // case a transient layout swap re-acquires once.
-      expect(after.destroyed - before.destroyed).toBeLessThanOrEqual(1);
-      expect(after.acquireMiss - before.acquireMiss).toBeLessThanOrEqual(1);
+      // While the tab is actively viewing this note, the editor's doc must
+      // NEVER be destroyed by a layout-only viewport change. Zero tolerance:
+      // any destroy here means resize is touching the cache, which is the
+      // bug class we're guarding against.
+      expect(
+        after.destroyed - before.destroyed,
+        "doc-cache destroyed a doc during rapid resize while tab was active",
+      ).toBe(0);
+      expect(after.acquireMiss - before.acquireMiss).toBe(0);
     }
   });
+
 
   test("preview state after rapid resize matches the final viewport across F5", async ({ page }) => {
     await page.setViewportSize(DESKTOP);

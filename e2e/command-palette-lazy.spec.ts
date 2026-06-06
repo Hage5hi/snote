@@ -79,16 +79,38 @@ test.describe("CommandPalette — lazy chunk loading", () => {
     expect(secondOpenMs).toBeLessThanOrEqual(firstOpenMs + 50);
   });
 
-  test("⌘+K opens the palette after F5", async ({ page }) => {
+  test("⌘+K opens the palette after F5 within budget (first + repeat)", async ({ page }) => {
     await seed(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
     await page.reload();
     await page.waitForLoadState("networkidle");
 
-    await page.evaluate(() => {
-      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
-    });
-    await expect(page.locator("[cmdk-root], [role='dialog']")).toBeVisible({ timeout: 5000 });
+    async function measureOpen(): Promise<number> {
+      return page.evaluate(async () => {
+        const t0 = performance.now();
+        window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
+        const deadline = t0 + 5000;
+        while (performance.now() < deadline) {
+          if (document.querySelector("[cmdk-root], [role='dialog']")) return performance.now() - t0;
+          await new Promise((r) => setTimeout(r, 16));
+        }
+        return -1;
+      });
+    }
+
+    const firstOpenMs = await measureOpen();
+    expect(firstOpenMs).toBeGreaterThan(0);
+    // Generous CI budget; tightening this caught the eager-import regression.
+    expect(firstOpenMs, `first ⌘+K after F5 too slow: ${firstOpenMs}ms`).toBeLessThan(3000);
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[cmdk-root], [role='dialog']")).toBeHidden({ timeout: 2000 });
+
+    const secondOpenMs = await measureOpen();
+    expect(secondOpenMs).toBeGreaterThan(0);
+    // Second open is in-process (no chunk fetch). Must be snappy.
+    expect(secondOpenMs, `second ⌘+K too slow: ${secondOpenMs}ms`).toBeLessThan(500);
   });
 });
+

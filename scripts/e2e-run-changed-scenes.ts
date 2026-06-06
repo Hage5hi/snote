@@ -74,7 +74,14 @@ const ALWAYS_RUN = [
   // Lazy CommandPalette: any regression that re-introduces cmdk into the
   // eager shell breaks initial-load budget; keep this on every PR.
   "e2e/command-palette-lazy.spec.ts",
+  // a11y guardrail: focus trap + Escape must keep working when shadcn /
+  // Radix Dialog gets swapped or wrapped.
+  "e2e/command-palette-focus-trap.spec.ts",
+  // Storage hardening: preview hook must survive a fully blocked /
+  // quota-exceeded localStorage without throwing or re-running migration.
+  "e2e/preview-quota-exceeded.spec.ts",
 ];
+
 const VISUAL_SPEC = "e2e/home-scenes-visual.spec.ts";
 
 // "Shared renderer infra" — touching any of these can change every scene's
