@@ -40,13 +40,22 @@ async function previewIsOn(page: Page): Promise<boolean> {
   return (await hide.count()) > 0;
 }
 
-async function openTab(context: BrowserContext, path: string, viewport = DESKTOP) {
+// IDLE_MS in doc-cache. Kept in sync with src/lib/yjs/doc-cache.ts.
+const DOC_CACHE_IDLE_MS = 30_000;
+
+async function openTab(context: BrowserContext, path: string, viewport = DESKTOP, withClock = false) {
   const page = await context.newPage();
   await page.setViewportSize(viewport);
   await seed(page);
+  if (withClock) {
+    // Deterministic time: setTimeout fires only when we explicitly tick.
+    // This removes wall-clock races from the IDLE_MS destroy assertions.
+    await page.clock.install();
+  }
   await page.goto(path);
   return page;
 }
+
 
 test.describe("Markdown preview + doc-cache — two tabs on same note", () => {
   test("toggling preview in one tab does not corrupt the other after F5", async ({ browser }) => {
@@ -77,8 +86,10 @@ test.describe("Markdown preview + doc-cache — two tabs on same note", () => {
     const context = await browser.newContext();
     const slug = sharedSlug();
 
-    const tabA = await openTab(context, slug);
-    const tabB = await openTab(context, slug);
+    // Both tabs run on a controlled clock so any pending IDLE_MS destroy
+    // timer is observable and gated by `clock.runFor()`.
+    const tabA = await openTab(context, slug, DESKTOP, true);
+    const tabB = await openTab(context, slug, DESKTOP, true);
 
     // Wait for editor to be live in both.
     await expect(tabA.locator(".cm-content").first()).toBeVisible({ timeout: 10_000 });
@@ -98,8 +109,13 @@ test.describe("Markdown preview + doc-cache — two tabs on same note", () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
 
-    // Give the event a tick to propagate (it won't cross realms, but be safe).
-    await tabB.waitForTimeout(200);
+    // Advance tab B's clock by JUST UNDER the IDLE_MS deadline. If any
+    // destroy timer was (incorrectly) scheduled for tab B's still-mounted
+    // doc, it fires deterministically inside this window. Stopping 1ms
+    // short of IDLE_MS guarantees we never tip a *correctly* released
+    // doc into destruction during the test.
+    await tabB.clock.runFor(DOC_CACHE_IDLE_MS - 1);
+
 
     const after = await tabB.evaluate(() => {
       const w = window as unknown as { __docCacheMetrics?: () => { destroyed: number; size: number } };

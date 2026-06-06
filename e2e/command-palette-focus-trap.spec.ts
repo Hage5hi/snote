@@ -62,22 +62,48 @@ test.describe("CommandPalette — focus trap & Escape", () => {
     }
   });
 
-  test("Escape closes the palette and restores focus to the page", async ({ page }) => {
+  test("Escape returns focus to the original trigger and never escapes the container", async ({ page }) => {
     await seed(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
+
+    // Tag a real, focusable element on the page as the "trigger". Radix
+    // Dialog stores `document.activeElement` at open time and restores it
+    // on close, so we tag whatever we focus, open the palette, then
+    // assert the same element is active again post-Escape.
+    await page.evaluate(() => {
+      const btn = document.querySelector<HTMLElement>("button, a, [tabindex]");
+      if (!btn) throw new Error("no focusable trigger found on Home");
+      btn.setAttribute("data-test-trigger", "1");
+      btn.focus();
+    });
+    const triggerActiveBefore = await page.evaluate(() =>
+      document.activeElement?.getAttribute("data-test-trigger") === "1",
+    );
+    expect(triggerActiveBefore, "trigger did not receive focus pre-open").toBe(true);
+
     await openPalette(page);
+    // Sanity: focus moved into the dialog.
+    await expect.poll(() => activeIsInsideDialog(page), { timeout: 2000 }).toBe(true);
 
     await page.keyboard.press("Escape");
     await expect(page.locator("[cmdk-root], [role='dialog']")).toBeHidden({ timeout: 2000 });
 
-    // Focus should be back on something in the document — not stuck on null /
-    // detached node — and definitely not still inside a dialog that no
-    // longer exists.
-    const ok = await page.evaluate(() => {
-      const dialog = document.querySelector("[role='dialog']");
-      return dialog === null && document.activeElement !== null;
+    // Focus must come back to the exact element that opened the dialog,
+    // never to <body>, never to a detached node, never to anything outside
+    // the page's main container.
+    const post = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return {
+        triggerRestored: el?.getAttribute("data-test-trigger") === "1",
+        isBody: el === document.body,
+        inMain: !!el && !!document.querySelector("#root, main, body")?.contains(el),
+        tag: el?.tagName ?? null,
+      };
     });
-    expect(ok).toBe(true);
+    expect(post.isBody, "focus fell back to <body> after Escape").toBe(false);
+    expect(post.inMain, "focus left the expected container after Escape").toBe(true);
+    expect(post.triggerRestored, `focus did not return to original trigger (active=${post.tag})`).toBe(true);
   });
 });
+
