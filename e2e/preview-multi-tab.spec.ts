@@ -106,12 +106,17 @@ test.describe("Markdown preview + doc-cache — two tabs on same note", () => {
       return w.__docCacheMetrics?.() ?? null;
     });
 
-    // Tab B's editor is still mounted, so its doc cannot be destroyed.
+    // Tab B's editor is still mounted and the user is actively viewing it,
+    // so its doc cannot be destroyed — zero tolerance.
     await expect(tabB.locator(".cm-content").first()).toBeVisible();
     if (before && after) {
-      expect(after.destroyed).toBe(before.destroyed);
+      expect(
+        after.destroyed,
+        "tab A visibilitychange must not destroy tab B's active doc",
+      ).toBe(before.destroyed);
       expect(after.size).toBeGreaterThanOrEqual(1);
     }
+
 
     await context.close();
   });
