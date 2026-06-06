@@ -258,15 +258,17 @@ describe("usePreviewVisible — legacy migration", () => {
     expect(mobile.result.current.visible).toBe(false);
   });
 
-  it("migrates legacy key into wide key and clears the legacy slot", () => {
+  it("migrates legacy key into wide key and preserves the legacy slot", () => {
     window.localStorage.setItem("notes:preview-visible", "0");
     narrow = false;
     const { result } = renderHook(() => usePreviewVisible());
     expect(result.current.visible).toBe(false);
     expect(window.localStorage.getItem("notes:preview-visible:wide")).toBe("0");
-    expect(window.localStorage.getItem("notes:preview-visible")).toBeNull();
+    // User data is sacred — legacy key must NOT be auto-deleted.
+    expect(window.localStorage.getItem("notes:preview-visible")).toBe("0");
   });
 });
+
 
 describe("usePreviewVisible — corrupted stored values fall back to default", () => {
   it("ignores garbage in the wide key and uses default ON", () => {
