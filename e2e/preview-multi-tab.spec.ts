@@ -40,13 +40,22 @@ async function previewIsOn(page: Page): Promise<boolean> {
   return (await hide.count()) > 0;
 }
 
-async function openTab(context: BrowserContext, path: string, viewport = DESKTOP) {
+// IDLE_MS in doc-cache. Kept in sync with src/lib/yjs/doc-cache.ts.
+const DOC_CACHE_IDLE_MS = 30_000;
+
+async function openTab(context: BrowserContext, path: string, viewport = DESKTOP, withClock = false) {
   const page = await context.newPage();
   await page.setViewportSize(viewport);
   await seed(page);
+  if (withClock) {
+    // Deterministic time: setTimeout fires only when we explicitly tick.
+    // This removes wall-clock races from the IDLE_MS destroy assertions.
+    await page.clock.install();
+  }
   await page.goto(path);
   return page;
 }
+
 
 test.describe("Markdown preview + doc-cache — two tabs on same note", () => {
   test("toggling preview in one tab does not corrupt the other after F5", async ({ browser }) => {
