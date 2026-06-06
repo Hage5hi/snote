@@ -97,23 +97,27 @@ describe("usePreviewVisible — blocked / unavailable localStorage", () => {
 });
 
 describe("usePreviewVisible — legacy migration runs once", () => {
-  it("only migrates the legacy key on the first read", () => {
+  it("only migrates the legacy key on the first read and preserves user data", () => {
     window.localStorage.setItem("notes:preview-visible", "0");
     narrow = false;
     const first = renderHook(() => usePreviewVisible());
     expect(first.result.current.visible).toBe(false);
-    expect(window.localStorage.getItem("notes:preview-visible")).toBeNull();
+    // User data must NEVER be auto-deleted — the legacy key stays put after
+    // migration. Only an explicit user action may clear it.
+    expect(window.localStorage.getItem("notes:preview-visible")).toBe("0");
+    expect(window.localStorage.getItem("notes:preview-visible:wide")).toBe("0");
 
-    // Manually re-add the legacy key — second hook instance must NOT
-    // re-trigger migration (guard prevents drift if old code re-writes it).
-    window.localStorage.setItem("notes:preview-visible", "1");
+    // Wipe the new key to simulate a fresh wide read; the second hook must
+    // NOT re-trigger migration (one-shot guard prevents drift even if the
+    // legacy key is still present).
     window.localStorage.removeItem("notes:preview-visible:wide");
     const second = renderHook(() => usePreviewVisible());
-    // Legacy key is left untouched the second time; default ON wins.
-    expect(window.localStorage.getItem("notes:preview-visible")).toBe("1");
+    // Legacy still present, but migration no longer runs → default ON wins.
+    expect(window.localStorage.getItem("notes:preview-visible")).toBe("0");
     expect(second.result.current.visible).toBe(true);
   });
 });
+
 
 describe("usePreviewVisible — default by viewport", () => {
   it("defaults ON for desktop (wide) on first visit", () => {
