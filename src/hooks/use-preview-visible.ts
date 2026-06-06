@@ -67,21 +67,27 @@ function tryMigrateLegacyToWide(): boolean | null {
     const legacy = parseStored(window.localStorage.getItem(PREVIEW_KEY_LEGACY));
     if (legacy === null) return null;
     try {
+      // Mirror the legacy value into the wide key so subsequent reads use
+      // the new key directly. We intentionally do NOT remove the legacy
+      // key — user data in localStorage is sacred and must only be cleared
+      // by an explicit user action. Leaving it in place is harmless: the
+      // one-shot guard above prevents re-migration on the same realm, and
+      // `readInitial` always prefers the new key when present.
       window.localStorage.setItem(PREVIEW_KEY_WIDE, legacy ? "1" : "0");
-      window.localStorage.removeItem(PREVIEW_KEY_LEGACY);
     } catch {
       /* best-effort */
     }
     legacyMigrationRanCount++;
     if (import.meta.env?.DEV) {
       // eslint-disable-next-line no-console
-      console.debug("[preview-visible] migrated legacy key → wide", { value: legacy });
+      console.debug("[preview-visible] migrated legacy key → wide (legacy key preserved)", { value: legacy });
     }
     return legacy;
   } catch {
     return null;
   }
 }
+
 
 function readInitial(narrow: boolean): boolean {
   const defaultForViewport = !narrow;
