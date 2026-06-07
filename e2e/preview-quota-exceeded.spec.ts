@@ -125,4 +125,48 @@ test.describe("Markdown preview — localStorage quota exceeded", () => {
       expect(m.migrationRan).toBeLessThanOrEqual(1);
     }
   });
+
+  test("legacy key is preserved across migration + viewport toggle never throws", async ({ page }) => {
+    // User data in localStorage is sacred: the migration must mirror the
+    // legacy value into the wide key but NEVER delete the legacy key, even
+    // when subsequent writes throw QuotaExceededError. Then toggling the
+    // preview pane across desktop ↔ mobile must keep working (in-memory)
+    // without emitting pageerrors despite every setItem throwing.
+    const errors: string[] = [];
+    page.on("pageerror", (e) => errors.push(String(e)));
+
+    await page.setViewportSize(DESKTOP);
+    await seedWithQuotaTrap(page);
+    await page.goto(notePath());
+
+    await expect.poll(() => previewIsOn(page), { timeout: 5000 }).toBe(true);
+
+    // Legacy key must still be present after the migration ran under quota.
+    const legacyAfterMigration = await page.evaluate(
+      (k) => localStorage.getItem(k),
+      PREVIEW_LEGACY,
+    );
+    expect(legacyAfterMigration, "migration deleted legacy key under quota").toBe("1");
+
+    // Toggle on desktop (write would throw → must be swallowed).
+    await page.getByRole("button", { name: /Hide preview/ }).first().click();
+    await expect.poll(() => previewIsOn(page), { timeout: 3000 }).toBe(false);
+
+    // Switch to mobile viewport → fallback OFF by viewport, no carryover.
+    await page.setViewportSize(MOBILE);
+    await expect.poll(() => previewIsOn(page), { timeout: 3000 }).toBe(false);
+
+    // Back to desktop → in-memory wide state still OFF (set just above).
+    await page.setViewportSize(DESKTOP);
+    await expect.poll(() => previewIsOn(page), { timeout: 3000 }).toBe(false);
+
+    // Legacy key still untouched after all the toggling + resizes.
+    const legacyFinal = await page.evaluate(
+      (k) => localStorage.getItem(k),
+      PREVIEW_LEGACY,
+    );
+    expect(legacyFinal, "legacy key was mutated by toggle/resize under quota").toBe("1");
+
+    expect(errors, `unexpected pageerror under quota: ${errors.join("\n")}`).toEqual([]);
+  });
 });

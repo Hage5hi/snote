@@ -37,27 +37,58 @@ async function activeIsInsideDialog(page: Page): Promise<boolean> {
 }
 
 test.describe("CommandPalette — focus trap & Escape", () => {
-  test("Tab cycles focus inside the dialog and never escapes to body", async ({ page }) => {
+  test("Tab cycles focus inside the dialog and never escapes the #root/main/body container", async ({ page }) => {
     await seed(page);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
-    await openPalette(page);
 
-    // After opening, focus should already be inside the dialog (input).
+    // Inject extra tabbable decoys OUTSIDE the (future) dialog: if the trap
+    // ever regresses, Tab would land on these — making the failure obvious.
+    await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "e2e-focus-decoys";
+      host.style.cssText = "position:fixed;left:-9999px;top:0;";
+      for (let i = 0; i < 3; i++) {
+        const b = document.createElement("button");
+        b.textContent = `decoy-${i}`;
+        b.setAttribute("data-e2e-decoy", String(i));
+        host.appendChild(b);
+      }
+      document.body.appendChild(host);
+    });
+
+    await openPalette(page);
     await expect.poll(() => activeIsInsideDialog(page), { timeout: 2000 }).toBe(true);
 
-    // Press Tab a generous number of times — focus must never land on <body>
-    // or outside the dialog container.
+    async function snapshotActive() {
+      return page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null;
+        return {
+          isBody: el === document.body,
+          isDecoy: !!el?.hasAttribute("data-e2e-decoy"),
+          inContainer:
+            !!el && !!document.querySelector("#root, main, body")?.contains(el),
+        };
+      });
+    }
+
     for (let i = 0; i < 12; i++) {
       await page.keyboard.press("Tab");
+      const s = await snapshotActive();
       const inside = await activeIsInsideDialog(page);
+      expect(s.isBody, `Tab #${i + 1} landed on <body>`).toBe(false);
+      expect(s.isDecoy, `Tab #${i + 1} escaped to background decoy`).toBe(false);
+      expect(s.inContainer, `Tab #${i + 1} left #root/main/body container`).toBe(true);
       expect(inside, `Tab #${i + 1} let focus escape the dialog`).toBe(true);
     }
 
-    // Shift+Tab the other direction too.
     for (let i = 0; i < 12; i++) {
       await page.keyboard.press("Shift+Tab");
+      const s = await snapshotActive();
       const inside = await activeIsInsideDialog(page);
+      expect(s.isBody, `Shift+Tab #${i + 1} landed on <body>`).toBe(false);
+      expect(s.isDecoy, `Shift+Tab #${i + 1} escaped to background decoy`).toBe(false);
+      expect(s.inContainer, `Shift+Tab #${i + 1} left #root/main/body container`).toBe(true);
       expect(inside, `Shift+Tab #${i + 1} let focus escape the dialog`).toBe(true);
     }
   });
