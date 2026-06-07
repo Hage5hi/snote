@@ -80,6 +80,15 @@ const ALWAYS_RUN = [
   // Storage hardening: preview hook must survive a fully blocked /
   // quota-exceeded localStorage without throwing or re-running migration.
   "e2e/preview-quota-exceeded.spec.ts",
+  // Snapshots localStorage keys before/after migrate + viewport toggle to
+  // prove the legacy preview key is never deleted by the migration.
+  "e2e/preview-localstorage-snapshot.spec.ts",
+  // Focus must remain inside #root/main/body across many F5 + open/close
+  // cycles of the CommandPalette.
+  "e2e/command-palette-focus-cycles.spec.ts",
+  // Meta-guardrail: the perf-trace attachment logic only uploads artifacts
+  // when render budgets are exceeded — passing runs must stay clean.
+  "e2e/command-palette-perf-attachments.spec.ts",
 ];
 
 const VISUAL_SPEC = "e2e/home-scenes-visual.spec.ts";
