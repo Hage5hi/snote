@@ -89,6 +89,15 @@ const ALWAYS_RUN = [
   // Meta-guardrail: the perf-trace attachment logic only uploads artifacts
   // when render budgets are exceeded — passing runs must stay clean.
   "e2e/command-palette-perf-attachments.spec.ts",
+  // Within-budget repeats must upload zero artifacts; over-budget artifact
+  // names/paths must embed test-title + run-id for easy F5 correlation.
+  "e2e/command-palette-perf-no-attach-repeat.spec.ts",
+  // After many Tab/Shift+Tab presses, Escape must restore focus to the
+  // exact trigger that opened the palette — never to <body> or a decoy.
+  "e2e/command-palette-escape-after-tabs.spec.ts",
+  // Diff between the 3 localStorage snapshots (pre/post-migrate, post-toggle)
+  // is attached as JSON and asserted to expose only expected changes.
+  "e2e/preview-localstorage-diff.spec.ts",
 ];
 
 const VISUAL_SPEC = "e2e/home-scenes-visual.spec.ts";
