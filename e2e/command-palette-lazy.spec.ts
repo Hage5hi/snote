@@ -87,19 +87,23 @@ test.describe("CommandPalette — lazy chunk loading", () => {
     let firstOpenMs = -1;
     let secondOpenMs = -1;
     let tracingStopped = false;
+    // Embed test title + a unique run id into every artifact name/path so
+    // multiple F5 reruns produce distinct, easy-to-correlate files in CI.
+    const slug = testInfo.title.replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase();
+    const runId = `${testInfo.workerIndex}-${testInfo.retry}-${Date.now()}`;
     const stopAndMaybeAttach = async (reason: string | null) => {
       if (tracingStopped) return;
       tracingStopped = true;
-      const tracePath = testInfo.outputPath(`cmdk-perf-${Date.now()}.zip`);
+      const tracePath = testInfo.outputPath(`cmdk-perf-${slug}-${runId}.zip`);
       await context.tracing.stop({ path: tracePath });
       if (reason) {
-        await testInfo.attach(`cmdk-perf-trace (${reason})`, {
+        await testInfo.attach(`cmdk-perf-trace-${slug}-${runId} (${reason})`, {
           path: tracePath,
           contentType: "application/zip",
         });
         // Also attach a JSON summary so triage doesn't need to open the trace.
-        await testInfo.attach("cmdk-perf-summary.json", {
-          body: JSON.stringify({ reason, firstOpenMs, secondOpenMs }, null, 2),
+        await testInfo.attach(`cmdk-perf-summary-${slug}-${runId}.json`, {
+          body: JSON.stringify({ reason, testTitle: testInfo.title, runId, firstOpenMs, secondOpenMs }, null, 2),
           contentType: "application/json",
         });
       }
