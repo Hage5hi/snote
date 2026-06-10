@@ -42,10 +42,6 @@ async function measureFirstOpen(page: Page): Promise<number> {
   });
 }
 
-function slugOf(testInfo: TestInfo): string {
-  return testInfo.title.replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase();
-}
-
 async function runWithBudget(
   page: Page,
   context: BrowserContext,
@@ -56,16 +52,20 @@ async function runWithBudget(
   await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   const openedMs = await measureFirstOpen(page);
   const exceeded = openedMs <= 0 || openedMs >= budgetMs;
-  const slug = slugOf(testInfo);
+  const slug = slugifyTitle(testInfo.title);
+  // Custom suffix folds in the iteration count so within-test repeats are
+  // distinguishable in CI without losing the canonical worker-retry prefix.
   const runId = `${testInfo.workerIndex}-${testInfo.retry}-iter${iter}-${Date.now()}`;
+  const traceName = buildArtifactName(testInfo, "trace", runId);
+  const summaryName = buildArtifactName(testInfo, "summary", runId);
   if (exceeded) {
-    const tracePath = testInfo.outputPath(`cmdk-perf-${slug}-${runId}.zip`);
+    const tracePath = testInfo.outputPath(traceName);
     await context.tracing.stop({ path: tracePath });
-    await testInfo.attach(`cmdk-perf-trace-${slug}-${runId} (budget ${budgetMs}ms)`, {
+    await testInfo.attach(`${traceName} (budget ${budgetMs}ms)`, {
       path: tracePath,
       contentType: "application/zip",
     });
-    await testInfo.attach(`cmdk-perf-summary-${slug}-${runId}.json`, {
+    await testInfo.attach(summaryName, {
       body: JSON.stringify({ budgetMs, openedMs, testTitle: testInfo.title, runId }, null, 2),
       contentType: "application/json",
     });
