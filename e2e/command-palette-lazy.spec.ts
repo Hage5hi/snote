@@ -3,6 +3,12 @@
 // reasonable time even on a cold visit. Re-opening must be faster than the
 // first open (no second network round-trip).
 import { test, expect, type Page } from "@playwright/test";
+import {
+  buildArtifactName,
+  buildRunId,
+  slugifyTitle,
+  PERF_ARTIFACT_NAME_RE,
+} from "./helpers/perf-artifact-name";
 
 const LANG_KEY = "lang";
 const IP_DETECTED_KEY = "lang.ip_detected";
