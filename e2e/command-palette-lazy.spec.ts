@@ -94,21 +94,31 @@ test.describe("CommandPalette — lazy chunk loading", () => {
     let secondOpenMs = -1;
     let tracingStopped = false;
     // Embed test title + a unique run id into every artifact name/path so
-    // multiple F5 reruns produce distinct, easy-to-correlate files in CI.
-    const slug = testInfo.title.replace(/[^a-z0-9]+/gi, "-").replace(/(^-|-$)/g, "").toLowerCase();
-    const runId = `${testInfo.workerIndex}-${testInfo.retry}-${Date.now()}`;
+    // multiple F5 reruns + retries produce distinct, easy-to-correlate files.
+    const slug = slugifyTitle(testInfo.title);
+    const runId = buildRunId(testInfo);
+    const traceName = buildArtifactName(testInfo, "trace", runId);
+    const summaryName = buildArtifactName(testInfo, "summary", runId);
+    // Sanity-check the canonical pattern at runtime so a future helper
+    // change can't silently produce CI artifacts we can't grep for.
+    expect(traceName).toMatch(PERF_ARTIFACT_NAME_RE);
+    expect(summaryName).toMatch(PERF_ARTIFACT_NAME_RE);
+    expect(traceName).toContain(slug);
+    expect(traceName).toContain(runId);
     const stopAndMaybeAttach = async (reason: string | null) => {
       if (tracingStopped) return;
       tracingStopped = true;
-      const tracePath = testInfo.outputPath(`cmdk-perf-${slug}-${runId}.zip`);
+      const tracePath = testInfo.outputPath(traceName);
       await context.tracing.stop({ path: tracePath });
       if (reason) {
-        await testInfo.attach(`cmdk-perf-trace-${slug}-${runId} (${reason})`, {
+        expect(tracePath).toContain(slug);
+        expect(tracePath).toContain(runId);
+        await testInfo.attach(`${traceName} (${reason})`, {
           path: tracePath,
           contentType: "application/zip",
         });
         // Also attach a JSON summary so triage doesn't need to open the trace.
-        await testInfo.attach(`cmdk-perf-summary-${slug}-${runId}.json`, {
+        await testInfo.attach(summaryName, {
           body: JSON.stringify({ reason, testTitle: testInfo.title, runId, firstOpenMs, secondOpenMs }, null, 2),
           contentType: "application/json",
         });
