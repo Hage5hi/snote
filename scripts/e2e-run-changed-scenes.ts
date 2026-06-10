@@ -92,6 +92,9 @@ const ALWAYS_RUN = [
   // Within-budget repeats must upload zero artifacts; over-budget artifact
   // names/paths must embed test-title + run-id for easy F5 correlation.
   "e2e/command-palette-perf-no-attach-repeat.spec.ts",
+  // Simulated-retry coverage: within-budget runs must leak zero artifacts
+  // across multiple retry-equivalent attempts.
+  "e2e/command-palette-perf-no-attach-retry.spec.ts",
   // After many Tab/Shift+Tab presses, Escape must restore focus to the
   // exact trigger that opened the palette — never to <body> or a decoy.
   "e2e/command-palette-escape-after-tabs.spec.ts",
