@@ -106,5 +106,8 @@ test.describe("CommandPalette perf — repeated within-budget runs upload no art
     expect(zip!.name, `zip name lacks runId: ${zip!.name}`).toContain(runId);
     expect(json!.name, `json name lacks slug: ${json!.name}`).toContain(slug);
     expect(json!.name, `json name lacks runId: ${json!.name}`).toContain(runId);
+    // Both attachment names must conform to the shared canonical pattern.
+    expect(zip!.name, `zip name fails canonical pattern: ${zip!.name}`).toMatch(PERF_ARTIFACT_NAME_RE);
+    expect(json!.name, `json name fails canonical pattern: ${json!.name}`).toMatch(PERF_ARTIFACT_NAME_RE);
   });
 });
