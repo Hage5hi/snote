@@ -136,5 +136,77 @@ test.describe("CommandPalette — focus trap & Escape", () => {
     expect(post.inMain, "focus left the expected container after Escape").toBe(true);
     expect(post.triggerRestored, `focus did not return to original trigger (active=${post.tag})`).toBe(true);
   });
+
+  test("mouse-focused trigger → ⌘+K → Tab/Shift+Tab cycles → Escape restores focus to that trigger", async ({ page }) => {
+    // Scenario: user first focuses the trigger with a real mouse click
+    // (not keyboard Tab), then opens the palette, cycles focus many times
+    // with Tab/Shift+Tab, and presses Escape. The palette only opens via
+    // ⌘+K — there's no mouse-driven opener — so this test pins the
+    // "mouse-focused then keyboard-opened" flow, which is the closest
+    // analog and the one that previously broke focus restoration.
+    await seed(page);
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+
+    // Install decoys so a focus escape after Escape would be visible.
+    await page.evaluate(() => {
+      const host = document.createElement("div");
+      host.id = "e2e-focus-decoys-mouse";
+      host.style.cssText = "position:fixed;left:-9999px;top:0;";
+      for (let i = 0; i < 3; i++) {
+        const b = document.createElement("button");
+        b.textContent = `decoy-${i}`;
+        b.setAttribute("data-e2e-decoy", String(i));
+        host.appendChild(b);
+      }
+      document.body.appendChild(host);
+    });
+
+    // Tag a real on-page focusable, then click it with the mouse so the
+    // browser records a real pointer-driven focus (not a programmatic one).
+    const triggerSel = await page.evaluate(() => {
+      const btn = document.querySelector<HTMLElement>("button, a, [tabindex]");
+      if (!btn) throw new Error("no focusable trigger on Home");
+      btn.setAttribute("data-test-trigger", "mouse");
+      btn.setAttribute("data-mouse-trigger", "1");
+      return "[data-mouse-trigger='1']";
+    });
+    await page.locator(triggerSel).click();
+    const focusedViaMouse = await page.evaluate(
+      () => document.activeElement?.getAttribute("data-mouse-trigger") === "1",
+    );
+    expect(focusedViaMouse, "trigger did not receive focus from mouse click").toBe(true);
+
+    await openPalette(page);
+    await expect.poll(() => activeIsInsideDialog(page), { timeout: 2000 }).toBe(true);
+
+    for (let i = 0; i < 10; i++) await page.keyboard.press("Tab");
+    for (let i = 0; i < 10; i++) await page.keyboard.press("Shift+Tab");
+
+    // Focus must still be inside the dialog throughout the cycling.
+    expect(await activeIsInsideDialog(page), "focus escaped dialog mid-cycle").toBe(true);
+
+    await page.keyboard.press("Escape");
+    await expect(page.locator("[cmdk-root], [role='dialog']")).toBeHidden({ timeout: 2000 });
+
+    const post = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      return {
+        triggerRestored: el?.getAttribute("data-mouse-trigger") === "1",
+        isBody: el === document.body,
+        isDecoy: !!el?.hasAttribute("data-e2e-decoy"),
+        inMain: !!el && !!document.querySelector("#root, main, body")?.contains(el),
+        tag: el?.tagName ?? null,
+      };
+    });
+    expect(post.isBody, "focus fell back to <body> after Escape (mouse-opened)").toBe(false);
+    expect(post.isDecoy, "focus landed on background decoy after Escape (mouse-opened)").toBe(false);
+    expect(post.inMain, "focus left container after Escape (mouse-opened)").toBe(true);
+    expect(
+      post.triggerRestored,
+      `mouse-focused trigger not restored after Escape (active=${post.tag})`,
+    ).toBe(true);
+  });
 });
+
 
