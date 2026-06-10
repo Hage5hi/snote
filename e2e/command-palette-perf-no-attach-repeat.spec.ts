@@ -7,6 +7,11 @@
 // embeds both the test title (slug) and a unique run id so multiple F5 reruns
 // are easy to correlate from the CI artifacts pane.
 import { test, expect, type Page, type TestInfo, type BrowserContext } from "@playwright/test";
+import {
+  buildArtifactName,
+  slugifyTitle,
+  PERF_ARTIFACT_NAME_RE,
+} from "./helpers/perf-artifact-name";
 
 const LANG_KEY = "lang";
 const IP_DETECTED_KEY = "lang.ip_detected";
