@@ -1,34 +1,34 @@
 // PWA update flow.
 //
-// Why this exists: previously vite-plugin-pwa was configured with
-// `registerType: "autoUpdate"` + `injectRegister: "auto"`. That silently
-// installs the new SW, claims clients, then leaves the open tab running the
-// old in-memory JS. To actually pick up new code, users had to clear cookies /
-// site-data — which wipes localStorage too, blowing away `note.recents`
-// (the 50 most-recently-opened slugs) and `note.pinned`. Note content itself
-// is safe on Supabase, but users couldn't remember slugs, so it felt like
-// data loss.
-//
-// New flow:
-//   1. Vite is now `registerType: "prompt"` + `injectRegister: false`.
-//   2. We register the SW here and listen for `onNeedRefresh`.
-//   3. When a new version is detected, we show a persistent Sonner toast with
-//      an explicit "Update" button. The user keeps full control — no auto
-//      reload, no data wipe.
-//   4. We also poll `registration.update()` hourly so long-running PWA tabs
-//      (standalone install) eventually notice updates, plus we re-check
-//      whenever the tab regains focus / visibility so the preview iframe
-//      doesn't sit on a stale build.
+// Goals:
+//   1. Users on the published site (snote.lovable.app, custom domain) ALWAYS
+//      see a persistent "Update" toast as soon as a new build is live — even
+//      if the service worker is slow to fire `onNeedRefresh` or the user has
+//      SW disabled entirely. We do this by polling /version.json (no-store)
+//      and comparing against the build ID stamped into THIS tab's bundle.
+//   2. The Lovable preview iframe (id-preview--*.lovable.app) NEVER serves a
+//      stale build. Iterating in the editor and seeing yesterday's UI is a
+//      bug — there is no offline-install value in a preview. We unregister
+//      any previously-installed SW and nuke its caches, then skip
+//      re-registration entirely on those hosts.
+//   3. User data (localStorage: recents, pins, theme; IndexedDB: Yjs docs;
+//      Supabase session) is NEVER touched by any cache-clearing logic.
+//      Only Cache Storage (workbox / SW caches) is cleared.
 
 import { registerSW } from "virtual:pwa-register";
 import { toast as sonnerToast } from "sonner";
 import { detectLang, dict, STORAGE_KEY, type Lang } from "@/i18n";
 
-// Re-check for a new SW every hour. Short enough that a user who leaves the
-// PWA open all day still picks updates up the same session; long enough not
-// to thrash on flaky networks.
-const UPDATE_POLL_INTERVAL_MS = 60 * 60 * 1000;
+// Build ID stamped at compile time. See vite.config.ts.
+declare const __BUILD_ID__: string;
+const CURRENT_BUILD_ID: string = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
 
+// Poll cadence for /version.json. Short enough that a user idling on the app
+// during a deploy gets the update prompt within a minute, long enough that
+// it's not a thundering herd on the static host.
+const VERSION_POLL_INTERVAL_MS = 60 * 1000;
+// Independent cadence for asking the SW to re-check itself. Same target.
+const SW_UPDATE_POLL_INTERVAL_MS = 60 * 1000;
 const TOAST_ID = "pwa-update-toast";
 
 type FlatDict = Record<string, string>;
@@ -38,71 +38,156 @@ function tr(lang: Lang, key: string): string {
   return d[lang]?.[key] ?? d.en[key] ?? key;
 }
 
+// Preview iframe served by Lovable's editor. We don't want a SW caching
+// anything here — every reload should hit the latest deployed preview build.
+function isLovablePreviewHost(): boolean {
+  if (typeof window === "undefined") return false;
+  return /(^|\.)id-preview--/.test(window.location.hostname);
+}
+
+// Best-effort: remove every previously-registered SW + every Cache Storage
+// entry. Does NOT touch localStorage / IndexedDB — user data is sacred.
+async function nukeServiceWorkersAndCaches(): Promise<void> {
+  try {
+    if ("serviceWorker" in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof caches !== "undefined") {
+      const names = await caches.keys();
+      await Promise.all(names.map((n) => caches.delete(n).catch(() => false)));
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function showUpdateToast(onReload: () => void): void {
+  const lang = detectLang();
+  sonnerToast(tr(lang, "update.title"), {
+    id: TOAST_ID,
+    description: tr(lang, "update.description"),
+    duration: Infinity,
+    action: {
+      label: tr(lang, "update.btn_reload"),
+      onClick: onReload,
+    },
+  });
+}
+
+// /version.json poller — works even with no SW. Returns a stop fn.
+function startVersionPoller(onMismatch: () => void): () => void {
+  let stopped = false;
+  let timer: number | undefined;
+
+  const check = async () => {
+    if (stopped) return;
+    try {
+      const res = await fetch(`/version.json?ts=${Date.now()}`, {
+        cache: "no-store",
+        credentials: "omit",
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { buildId?: string };
+      if (data?.buildId && data.buildId !== CURRENT_BUILD_ID) {
+        onMismatch();
+      }
+    } catch {
+      /* network blip — try again next tick */
+    }
+  };
+
+  // First check shortly after boot so a user who opens the app right after a
+  // deploy sees the prompt quickly, not a minute later.
+  window.setTimeout(check, 3000);
+  timer = window.setInterval(check, VERSION_POLL_INTERVAL_MS) as unknown as number;
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void check();
+  });
+  window.addEventListener("focus", () => void check());
+
+  return () => {
+    stopped = true;
+    if (timer !== undefined) window.clearInterval(timer);
+  };
+}
+
 export function registerAppUpdater(): void {
   if (typeof window === "undefined") return;
-  if (!("serviceWorker" in navigator)) return;
-  // No SW is generated in dev builds (devOptions.enabled: false), so skip.
+  // No SW is generated in dev builds (devOptions.enabled: false). Nothing to
+  // poll either — Vite already serves fresh modules.
   if (import.meta.env.DEV) return;
 
-  let updateAvailable = false;
+  // Lovable preview iframe: unregister anything previously installed, wipe
+  // caches, and bail. Future reloads will always hit the latest deploy.
+  if (isLovablePreviewHost()) {
+    void nukeServiceWorkersAndCaches();
+    return;
+  }
 
-  const showToast = (updateSW: (reload?: boolean) => Promise<void>) => {
-    // Read language fresh each time so the toast matches the user's
-    // *current* selection, not whatever was set when the SW registered.
-    const lang = detectLang();
-    sonnerToast(tr(lang, "update.title"), {
-      id: TOAST_ID,
-      description: tr(lang, "update.description"),
-      // Stay visible until the user decides. Sonner treats Infinity as
-      // "never auto-dismiss".
-      duration: Infinity,
-      action: {
-        label: tr(lang, "update.btn_reload"),
-        onClick: () => {
-          // updateSW(true) posts SKIP_WAITING to the waiting SW and reloads
-          // the page once the new SW takes control. No data is cleared —
-          // IndexedDB (Yjs), localStorage (recents/pins/theme), and any
-          // Supabase session all survive the reload.
-          void updateSW(true);
-        },
-      },
+  let updateAvailable = false;
+  let pendingReload: (() => void) | null = null;
+
+  const triggerToast = () => {
+    updateAvailable = true;
+    showUpdateToast(() => {
+      // If the SW has a waiting worker, prefer its proper activation path
+      // (skipWaiting → controllerchange → reload). Otherwise just hard-reload
+      // — the new index.html will pick up the new bundle hashes.
+      if (pendingReload) {
+        pendingReload();
+      } else {
+        window.location.reload();
+      }
     });
   };
+
+  // Always run the version poller — it's the safety net for the "SW didn't
+  // fire onNeedRefresh" failure mode that originally caused stale tabs.
+  startVersionPoller(triggerToast);
+
+  if (!("serviceWorker" in navigator)) return;
 
   const updateSW = registerSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
-      // Check immediately so a freshly opened preview tab that's been left
-      // open across deploys doesn't have to wait an hour to notice.
+      pendingReload = () => {
+        // updateSW(true) posts SKIP_WAITING to the waiting SW and reloads
+        // once the new SW takes control. Caches are managed by Workbox
+        // (`cleanupOutdatedCaches: true`), so old precache entries are
+        // pruned automatically on activate. User data is untouched.
+        void updateSW(true);
+      };
+      // Immediate check so a freshly opened tab after a deploy doesn't sit
+      // on the old build for an hour.
       registration.update().catch(() => {});
       window.setInterval(() => {
-        // Silent: any network failure here is fine, we'll try again next tick.
         registration.update().catch(() => {});
-      }, UPDATE_POLL_INTERVAL_MS);
-      // Re-check whenever the tab becomes visible again (catches the
-      // "preview iframe was hidden during deploy" case).
+      }, SW_UPDATE_POLL_INTERVAL_MS);
       document.addEventListener("visibilitychange", () => {
         if (document.visibilityState === "visible") {
           registration.update().catch(() => {});
         }
       });
+      window.addEventListener("focus", () => {
+        registration.update().catch(() => {});
+      });
     },
     onNeedRefresh() {
-      updateAvailable = true;
-      showToast(updateSW);
+      triggerToast();
     },
   });
 
-  // If the user switches language while the update toast is visible, re-show
-  // it with the new translations.
+  // Re-render the toast in the user's current language if they switch while
+  // the update prompt is up.
   window.addEventListener("storage", (e) => {
-    if (e.key === STORAGE_KEY && updateAvailable) {
-      showToast(updateSW);
-    }
+    if (e.key === STORAGE_KEY && updateAvailable) triggerToast();
   });
-  // Same-tab language changes don't fire `storage`; provider dispatches this
-  // custom event so we can refresh the toast in place.
   window.addEventListener("i18n:lang-changed", () => {
-    if (updateAvailable) showToast(updateSW);
+    if (updateAvailable) triggerToast();
   });
 }
