@@ -13,7 +13,32 @@ import { VitePWA } from "vite-plugin-pwa";
 // the runtime warm-up is the single source of truth for this policy.
 
 // https://vitejs.dev/config/
+// Build-time identity. Stamped into both the bundle (__BUILD_ID__) and a
+// public /version.json file. Used at runtime by src/lib/pwa-update.ts to
+// detect "the deployed version drifted from the version this tab booted with"
+// and surface the Update toast — even when the SW machinery hasn't fired
+// onNeedRefresh yet (or the user has SW disabled entirely).
+const BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+function emitVersionJson() {
+  return {
+    name: "emit-version-json",
+    apply: "build" as const,
+    generateBundle() {
+      // @ts-expect-error rollup plugin context typing not imported here
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: JSON.stringify({ buildId: BUILD_ID, builtAt: new Date().toISOString() }),
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
+  define: {
+    __BUILD_ID__: JSON.stringify(BUILD_ID),
+  },
   server: {
     host: "::",
     port: 8080,
@@ -62,6 +87,7 @@ export default defineConfig(({ mode }) => ({
         cleanupOutdatedCaches: true,
       },
     }),
+    emitVersionJson(),
   ].filter(Boolean),
   resolve: {
     alias: {
