@@ -18,6 +18,7 @@ const RawView = lazy(() => import("./pages/RawView"));
 const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const SharePage = lazy(() => import("./pages/SharePage"));
+const Privacy = lazy(() => import("./pages/Privacy"));
 
 const queryClient = new QueryClient();
 // EditorSkeleton mimics the topbar + editor layout so there's no shift when
@@ -83,6 +84,14 @@ const App = () => (
             <DonateButton />
             <Routes>
               <Route path="/" element={<Home />} />
+              <Route
+                path="/privacy"
+                element={
+                  <Suspense fallback={PlainFallback}>
+                    <Privacy />
+                  </Suspense>
+                }
+              />
               <Route
                 path="/s/:token"
                 element={
