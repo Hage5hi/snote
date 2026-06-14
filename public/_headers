@@ -8,6 +8,9 @@
 # manifest, and the version.json heartbeat must also stay no-cache so update
 # detection works on every reload.
 
+/*
+  Content-Security-Policy: frame-ancestors 'self' chrome-extension://*
+
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
