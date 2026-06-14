@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Syrin Note</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <div id="loader" class="loader" aria-live="polite" aria-busy="true">
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Loading Syrin Note…</p>
+    </div>
+
+    <iframe
+      id="app"
+      src="https://note.syrin.online/?from=ext"
+      title="Syrin Note"
+      allow="clipboard-read; clipboard-write; fullscreen"
+      referrerpolicy="origin"
+    ></iframe>
+
+    <div id="fallback" class="fallback" hidden>
+      <h1>Couldn't load Syrin Note</h1>
+      <p>The side panel can't embed the app right now. You can open it in a new tab instead.</p>
+      <button id="open-tab" type="button">Open in new tab</button>
+      <noscript>
+        <a href="https://note.syrin.online">Open Syrin Note</a>
+      </noscript>
+    </div>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>
