@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Syrin Note — Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Side Panel Settings</h1>
+      <p class="subtitle">Choose what opens when you launch the side panel.</p>
+
+      <form id="settings">
+        <fieldset>
+          <legend>When I open the side panel, go to:</legend>
+
+          <label class="radio">
+            <input type="radio" name="openMode" value="home" />
+            <span>The homepage <small>(random new note)</small></span>
+          </label>
+
+          <label class="radio">
+            <input type="radio" name="openMode" value="slug" />
+            <span>A specific note</span>
+          </label>
+
+          <div class="slug-row">
+            <label for="defaultSlug" class="slug-label">Slug</label>
+            <input
+              type="text"
+              id="defaultSlug"
+              name="defaultSlug"
+              placeholder="my-default-note"
+              autocomplete="off"
+              spellcheck="false"
+            />
+          </div>
+          <p id="slugError" class="error" hidden>
+            Slug must be 1–64 characters: letters, numbers, hyphen or underscore.
+          </p>
+
+          <label class="radio">
+            <input type="radio" name="openMode" value="last" />
+            <span>The last note I had open</span>
+          </label>
+        </fieldset>
+
+        <div class="actions">
+          <button type="submit" id="save">Save</button>
+          <span id="status" class="status" aria-live="polite"></span>
+        </div>
+      </form>
+
+      <p class="footnote">
+        Keyboard shortcut: <kbd>Alt</kbd>+<kbd>S</kbd> opens the side panel.
+        Change it at <code>chrome://extensions/shortcuts</code>.
+      </p>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

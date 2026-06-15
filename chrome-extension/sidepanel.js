@@ -1,10 +1,31 @@
 (() => {
+  const APP_ORIGIN = "https://note.syrin.online";
+  const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
   const iframe = document.getElementById("app");
   const loader = document.getElementById("loader");
   const fallback = document.getElementById("fallback");
   const openTab = document.getElementById("open-tab");
 
   let loaded = false;
+
+  function buildSrc({ openMode, defaultSlug, lastSlug }) {
+    let path = "/";
+    if (openMode === "slug" && defaultSlug && SLUG_RE.test(defaultSlug)) {
+      path = `/${defaultSlug}`;
+    } else if (openMode === "last" && lastSlug && SLUG_RE.test(lastSlug)) {
+      path = `/${lastSlug}`;
+    }
+    return `${APP_ORIGIN}${path}?from=ext`;
+  }
+
+  // Read user settings from chrome.storage.sync, then load the iframe.
+  chrome.storage.sync.get(
+    { openMode: "home", defaultSlug: "", lastSlug: "" },
+    (settings) => {
+      iframe.src = buildSrc(settings);
+    },
+  );
 
   iframe.addEventListener("load", () => {
     loaded = true;
@@ -23,9 +44,28 @@
 
   openTab.addEventListener("click", () => {
     if (typeof chrome !== "undefined" && chrome.tabs && chrome.tabs.create) {
-      chrome.tabs.create({ url: "https://note.syrin.online" });
+      chrome.tabs.create({ url: APP_ORIGIN });
     } else {
-      window.open("https://note.syrin.online", "_blank", "noopener");
+      window.open(APP_ORIGIN, "_blank", "noopener");
+    }
+  });
+
+  // Listen for slug updates from the web app so "resume last note" works.
+  window.addEventListener("message", (event) => {
+    if (event.origin !== APP_ORIGIN) return;
+    const data = event.data;
+    if (
+      data &&
+      typeof data === "object" &&
+      data.type === "syrin:slug" &&
+      typeof data.slug === "string" &&
+      SLUG_RE.test(data.slug)
+    ) {
+      try {
+        chrome.storage.sync.set({ lastSlug: data.slug });
+      } catch (err) {
+        console.error("[syrin-note] failed to save lastSlug", err);
+      }
     }
   });
 })();

@@ -339,7 +339,7 @@ export default function Home() {
           </span>
         </div>
 
-        <InstallPrompt />
+        {!isExtensionContext && <InstallPrompt />}
 
         {pinned.length > 0 && (
           <section
