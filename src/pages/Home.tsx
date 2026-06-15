@@ -8,6 +8,7 @@ import { SceneToggle } from "@/components/SceneToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { getPinned, getRecents, removeRecent, togglePin, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
+import { isExtensionContext } from "@/lib/ext-context";
 import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
