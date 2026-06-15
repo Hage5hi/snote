@@ -34,6 +34,7 @@ import { useI18n } from "@/i18n";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 import { AppShell } from "@/components/app/AppShell";
+import { isExtensionContext } from "@/lib/ext-context";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
@@ -198,6 +199,19 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       cancelled = true;
     };
   }, [slug, validSlug]);
+
+  // When inside the Syrin Note Chrome extension side panel, tell the host
+  // which slug we're on so it can remember the last-opened note.
+  useEffect(() => {
+    if (!isExtensionContext || !validSlug || embedSlug) return;
+    try {
+      window.parent.postMessage({ type: "syrin:slug", slug }, "*");
+    } catch {
+      // ignore
+    }
+  }, [slug, validSlug, embedSlug]);
+
+
 
   // Mount IDB + connect provider once enc decision is made.
   useEffect(() => {
