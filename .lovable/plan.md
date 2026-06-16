@@ -1,178 +1,140 @@
-# Extension v1.1.0 — Settings, phím tắt, và phát hiện iframe context
+# Plan: Chrome Extension v1.2.0 — Polish & Launch Assets
 
-## Tóm tắt
+## 1. Alt+S — kiểm thử và làm chắc (background.js)
 
-Nâng cấp `chrome-extension/` từ v1.0.0 → v1.1.0 với 4 việc:
-1. Trang Settings (`options.html`) cho phép user chọn cách side panel mở
-2. Phím tắt `Alt+S` mở/đóng side panel (qua `chrome.commands` + `background.js`)
-3. Web app phát hiện `?from=ext` để ẩn `InstallPrompt`
-4. Bump version, rebuild ZIP
+Chrome's `chrome.sidePanel.open()` cần user gesture (Alt+S đáp ứng), nhưng có 3 edge cases dễ trượt:
 
-Đã loại bỏ khỏi scope (theo đánh giá của bạn — đều đúng):
-- ❌ Chỉnh độ rộng side panel (Chrome không có API)
-- ❌ Re-implement lock/unlock (web app đã có sẵn `UnlockForm`)
-- ❌ Offline fallback riêng (PWA của web app đã lo)
+- **Tab `chrome://*` / `chrome-extension://*`**: `chrome.tabs.query` trả tab nhưng `sidePanel.open({tabId})` reject. → Dùng `{windowId}` (đã đúng) thay vì `{tabId}` để mở panel ở cấp window.
+- **Không có active tab** (ví dụ Detached DevTools là cửa sổ chính): `tab` undefined → log + no-op (đã đúng).
+- **Focus sau khi mở**: Chrome tự focus iframe sau load. Web app cần ensure editor không auto-focus chặn — verify bằng tay sau khi rebuild.
 
----
+Cải tiến nhỏ:
+- Thêm fallback `chrome.windows.getCurrent()` khi `chrome.tabs.query` trả mảng rỗng.
+- Log structured error code để dễ debug.
 
-## 1. Settings page (`chrome-extension/options.html` + `options.js` + `options.css`)
+Không tự test bằng Playwright (theo lựa chọn A của bạn) — kiểm thử thủ công sau khi cài lại extension.
 
-**UI** (dark theme `#0A0A0B`, khớp với sidepanel.css):
+## 2. Badge "H"/"S"/"L" trên toolbar icon (background.js)
 
-```text
-┌─────────────────────────────────────────┐
-│  Syrin Note — Side Panel Settings       │
-├─────────────────────────────────────────┤
-│  When I open the side panel, go to:     │
-│                                          │
-│  ( ) The homepage (random new note)     │
-│  (•) A specific note                    │
-│        Slug: [ my-default-note      ]   │
-│  ( ) The last note I had open           │
-│                                          │
-│  [ Save ]   ✓ Saved                     │
-└─────────────────────────────────────────┘
+- Định nghĩa `applyBadge(settings)`: text = `"H"`/`"S"`/`"L"`, background `#1e3a8a` (navy watercolor), color trắng.
+- Gọi `applyBadge` ở 3 điểm:
+  1. `chrome.runtime.onInstalled` — load settings từ `chrome.storage.sync` rồi set.
+  2. `chrome.runtime.onStartup` — tương tự.
+  3. `chrome.storage.onChanged` (filter `areaName === "sync"` và `changes.openMode`) — cập nhật realtime khi user save Settings.
+- Default `openMode: "home"` → badge `"H"` ngay sau cài.
+
+## 3. postMessage hardening (sidepanel.js + NotePage.tsx)
+
+Vấn đề hiện tại: web app post `syrin:slug` ngay khi `slug` đổi, nhưng nếu sidepanel.js chưa attach listener (race khi iframe load chậm) thì message rớt → `lastSlug` không update.
+
+**Side panel (`sidepanel.js`)**:
+- Attach `window.addEventListener("message", ...)` **trước** khi set `iframe.src` (hiện đang sau — đảo thứ tự).
+- Origin check đã có (`event.origin !== APP_ORIGIN`) — giữ.
+- Throttle ghi `chrome.storage.sync.set({lastSlug})` (chỉ ghi khi slug khác giá trị hiện tại — tránh quota `MAX_WRITE_OPERATIONS_PER_MINUTE = 120`).
+- `try/catch` quanh `chrome.storage.sync.set` (đã có) + thêm callback check `chrome.runtime.lastError`.
+- Reply lại web app `{type: "syrin:ack", slug}` để web app biết đã nhận (cho phép retry).
+
+**Web app (`NotePage.tsx`)**:
+- Hiện tại post 1 lần per slug change. Đổi thành: post → đợi `syrin:ack` trong 500ms → nếu không có, retry tối đa 3 lần (1s interval).
+- Listen `message` từ `event.source === window.parent` với check `event.data?.type === "syrin:ack"`.
+- Target origin: post với `"*"` là OK (data không nhạy cảm — chỉ slug), nhưng để chặt: detect parent origin từ `document.referrer` lần đầu, sau đó dùng origin đó.
+
+## 4. Settings E2E — Unit test (vitest)
+
+Theo lựa chọn A: chỉ test pure logic, mock `chrome.storage`.
+
+Tạo `chrome-extension/__tests__/options.test.ts` và `sidepanel.test.ts`. Vì code là plain JS không export, tách logic ra module được test:
+
+- Tạo `chrome-extension/lib/build-src.js` (CommonJS-compatible ESM): export `buildSrc({openMode, defaultSlug, lastSlug, appOrigin})`. Import từ `sidepanel.js` và test.
+- Tạo `chrome-extension/lib/validate-slug.js`: export `SLUG_RE`, `isValidSlug(s)`. Import từ cả `options.js` và `sidepanel.js`.
+
+Test cases:
+- `buildSrc`: home → `/?from=ext`, slug + valid → `/my-note?from=ext`, slug + invalid → fallback `/`, last + valid → `/last?from=ext`, last + empty → `/`.
+- `isValidSlug`: 11 cases (empty, too long 65, valid 1ch, dash/underscore, unicode reject, space reject, etc.).
+- `applyBadge` logic: pure function `badgeForMode(mode)` → "H"/"S"/"L".
+
+Add to `vitest.config.ts` include: `"chrome-extension/__tests__/**/*.test.{js,ts}"`.
+
+**Không** test thật `chrome.sidePanel.open` hay Alt+S trong CI (theo A).
+
+## 5. Chrome Web Store assets (watercolor navy)
+
+Style guide từ logo: watercolor xanh navy (#1e3a8a → #0f172a), nền trắng/kem, texture giấy, brush stroke organic. Không gradient AI sến.
+
+**Icons** (regen từ logo watercolor user gửi):
+- `imagegen--edit_image` từ `user-uploads://note_syrin_logo.png` → tạo bộ icon vuông có padding nhỏ, 4 size: 16/32/48/128. Lưu `chrome-extension/icons/icon-{size}.png`.
+
+**Store assets** (lưu `/mnt/documents/chrome-store/`):
+- `tile-440x280.png` — logo trung tâm + tagline "Notes in your side panel" — `imagegen--generate_image` premium quality.
+- `marquee-1400x560.png` — banner ngang, logo trái + 3 keyword bullet bên phải.
+- `promo-920x680.png` — square-ish promo với mockup side panel.
+- 5 screenshots `screenshot-{1..5}-1280x800.png`. Mỗi screenshot là composite của Chrome window mockup + side panel mở:
+  1. **Hero**: trang web bất kỳ + side panel show Editor mode
+  2. **Settings page**: options.html đã render
+  3. **Default slug**: side panel mở đúng note user chọn
+  4. **Markdown preview**: split editor/preview
+  5. **Lock/unlock**: encrypted note flow
+
+Workflow cho screenshots: dùng `browser--screenshot` lên preview URL → composite bằng skill `product-shot` (mesh gradient `arctic` để hợp watercolor navy) hoặc PIL script tự code. Vì chưa có Chrome browser thật với extension loaded, screenshot sẽ là **mockup** (web app fullscreen rồi crop dạng side panel 400×800).
+
+Output deliverables:
 ```
-
-**Storage** (`chrome.storage.sync`, sync giữa các máy):
-```js
-{
-  openMode: "home" | "slug" | "last",
-  defaultSlug: "string|empty",
-  lastSlug: "string|empty"  // mode "last" — chỉ ghi qua postMessage (xem dưới)
-}
+/mnt/documents/chrome-store/
+├── tile-440x280.png
+├── marquee-1400x560.png
+├── promo-920x680.png
+├── screenshot-1-hero.png
+├── screenshot-2-settings.png
+├── screenshot-3-default-slug.png
+├── screenshot-4-preview.png
+└── screenshot-5-lock.png
 ```
+Kèm `<presentation-artifact>` cho từng file để bạn download.
 
-**Validation slug**: dùng cùng regex của web app: `/^[a-zA-Z0-9_-]{1,64}$/`. Slug invalid → disable Save + báo lỗi inline.
+**Video YouTube**: bạn tự quay (lựa chọn B) — tôi chỉ cung cấp script gợi ý 20s trong README:
+1. (0-3s) Mở Chrome bất kỳ trang
+2. (3-5s) Bấm Alt+S → side panel slide in
+3. (5-12s) Gõ markdown, preview render real-time
+4. (12-17s) Mở Settings, set default slug
+5. (17-20s) Logo + "Syrin Note — Side Panel"
 
-**Đăng ký trong `manifest.json`**:
-```json
-"options_ui": { "page": "options.html", "open_in_tab": false }
-```
+## 6. Bump version + rebuild ZIP
 
-## 2. `sidepanel.js` đọc settings khi mở panel
+- `manifest.json`: `1.1.0` → `1.2.0`
+- `README.md`: changelog v1.2.0 (badge, postMessage retry, asset bundle, kiểm thử unit)
+- Rebuild `public/syrin-note-sidepanel.zip` qua `nix run nixpkgs#zip`
 
-Thay vì hard-code `src="https://note.syrin.online/?from=ext"`, dynamic build:
+## Files
 
-```js
-chrome.storage.sync.get(
-  { openMode: "home", defaultSlug: "", lastSlug: "" },
-  ({ openMode, defaultSlug, lastSlug }) => {
-    let path = "/";
-    if (openMode === "slug" && defaultSlug) path = `/${defaultSlug}`;
-    else if (openMode === "last" && lastSlug) path = `/${lastSlug}`;
-    iframe.src = `https://note.syrin.online${path}?from=ext`;
-  },
-);
-```
+**Create**:
+- `chrome-extension/lib/build-src.js`
+- `chrome-extension/lib/validate-slug.js`
+- `chrome-extension/__tests__/build-src.test.ts`
+- `chrome-extension/__tests__/validate-slug.test.ts`
+- `chrome-extension/__tests__/badge.test.ts`
+- `chrome-extension/icons/icon-{16,32,48,128}.png` (overwrite, watercolor version)
+- `/mnt/documents/chrome-store/*.png` (8 files)
 
-**Resume last-opened (mode "last")**: cần web app gửi `postMessage` mỗi khi slug đổi. Thêm 1 đoạn nhỏ trong `src/pages/NotePage.tsx` (chỉ chạy khi `from=ext`):
-
-```ts
-useEffect(() => {
-  if (!isExtensionContext) return;
-  try {
-    window.parent.postMessage({ type: "syrin:slug", slug }, "*");
-  } catch {}
-}, [slug, isExtensionContext]);
-```
-
-Và `sidepanel.js` lắng nghe:
-```js
-window.addEventListener("message", (e) => {
-  if (e.origin !== "https://note.syrin.online") return;
-  if (e.data?.type === "syrin:slug" && typeof e.data.slug === "string") {
-    chrome.storage.sync.set({ lastSlug: e.data.slug });
-  }
-});
-```
-
-## 3. Phím tắt Alt+S (`chrome.commands` + `background.js`)
-
-**`manifest.json`** thêm:
-```json
-"commands": {
-  "open-side-panel": {
-    "suggested_key": { "default": "Alt+S", "mac": "Alt+S" },
-    "description": "Open Syrin Note side panel"
-  }
-}
-```
-
-**`background.js`** thêm listener:
-```js
-chrome.commands.onCommand.addListener(async (cmd) => {
-  if (cmd !== "open-side-panel") return;
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab?.windowId != null) {
-    await chrome.sidePanel.open({ windowId: tab.windowId }).catch(console.error);
-  }
-});
-```
-
-User có thể tự đổi phím tại `chrome://extensions/shortcuts` nếu Alt+S xung đột.
-
-`Ctrl+K` mở Command Palette **bên trong iframe** đã work sẵn (xem `src/components/CommandPalette.tsx`) — không cần thêm gì.
-
-## 4. Web app: phát hiện `?from=ext`
-
-**`src/lib/ext-context.ts`** (file mới, tiny):
-```ts
-export const isExtensionContext = (() => {
-  if (typeof window === "undefined") return false;
-  try {
-    const p = new URLSearchParams(window.location.search);
-    if (p.get("from") === "ext") {
-      sessionStorage.setItem("syrin:from-ext", "1");
-      return true;
-    }
-    return sessionStorage.getItem("syrin:from-ext") === "1";
-  } catch { return false; }
-})();
-```
-(Lưu vào sessionStorage để các route sau khi navigate không mất context khi query param biến mất.)
-
-**`src/pages/Home.tsx`**: wrap `<InstallPrompt />` bằng `{!isExtensionContext && <InstallPrompt />}` — vì user đang trong extension rồi, prompt cài PWA là thừa.
-
-**`src/pages/NotePage.tsx`**: thêm useEffect postMessage slug (như đã ghi ở mục 2).
-
-## 5. Bump version + rebuild
-
-- `chrome-extension/manifest.json`: `"version": "1.1.0"`
-- `chrome-extension/README.md`: ghi chú v1.1.0 changelog + hướng dẫn re-load unpacked
-- Rebuild `public/syrin-note-sidepanel.zip`:
-  ```bash
-  rm -f public/syrin-note-sidepanel.zip
-  cd chrome-extension && nix run nixpkgs#zip -- -r ../public/syrin-note-sidepanel.zip .
-  ```
-
----
-
-## Danh sách file đụng đến
-
-**Tạo mới:**
-- `chrome-extension/options.html`
-- `chrome-extension/options.css`
-- `chrome-extension/options.js`
-- `src/lib/ext-context.ts`
-
-**Sửa:**
-- `chrome-extension/manifest.json` (version, commands, options_ui)
-- `chrome-extension/background.js` (commands listener)
-- `chrome-extension/sidepanel.js` (read storage, build src, listen postMessage)
-- `chrome-extension/sidepanel.html` (bỏ hard-code src, để JS set)
-- `chrome-extension/README.md` (changelog + Alt+S note)
-- `src/pages/Home.tsx` (gate InstallPrompt)
-- `src/pages/NotePage.tsx` (postMessage slug khi from=ext)
+**Edit**:
+- `chrome-extension/manifest.json` (version 1.2.0)
+- `chrome-extension/background.js` (badge logic, settings listener)
+- `chrome-extension/sidepanel.js` (attach listener trước iframe.src, ack reply, throttle)
+- `chrome-extension/options.js` (import shared validate-slug)
+- `chrome-extension/README.md` (changelog, video script, asset list)
+- `src/pages/NotePage.tsx` (postMessage retry + ack listener)
+- `vitest.config.ts` (include chrome-extension tests)
 - `public/syrin-note-sidepanel.zip` (rebuild)
 
-## Những thứ KHÔNG làm (xác nhận lại)
+## Không làm
 
-- Không sửa `_headers` CSP (đã đúng từ v1.0.0)
-- Không sửa `Privacy.tsx` (vẫn chính xác — sẽ thêm 1 dòng nhỏ về options page lưu trong chrome.storage)
-- Không touch crypto, auth, Yjs provider, service worker
-- Không re-implement command palette / lock trong extension
+- ❌ Playwright E2E load extension (theo lựa chọn A)
+- ❌ Tự quay video (theo lựa chọn B)
+- ❌ Đổi CSP/headers, crypto, Yjs, service worker
+- ❌ Thêm width adjustment (Chrome không có API)
+- ❌ Đổi business logic web app ngoài postMessage retry
 
-## Câu hỏi cuối (nếu có)
+## Câu hỏi xác nhận trước khi build
 
-Mode `"last"` cần postMessage từ web app — điều này nghĩa là **web app v1.1 phải deploy trước extension v1.1** thì mode "last" mới chạy được. Tôi sẽ ship cả 2 cùng lúc trong build mode này, nhưng nhớ: user đã cài extension v1.0 cũ cần update lên 1.1 mới thấy được Settings UI. Ok đúng kế hoạch?
+1. **Icon mới**: tôi sẽ regen từ logo watercolor → vuông có padding ~12%, nền trong suốt cho chỗ trống. OK chứ, hay giữ icon hiện tại?
+2. **`/mnt/documents/chrome-store/`**: bạn download và submit lên Web Store thủ công đúng không? (Không commit vào repo)
+3. **postMessage origin**: dùng `"*"` (đơn giản, slug không nhạy cảm) hay strict origin từ `document.referrer`?

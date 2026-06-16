@@ -201,14 +201,50 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   }, [slug, validSlug]);
 
   // When inside the Syrin Note Chrome extension side panel, tell the host
-  // which slug we're on so it can remember the last-opened note.
+  // which slug we're on so it can remember the last-opened note. We retry
+  // up to 3 times (1s apart) if the host doesn't ack within 500ms — covers
+  // the race where the side panel's listener attaches after our first post.
   useEffect(() => {
     if (!isExtensionContext || !validSlug || embedSlug) return;
+    if (typeof window === "undefined" || window.parent === window) return;
+    // Strict origin: derive from document.referrer (the extension host).
+    // Fall back to "*" if referrer is empty (some Chromium builds strip it).
+    let targetOrigin = "*";
     try {
-      window.parent.postMessage({ type: "syrin:slug", slug }, "*");
+      if (document.referrer) targetOrigin = new URL(document.referrer).origin;
     } catch {
-      // ignore
+      /* keep "*" */
     }
+    let acked = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== window.parent) return;
+      const d = e.data;
+      if (d && typeof d === "object" && d.type === "syrin:ack" && d.slug === slug) {
+        acked = true;
+        if (timer) clearTimeout(timer);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    const sendOnce = () => {
+      try {
+        window.parent.postMessage({ type: "syrin:slug", slug }, targetOrigin);
+      } catch {
+        /* ignore */
+      }
+      attempts += 1;
+      timer = setTimeout(() => {
+        if (acked) return;
+        if (attempts >= 3) return;
+        sendOnce();
+      }, attempts === 1 ? 500 : 1000);
+    };
+    sendOnce();
+    return () => {
+      window.removeEventListener("message", onMessage);
+      if (timer) clearTimeout(timer);
+    };
   }, [slug, validSlug, embedSlug]);
 
 
