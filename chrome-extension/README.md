@@ -2,13 +2,19 @@
 
 A Manifest V3 Chrome extension that opens [note.syrin.online](https://note.syrin.online) in Chrome's side panel.
 
-## What's new in v1.2.0
+## What's new in v1.3.0
 
-- **Toolbar badge** — the icon now shows `H` / `S` / `L` so you know what the side panel will open (homepage / specific slug / last note). Updates live when you save Settings.
-- **Reliable last-note sync** — postMessage between the web app and side panel now uses an ack + retry handshake. The `lastSlug` write is throttled and validated.
-- **Stronger Alt+S** — falls back to `chrome.windows.getCurrent()` when no active tab is reported (e.g. detached devtools focused).
-- **Strict origin** — the web app posts to the parent origin derived from `document.referrer` instead of `"*"`.
-- **Unit tests** — `chrome-extension/__tests__/` covers `buildSrc`, `badgeForMode`, and `isValidSlug` (29 tests). Run with `bunx vitest run chrome-extension/__tests__`.
+- **Unified watercolor "N" logo** — toolbar icons (16/32/48/128) and all Web Store promo assets are generated from the same source file (`icons/source.png`). Run `bash scripts/build-store-assets.sh` to rebuild.
+- **Debug mode** — toggle in Settings. Adds a debug bar at the bottom of the side panel showing `lastSlug`, postMessage acks, origin rejections, and storage writes. Web app honours `localStorage.syrin:debug = "1"` for retry logging.
+- **Playwright E2E** for the extension — `e2e-extension/` covers Alt+S → side panel URL by mode, Settings persistence + reload, and lastSlug sync from postMessage. Run with `bunx playwright test --config=e2e-extension/playwright.config.ts` (local headed Chromium).
+- **JSDOM tests for `options.js`** — 11 cases covering defaults, validation, mode switching, and save success/failure.
+- **STORE_LISTING.md** — copy-paste–ready Chrome Web Store fields (title, description, permission justifications, screenshots, video script, privacy answers).
+
+## v1.2.0
+
+- Toolbar badge `H` / `S` / `L` shows what the panel will open.
+- postMessage ack + retry handshake with strict-origin targeting.
+- Alt+S falls back to `chrome.windows.getCurrent()`.
 
 ## v1.1.0
 
