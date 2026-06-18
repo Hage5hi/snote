@@ -24,6 +24,9 @@ interface ChromeMock {
   runtime: { lastError: { message: string } | null };
 }
 
+// @ts-expect-error - plain JS module
+import { initOptions } from "../options.js";
+
 let stored: Record<string, unknown> = {};
 let setShouldFail = false;
 let chromeMock: ChromeMock;
@@ -56,14 +59,12 @@ async function loadOptions(initial: Record<string, unknown> = {}) {
     },
     runtime: { lastError: null },
   };
-  // Strip the <script> tag — we import the module directly below.
   document.documentElement.innerHTML = HTML.replace(
     /<script[\s\S]*?<\/script>/,
     "",
   );
   (globalThis as unknown as { chrome: ChromeMock }).chrome = chromeMock;
-  vi.resetModules();
-  await import(/* @vite-ignore */ `../options.js?bust=${Math.random()}`);
+  initOptions();
   await Promise.resolve();
 }
 
