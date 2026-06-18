@@ -63,7 +63,7 @@ async function loadOptions(initial: Record<string, unknown> = {}) {
   );
   (globalThis as unknown as { chrome: ChromeMock }).chrome = chromeMock;
   vi.resetModules();
-  await import(`../options.js?bust=${Math.random()}`);
+  await import(/* @vite-ignore */ `../options.js?bust=${Math.random()}`);
   await Promise.resolve();
 }
 
