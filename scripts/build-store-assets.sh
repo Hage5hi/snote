@@ -21,9 +21,9 @@ MAGICK="nix run nixpkgs#imagemagick --"
 $MAGICK \
   -size 440x280 xc:"$BG" \
   \( "$SRC" -resize 220x220 \) -gravity west -geometry +20+0 -composite \
-  -font Times-Bold -pointsize 38 -fill "$INK" \
+  -font Liberation-Serif-Bold -pointsize 38 -fill "$INK" \
   -gravity east -annotate +30+-18 "Syrin Note" \
-  -font Helvetica -pointsize 14 -fill "$INK_SOFT" \
+  -font Liberation-Sans -pointsize 14 -fill "$INK_SOFT" \
   -gravity east -annotate +30+30 "Side panel markdown" \
   "$OUT/tile-440x280.png"
 
@@ -31,11 +31,11 @@ $MAGICK \
 $MAGICK \
   -size 1400x560 xc:"$BG" \
   \( "$SRC" -resize 480x480 \) -gravity west -geometry +60+0 -composite \
-  -font Times-Bold -pointsize 96 -fill "$INK" \
+  -font Liberation-Serif-Bold -pointsize 96 -fill "$INK" \
   -gravity west -annotate +580+-30 "Syrin Note" \
-  -font Helvetica -pointsize 32 -fill "$INK_SOFT" \
+  -font Liberation-Sans -pointsize 32 -fill "$INK_SOFT" \
   -gravity west -annotate +580+70 "Markdown notes in your side panel" \
-  -font Helvetica -pointsize 22 -fill "$INK_SOFT" \
+  -font Liberation-Sans -pointsize 22 -fill "$INK_SOFT" \
   -gravity west -annotate +580+130 "Press Alt+S anywhere in Chrome" \
   "$OUT/marquee-1400x560.png"
 
@@ -43,9 +43,9 @@ $MAGICK \
 $MAGICK \
   -size 920x680 xc:"$BG" \
   \( "$SRC" -resize 280x280 \) -gravity north -geometry +0+30 -composite \
-  -font Times-Bold -pointsize 56 -fill "$INK" \
+  -font Liberation-Serif-Bold -pointsize 56 -fill "$INK" \
   -gravity north -annotate +0+340 "Syrin Note — Side Panel" \
-  -font Helvetica -pointsize 22 -fill "$INK_SOFT" \
+  -font Liberation-Sans -pointsize 22 -fill "$INK_SOFT" \
   -gravity north -annotate +0+430 "• Write while you read" \
   -gravity north -annotate +0+470 "• Open with Alt+S" \
   -gravity north -annotate +0+510 "• Markdown + live preview" \
@@ -61,13 +61,13 @@ make_screenshot() {
   $MAGICK \
     -size 1280x800 xc:"$BG" \
     \( "$SRC" -resize 180x180 \) -gravity northwest -geometry +60+60 -composite \
-    -font Times-Bold -pointsize 48 -fill "$INK" \
+    -font Liberation-Serif-Bold -pointsize 48 -fill "$INK" \
     -gravity northwest -annotate +280+110 "$title" \
-    -font Helvetica -pointsize 22 -fill "$INK_SOFT" \
+    -font Liberation-Sans -pointsize 22 -fill "$INK_SOFT" \
     -gravity northwest -annotate +280+180 "$sub" \
     -fill "#FFFFFF" -stroke "$INK_SOFT" -strokewidth 1 \
     -draw "roundrectangle 60,300 1220,740 12,12" \
-    -font Helvetica -pointsize 18 -fill "$INK_SOFT" \
+    -font Liberation-Sans -pointsize 18 -fill "$INK_SOFT" \
     -gravity south -annotate +0+30 "syrin-note.lovable.app  ·  Alt+S to open" \
     "$OUT/$file"
 }
