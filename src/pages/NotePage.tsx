@@ -207,8 +207,17 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   useEffect(() => {
     if (!isExtensionContext || !validSlug || embedSlug) return;
     if (typeof window === "undefined" || window.parent === window) return;
+    const debug = (() => {
+      try {
+        return localStorage.getItem("syrin:debug") === "1";
+      } catch {
+        return false;
+      }
+    })();
+    const dlog = (...args: unknown[]) => {
+      if (debug) console.log("[syrin-note][debug][web]", ...args);
+    };
     // Strict origin: derive from document.referrer (the extension host).
-    // Fall back to "*" if referrer is empty (some Chromium builds strip it).
     let targetOrigin = "*";
     try {
       if (document.referrer) targetOrigin = new URL(document.referrer).origin;
@@ -223,6 +232,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       const d = e.data;
       if (d && typeof d === "object" && d.type === "syrin:ack" && d.slug === slug) {
         acked = true;
+        dlog("ack received", slug, "after attempts=", attempts);
         if (timer) clearTimeout(timer);
       }
     };
@@ -230,13 +240,17 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const sendOnce = () => {
       try {
         window.parent.postMessage({ type: "syrin:slug", slug }, targetOrigin);
-      } catch {
-        /* ignore */
+        dlog("posted slug", slug, "→", targetOrigin, "attempt", attempts + 1);
+      } catch (err) {
+        dlog("post failed", err);
       }
       attempts += 1;
       timer = setTimeout(() => {
         if (acked) return;
-        if (attempts >= 3) return;
+        if (attempts >= 3) {
+          dlog("giving up after 3 attempts");
+          return;
+        }
         sendOnce();
       }, attempts === 1 ? 500 : 1000);
     };
