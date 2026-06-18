@@ -1,4 +1,7 @@
 import { badgeForMode } from "./lib/build-src.js";
+import { dlog, initDebugFromStorage } from "./lib/debug.js";
+
+initDebugFromStorage();
 
 const BADGE_BG = "#1e3a8a"; // watercolor navy
 
@@ -10,6 +13,7 @@ function applyBadge(openMode) {
       chrome.action.setBadgeTextColor({ color: "#FFFFFF" });
     }
     chrome.action.setBadgeText({ text });
+    dlog("badge set", text);
   } catch (err) {
     console.error("[syrin-note] applyBadge failed", err);
   }
@@ -25,7 +29,6 @@ function refreshBadgeFromStorage() {
   }
 }
 
-// Open the side panel when the toolbar action is clicked.
 chrome.runtime.onInstalled.addListener(() => {
   try {
     chrome.sidePanel
@@ -41,7 +44,6 @@ chrome.runtime.onStartup.addListener(() => {
   refreshBadgeFromStorage();
 });
 
-// Update badge live whenever the user saves Settings.
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "sync") return;
   if (changes.openMode) {
@@ -49,8 +51,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   }
 });
 
-// Alt+S → open side panel in current window. Falls back to chrome.windows
-// if no active tab is reported (e.g. detached devtools focused).
+// Alt+S → open side panel in current window.
 chrome.commands.onCommand.addListener(async (command) => {
   if (command !== "open-side-panel") return;
   try {
@@ -66,6 +67,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       console.warn("[syrin-note] no window to open side panel in");
       return;
     }
+    dlog("Alt+S → open side panel windowId=", windowId);
     await chrome.sidePanel.open({ windowId });
   } catch (err) {
     console.error("[syrin-note] open side panel failed", err?.message || err);

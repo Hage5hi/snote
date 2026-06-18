@@ -72,3 +72,32 @@ iframe#app {
 }
 .fallback button:hover { background: #e5e5e7; }
 .fallback a { color: #f5f5f7; text-decoration: underline; }
+
+.debug-bar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 10;
+  max-height: 40vh;
+  background: rgba(10,10,11,0.96);
+  border-top: 1px solid #1e3a8a;
+  color: #e5e5e7;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  display: flex; flex-direction: column;
+}
+.debug-bar header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.debug-bar header strong { color: #93c5fd; }
+.debug-bar header span { flex: 1; color: #a1a1aa; }
+.debug-bar header button {
+  background: transparent; color: #e5e5e7;
+  border: 1px solid rgba(255,255,255,0.15);
+  padding: 2px 8px; font: inherit; cursor: pointer;
+}
+.debug-bar ol {
+  margin: 0; padding: 6px 10px; list-style: none;
+  overflow: auto; flex: 1;
+}
+.debug-bar li { padding: 2px 0; white-space: pre-wrap; word-break: break-all; }

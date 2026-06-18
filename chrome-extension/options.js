@@ -1,10 +1,11 @@
 import { isValidSlug } from "./lib/validate-slug.js";
 
-const DEFAULTS = { openMode: "home", defaultSlug: "" };
+const DEFAULTS = { openMode: "home", defaultSlug: "", debug: false };
 
 const form = document.getElementById("settings");
 const slugInput = document.getElementById("defaultSlug");
 const slugError = document.getElementById("slugError");
+const debugInput = document.getElementById("debug");
 const saveBtn = document.getElementById("save");
 const status = document.getElementById("status");
 
@@ -41,6 +42,7 @@ chrome.storage.sync.get(DEFAULTS, (settings) => {
   if (radio) radio.checked = true;
   else form.querySelector('input[name="openMode"][value="home"]').checked = true;
   slugInput.value = settings.defaultSlug || "";
+  debugInput.checked = !!settings.debug;
   validate();
 });
 
@@ -59,7 +61,11 @@ form.addEventListener("submit", (e) => {
   const mode = currentMode();
   const slug = slugInput.value.trim();
   chrome.storage.sync.set(
-    { openMode: mode, defaultSlug: mode === "slug" ? slug : "" },
+    {
+      openMode: mode,
+      defaultSlug: mode === "slug" ? slug : "",
+      debug: !!debugInput.checked,
+    },
     () => {
       if (chrome.runtime.lastError) {
         status.textContent = "✗ Save failed";
