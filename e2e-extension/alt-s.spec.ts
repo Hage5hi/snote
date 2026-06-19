@@ -1,10 +1,15 @@
 import { test, expect, inSW } from "./fixtures/extension";
+import type { Page, Worker } from "@playwright/test";
 
 // Drives the same code path Alt+S triggers: chrome.sidePanel.open({windowId}).
-// Verifies the side panel opens with the URL computed from buildSrc() for
-// each openMode.
+// In addition to URL correctness, this spec asserts that:
+//   - the side panel page becomes the focused document,
+//   - the iframe receives focus (or is focusable via Tab),
+//   - Tab/Shift+Tab keyboard navigation reaches the expected interactive
+//     elements (fallback "Open in new tab" button and debug controls when
+//     visible) without trapping focus on the loader.
 
-async function setSettings(sw: import("@playwright/test").Worker, settings: Record<string, unknown>) {
+async function setSettings(sw: Worker, settings: Record<string, unknown>) {
   await sw.evaluate(
     (s) =>
       new Promise<void>((resolve) => {
@@ -18,51 +23,117 @@ async function setSettings(sw: import("@playwright/test").Worker, settings: Reco
   );
 }
 
-test("opens to homepage by default (H badge)", async ({ context, serviceWorker, extensionId }) => {
+async function openPanelAndGet(
+  context: import("@playwright/test").BrowserContext,
+  sw: Worker,
+  extensionId: string,
+): Promise<Page> {
+  await inSW(sw, async () => {
+    // @ts-expect-error chrome global in SW
+    const win = await chrome.windows.getCurrent();
+    // @ts-expect-error chrome global in SW
+    await chrome.sidePanel.open({ windowId: win.id });
+  });
+  const prefix = `chrome-extension://${extensionId}/sidepanel.html`;
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    const found = context.pages().find((p) => p.url().startsWith(prefix));
+    if (found) return found;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error("side panel did not appear within 8s");
+}
+
+async function assertPanelFocusable(panel: Page) {
+  await panel.bringToFront();
+  // Document must be focusable (not detached/hidden).
+  const hasFocus = await panel.evaluate(() => document.hasFocus());
+  expect(hasFocus, "side panel document has focus").toBeTruthy();
+
+  // Iframe is in the tab order.
+  const iframeTabIndex = await panel
+    .locator("iframe#app")
+    .evaluate((el) => (el as HTMLIFrameElement).tabIndex);
+  expect(iframeTabIndex).toBeGreaterThanOrEqual(0);
+
+  // Focus the iframe explicitly and verify activeElement points at it.
+  await panel.locator("iframe#app").focus();
+  const activeIsIframe = await panel.evaluate(
+    () => document.activeElement?.tagName?.toLowerCase() === "iframe",
+  );
+  expect(activeIsIframe, "iframe receives focus").toBeTruthy();
+}
+
+async function assertKeyboardNavReachesFallback(panel: Page) {
+  // Force the fallback button to be reachable by un-hiding it for the
+  // assertion (the timeout-based flow normally takes 8s). We're verifying
+  // that when the fallback IS visible, keyboard nav lands on it.
+  await panel.evaluate(() => {
+    const fb = document.getElementById("fallback");
+    if (fb) (fb as HTMLElement).hidden = false;
+  });
+  await panel.locator("body").focus();
+  // Tab forward until activeElement.id === "open-tab", up to 6 hops.
+  let landedOnButton = false;
+  for (let i = 0; i < 6; i++) {
+    await panel.keyboard.press("Tab");
+    const id = await panel.evaluate(() => document.activeElement?.id ?? "");
+    if (id === "open-tab") {
+      landedOnButton = true;
+      break;
+    }
+  }
+  expect(landedOnButton, "Tab navigation reaches fallback button").toBeTruthy();
+}
+
+test("homepage mode (H): correct URL, focus, keyboard nav", async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
   await setSettings(serviceWorker, { openMode: "home" });
-  await inSW(serviceWorker, async () => {
-    // @ts-expect-error chrome global in SW
-    const win = await chrome.windows.getCurrent();
-    // @ts-expect-error chrome global in SW
-    await chrome.sidePanel.open({ windowId: win.id });
-  });
-  const page = await context.waitForEvent("page", { timeout: 10_000 }).catch(() => null);
-  // Side panel pages don't always emit "page"; fall back to scanning.
-  const pages = page ? [page] : context.pages();
-  const panel = pages.find((p) => p.url().startsWith(`chrome-extension://${extensionId}/sidepanel.html`));
-  expect(panel, "side panel page exists").toBeTruthy();
-  const iframeSrc = await panel!.locator("iframe#app").getAttribute("src");
+  const panel = await openPanelAndGet(context, serviceWorker, extensionId);
+  const iframeSrc = await panel.locator("iframe#app").getAttribute("src");
   expect(iframeSrc).toBe("https://note.syrin.online/?from=ext");
+  await assertPanelFocusable(panel);
+  await assertKeyboardNavReachesFallback(panel);
 });
 
-test("opens to specific slug (S badge)", async ({ context, serviceWorker, extensionId }) => {
+test("specific slug mode (S): correct URL, focus, keyboard nav", async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
   await setSettings(serviceWorker, { openMode: "slug", defaultSlug: "my-note" });
-  await inSW(serviceWorker, async () => {
-    // @ts-expect-error chrome global in SW
-    const win = await chrome.windows.getCurrent();
-    // @ts-expect-error chrome global in SW
-    await chrome.sidePanel.open({ windowId: win.id });
-  });
-  const panel = context
-    .pages()
-    .find((p) => p.url().startsWith(`chrome-extension://${extensionId}/sidepanel.html`));
-  expect(panel).toBeTruthy();
-  const iframeSrc = await panel!.locator("iframe#app").getAttribute("src");
+  const panel = await openPanelAndGet(context, serviceWorker, extensionId);
+  const iframeSrc = await panel.locator("iframe#app").getAttribute("src");
   expect(iframeSrc).toBe("https://note.syrin.online/my-note?from=ext");
+  await assertPanelFocusable(panel);
+  await assertKeyboardNavReachesFallback(panel);
 });
 
-test("opens to last slug (L badge)", async ({ context, serviceWorker, extensionId }) => {
-  await setSettings(serviceWorker, { openMode: "last", lastSlug: "yesterday" });
-  await inSW(serviceWorker, async () => {
-    // @ts-expect-error chrome global in SW
-    const win = await chrome.windows.getCurrent();
-    // @ts-expect-error chrome global in SW
-    await chrome.sidePanel.open({ windowId: win.id });
+test("last opened mode (L): correct URL, focus, keyboard nav, debug controls reachable", async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  await setSettings(serviceWorker, {
+    openMode: "last",
+    lastSlug: "yesterday",
+    debug: true,
   });
-  const panel = context
-    .pages()
-    .find((p) => p.url().startsWith(`chrome-extension://${extensionId}/sidepanel.html`));
-  expect(panel).toBeTruthy();
-  const iframeSrc = await panel!.locator("iframe#app").getAttribute("src");
+  const panel = await openPanelAndGet(context, serviceWorker, extensionId);
+  const iframeSrc = await panel.locator("iframe#app").getAttribute("src");
   expect(iframeSrc).toBe("https://note.syrin.online/yesterday?from=ext");
+  await assertPanelFocusable(panel);
+
+  // Debug bar is visible because debug=true; copy/clear/export buttons must
+  // be in the tab order.
+  await expect(panel.locator("#debug-bar")).toBeVisible();
+  for (const id of ["debug-copy", "debug-clear", "debug-export"]) {
+    const tabIndex = await panel
+      .locator(`#${id}`)
+      .evaluate((el) => (el as HTMLButtonElement).tabIndex);
+    expect(tabIndex, `#${id} is keyboard reachable`).toBeGreaterThanOrEqual(0);
+  }
 });

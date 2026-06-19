@@ -3,8 +3,10 @@
 // (used by the side panel debug bar). When false, it's a no-op.
 
 const PREFIX = "[syrin-note][debug]";
+const BUFFER_MAX = 200;
 let enabled = false;
 const subscribers = new Set();
+const buffer = []; // ring buffer of {t, msg}
 
 export function setDebug(value) {
   enabled = !!value;
@@ -17,6 +19,11 @@ export function isDebug() {
 export function onDebugLog(fn) {
   subscribers.add(fn);
   return () => subscribers.delete(fn);
+}
+
+// Snapshot the current in-memory log buffer (oldest → newest).
+export function snapshotDebugLog() {
+  return buffer.slice();
 }
 
 export function dlog(...args) {
@@ -39,6 +46,8 @@ export function dlog(...args) {
       })
       .join(" "),
   };
+  buffer.push(line);
+  while (buffer.length > BUFFER_MAX) buffer.shift();
   for (const fn of subscribers) {
     try {
       fn(line);

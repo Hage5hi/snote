@@ -1,0 +1,78 @@
+name: Extension E2E (Playwright)
+
+# Runs the chrome-extension Playwright suite against the unpacked extension.
+# Triggers only on changes that can affect the extension, so it doesn't slow
+# down unrelated PRs. Uses xvfb because the persistent-context launch needs a
+# headed Chromium (MV3 service workers + chrome.sidePanel APIs).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "chrome-extension/**"
+      - "e2e-extension/**"
+      - ".github/workflows/extension-e2e.yml"
+  pull_request:
+    paths:
+      - "chrome-extension/**"
+      - "e2e-extension/**"
+      - ".github/workflows/extension-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  extension-e2e:
+    name: chrome-extension E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Install Playwright browsers (Chromium only)
+        run: bunx playwright install --with-deps chromium
+      - name: Run extension E2E under xvfb
+        run: |
+          xvfb-run -a --server-args="-screen 0 1280x800x24" \
+            bunx playwright test --config=e2e-extension/playwright.config.ts \
+            --reporter=list,html
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-e2e-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  store-assets:
+    # Regenerates the Chrome Web Store screenshots, tile, marquee, promo and
+    # video thumbnail from the live manifest version + STORE_LISTING.md, so
+    # listing assets never drift behind the shipped extension. Runs only
+    # when the extension or its listing changes.
+    name: Sync store assets with build
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[store]') ||
+      github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Build store assets
+        env:
+          STORE_ASSETS_OUT: ${{ github.workspace }}/store-assets-out
+        run: |
+          mkdir -p "$STORE_ASSETS_OUT"
+          bash scripts/build-store-assets.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: chrome-store-assets
+          path: ${{ github.workspace }}/store-assets-out
+          retention-days: 30
+          if-no-files-found: error
+
