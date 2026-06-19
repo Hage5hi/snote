@@ -46,6 +46,39 @@ debugClear?.addEventListener("click", () => {
   if (debugLog) debugLog.innerHTML = "";
 });
 
+// One-click export: download the in-memory debug buffer as JSON.
+// Captures ack/retry/origin-rejection/lastSlug entries dlog() recorded.
+debugExport?.addEventListener("click", () => {
+  try {
+    const manifestVersion =
+      (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown";
+    const payload = {
+      kind: "syrin-note-debug-log",
+      version: 1,
+      extensionVersion: manifestVersion,
+      exportedAt: new Date().toISOString(),
+      lastSlug: lastSavedSlug || null,
+      iframeSrc: iframe?.src || null,
+      lines: snapshotDebugLog(),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const ts = new Date().toISOString().replace(/[:.]/g, "-");
+    a.href = url;
+    a.download = `syrin-note-debug-${ts}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    dlog("debug log exported", payload.lines.length + " lines");
+  } catch (err) {
+    console.error("[syrin-note] debug export failed", err);
+  }
+});
+
 // Listener attached BEFORE iframe.src to avoid races.
 window.addEventListener("message", (event) => {
   if (event.origin !== APP_ORIGIN) {
