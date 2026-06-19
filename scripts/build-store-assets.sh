@@ -11,7 +11,7 @@
 set -euo pipefail
 
 SRC="chrome-extension/icons/source.png"
-OUT="/mnt/documents/chrome-store"
+OUT="${STORE_ASSETS_OUT:-/mnt/documents/chrome-store}"
 BG="#F5F1E8"            # cream paper
 INK="#1e3a8a"           # watercolor navy
 INK_SOFT="#475569"      # body text
