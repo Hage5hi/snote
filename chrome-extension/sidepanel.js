@@ -12,6 +12,7 @@ const debugBar = document.getElementById("debug-bar");
 const debugLast = document.getElementById("debug-last");
 const debugLog = document.getElementById("debug-log");
 const debugCopy = document.getElementById("debug-copy");
+const debugExport = document.getElementById("debug-export");
 const debugClear = document.getElementById("debug-clear");
 
 let loaded = false;
