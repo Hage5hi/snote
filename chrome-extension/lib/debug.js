@@ -46,6 +46,8 @@ export function dlog(...args) {
       })
       .join(" "),
   };
+  buffer.push(line);
+  while (buffer.length > BUFFER_MAX) buffer.shift();
   for (const fn of subscribers) {
     try {
       fn(line);
