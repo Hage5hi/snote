@@ -76,10 +76,3 @@ jobs:
           retention-days: 30
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: chrome-store-assets
-          path: /mnt/documents/chrome-store/
-          retention-days: 30
-          if-no-files-found: error
-
