@@ -1,6 +1,13 @@
 import { buildSrc, badgeForMode } from "./lib/build-src.js";
 import { isValidSlug } from "./lib/validate-slug.js";
 import { dlog, isDebug, onDebugLog, setDebug, snapshotDebugLog } from "./lib/debug.js";
+import { redactPayload } from "./lib/redact.js";
+import {
+  EXPORT_KIND,
+  EXPORT_VERSION,
+  expectedFilename,
+  validateExport,
+} from "./lib/export-schema.js";
 
 const APP_ORIGIN = "https://note.syrin.online";
 
@@ -47,82 +54,44 @@ debugClear?.addEventListener("click", () => {
   if (debugLog) debugLog.innerHTML = "";
 });
 
-// Mask a slug-like token: keep first/last char, replace middle with •••.
-// Empty/short values become "•••" so length isn't leaked usefully.
-function maskToken(s) {
-  if (!s) return "";
-  const str = String(s);
-  if (str.length <= 2) return "•••";
-  return `${str[0]}•••${str[str.length - 1]}`;
-}
 
-// Redact a single log line's message. Strategy: keep the leading verb/keyword
-// (e.g. "ack sent", "loading", "origin rejected") but mask any URL to its
-// origin and mask trailing slug/identifier tokens. Conservative — when in
-// doubt, mask.
-function redactLine(msg) {
-  let out = String(msg);
-  // URLs → origin only.
-  out = out.replace(/https?:\/\/[^\s"']+/g, (url) => {
-    try {
-      return new URL(url).origin + "/…";
-    } catch {
-      return "<url>";
-    }
-  });
-  // Known prefixes followed by a slug-like token.
-  out = out.replace(
-    /\b(ack sent|storage write ok|storage write FAILED|lastSlug:|slug:)\s+(\S+)/g,
-    (_, prefix, tok) => `${prefix} ${maskToken(tok)}`,
-  );
-  return out;
-}
 
-function redactPayload(payload) {
-  return {
-    ...payload,
-    redacted: true,
-    lastSlug: payload.lastSlug ? maskToken(payload.lastSlug) : null,
-    iframeSrc: payload.iframeSrc
-      ? (() => {
-          try {
-            return new URL(payload.iframeSrc).origin + "/…";
-          } catch {
-            return "<url>";
-          }
-        })()
-      : null,
-    lines: payload.lines.map((l) => ({ t: l.t, msg: redactLine(l.msg) })),
-  };
-}
 
 // One-click export: download the in-memory debug buffer as JSON.
 // Captures ack/retry/origin-rejection/lastSlug entries dlog() recorded.
 // When the "redact" checkbox is on, slugs/URLs/identifiers are masked
-// before the file is written so the JSON is safe to share in bug reports.
+// (see lib/redact.js) before the file is written so the JSON is safe to
+// share in bug reports. Both shapes are validated against the schema in
+// lib/export-schema.js so consumers always get the same fields.
 debugExport?.addEventListener("click", () => {
   try {
     const manifestVersion =
       (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown";
+    const exportedAt = new Date().toISOString();
     const raw = {
-      kind: "syrin-note-debug-log",
-      version: 1,
+      kind: EXPORT_KIND,
+      version: EXPORT_VERSION,
       extensionVersion: manifestVersion,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       lastSlug: lastSavedSlug || null,
       iframeSrc: iframe?.src || null,
       lines: snapshotDebugLog(),
     };
     const redact = !!debugRedact?.checked;
-    const payload = redact ? redactPayload(raw) : raw;
+    const payload = redact ? redactPayload(raw) : { ...raw, redacted: false };
+    const verdict = validateExport(payload);
+    if (!verdict.ok) {
+      console.error("[syrin-note] export schema validation failed", verdict.errors);
+      dlog("export blocked: schema invalid", verdict.errors.join("; "));
+      return;
+    }
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: "application/json",
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const ts = new Date().toISOString().replace(/[:.]/g, "-");
     a.href = url;
-    a.download = `syrin-note-debug${redact ? "-redacted" : ""}-${ts}.json`;
+    a.download = expectedFilename({ redacted: redact, isoTimestamp: exportedAt });
     document.body.appendChild(a);
     a.click();
     a.remove();
