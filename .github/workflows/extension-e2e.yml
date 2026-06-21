@@ -20,6 +20,10 @@ on:
   workflow_dispatch:
 
 jobs:
+  # NOTE: To require this check before merging into `main`, mark the
+  # "chrome-extension E2E" job as a required status check in
+  # Settings → Branches → Branch protection rules → main.
+  # The required-check job below is the stable name to pin.
   extension-e2e:
     name: chrome-extension E2E
     runs-on: ubuntu-latest
@@ -35,15 +39,21 @@ jobs:
       - name: Run extension E2E under xvfb
         run: |
           xvfb-run -a --server-args="-screen 0 1280x800x24" \
-            bunx playwright test --config=e2e-extension/playwright.config.ts \
-            --reporter=list,html
-      - if: always()
+            bunx playwright test --config=e2e-extension/playwright.config.ts
+      - name: Upload Playwright HTML report (on failure)
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: extension-e2e-report
-          path: |
-            playwright-report/
-            test-results/
+          name: extension-e2e-html-report
+          path: playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Upload Playwright traces, screenshots & videos (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extension-e2e-test-results
+          path: test-results/
           retention-days: 14
           if-no-files-found: ignore
 

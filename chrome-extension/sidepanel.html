@@ -34,6 +34,10 @@
         <span id="debug-last">lastSlug: —</span>
         <button id="debug-copy" type="button">copy</button>
         <button id="debug-export" type="button" title="Download debug log as JSON">export</button>
+        <label class="debug-redact" title="Redact slugs, URLs and error paths from the exported JSON">
+          <input id="debug-redact" type="checkbox" />
+          redact
+        </label>
         <button id="debug-clear" type="button">clear</button>
       </header>
       <ol id="debug-log"></ol>
