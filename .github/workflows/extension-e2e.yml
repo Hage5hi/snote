@@ -44,7 +44,9 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: extension-e2e-html-report
+          # Include run + attempt so re-runs of the same job don't collide,
+          # and a failing retry's report is preserved alongside the original.
+          name: extension-e2e-html-report-run${{ github.run_number }}-attempt${{ github.run_attempt }}
           path: playwright-report/
           retention-days: 14
           if-no-files-found: ignore
@@ -52,7 +54,11 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: extension-e2e-test-results
+          # Playwright writes per-test subfolders under test-results/ named
+          # after the failing test title (e.g. "redacted-export-…-masks-…").
+          # We keep that structure and just stamp run/attempt on the artifact
+          # name so a specific failing retry attempt is easy to find.
+          name: extension-e2e-test-results-run${{ github.run_number }}-attempt${{ github.run_attempt }}
           path: test-results/
           retention-days: 14
           if-no-files-found: ignore
