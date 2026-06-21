@@ -96,6 +96,11 @@ iframe#app {
   border: 1px solid rgba(255,255,255,0.15);
   padding: 2px 8px; font: inherit; cursor: pointer;
 }
+.debug-bar .debug-redact {
+  display: inline-flex; align-items: center; gap: 4px;
+  color: #a1a1aa; font-size: 11px; cursor: pointer;
+}
+.debug-bar .debug-redact input { margin: 0; }
 .debug-bar ol {
   margin: 0; padding: 6px 10px; list-style: none;
   overflow: auto; flex: 1;
