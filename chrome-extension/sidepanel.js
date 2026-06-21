@@ -1,6 +1,13 @@
 import { buildSrc, badgeForMode } from "./lib/build-src.js";
 import { isValidSlug } from "./lib/validate-slug.js";
 import { dlog, isDebug, onDebugLog, setDebug, snapshotDebugLog } from "./lib/debug.js";
+import { redactPayload } from "./lib/redact.js";
+import {
+  EXPORT_KIND,
+  EXPORT_VERSION,
+  expectedFilename,
+  validateExport,
+} from "./lib/export-schema.js";
 
 const APP_ORIGIN = "https://note.syrin.online";
 
