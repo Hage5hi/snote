@@ -46,12 +46,49 @@ function updateDebugLast(slug) {
 
 onDebugLog(renderDebugLine);
 
+// Build the export payload — shared by download and copy paths so any
+// redaction the user requested is applied identically across export
+// surfaces (download .json, copy to clipboard).
+function buildExportPayload() {
+  const manifestVersion =
+    (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown";
+  const exportedAt = new Date().toISOString();
+  const raw = {
+    kind: EXPORT_KIND,
+    version: EXPORT_VERSION,
+    extensionVersion: manifestVersion,
+    exportedAt,
+    lastSlug: lastSavedSlug || null,
+    iframeSrc: iframe?.src || null,
+    lines: snapshotDebugLog(),
+  };
+  const redact = !!debugRedact?.checked;
+  const payload = redact ? redactPayload(raw) : { ...raw, redacted: false };
+  return { payload, redact, exportedAt };
+}
+
 debugCopy?.addEventListener("click", () => {
-  const text = Array.from(debugLog.children).map((li) => li.textContent).join("\n");
+  // When redaction is on the copy path emits the same JSON shape as the
+  // download so consumers see a single contract. When off, fall back to
+  // the human-readable log view users expect from a "copy" button.
+  const { payload, redact } = buildExportPayload();
+  const text = redact
+    ? JSON.stringify(payload, null, 2)
+    : Array.from(debugLog.children).map((li) => li.textContent).join("\n");
   navigator.clipboard?.writeText(text).catch(() => {});
 });
 debugClear?.addEventListener("click", () => {
   if (debugLog) debugLog.innerHTML = "";
+});
+
+// Persist the redact toggle in chrome.storage.local so it survives panel
+// reloads (and switching tabs that reopen the side panel).
+const REDACT_KEY = "debugRedact";
+chrome.storage?.local?.get?.({ [REDACT_KEY]: false }, (s) => {
+  if (debugRedact) debugRedact.checked = !!s[REDACT_KEY];
+});
+debugRedact?.addEventListener("change", () => {
+  chrome.storage?.local?.set?.({ [REDACT_KEY]: !!debugRedact.checked });
 });
 
 
@@ -65,20 +102,7 @@ debugClear?.addEventListener("click", () => {
 // lib/export-schema.js so consumers always get the same fields.
 debugExport?.addEventListener("click", () => {
   try {
-    const manifestVersion =
-      (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown";
-    const exportedAt = new Date().toISOString();
-    const raw = {
-      kind: EXPORT_KIND,
-      version: EXPORT_VERSION,
-      extensionVersion: manifestVersion,
-      exportedAt,
-      lastSlug: lastSavedSlug || null,
-      iframeSrc: iframe?.src || null,
-      lines: snapshotDebugLog(),
-    };
-    const redact = !!debugRedact?.checked;
-    const payload = redact ? redactPayload(raw) : { ...raw, redacted: false };
+    const { payload, redact, exportedAt } = buildExportPayload();
     const verdict = validateExport(payload);
     if (!verdict.ok) {
       console.error("[syrin-note] export schema validation failed", verdict.errors);

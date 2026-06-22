@@ -1,47 +1,66 @@
-## Mục tiêu
+# Plan
 
-Trên trang Home, thay card "Install as an app" hiện tại (có nút X đóng, có thể bị ẩn bởi localStorage hoặc khi không có `beforeinstallprompt`) bằng một panel **cố định, không thể đóng**, chia đều 2 cột:
+Two independent tracks. Both ship together.
 
-- **Cột trái — Install as an app (PWA):** giữ nội dung hiện tại (icon, tiêu đề, mô tả theo platform iOS/Android/Desktop, nút Install khi có `beforeinstallprompt`).
-- **Cột phải — Browser extension:** nút tải `syrin-note-sidepanel.zip` + hướng dẫn cài unpacked ngắn gọn, chính xác.
+## Track A — Extension: tests & export coverage
 
-## Thay đổi
+### 1. Unit tests for `chrome-extension/lib/redact.js`
+- New file `chrome-extension/lib/__tests__/redact.test.js` (Vitest, run by existing root Vitest config which already includes `src/**` — extend `vitest.config.ts` `test.include` to also match `chrome-extension/**/*.test.js`).
+- One `describe` per `REDACTION_RULES` entry. Each test = explicit `{ input, expected }` fixture pair so any weakening of a regex flips the assertion. Rules covered: `url`, `email`, `jwt`, `bearer`, `api-key-prefixed`, `uuid`, `fs-path`, `username-at`, `labeled-slug`, `long-token`, plus `maskToken`, `redactUrl`, `redactPayload` (asserts `lastSlug` masked, `iframeSrc` reduced to origin, `lines[].msg` redacted, `redacted: true`).
+- Include negative fixtures (e.g. short tokens unchanged, plain words not matched) so over-broad changes also fail.
 
-### 1. `src/components/note/InstallPrompt.tsx` — viết lại
+### 2. Playwright: filename contract across versions and modes
+- Extend `e2e-extension/redacted-export.spec.ts` (or new `export-filename.spec.ts`).
+- Trigger export twice (redacted off / on). For each, capture the `download` event, compute `expectedFilename({ redacted, isoTimestamp })` in-page via `page.evaluate` importing `export-schema.js`, assert downloaded name === expected and matches `isExpectedFilename`.
+- Parameterize over multiple `EXPORT_VERSION` values by stubbing the module: before navigation, use `page.route` on `**/lib/export-schema.js` to rewrite `EXPORT_VERSION` to `[1, 2, 99]`. Assert the JSON payload's `version` field and that filename logic still passes `isExpectedFilename`.
 
-- Bỏ hoàn toàn nút X, state `dismissed`, key `notes:install-dismissed` trong localStorage, và điều kiện `if (platform === "desktop" && !bipEvent) return null`.
-- Vẫn ẩn khi đã chạy ở chế độ standalone (`isStandalone()` true) — tránh hiển thị thừa khi user đã cài PWA. Đây là hành vi hợp lý, không phải "đóng".
-- Layout: `grid grid-cols-1 md:grid-cols-2` với divider dọc `md:divide-x divide-border`. Mỗi cột có padding riêng. Trên mobile xếp dọc.
-- **Cột trái** giữ nguyên markup hiện tại (icon Smartphone + title + hint theo platform + nút Install khi `bipEvent`). Khi desktop không có `bipEvent`, hiển thị một dòng hint chung ("Use your browser's install icon in the address bar.") thay vì ẩn cột.
-- **Cột phải** mới: icon `Puzzle` (lucide), tiêu đề "Browser extension", mô tả ngắn ("Open Notes in Chrome's side panel — Alt+S anywhere."), nút "Download .zip" tải `/syrin-note-sidepanel.zip` qua fetch+blob (preview env không cho `<a download>` trực tiếp), và `<ol>` 4 bước:
-  1. Unzip the downloaded file.
-  2. Open `chrome://extensions`.
-  3. Enable Developer mode (top-right).
-  4. Click "Load unpacked" and select the unzipped folder.
+### 3. Playwright: toggle persistence across reload
+- New spec `e2e-extension/redaction-persist.spec.ts`: open side panel → toggle redaction ON → reload side panel page → assert checkbox still checked (state lives in `chrome.storage.local`; if not yet, add a small `chrome.storage.local.set/get` for the toggle in `sidepanel.js`) → export → assert filename contains `-redacted-` and payload validates against `validateExport` with `redacted: true`.
 
-### 2. `src/i18n/index.ts` — thêm keys
+### 4. Playwright: copy-to-clipboard + alternate export paths
+- `debug-copy` button currently calls `navigator.clipboard.writeText(text)` with the **raw** buffer. Update `sidepanel.js` so the copy path runs the same `redactPayload`/`redactLine` pipeline when the redaction toggle is on, producing JSON identical in shape to the download.
+- New spec `e2e-extension/export-paths.spec.ts`: grant `clipboard-read`, toggle redaction on, click copy, read `navigator.clipboard.readText()`, parse JSON, assert `validateExport(...).ok` and that `lastSlug`/`iframeSrc` are masked exactly like the downloaded file. Repeat with redaction off and assert identical raw values across both export methods.
 
-Thêm vào tất cả locale (en, vi, zh, ja, ko, …) — keys mới:
+## Track B — Install panel UX (`src/components/note/InstallPrompt.tsx` + i18n)
 
-- `install.desktop_no_bip` — fallback hint khi desktop không có beforeinstallprompt.
-- `install.ext_title`, `install.ext_desc`, `install.ext_download`, `install.ext_step1..4`.
+### 1. Non-dismissible, install-aware
+- Remove any close affordance. Dialogs stay opt-in via the two trigger buttons, but the outer panel itself has no X and no localStorage dismissal (already true — keep it that way and add a comment so it isn't reintroduced).
+- Listen to `appinstalled` event + `matchMedia('(display-mode: standalone)')` change. When installed: the "Install as an app" button switches to a success state ("Installed ✓", disabled, hint text "Open from your home screen / app launcher"). Right-hand extension column stays available.
 
-Giữ nguyên các keys cũ. Xoá `install.close` (không còn dùng) — hoặc để lại nếu rủi ro phá build, sẽ bỏ luôn vì không reference nữa.
+### 2. Responsive 2-column layout
+- Outer panel: `max-w-xl` on desktop, `grid-cols-2` from `sm:` up, `grid-cols-1` below. `min-w-0` on each cell + `truncate`/`break-words` on labels so nothing overflows on narrow widths.
+- Dialog content: `sm:max-w-md`, body wrapped in `max-h-[70vh] overflow-y-auto` so the checklist + download button never push off-screen on short viewports.
 
-### 3. `src/pages/Home.tsx`
+### 3. Platform-aware install dialog
+- Detect capability up front: `canPrompt = !!bipEvent` (Chrome/Edge desktop, Android Chrome), `isIosSafari`, `isFirefox`, `isStandalone`.
+- Dialog header shows a status row:
+  - Supported + prompt ready → green dot + "Ready to install" + `Install` button.
+  - Supported browser but prompt not yet fired → amber dot + "Waiting for browser…" + explanation (interact with the site / visit again later).
+  - iOS Safari → blue dot + Share-sheet instructions.
+  - Firefox / unsupported → grey dot + "Your browser does not support one-click install" + manual steps.
+  - Already installed → check + "Installed".
+- Each branch renders its own dedicated step list (see below).
 
-Không đổi vị trí render. Vẫn `{!isExtensionContext && <InstallPrompt />}` — trong context extension thì không cần khuyến cáo cài extension/PWA.
+### 4. Live 4-step checklists (both dialogs)
+- Reusable `<StepList steps={[{label, done}]}/>` rendering a checkbox/check icon per step.
+- **Install-as-app steps** vary per branch:
+  - Chrome/Edge desktop: 1) Open this site in Chrome/Edge → auto-done, 2) Click **Install** → flips done after `bipEvent.userChoice` resolves accepted, 3) Confirm browser dialog → done on `appinstalled`, 4) Launch from app launcher → done when `display-mode: standalone` becomes true.
+  - Android Chrome: same shape, step 1 detects Android UA.
+  - iOS Safari: 1) Open in Safari (auto), 2) Tap Share, 3) Tap "Add to Home Screen", 4) Open from home screen (flips on standalone).
+- **Extension steps**: 1) Download `.zip` → flips done after successful fetch, 2) Unzip, 3) Open `chrome://extensions` + enable Developer mode, 4) Click **Load unpacked** and select the folder. Steps 2-4 expose a "Mark done" checkbox the user can tick; state persists in `localStorage` keyed `install.ext.steps` so progress survives reload.
 
-## Không thay đổi
+### 5. i18n
+- Add keys for each new string in all 9 locales already present in `src/i18n/index.ts`: `install.status_ready`, `install.status_waiting`, `install.status_ios`, `install.status_unsupported`, `install.status_installed`, `install.waiting_reason`, `install.unsupported_reason`, `install.app_step1..4` per platform (`app_step_chrome_1` etc.), `install.ext_mark_done`. Reuse existing `install.ext_step1..4`.
 
-- Logic `beforeinstallprompt`, `isStandalone`, `detectPlatform` giữ nguyên.
-- File extension zip `public/syrin-note-sidepanel.zip` đã có sẵn, không build lại.
-- Không thay đổi component khác, không refactor Home.
+## Verification
 
-## Kiểm chứng
+- `bunx vitest run chrome-extension/lib/__tests__/redact.test.js`
+- `bunx playwright test --config e2e-extension/playwright.config.ts` (filename, persistence, export-paths specs)
+- Manual Playwright screenshot pass on the homepage at 360px, 640px, 1024px widths to confirm no overflow and both dialogs scroll cleanly.
+- Toggle Chrome DevTools "App installed" emulation to verify the installed state copy appears.
 
-1. Mở `/` ở desktop Chrome chưa cài PWA → thấy panel 2 cột, không có nút X.
-2. Reload nhiều lần / xoá localStorage → panel vẫn hiện.
-3. Click "Download .zip" cột phải → tải về `syrin-note-sidepanel.zip`.
-4. Mobile viewport → 2 cột xếp dọc, vẫn không đóng được.
-5. Khi đã cài PWA (standalone) → panel ẩn (đúng hành vi).
+## Out of scope
+
+- No changes to `sidepanel.html` styling beyond what the copy-path redaction parity requires.
+- No new dependencies (no Ajv, no extra UI libs).
+- No changes to `manifest.json` permissions besides `clipboardRead` if not already granted (already present per recent changes — verify before adding).
