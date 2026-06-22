@@ -102,20 +102,7 @@ debugRedact?.addEventListener("change", () => {
 // lib/export-schema.js so consumers always get the same fields.
 debugExport?.addEventListener("click", () => {
   try {
-    const manifestVersion =
-      (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown";
-    const exportedAt = new Date().toISOString();
-    const raw = {
-      kind: EXPORT_KIND,
-      version: EXPORT_VERSION,
-      extensionVersion: manifestVersion,
-      exportedAt,
-      lastSlug: lastSavedSlug || null,
-      iframeSrc: iframe?.src || null,
-      lines: snapshotDebugLog(),
-    };
-    const redact = !!debugRedact?.checked;
-    const payload = redact ? redactPayload(raw) : { ...raw, redacted: false };
+    const { payload, redact, exportedAt } = buildExportPayload();
     const verdict = validateExport(payload);
     if (!verdict.ok) {
       console.error("[syrin-note] export schema validation failed", verdict.errors);
