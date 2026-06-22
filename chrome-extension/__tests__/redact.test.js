@@ -110,8 +110,8 @@ describe("rule: uuid", () => {
 
 describe("rule: fs-path", () => {
   it.each([
-    ["/Users/alice/notes", "<path>"],
-    ["/home/bob/file", "<path>/file"], // path rule eats user dir; rest remains
+    ["/Users/alice/notes", "<path>/notes"],
+    ["/home/bob/file", "<path>/file"],
     ["C:\\Users\\bob\\x", "<path>\\x"],
   ])("%s -> %s", (i, e) => expect(apply("fs-path", i)).toBe(e));
 });
