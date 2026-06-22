@@ -76,7 +76,7 @@ describe("rule: jwt", () => {
 
 describe("rule: bearer", () => {
   it.each([
-    ["Authorization: Bearer abc123xyz", "Bearer=<redacted>"],
+    ["Authorization: Bearer abc123xyz", "Authorization: Bearer=<redacted>"],
     ["token=hunter2", "token=<redacted>"],
     ["apikey: SECRETVAL", "apikey=<redacted>"],
     ["api_key = AKIA", "api_key=<redacted>"],
