@@ -58,8 +58,10 @@ function detectBrowser(): Browser {
 // user-managed checkmarks persisted in localStorage by the caller.
 function StepList({
   steps,
+  labels,
 }: {
   steps: { label: string; done: boolean; onToggle?: () => void }[];
+  labels: { completed: string; mark: string };
 }) {
   return (
     <ol className="space-y-1.5 text-xs">
@@ -70,7 +72,7 @@ function StepList({
             onClick={s.onToggle}
             disabled={!s.onToggle}
             className="mt-0.5 shrink-0"
-            aria-label={s.done ? "Completed" : "Mark step"}
+            aria-label={s.done ? labels.completed : labels.mark}
           >
             {s.done ? (
               <CheckCircle2 className="h-4 w-4 text-green-500" />
@@ -88,6 +90,7 @@ function StepList({
     </ol>
   );
 }
+
 
 const EXT_STEPS_KEY = "install.ext.steps";
 
@@ -145,17 +148,18 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
   // user always knows whether one-click install is supported and why.
   const status = useMemo(() => {
     if (appInstalled)
-      return { color: "bg-green-500", label: "Installed", reason: "Open from your home screen or app launcher." };
+      return { color: "bg-green-500", label: t("install.status_installed_label"), reason: t("install.status_installed_reason") };
     if (canPrompt)
-      return { color: "bg-green-500", label: "Ready to install", reason: "Your browser supports one-click install." };
+      return { color: "bg-green-500", label: t("install.status_ready_label"), reason: t("install.status_ready_reason") };
     if (platform === "ios" && browser === "safari")
-      return { color: "bg-blue-500", label: "Use the Share sheet", reason: "iOS Safari installs via Share → Add to Home Screen." };
+      return { color: "bg-blue-500", label: t("install.status_ios_label"), reason: t("install.status_ios_reason") };
     if (browser === "firefox")
-      return { color: "bg-zinc-400", label: "Not supported in this browser", reason: "Firefox does not implement one-click web-app install. Use Chrome, Edge, or Brave." };
+      return { color: "bg-zinc-400", label: t("install.status_firefox_label"), reason: t("install.status_firefox_reason") };
     if (browser === "chromium")
-      return { color: "bg-amber-500", label: "Waiting for browser…", reason: "Your browser supports install but hasn't offered the prompt yet. Interact with the page or revisit later." };
-    return { color: "bg-zinc-400", label: "Not supported in this browser", reason: "Open the site in Chrome, Edge, or Brave to install as an app." };
-  }, [appInstalled, canPrompt, platform, browser]);
+      return { color: "bg-amber-500", label: t("install.status_waiting_label"), reason: t("install.status_waiting_reason") };
+    return { color: "bg-zinc-400", label: t("install.status_unsupported_label"), reason: t("install.status_unsupported_reason") };
+  }, [appInstalled, canPrompt, platform, browser, t]);
+
 
   const install = async () => {
     if (!bipEvent) return;
@@ -196,45 +200,50 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
   const appSteps = useMemo(() => {
     if (platform === "ios") {
       return [
-        { label: "Open this page in Safari.", done: browser === "safari" },
-        { label: "Tap the Share button.", done: appInstalled },
-        { label: "Choose 'Add to Home Screen'.", done: appInstalled },
-        { label: "Open the new icon from your home screen.", done: standalone },
+        { label: t("install.app_step_ios_1"), done: browser === "safari" },
+        { label: t("install.app_step_ios_2"), done: appInstalled },
+        { label: t("install.app_step_ios_3"), done: appInstalled },
+        { label: t("install.app_step_ios_4"), done: standalone },
       ];
     }
     const isChrome = browser === "chromium";
     return [
       {
         label: platform === "android"
-          ? "Open this page in Chrome on Android."
-          : "Open this page in Chrome, Edge, or Brave.",
+          ? t("install.app_step_android_1")
+          : t("install.app_step_desktop_1"),
         done: isChrome,
       },
-      { label: "Click the 'Install' button below.", done: canPrompt && promptAccepted },
-      { label: "Confirm your browser's install dialog.", done: installed },
-      { label: "Launch the app from your launcher / dock.", done: standalone },
+      { label: t("install.app_step_chromium_2"), done: canPrompt && promptAccepted },
+      { label: t("install.app_step_chromium_3"), done: installed },
+      { label: t("install.app_step_chromium_4"), done: standalone },
     ];
-  }, [platform, browser, canPrompt, promptAccepted, installed, standalone, appInstalled]);
+  }, [platform, browser, canPrompt, promptAccepted, installed, standalone, appInstalled, t]);
 
   // Extension steps: step 1 (download) auto-completes; the rest are
   // user-toggled because we can't observe `chrome://extensions` actions.
   const extStepDefs = [
-    { label: "Download the .zip below.", done: zipDownloaded || extSteps[0], onToggle: undefined },
-    { label: "Unzip the downloaded file.", done: extSteps[1], onToggle: () => toggleExtStep(1) },
+    { label: t("install.ext_step_download"), done: zipDownloaded || extSteps[0], onToggle: undefined },
+    { label: t("install.ext_step_unzip"), done: extSteps[1], onToggle: () => toggleExtStep(1) },
     {
-      label: "Open chrome://extensions and enable Developer mode (top-right).",
+      label: t("install.ext_step_devmode"),
       done: extSteps[2],
       onToggle: () => toggleExtStep(2),
     },
     {
-      label: "Click 'Load unpacked' and select the unzipped folder.",
+      label: t("install.ext_step_loadunpacked"),
       done: extSteps[3],
       onToggle: () => toggleExtStep(3),
     },
   ];
 
+  const stepLabels = { completed: t("install.step_completed"), mark: t("install.step_mark") };
+
+
   return (
     <div
+      role="region"
+      aria-label={t("install.panel_label")}
       className="mx-auto mt-6 grid w-full max-w-md grid-cols-1 gap-2 rounded-md border border-border bg-card p-2 sm:max-w-xl sm:grid-cols-2 sm:divide-x sm:divide-border"
       data-testid="install-prompt"
     >
@@ -249,7 +258,7 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
               {appInstalled ? <Check className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
             </div>
             <span className="min-w-0 truncate text-sm font-medium">
-              {appInstalled ? "Installed" : t("install.title")}
+              {appInstalled ? t("install.status_installed_label") : t("install.title")}
             </span>
           </button>
         </DialogTrigger>
@@ -285,7 +294,7 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
               {t("install.btn")}
             </Button>
           )}
-          <StepList steps={appSteps} />
+          <StepList steps={appSteps} labels={stepLabels} />
         </DialogContent>
       </Dialog>
 
@@ -315,11 +324,12 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
             <Download className="h-4 w-4" />
             {t("install.ext_download")}
           </Button>
-          <StepList steps={extStepDefs} />
+          <StepList steps={extStepDefs} labels={stepLabels} />
         </DialogContent>
       </Dialog>
     </div>
   );
 });
+
 
 InstallPrompt.displayName = "InstallPrompt";
