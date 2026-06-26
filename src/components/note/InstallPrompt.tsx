@@ -200,42 +200,45 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
   const appSteps = useMemo(() => {
     if (platform === "ios") {
       return [
-        { label: "Open this page in Safari.", done: browser === "safari" },
-        { label: "Tap the Share button.", done: appInstalled },
-        { label: "Choose 'Add to Home Screen'.", done: appInstalled },
-        { label: "Open the new icon from your home screen.", done: standalone },
+        { label: t("install.app_step_ios_1"), done: browser === "safari" },
+        { label: t("install.app_step_ios_2"), done: appInstalled },
+        { label: t("install.app_step_ios_3"), done: appInstalled },
+        { label: t("install.app_step_ios_4"), done: standalone },
       ];
     }
     const isChrome = browser === "chromium";
     return [
       {
         label: platform === "android"
-          ? "Open this page in Chrome on Android."
-          : "Open this page in Chrome, Edge, or Brave.",
+          ? t("install.app_step_android_1")
+          : t("install.app_step_desktop_1"),
         done: isChrome,
       },
-      { label: "Click the 'Install' button below.", done: canPrompt && promptAccepted },
-      { label: "Confirm your browser's install dialog.", done: installed },
-      { label: "Launch the app from your launcher / dock.", done: standalone },
+      { label: t("install.app_step_chromium_2"), done: canPrompt && promptAccepted },
+      { label: t("install.app_step_chromium_3"), done: installed },
+      { label: t("install.app_step_chromium_4"), done: standalone },
     ];
-  }, [platform, browser, canPrompt, promptAccepted, installed, standalone, appInstalled]);
+  }, [platform, browser, canPrompt, promptAccepted, installed, standalone, appInstalled, t]);
 
   // Extension steps: step 1 (download) auto-completes; the rest are
   // user-toggled because we can't observe `chrome://extensions` actions.
   const extStepDefs = [
-    { label: "Download the .zip below.", done: zipDownloaded || extSteps[0], onToggle: undefined },
-    { label: "Unzip the downloaded file.", done: extSteps[1], onToggle: () => toggleExtStep(1) },
+    { label: t("install.ext_step_download"), done: zipDownloaded || extSteps[0], onToggle: undefined },
+    { label: t("install.ext_step_unzip"), done: extSteps[1], onToggle: () => toggleExtStep(1) },
     {
-      label: "Open chrome://extensions and enable Developer mode (top-right).",
+      label: t("install.ext_step_devmode"),
       done: extSteps[2],
       onToggle: () => toggleExtStep(2),
     },
     {
-      label: "Click 'Load unpacked' and select the unzipped folder.",
+      label: t("install.ext_step_loadunpacked"),
       done: extSteps[3],
       onToggle: () => toggleExtStep(3),
     },
   ];
+
+  const stepLabels = { completed: t("install.step_completed"), mark: t("install.step_mark") };
+
 
   return (
     <div
