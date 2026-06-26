@@ -148,17 +148,18 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
   // user always knows whether one-click install is supported and why.
   const status = useMemo(() => {
     if (appInstalled)
-      return { color: "bg-green-500", label: "Installed", reason: "Open from your home screen or app launcher." };
+      return { color: "bg-green-500", label: t("install.status_installed_label"), reason: t("install.status_installed_reason") };
     if (canPrompt)
-      return { color: "bg-green-500", label: "Ready to install", reason: "Your browser supports one-click install." };
+      return { color: "bg-green-500", label: t("install.status_ready_label"), reason: t("install.status_ready_reason") };
     if (platform === "ios" && browser === "safari")
-      return { color: "bg-blue-500", label: "Use the Share sheet", reason: "iOS Safari installs via Share → Add to Home Screen." };
+      return { color: "bg-blue-500", label: t("install.status_ios_label"), reason: t("install.status_ios_reason") };
     if (browser === "firefox")
-      return { color: "bg-zinc-400", label: "Not supported in this browser", reason: "Firefox does not implement one-click web-app install. Use Chrome, Edge, or Brave." };
+      return { color: "bg-zinc-400", label: t("install.status_firefox_label"), reason: t("install.status_firefox_reason") };
     if (browser === "chromium")
-      return { color: "bg-amber-500", label: "Waiting for browser…", reason: "Your browser supports install but hasn't offered the prompt yet. Interact with the page or revisit later." };
-    return { color: "bg-zinc-400", label: "Not supported in this browser", reason: "Open the site in Chrome, Edge, or Brave to install as an app." };
-  }, [appInstalled, canPrompt, platform, browser]);
+      return { color: "bg-amber-500", label: t("install.status_waiting_label"), reason: t("install.status_waiting_reason") };
+    return { color: "bg-zinc-400", label: t("install.status_unsupported_label"), reason: t("install.status_unsupported_reason") };
+  }, [appInstalled, canPrompt, platform, browser, t]);
+
 
   const install = async () => {
     if (!bipEvent) return;
