@@ -242,6 +242,8 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
 
   return (
     <div
+      role="region"
+      aria-label={t("install.panel_label")}
       className="mx-auto mt-6 grid w-full max-w-md grid-cols-1 gap-2 rounded-md border border-border bg-card p-2 sm:max-w-xl sm:grid-cols-2 sm:divide-x sm:divide-border"
       data-testid="install-prompt"
     >
@@ -256,7 +258,7 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
               {appInstalled ? <Check className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
             </div>
             <span className="min-w-0 truncate text-sm font-medium">
-              {appInstalled ? "Installed" : t("install.title")}
+              {appInstalled ? t("install.status_installed_label") : t("install.title")}
             </span>
           </button>
         </DialogTrigger>
@@ -292,7 +294,7 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
               {t("install.btn")}
             </Button>
           )}
-          <StepList steps={appSteps} />
+          <StepList steps={appSteps} labels={stepLabels} />
         </DialogContent>
       </Dialog>
 
@@ -322,11 +324,12 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
             <Download className="h-4 w-4" />
             {t("install.ext_download")}
           </Button>
-          <StepList steps={extStepDefs} />
+          <StepList steps={extStepDefs} labels={stepLabels} />
         </DialogContent>
       </Dialog>
     </div>
   );
 });
+
 
 InstallPrompt.displayName = "InstallPrompt";
