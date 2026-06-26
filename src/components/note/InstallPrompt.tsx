@@ -58,8 +58,10 @@ function detectBrowser(): Browser {
 // user-managed checkmarks persisted in localStorage by the caller.
 function StepList({
   steps,
+  labels,
 }: {
   steps: { label: string; done: boolean; onToggle?: () => void }[];
+  labels: { completed: string; mark: string };
 }) {
   return (
     <ol className="space-y-1.5 text-xs">
@@ -70,7 +72,7 @@ function StepList({
             onClick={s.onToggle}
             disabled={!s.onToggle}
             className="mt-0.5 shrink-0"
-            aria-label={s.done ? "Completed" : "Mark step"}
+            aria-label={s.done ? labels.completed : labels.mark}
           >
             {s.done ? (
               <CheckCircle2 className="h-4 w-4 text-green-500" />
@@ -88,6 +90,7 @@ function StepList({
     </ol>
   );
 }
+
 
 const EXT_STEPS_KEY = "install.ext.steps";
 
