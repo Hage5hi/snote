@@ -58,26 +58,13 @@ for (const vp of VIEWPORTS) {
     expect(tracks).toBe(vp.cols);
 
     // In 2-column mode the two trigger buttons must align on the same row.
+    // Direct children of the panel are the two Radix DialogTrigger buttons.
     if (vp.cols === 2) {
-      const tops = await panel.evaluate(() => {
-        const btns = Array.from(
-          document.querySelectorAll(
-            '[data-testid="install-prompt"] > * button',
-          ),
-        ).filter(
-          (b) => (b as HTMLElement).offsetParent !== null,
+      const tops = await panel.evaluate((el) => {
+        const btns = Array.from(el.children).filter(
+          (c) => c.tagName === "BUTTON",
         ) as HTMLElement[];
-        // first button inside each grid cell
-        const seenCells = new Set<Element>();
-        const firsts: HTMLElement[] = [];
-        for (const b of btns) {
-          const cell = b.parentElement?.parentElement;
-          if (!cell || seenCells.has(cell)) continue;
-          seenCells.add(cell);
-          firsts.push(b);
-          if (firsts.length === 2) break;
-        }
-        return firsts.map((b) => b.getBoundingClientRect().top);
+        return btns.map((b) => b.getBoundingClientRect().top);
       });
       expect(tops.length).toBe(2);
       expect(Math.abs(tops[0] - tops[1])).toBeLessThanOrEqual(1);
