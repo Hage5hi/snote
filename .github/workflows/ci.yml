@@ -996,3 +996,46 @@ jobs:
             /tmp/i18n-cli-flags.log
           retention-days: 14
           if-no-files-found: warn
+
+
+  install-prompt-a11y:
+    # Dedicated axe-core a11y gate for the non-dismissible InstallPrompt
+    # panel + its two install dialogs. Fails the build whenever a new
+    # serious/critical accessibility violation appears that wasn't in the
+    # baseline captured before the dialog is opened.
+    name: InstallPrompt a11y (axe)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: changes
+        with:
+          filters: |
+            ip:
+              - 'src/components/note/InstallPrompt.tsx'
+              - 'src/i18n/**'
+              - 'e2e/install-prompt-*.spec.ts'
+              - 'playwright.config.ts'
+              - 'package.json'
+              - 'bun.lockb'
+      - if: steps.changes.outputs.ip == 'true' || github.event_name == 'push'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - if: steps.changes.outputs.ip == 'true' || github.event_name == 'push'
+        run: bun install --frozen-lockfile
+      - if: steps.changes.outputs.ip == 'true' || github.event_name == 'push'
+        run: bunx playwright install --with-deps chromium
+      - if: steps.changes.outputs.ip == 'true' || github.event_name == 'push'
+        name: Run InstallPrompt a11y specs (axe-core)
+        run: bunx playwright test e2e/install-prompt-a11y.spec.ts e2e/install-prompt-responsive.spec.ts --reporter=line
+      - if: always() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-prompt-a11y-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+          if-no-files-found: ignore
