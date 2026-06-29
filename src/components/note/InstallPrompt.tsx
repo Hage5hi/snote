@@ -262,7 +262,12 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
             </span>
           </button>
         </DialogTrigger>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
+        <DialogContent
+          hideClose
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+          className="max-h-[85vh] overflow-y-auto sm:max-w-md"
+        >
           <DialogHeader>
             <DialogTitle>{t("install.title")}</DialogTitle>
             <DialogDescription asChild>

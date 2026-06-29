@@ -1029,7 +1029,21 @@ jobs:
         run: bunx playwright install --with-deps chromium
       - if: steps.changes.outputs.ip == 'true' || github.event_name == 'push'
         name: Run InstallPrompt a11y specs (axe-core)
-        run: bunx playwright test e2e/install-prompt-a11y.spec.ts e2e/install-prompt-responsive.spec.ts --reporter=line
+        id: ip_a11y
+        run: |
+          bunx playwright test \
+            e2e/install-prompt-a11y.spec.ts \
+            e2e/install-prompt-responsive.spec.ts \
+            e2e/install-prompt-bip.spec.ts \
+            e2e/install-prompt-locked.spec.ts \
+            --reporter=line,html,json
+        env:
+          PLAYWRIGHT_HTML_REPORT: playwright-report/install-prompt
+          PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/install-prompt-results.json
+      # Always upload the HTML report, JSON results, screenshots, traces
+      # and videos when the install-prompt specs run — regardless of
+      # outcome — so regressions are traceable from the workflow run
+      # summary without re-running locally.
       - if: always() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
         uses: actions/upload-artifact@v4
         with:
@@ -1039,3 +1053,16 @@ jobs:
             test-results/
           retention-days: 14
           if-no-files-found: ignore
+      # Dedicated failure-only bundle: screenshots + traces only, named
+      # with the run attempt so retries don't clobber each other.
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-prompt-failure-evidence-attempt-${{ github.run_attempt }}
+          path: |
+            test-results/**/*.png
+            test-results/**/*.webm
+            test-results/**/trace.zip
+          retention-days: 14
+          if-no-files-found: warn
+
