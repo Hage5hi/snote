@@ -35,6 +35,11 @@ test('"Install" button is hidden until beforeinstallprompt fires', async ({ page
 
 test('"Install" button appears after dispatching beforeinstallprompt', async ({ page }) => {
   await page.goto("/");
+  const trigger = page.getByRole("button", {
+    name: new RegExp(dict.en["install.title"]),
+  });
+  await expect(trigger).toBeVisible();
+
   // Synthesize a BeforeInstallPromptEvent that the component listens for.
   await page.evaluate(() => {
     const ev = new Event("beforeinstallprompt") as Event & {
@@ -46,9 +51,7 @@ test('"Install" button appears after dispatching beforeinstallprompt', async ({ 
     window.dispatchEvent(ev);
   });
 
-  await page
-    .getByRole("button", { name: new RegExp(dict.en["install.title"]) })
-    .click();
+  await trigger.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
@@ -57,3 +60,4 @@ test('"Install" button appears after dispatching beforeinstallprompt', async ({ 
   });
   await expect(installBtn).toBeVisible();
 });
+
