@@ -1030,16 +1030,21 @@ jobs:
       - if: steps.changes.outputs.ip == 'true' || github.event_name == 'push'
         name: Run InstallPrompt a11y specs (axe-core)
         id: ip_a11y
+        # Glob picks up every install-prompt-*.spec.ts so newly added
+        # specs are auto-included. Trace / video / screenshot are gated
+        # to failure-only by playwright.config.ts (retain-on-failure /
+        # only-on-failure), so green runs stay artifact-light while red
+        # runs produce a full evidence bundle for flake diagnosis.
         run: |
           bunx playwright test \
-            e2e/install-prompt-a11y.spec.ts \
-            e2e/install-prompt-responsive.spec.ts \
-            e2e/install-prompt-bip.spec.ts \
-            e2e/install-prompt-locked.spec.ts \
-            --reporter=line,html,json
+            e2e/install-prompt-*.spec.ts \
+            --reporter=line,html,json \
+            --trace=retain-on-failure \
+            --output=test-results/install-prompt
         env:
           PLAYWRIGHT_HTML_REPORT: playwright-report/install-prompt
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/install-prompt-results.json
+
       # Always upload the HTML report, JSON results, screenshots, traces
       # and videos when the install-prompt specs run — regardless of
       # outcome — so regressions are traceable from the workflow run
