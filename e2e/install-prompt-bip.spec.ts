@@ -14,9 +14,11 @@ test.beforeEach(async ({ page }) => {
 
 test('"Install" button is hidden until beforeinstallprompt fires', async ({ page }) => {
   await page.goto("/");
-  await page
-    .getByRole("button", { name: new RegExp(dict.en["install.title"]) })
-    .click();
+  const trigger = page.getByRole("button", {
+    name: new RegExp(dict.en["install.title"]),
+  });
+  await expect(trigger).toBeVisible();
+  await trigger.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
 
@@ -29,6 +31,7 @@ test('"Install" button is hidden until beforeinstallprompt fires', async ({ page
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
 });
+
 
 test('"Install" button appears after dispatching beforeinstallprompt', async ({ page }) => {
   await page.goto("/");
