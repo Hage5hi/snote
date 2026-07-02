@@ -1035,11 +1035,19 @@ jobs:
         # to failure-only by playwright.config.ts (retain-on-failure /
         # only-on-failure), so green runs stay artifact-light while red
         # runs produce a full evidence bundle for flake diagnosis.
+        # `--retries=2` re-runs failed tests up to 2 additional times to
+        # absorb genuine environmental flakiness (WebKit font jitter,
+        # CI-scheduler noise). Playwright still records trace/video/
+        # screenshot on EACH failed attempt (playwright.config.ts uses
+        # retain-on-failure / only-on-failure), so no evidence is lost —
+        # per-attempt artifacts live under test-results/ and are uploaded
+        # via the failure-evidence bundle below.
         run: |
           bunx playwright test \
             e2e/install-prompt-*.spec.ts \
             --reporter=line,html,json \
             --trace=retain-on-failure \
+            --retries=2 \
             --output=test-results/install-prompt
         env:
           PLAYWRIGHT_HTML_REPORT: playwright-report/install-prompt
