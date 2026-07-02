@@ -1070,4 +1070,65 @@ jobs:
             test-results/**/trace.zip
           retention-days: 14
           if-no-files-found: warn
+      # Print direct download links for every trace/video/screenshot
+      # produced by failing install-prompt specs to the workflow run
+      # summary. Reviewers can jump straight to evidence for a flaky
+      # spec without hunting through the artifacts list.
+      - name: InstallPrompt failure evidence — print links to summary
+        if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          ARTIFACTS_URL="${RUN_URL}#artifacts"
+          BUNDLE="install-prompt-failure-evidence-attempt-${{ github.run_attempt }}"
+          {
+            echo '### InstallPrompt failure evidence'
+            echo ''
+            echo "Attempt **${{ github.run_attempt }}** — download the [\`${BUNDLE}\`](${ARTIFACTS_URL}) bundle or the full [\`install-prompt-a11y-report\`](${ARTIFACTS_URL})."
+            echo ''
+            echo '| Spec | Kind | File |'
+            echo '|---|---|---|'
+            shopt -s nullglob globstar
+            any=0
+            for f in test-results/**/*.png test-results/**/*.webm test-results/**/trace.zip; do
+              [ -e "$f" ] || continue
+              rel="${f#test-results/}"
+              spec="${rel%%/*}"
+              base="$(basename "$f")"
+              case "$base" in
+                *.png)     kind='screenshot' ;;
+                *.webm)    kind='video' ;;
+                trace.zip) kind='trace' ;;
+                *)         kind='artifact' ;;
+              esac
+              echo "| \`${spec}\` | ${kind} | [\`${base}\`](${ARTIFACTS_URL}) |"
+              any=1
+            done
+            if [ "$any" = "0" ]; then
+              echo '| _(none)_ | | _no per-spec evidence files were produced_ |'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      # Sticky PR comment mirroring the summary so flake diagnosis
+      # lives on the PR itself. Keyed on a stable header so retries
+      # update in place instead of piling up new comments.
+      - name: InstallPrompt failure evidence — sticky PR comment
+        if: failure() && github.event_name == 'pull_request' && (steps.changes.outputs.ip == 'true')
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: install-prompt-failure-evidence
+          message: |
+            ### InstallPrompt Playwright failures — attempt ${{ github.run_attempt }}
+
+            Trace / video / screenshot bundles are attached to
+            [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):
+
+            - **Failure evidence**: `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
+            - **Full HTML report**: `install-prompt-a11y-report`
+
+            Open the HTML report locally with:
+            ```
+            bunx playwright show-report playwright-report/install-prompt
+            ```
+
+            See the workflow run **Summary** tab for the per-spec file table.
+
 
