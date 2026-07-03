@@ -1166,19 +1166,22 @@ jobs:
         with:
           header: install-prompt-failure-evidence
           message: |
-            ### InstallPrompt Playwright failures — attempt ${{ github.run_attempt }}
+            ### InstallPrompt Playwright failures — workflow attempt ${{ github.run_attempt }}
 
+            Playwright ran with `--retries=2` (each failing test re-attempts up to 2 times).
             Trace / video / screenshot bundles are attached to
             [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):
 
-            - **Failure evidence**: `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
+            - **Failure evidence** (per attempt): `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
             - **Full HTML report**: `install-prompt-a11y-report`
+
+            The workflow run **Summary** tab has:
+            - a **per-test retry breakdown** (attempts + final status, flags flaky vs. broken specs)
+            - a **per-spec artifact table** with links to each screenshot/video/trace
 
             Open the HTML report locally with:
             ```
             bunx playwright show-report playwright-report/install-prompt
             ```
-
-            See the workflow run **Summary** tab for the per-spec file table.
 
 
