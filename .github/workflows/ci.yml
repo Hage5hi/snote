@@ -1178,15 +1178,17 @@ jobs:
             ### InstallPrompt Playwright failures — workflow attempt ${{ github.run_attempt }}
 
             Playwright ran with `--retries=2` (each failing test re-attempts up to 2 times).
-            Trace / video / screenshot bundles are attached to
-            [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):
+            The failure-evidence bundle contains **per-attempt** trace/video/screenshot files
+            — not just the last attempt — so you can diff evidence across retries.
 
-            - **Failure evidence** (per attempt): `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
+            Attached to [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):
+
+            - **Failure evidence** (per workflow attempt, contains all Playwright retry attempts): `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
             - **Full HTML report**: `install-prompt-a11y-report`
 
             The workflow run **Summary** tab has:
             - a **per-test retry breakdown** (attempts + final status, flags flaky vs. broken specs)
-            - a **per-spec artifact table** with links to each screenshot/video/trace
+            - a **per-spec artifact table** with a `PW attempt` column linking each screenshot/video/trace to its exact retry number
 
             Open the HTML report locally with:
             ```
