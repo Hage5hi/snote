@@ -1131,30 +1131,39 @@ jobs:
               ' "$RESULTS_JSON"
               echo ''
             fi
-            echo '#### Per-spec artifact files'
+            echo '#### Per-spec artifact files (grouped by Playwright retry attempt)'
             echo ''
-            echo '| Spec | Kind | File |'
-            echo '|---|---|---|'
+            echo '| Spec | PW attempt | Kind | File |'
+            echo '|---|---:|---|---|'
             shopt -s nullglob globstar
             any=0
             for f in test-results/**/*.png test-results/**/*.webm test-results/**/trace.zip; do
               [ -e "$f" ] || continue
               rel="${f#test-results/}"
-              spec="${rel%%/*}"
+              spec_dir="${rel%%/*}"
               base="$(basename "$f")"
+              # Playwright names per-retry dirs `<spec>-retry<N>` and the
+              # first attempt has no suffix. Extract the retry number so
+              # reviewers can jump to the exact failing attempt instead
+              # of scrolling through interleaved evidence.
+              if [[ "$spec_dir" =~ -retry([0-9]+)$ ]]; then
+                pw_attempt="${BASH_REMATCH[1]}"
+                spec="${spec_dir%-retry*}"
+              else
+                pw_attempt="0 (initial)"
+                spec="$spec_dir"
+              fi
               case "$base" in
                 *.png)     kind='screenshot' ;;
                 *.webm)    kind='video' ;;
                 trace.zip) kind='trace' ;;
                 *)         kind='artifact' ;;
               esac
-              # Playwright names per-attempt dirs `<spec>-retry<N>`, so the
-              # retry number is embedded directly in the spec column.
-              echo "| \`${spec}\` | ${kind} | [\`${base}\`](${ARTIFACTS_URL}) |"
+              echo "| \`${spec}\` | ${pw_attempt} | ${kind} | [\`${base}\`](${ARTIFACTS_URL}) |"
               any=1
             done
             if [ "$any" = "0" ]; then
-              echo '| _(none)_ | | _no per-spec evidence files were produced_ |'
+              echo '| _(none)_ | | | _no per-spec evidence files were produced_ |'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
       # Sticky PR comment mirroring the summary so flake diagnosis
@@ -1169,15 +1178,17 @@ jobs:
             ### InstallPrompt Playwright failures — workflow attempt ${{ github.run_attempt }}
 
             Playwright ran with `--retries=2` (each failing test re-attempts up to 2 times).
-            Trace / video / screenshot bundles are attached to
-            [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):
+            The failure-evidence bundle contains **per-attempt** trace/video/screenshot files
+            — not just the last attempt — so you can diff evidence across retries.
 
-            - **Failure evidence** (per attempt): `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
+            Attached to [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):
+
+            - **Failure evidence** (per workflow attempt, contains all Playwright retry attempts): `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
             - **Full HTML report**: `install-prompt-a11y-report`
 
             The workflow run **Summary** tab has:
             - a **per-test retry breakdown** (attempts + final status, flags flaky vs. broken specs)
-            - a **per-spec artifact table** with links to each screenshot/video/trace
+            - a **per-spec artifact table** with a `PW attempt` column linking each screenshot/video/trace to its exact retry number
 
             Open the HTML report locally with:
             ```
