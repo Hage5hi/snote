@@ -1091,7 +1091,47 @@ jobs:
           {
             echo '### InstallPrompt failure evidence'
             echo ''
-            echo "Attempt **${{ github.run_attempt }}** — download the [\`${BUNDLE}\`](${ARTIFACTS_URL}) bundle or the full [\`install-prompt-a11y-report\`](${ARTIFACTS_URL})."
+            echo "Workflow attempt **${{ github.run_attempt }}** — Playwright retried each failing test up to **2** additional times (\`--retries=2\`)."
+            echo "Download the [\`${BUNDLE}\`](${ARTIFACTS_URL}) bundle or the full [\`install-prompt-a11y-report\`](${ARTIFACTS_URL})."
+            echo ''
+            # Per-test retry breakdown parsed from the Playwright JSON report.
+            # Playwright records one entry per attempt in `test.results[]`, so
+            # `retry` counts how many re-runs a spec needed before its final
+            # status. This makes it obvious which specs are flaky vs. broken.
+            RESULTS_JSON=test-results/install-prompt-results.json
+            if [ -f "$RESULTS_JSON" ]; then
+              echo '#### Per-test retry breakdown'
+              echo ''
+              echo '| Spec | Test | Attempts | Final status |'
+              echo '|---|---|---:|---|'
+              node -e '
+                const fs = require("fs");
+                const r = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                const rows = [];
+                const walk = (suite, file) => {
+                  const f = file || suite.file || "";
+                  for (const s of suite.suites || []) walk(s, f);
+                  for (const spec of suite.specs || []) {
+                    for (const t of spec.tests || []) {
+                      const attempts = (t.results || []).length;
+                      const last = (t.results || []).slice(-1)[0] || {};
+                      const status = last.status || t.status || "unknown";
+                      if (attempts > 1 || status !== "passed") {
+                        rows.push({ file: f, name: spec.title, attempts, status });
+                      }
+                    }
+                  }
+                };
+                for (const s of r.suites || []) walk(s);
+                for (const row of rows) {
+                  const badge = row.status === "passed" ? "✅ passed (flaky)" : `❌ ${row.status}`;
+                  process.stdout.write(`| \`${row.file}\` | ${row.name} | ${row.attempts} | ${badge} |\n`);
+                }
+                if (rows.length === 0) process.stdout.write("| _(none)_ | | | _no retries or failures_ |\n");
+              ' "$RESULTS_JSON"
+              echo ''
+            fi
+            echo '#### Per-spec artifact files'
             echo ''
             echo '| Spec | Kind | File |'
             echo '|---|---|---|'
@@ -1108,6 +1148,8 @@ jobs:
                 trace.zip) kind='trace' ;;
                 *)         kind='artifact' ;;
               esac
+              # Playwright names per-attempt dirs `<spec>-retry<N>`, so the
+              # retry number is embedded directly in the spec column.
               echo "| \`${spec}\` | ${kind} | [\`${base}\`](${ARTIFACTS_URL}) |"
               any=1
             done
