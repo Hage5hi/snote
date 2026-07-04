@@ -130,7 +130,7 @@ jobs:
 
 
       - name: Job summary — top schemaVersion mismatches (on drift)
-        if: failure() && steps.schema_types_check.outcome == 'failure'
+        if: always() && steps.schema_types_check.outputs.drift == '1'
         run: |
           set -euo pipefail
           {
