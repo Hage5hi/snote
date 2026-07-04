@@ -1132,62 +1132,96 @@ jobs:
               echo ''
             fi
             # Build a per-spec, per-attempt grouped view of artifact
-            # files. Each spec becomes a collapsible <details> block,
-            # inside which files are grouped under an "attempt N"
-            # sub-heading. This makes it trivial to see which exact
-            # retry produced a given trace/video/screenshot.
+            # files. Each spec file becomes a collapsible <details> block
+            # showing, per Playwright retry attempt, the browser (project)
+            # and the exact failing test title alongside its trace, video
+            # and screenshot links. Driven by the Playwright JSON report
+            # (test-results/install-prompt-results.json) so we get the
+            # real test title + project instead of relying on directory
+            # slugs.
             GROUPED_MD=$(mktemp)
-            {
-              echo '#### Per-spec artifact files (grouped by spec + Playwright retry attempt)'
-              echo ''
-              shopt -s nullglob globstar
-              ENTRIES=$(mktemp)
-              for f in test-results/**/*.png test-results/**/*.webm test-results/**/trace.zip; do
-                [ -e "$f" ] || continue
-                rel="${f#test-results/}"
-                spec_dir="${rel%%/*}"
-                base="$(basename "$f")"
-                if [[ "$spec_dir" =~ -retry([0-9]+)$ ]]; then
-                  pw_attempt="${BASH_REMATCH[1]}"
-                  spec="${spec_dir%-retry*}"
-                else
-                  pw_attempt="0"
-                  spec="$spec_dir"
-                fi
-                case "$base" in
-                  *.png)     kind='screenshot' ;;
-                  *.webm)    kind='video' ;;
-                  trace.zip) kind='trace' ;;
-                  *)         kind='artifact' ;;
-                esac
-                printf '%s\t%s\t%s\t%s\n' "$spec" "$pw_attempt" "$kind" "$base" >> "$ENTRIES"
-              done
-              if [ ! -s "$ENTRIES" ]; then
-                echo '_No per-spec evidence files were produced._'
-              else
-                for spec in $(cut -f1 "$ENTRIES" | sort -u); do
-                  echo "<details><summary><code>${spec}</code></summary>"
-                  echo ''
-                  for att in $(awk -F'\t' -v s="$spec" '$1==s{print $2}' "$ENTRIES" | sort -un); do
-                    att_label="attempt ${att}"
-                    [ "$att" = "0" ] && att_label="attempt 0 (initial)"
-                    echo "**${att_label}**"
-                    echo ''
-                    echo '| Kind | File |'
-                    echo '|---|---|'
-                    awk -F'\t' -v s="$spec" -v a="$att" '$1==s && $2==a {printf "| %s | [`%s`](%s) |\n", $3, $4, ENVIRON["ARTIFACTS_URL"]}' "$ENTRIES"
-                    echo ''
-                  done
-                  echo '</details>'
-                  echo ''
-                done
-              fi
-              rm -f "$ENTRIES"
-            } > "$GROUPED_MD"
+            if [ -f "$RESULTS_JSON" ]; then
+              ARTIFACTS_URL="$ARTIFACTS_URL" node -e '
+                const fs = require("fs");
+                const r = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                const url = process.env.ARTIFACTS_URL;
+                // file -> attempt -> array of { project, title, kind, base }
+                const bySpec = new Map();
+                const walk = (suite, file) => {
+                  const f = file || suite.file || "";
+                  for (const s of suite.suites || []) walk(s, f);
+                  for (const spec of suite.specs || []) {
+                    for (const t of spec.tests || []) {
+                      const project = t.projectName || t.projectId || "unknown";
+                      (t.results || []).forEach((res, i) => {
+                        if (res.status === "passed" && (t.results || []).length === 1) return;
+                        const items = (res.attachments || [])
+                          .filter(a => a.path)
+                          .map(a => {
+                            const base = a.path.split(/[\\/]/).pop();
+                            let kind = "artifact";
+                            if (/\.png$/i.test(base)) kind = "screenshot";
+                            else if (/\.webm$/i.test(base)) kind = "video";
+                            else if (/trace(\.\w+)?\.zip$/i.test(base)) kind = "trace";
+                            else if (a.name) kind = a.name;
+                            return { kind, base };
+                          });
+                        if (!items.length && res.status === "passed") return;
+                        if (!bySpec.has(f)) bySpec.set(f, new Map());
+                        const byAtt = bySpec.get(f);
+                        if (!byAtt.has(i)) byAtt.set(i, []);
+                        byAtt.get(i).push({
+                          project,
+                          title: spec.title,
+                          status: res.status,
+                          items,
+                        });
+                      });
+                    }
+                  }
+                };
+                for (const s of r.suites || []) walk(s);
+                const out = [];
+                out.push("#### Per-spec artifact files (grouped by spec → Playwright retry attempt → browser · test)");
+                out.push("");
+                if (bySpec.size === 0) {
+                  out.push("_No per-spec evidence files were produced._");
+                } else {
+                  for (const [file, byAtt] of [...bySpec.entries()].sort()) {
+                    out.push(`<details><summary><code>${file}</code></summary>`);
+                    out.push("");
+                    for (const att of [...byAtt.keys()].sort((a,b)=>a-b)) {
+                      const label = att === 0 ? "attempt 0 (initial)" : `attempt ${att}`;
+                      out.push(`**${label}**`);
+                      out.push("");
+                      for (const entry of byAtt.get(att)) {
+                        const badge = entry.status === "passed" ? "✅ passed" : `❌ ${entry.status}`;
+                        out.push(`- \`${entry.project}\` · **${entry.title}** — ${badge}`);
+                        if (entry.items.length) {
+                          out.push("");
+                          out.push("  | Kind | File |");
+                          out.push("  |---|---|");
+                          for (const it of entry.items) {
+                            out.push(`  | ${it.kind} | [\`${it.base}\`](${url}) |`);
+                          }
+                        }
+                        out.push("");
+                      }
+                    }
+                    out.push("</details>");
+                    out.push("");
+                  }
+                }
+                process.stdout.write(out.join("\n"));
+              ' "$RESULTS_JSON" > "$GROUPED_MD"
+            else
+              echo '_No Playwright JSON report was produced; cannot group artifacts._' > "$GROUPED_MD"
+            fi
             cat "$GROUPED_MD"
             mkdir -p reports/_ci
             cp "$GROUPED_MD" reports/_ci/install-prompt-grouped-artifacts.md
           } >> "$GITHUB_STEP_SUMMARY"
+
         env:
           ARTIFACTS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts
       # Assemble the sticky PR comment body from a template + the
