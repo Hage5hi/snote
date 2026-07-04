@@ -161,6 +161,55 @@ vice versa. The CI summary renders a `Scene-diff wildcard expansions`
 table only when failures are present, focused on patterns that touched
 a failing scene.
 
+## Updating the focus-trap JSON Schemas
+
+The `--json-report` and `--diff-json-out` outputs of
+`scripts/inspect-focus-trap.ts` are pinned by published Draft-07 schemas
+in `schemas/` (`focus-trap-inspect-report.schema.json`,
+`focus-trap-inspect-diff.schema.json`). Downstream consumers validate
+against `schemaVersion`, so any change to the artifact shape is a
+coordinated 4-step update:
+
+1. **Edit the schema(s)** in `schemas/`. Bump the `schemaVersion`
+   `const` value if the change is not backwards-compatible.
+2. **Sync the CLI constants** in
+   `scripts/_helpers/focus-trap-inspect.ts` — `JSON_REPORT_SCHEMA_VERSION`
+   and/or `DIFF_JSON_SCHEMA_VERSION` must match the schema `const`. CI
+   fails otherwise (`CLI schemaVersion must match published JSON Schemas`).
+3. **Regenerate the TypeScript types** used by code and tests:
+
+   ```sh
+   bun run schema:types            # regenerate
+   bun run schema:types:check      # fail if the .gen.ts would change
+   ```
+
+   The pre-commit hook runs `schema:types:check` automatically when
+   `schemas/focus-trap-inspect-*.schema.json` or the generator is staged.
+4. **Validate + run the tests**:
+
+   ```sh
+   # Ajv-validate a real CLI run against the pinned schemas
+   bunx ajv validate \
+     -s schemas/focus-trap-inspect-report.schema.json \
+     -d reports/_ci/focus-trap-inspect-report.json
+   bunx ajv validate \
+     -s schemas/focus-trap-inspect-diff.schema.json \
+     -d reports/_ci/focus-trap-inspect-diff.json
+
+   # Unit + integration: schema, negative, determinism, byte-identical
+   bun run test scripts/__tests__/focus-trap-json-schemas.test.ts
+   bun run test scripts/__tests__/focus-trap-json-schemas-negative.test.ts
+   bun run test scripts/__tests__/focus-trap-diff-json-determinism.test.ts
+   bun run test scripts/__tests__/focus-trap-diff-json-byte-identical.test.ts
+   bun run test scripts/__tests__/focus-trap-schema-types.test.ts
+
+   # e2e a11y for the HTML triage report
+   bun run test:e2e e2e/focus-trap-html-report-a11y.spec.ts
+   ```
+
+See [`docs/focus-trap-debug.md`](docs/focus-trap-debug.md) for the full
+schema key reference and CLI flags.
+
 ## License
 
 Private.

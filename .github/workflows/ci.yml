@@ -1638,12 +1638,17 @@ jobs:
             if (v(d)) { console.error("expected failure but Ajv accepted wrong schemaVersion"); process.exit(0); }
             const constErr = (v.errors||[]).find(e => e.keyword==="const" && e.instancePath==="/schemaVersion");
             if (!constErr) { console.error("no const error on /schemaVersion:", JSON.stringify(v.errors)); process.exit(0); }
-            console.error("OK: rejected schemaVersion=" + d.schemaVersion + " (allowed=" + constErr.params.allowedValue + ")");
+            const msg = "schemaVersion mismatch: received=" + d.schemaVersion + " expected=" + constErr.params.allowedValue;
+            console.error(msg);
             process.exit(2);
-          ' "$FX/wrong/report.json"
+          ' "$FX/wrong/report.json" 2> "$FX/wrong/err.log"
           rc=$?
           set -e
-          if [ "$rc" -ne 2 ]; then echo "wrong-schemaVersion fixture did not fail as expected (rc=$rc)"; exit 1; fi
+          if [ "$rc" -ne 2 ]; then echo "wrong-schemaVersion fixture did not fail as expected (rc=$rc)"; cat "$FX/wrong/err.log"; exit 1; fi
+          # Assert error message names BOTH the received and the expected
+          # schemaVersion so on-call can triage from CI logs alone.
+          grep -q 'received=9.9.9'  "$FX/wrong/err.log" || { echo "error missing received schemaVersion"; cat "$FX/wrong/err.log"; exit 1; }
+          grep -q 'expected=1.0.0'  "$FX/wrong/err.log" || { echo "error missing expected schemaVersion"; cat "$FX/wrong/err.log"; exit 1; }
 
       # Regenerate the schema-derived .d.ts and fail if it differs from
       # the committed version — prevents silent drift between schemas/
