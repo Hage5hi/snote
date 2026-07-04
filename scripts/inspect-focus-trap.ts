@@ -24,10 +24,12 @@ type Arg = {
   out: string; csv?: string; md?: string;
   csvFilter: CsvFilter;
   validateOnly?: boolean;
+  maxErrors?: number;
   scanRoot: string;
   invalidDir?: string;
   files: string[];
 };
+
 function parseArgs(): Arg {
   const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", files: [] };
   const argv = process.argv.slice(2);
@@ -47,10 +49,15 @@ function parseArgs(): Arg {
         a.csvFilter = f; break;
       }
       case "--validate-only": a.validateOnly = true; break;
+      case "--max-errors": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 0) { console.error("--max-errors must be >= 0"); process.exit(64); }
+        a.maxErrors = n; break;
+      }
       case "--scan-root":     a.scanRoot = argv[++i]; break;
       case "--invalid-dir":   a.invalidDir = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
@@ -126,12 +133,13 @@ const summary: Array<Record<string, unknown>> = [];
 let hadInvalid = false;
 let firstInvalidFile: string | null = null;
 const invalidFiles: string[] = [];
+const canReport = () => args.maxErrors == null || invalidFiles.length < args.maxErrors;
 for (const f of matched) {
   const m = meta(f);
   let p: Record<string, unknown> = {};
   try { p = JSON.parse(readFileSync(f, "utf8")); } catch (e) {
     const reason = `parse error: ${(e as Error).message}`;
-    console.log(`\n=== ${f} ===\n  ${reason}`);
+    if (canReport()) console.log(`\n=== ${f} ===\n  ${reason}`);
     hadInvalid = true;
     firstInvalidFile ??= f;
     invalidFiles.push(f);
@@ -149,8 +157,10 @@ for (const f of matched) {
   const schemaErrs = validateFocusTrapPayload(p);
   if (schemaErrs.length) {
     const lines = schemaErrs.map(formatIssue);
-    console.log(`\n=== ${f} ===\n  ✗ malformed focus-trap-escape payload:`);
-    for (const l of lines) console.log(`    - ${l}`);
+    if (canReport()) {
+      console.log(`\n=== ${f} ===\n  ✗ malformed focus-trap-escape payload:`);
+      for (const l of lines) console.log(`    - ${l}`);
+    }
     hadInvalid = true;
     firstInvalidFile ??= f;
     invalidFiles.push(f);
@@ -165,6 +175,7 @@ for (const f of matched) {
     });
     continue;
   }
+
 
   if (args.validateOnly) {
     // Still emit a healthy entry so the summary JSON reflects every
@@ -234,9 +245,11 @@ const invalidCount = summary.length - validCount;
 // triage. CSV/MD are skipped by default; downstream consumers can still
 // read the summary JSON.
 if (args.validateOnly) {
-  console.log(`\n▶ validate-only: scanned ${matched.length}  valid=${validCount}  invalid=${invalidCount}`);
+  const capped = args.maxErrors != null && invalidCount > args.maxErrors;
+  console.log(`\n▶ validate-only: scanned ${matched.length}  valid=${validCount}  invalid=${invalidCount}${capped ? `  (reporting capped at --max-errors=${args.maxErrors})` : ""}`);
   if (hadInvalid) {
     console.log(`✗ first invalid: ${firstInvalidFile}`);
+
     // Persist a summary even on failure so CI can surface the details.
     mkdirSync(dirname(args.out), { recursive: true });
     writeFileSync(args.out, JSON.stringify({
