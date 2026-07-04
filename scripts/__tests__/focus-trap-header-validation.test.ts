@@ -67,15 +67,15 @@ describe("validateJsonReport", () => {
     delete (r as Record<string, unknown>).artifacts;
     delete (r as Record<string, unknown>).meta;
     const errs = validateJsonReport(r);
-    expect(errs).toContain("missing required top-level key 'artifacts'");
-    expect(errs).toContain("missing required top-level key 'meta'");
+    expect(errs.some((e) => e.startsWith("missing required top-level key 'artifacts'"))).toBe(true);
+    expect(errs.some((e) => e.startsWith("missing required top-level key 'meta'"))).toBe(true);
   });
 
   it("rejects wrong types on valid/invalid counts", () => {
     const r = { ...goodReport(), valid: "1", invalid: "0" };
     const errs = validateJsonReport(r);
-    expect(errs).toContain("'valid' must be a number, got string");
-    expect(errs).toContain("'invalid' must be a number, got string");
+    expect(errs.some((e) => e.startsWith("'valid' must be a number, got string"))).toBe(true);
+    expect(errs.some((e) => e.startsWith("'invalid' must be a number, got string"))).toBe(true);
   });
 
   it("reports each missing per-artifact required key with its index", () => {
@@ -83,7 +83,7 @@ describe("validateJsonReport", () => {
     delete bad.schemaPointer;
     delete bad.quarantined;
     const errs = validateJsonReport({ ...goodReport(), artifacts: [goodArtifact(), bad] });
-    expect(errs).toContain("artifacts[1]: missing required key 'schemaPointer'");
-    expect(errs).toContain("artifacts[1]: missing required key 'quarantined'");
+    expect(errs.some((e) => e.startsWith("artifacts[1]: missing required key 'schemaPointer'"))).toBe(true);
+    expect(errs.some((e) => e.startsWith("artifacts[1]: missing required key 'quarantined'"))).toBe(true);
   });
 });
