@@ -22,6 +22,13 @@ on:
       - "scripts/_helpers/focus-trap-inspect.ts"
       - "scripts/_helpers/focus-trap-inspect-schema.types.gen.ts"
       - "scripts/generate-focus-trap-schema-types.ts"
+  # Nightly drift sweep — catches schemas/types that regenerate differently
+  # under a newer toolchain (Bun / json-schema-to-typescript) before the
+  # divergence lands in a PR. Posts an issue comment on drift; PR runs
+  # keep their existing fail-the-check behavior.
+  schedule:
+    - cron: "17 6 * * *" # 06:17 UTC daily
+  workflow_dispatch:
 
 concurrency:
   group: schema-guard-${{ github.ref }}
