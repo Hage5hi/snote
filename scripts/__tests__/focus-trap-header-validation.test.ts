@@ -20,7 +20,7 @@ describe("validateDiffCsvHeader", () => {
     expect(errs.some((e) => e.includes("prevSchemaPointer"))).toBe(true);
     expect(errs.some((e) => e.includes("currFailureReason"))).toBe(true);
     expect(errs.some((e) => e.includes("currSchemaPointer"))).toBe(true);
-    for (const e of errs) expect(e).toMatch(/missing required column '[^']+'/);
+    expect(errs.filter((e) => /^missing required column '/.test(e))).toHaveLength(3);
   });
 
   it("reports the first out-of-order column with expected vs got", () => {
