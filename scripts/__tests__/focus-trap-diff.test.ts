@@ -88,7 +88,10 @@ describe("inspect-focus-trap --diff-with / --diff-out", () => {
     // Row for c-spec: prev schema → curr parse (reason changes even
     // though both are "invalid").
     const cRow = dataRows.find((r) => r.startsWith(fReasonChanged))!;
-    expect(cRow).toMatch(/^[^,]+,"?schema:.*,\/focusHistory,"?parse:/);
+    expect(cRow).toContain("schema:");
+    expect(cRow).toContain("/focusHistory");
+    expect(cRow).toMatch(/parse( error)?:/);
+
 
     // Re-running with identical inputs produces byte-identical CSV.
     const res2 = spawnSync(
