@@ -247,9 +247,11 @@ const invalidCount = summary.length - validCount;
 // triage. CSV/MD are skipped by default; downstream consumers can still
 // read the summary JSON.
 if (args.validateOnly) {
-  console.log(`\n▶ validate-only: scanned ${matched.length}  valid=${validCount}  invalid=${invalidCount}`);
+  const capped = args.maxErrors != null && invalidCount > args.maxErrors;
+  console.log(`\n▶ validate-only: scanned ${matched.length}  valid=${validCount}  invalid=${invalidCount}${capped ? `  (reporting capped at --max-errors=${args.maxErrors})` : ""}`);
   if (hadInvalid) {
     console.log(`✗ first invalid: ${firstInvalidFile}`);
+
     // Persist a summary even on failure so CI can surface the details.
     mkdirSync(dirname(args.out), { recursive: true });
     writeFileSync(args.out, JSON.stringify({
