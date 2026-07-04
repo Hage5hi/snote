@@ -52,10 +52,35 @@ jobs:
           done
 
       - name: schema:types:check (regenerate + fail on drift)
+        id: schema_types_check
         run: |
           set -euo pipefail
-          bun run schema:types:check \
-            || { echo "generated schema types drifted — run: bun run schema:types  (then commit scripts/_helpers/focus-trap-inspect-schema.types.gen.ts)"; exit 1; }
+          mkdir -p _schema_drift
+          # Snapshot the committed types so we can diff after regeneration.
+          cp scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
+             _schema_drift/committed.d.ts
+          if ! bun run schema:types:check > _schema_drift/check.log 2>&1; then
+            # Regenerate to produce the "after" file, then capture a
+            # unified diff so PR authors can see exactly what changed
+            # without running the generator locally.
+            bun run schema:types || true
+            cp scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
+               _schema_drift/regenerated.d.ts
+            diff -u _schema_drift/committed.d.ts _schema_drift/regenerated.d.ts \
+              > _schema_drift/types.diff || true
+            echo "generated schema types drifted — see the 'schema-types-drift' CI artifact,"
+            echo "then run: bun run schema:types  (and commit scripts/_helpers/focus-trap-inspect-schema.types.gen.ts)"
+            exit 1
+          fi
+
+      - name: Upload regenerated schema type diff (on drift)
+        if: failure() && steps.schema_types_check.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-types-drift
+          path: _schema_drift/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: CLI schemaVersion must match published JSON Schemas
         run: |
