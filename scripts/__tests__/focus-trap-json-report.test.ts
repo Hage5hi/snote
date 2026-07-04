@@ -84,10 +84,11 @@ describe("inspect-focus-trap --json-report", () => {
       ["run", "scripts/inspect-focus-trap.ts",
         "--scan-root", root, "--out", outJson,
         "--json-report", jsonReport,
-        "--invalid-dir", join(root, "..", "ft-jr-inv-" + Date.now())],
+        "--invalid-dir", invalidDir],
       { encoding: "utf8" },
     );
     expect(res2.status).toBe(2);
+
     const doc2 = JSON.parse(readFileSync(jsonReport, "utf8"));
     expect(doc2.artifacts).toEqual(doc.artifacts);
     expect(doc2.issues).toEqual(doc.issues);
