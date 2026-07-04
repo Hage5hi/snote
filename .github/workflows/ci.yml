@@ -1131,68 +1131,105 @@ jobs:
               ' "$RESULTS_JSON"
               echo ''
             fi
-            echo '#### Per-spec artifact files (grouped by Playwright retry attempt)'
-            echo ''
-            echo '| Spec | PW attempt | Kind | File |'
-            echo '|---|---:|---|---|'
-            shopt -s nullglob globstar
-            any=0
-            for f in test-results/**/*.png test-results/**/*.webm test-results/**/trace.zip; do
-              [ -e "$f" ] || continue
-              rel="${f#test-results/}"
-              spec_dir="${rel%%/*}"
-              base="$(basename "$f")"
-              # Playwright names per-retry dirs `<spec>-retry<N>` and the
-              # first attempt has no suffix. Extract the retry number so
-              # reviewers can jump to the exact failing attempt instead
-              # of scrolling through interleaved evidence.
-              if [[ "$spec_dir" =~ -retry([0-9]+)$ ]]; then
-                pw_attempt="${BASH_REMATCH[1]}"
-                spec="${spec_dir%-retry*}"
+            # Build a per-spec, per-attempt grouped view of artifact
+            # files. Each spec becomes a collapsible <details> block,
+            # inside which files are grouped under an "attempt N"
+            # sub-heading. This makes it trivial to see which exact
+            # retry produced a given trace/video/screenshot.
+            GROUPED_MD=$(mktemp)
+            {
+              echo '#### Per-spec artifact files (grouped by spec + Playwright retry attempt)'
+              echo ''
+              shopt -s nullglob globstar
+              ENTRIES=$(mktemp)
+              for f in test-results/**/*.png test-results/**/*.webm test-results/**/trace.zip; do
+                [ -e "$f" ] || continue
+                rel="${f#test-results/}"
+                spec_dir="${rel%%/*}"
+                base="$(basename "$f")"
+                if [[ "$spec_dir" =~ -retry([0-9]+)$ ]]; then
+                  pw_attempt="${BASH_REMATCH[1]}"
+                  spec="${spec_dir%-retry*}"
+                else
+                  pw_attempt="0"
+                  spec="$spec_dir"
+                fi
+                case "$base" in
+                  *.png)     kind='screenshot' ;;
+                  *.webm)    kind='video' ;;
+                  trace.zip) kind='trace' ;;
+                  *)         kind='artifact' ;;
+                esac
+                printf '%s\t%s\t%s\t%s\n' "$spec" "$pw_attempt" "$kind" "$base" >> "$ENTRIES"
+              done
+              if [ ! -s "$ENTRIES" ]; then
+                echo '_No per-spec evidence files were produced._'
               else
-                pw_attempt="0 (initial)"
-                spec="$spec_dir"
+                for spec in $(cut -f1 "$ENTRIES" | sort -u); do
+                  echo "<details><summary><code>${spec}</code></summary>"
+                  echo ''
+                  for att in $(awk -F'\t' -v s="$spec" '$1==s{print $2}' "$ENTRIES" | sort -un); do
+                    att_label="attempt ${att}"
+                    [ "$att" = "0" ] && att_label="attempt 0 (initial)"
+                    echo "**${att_label}**"
+                    echo ''
+                    echo '| Kind | File |'
+                    echo '|---|---|'
+                    awk -F'\t' -v s="$spec" -v a="$att" '$1==s && $2==a {printf "| %s | [`%s`](%s) |\n", $3, $4, ENVIRON["ARTIFACTS_URL"]}' "$ENTRIES"
+                    echo ''
+                  done
+                  echo '</details>'
+                  echo ''
+                done
               fi
-              case "$base" in
-                *.png)     kind='screenshot' ;;
-                *.webm)    kind='video' ;;
-                trace.zip) kind='trace' ;;
-                *)         kind='artifact' ;;
-              esac
-              echo "| \`${spec}\` | ${pw_attempt} | ${kind} | [\`${base}\`](${ARTIFACTS_URL}) |"
-              any=1
-            done
-            if [ "$any" = "0" ]; then
-              echo '| _(none)_ | | | _no per-spec evidence files were produced_ |'
-            fi
+              rm -f "$ENTRIES"
+            } > "$GROUPED_MD"
+            cat "$GROUPED_MD"
+            mkdir -p reports/_ci
+            cp "$GROUPED_MD" reports/_ci/install-prompt-grouped-artifacts.md
           } >> "$GITHUB_STEP_SUMMARY"
-      # Sticky PR comment mirroring the summary so flake diagnosis
-      # lives on the PR itself. Keyed on a stable header so retries
-      # update in place instead of piling up new comments.
+        env:
+          ARTIFACTS_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts
+      # Assemble the sticky PR comment body from a template + the
+      # grouped artifact section, so the comment shows the collapsible
+      # per-spec / per-attempt table inline (not just a link to the
+      # workflow summary).
+      - name: InstallPrompt failure evidence — build PR comment body
+        if: failure() && github.event_name == 'pull_request' && (steps.changes.outputs.ip == 'true')
+        run: |
+          mkdir -p reports/_ci
+          BODY=reports/_ci/install-prompt-pr-comment.md
+          {
+            echo "### InstallPrompt Playwright failures — workflow attempt ${{ github.run_attempt }}"
+            echo ''
+            echo 'Playwright ran with `--retries=2` (each failing test re-attempts up to 2 times).'
+            echo 'The failure-evidence bundle contains **per-attempt** trace/video/screenshot files'
+            echo '— not just the last attempt — so you can diff evidence across retries.'
+            echo ''
+            echo "Attached to [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):"
+            echo ''
+            echo "- **Failure evidence** (per workflow attempt, contains all Playwright retry attempts): \`install-prompt-failure-evidence-attempt-${{ github.run_attempt }}\`"
+            echo '- **Full HTML report**: `install-prompt-a11y-report`'
+            echo ''
+            if [ -f reports/_ci/install-prompt-grouped-artifacts.md ]; then
+              cat reports/_ci/install-prompt-grouped-artifacts.md
+            else
+              echo '_(No grouped artifact section was produced for this run.)_'
+            fi
+            echo ''
+            echo 'The workflow run **Summary** tab also has a per-test retry breakdown (attempts + final status).'
+            echo ''
+            echo 'Open the HTML report locally with:'
+            echo '```'
+            echo 'bunx playwright show-report playwright-report/install-prompt'
+            echo '```'
+          } > "$BODY"
       - name: InstallPrompt failure evidence — sticky PR comment
         if: failure() && github.event_name == 'pull_request' && (steps.changes.outputs.ip == 'true')
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: install-prompt-failure-evidence
-          message: |
-            ### InstallPrompt Playwright failures — workflow attempt ${{ github.run_attempt }}
+          path: reports/_ci/install-prompt-pr-comment.md
 
-            Playwright ran with `--retries=2` (each failing test re-attempts up to 2 times).
-            The failure-evidence bundle contains **per-attempt** trace/video/screenshot files
-            — not just the last attempt — so you can diff evidence across retries.
-
-            Attached to [this workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts):
-
-            - **Failure evidence** (per workflow attempt, contains all Playwright retry attempts): `install-prompt-failure-evidence-attempt-${{ github.run_attempt }}`
-            - **Full HTML report**: `install-prompt-a11y-report`
-
-            The workflow run **Summary** tab has:
-            - a **per-test retry breakdown** (attempts + final status, flags flaky vs. broken specs)
-            - a **per-spec artifact table** with a `PW attempt` column linking each screenshot/video/trace to its exact retry number
-
-            Open the HTML report locally with:
-            ```
-            bunx playwright show-report playwright-report/install-prompt
-            ```
 
 
