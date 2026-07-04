@@ -1205,8 +1205,23 @@ jobs:
           path: |
             reports/_ci/focus-trap-inspect-summary.invalid.csv
             reports/_ci/focus-trap-inspect-summary.invalid.json
+            reports/_ci/focus-trap-inspect-report.json
           retention-days: 14
           if-no-files-found: ignore
+      # Quarantined invalid focus-trap JSONs (with sibling screenshots/HTML
+      # copied by inspect-focus-trap.ts) — uploaded under the same
+      # sha + scan-root naming as the valid/invalid CSVs so on-call can
+      # correlate a bad artifact with its CSV row across runs.
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: focus-trap-quarantine--test-results--${{ github.sha }}--attempt-${{ github.run_attempt }}
+          path: |
+            reports/_ci/focus-trap-invalid/**
+          retention-days: 14
+          if-no-files-found: ignore
+
+
 
 
 
