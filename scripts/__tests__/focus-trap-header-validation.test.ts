@@ -58,8 +58,8 @@ describe("validateJsonReport", () => {
   });
 
   it("rejects a non-object top-level", () => {
-    expect(validateJsonReport(null)).toEqual(["report must be a top-level object"]);
-    expect(validateJsonReport([])).toEqual(["report must be a top-level object"]);
+    expect(validateJsonReport(null)).toEqual(["report must be a top-level object [pointer=/]"]);
+    expect(validateJsonReport([])).toEqual(["report must be a top-level object [pointer=/]"]);
   });
 
   it("reports every missing required top-level key", () => {
