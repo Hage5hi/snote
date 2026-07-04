@@ -328,9 +328,26 @@ const summaryDoc = {
   invalidDir: args.invalidDir ?? null,
   entries: summary,
 };
-mkdirSync(dirname(args.out), { recursive: true });
-writeFileSync(args.out, JSON.stringify(summaryDoc, null, 2));
-console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length}  valid=${validCount}  invalid=${invalidCount})`);
+
+// Shared run metadata (git SHA, scan-root, argv, timestamp) used by
+// both --json-report and --html-report so every artifact traces back
+// to the exact CI invocation that produced it.
+const runMeta = {
+  gitSha: process.env.GITHUB_SHA
+    || (() => { try { return require("node:child_process").execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return null; } })(),
+  scanRoot: args.scanRoot,
+  invalidDir: args.invalidDir ?? null,
+  argv: process.argv.slice(2),
+  timestamp: summaryDoc.generatedAt,
+  ciRunId: process.env.GITHUB_RUN_ID ?? null,
+  ciRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+};
+
+if (!args.reportValidateOnly) {
+  mkdirSync(dirname(args.out), { recursive: true });
+  writeFileSync(args.out, JSON.stringify(summaryDoc, null, 2));
+  console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length}  valid=${validCount}  invalid=${invalidCount})`);
+}
 
 if (args.csv) {
   const filtered = summary.filter((e) => {
