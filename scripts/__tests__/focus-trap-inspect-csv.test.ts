@@ -63,6 +63,7 @@ describe("toCsvRow", () => {
       "afterTab", "12.5",
       "stable-attribute", "true",
       "2",
+      "", // failureReason empty for healthy rows
     ]);
   });
 
@@ -73,10 +74,7 @@ describe("toCsvRow", () => {
 
   it("quotes labels containing newlines without splitting the row", () => {
     const row = toCsvRow({ ...baseEntry, label: "a\nb" });
-    // The escaped label must appear as a single quoted field, not split.
     expect(row).toContain('"a\nb"');
-    // Row still has exactly N-1 unquoted commas separating N fields
-    // (commas inside the quoted label do not count).
     const outsideQuotes = row.replace(/"[^"]*"/g, "");
     expect(outsideQuotes.split(",").length).toBe(CSV_COLUMNS.length);
   });
@@ -91,6 +89,13 @@ describe("toCsvRow", () => {
     // firstEscapeEvent, firstEscapePerfMs, relocatePath, relocateUsedFallback, iterCount
     expect(row.slice(6, 11)).toEqual(["", "", "", "", "0"]);
   });
+
+  it("surfaces schema/parse failures via the failureReason column", () => {
+    const row = toCsvRow({ ...baseEntry, failureReason: "schema: /focusHistory [focusHistory]: required array" }).split(",");
+    // failureReason is the last column and is quoted (contains commas/colons safe, but the value here has none).
+    expect(CSV_COLUMNS[CSV_COLUMNS.length - 1]).toBe("failureReason");
+    expect(row[row.length - 1]).toContain("schema:");
+  });
 });
 
 describe("validateFocusTrapPayload", () => {
@@ -98,14 +103,20 @@ describe("validateFocusTrapPayload", () => {
     expect(validateFocusTrapPayload({ focusHistory: [{ event: "beforeOpen" }] })).toEqual([]);
   });
 
-  it("rejects non-object payloads", () => {
-    expect(validateFocusTrapPayload(null)).toContain("payload: expected top-level object");
-    expect(validateFocusTrapPayload([])).toContain("payload: expected top-level object");
+  it("rejects non-object payloads with a JSON pointer and value snippet", () => {
+    const errs = validateFocusTrapPayload(null);
+    expect(errs[0]).toMatchObject({ pointer: "", field: "payload", message: "expected top-level object" });
+    expect(errs[0].value).toBe("null");
+    const errs2 = validateFocusTrapPayload([]);
+    expect(errs2[0].field).toBe("payload");
   });
 
-  it("requires focusHistory to be an array of entries with string events", () => {
-    expect(validateFocusTrapPayload({})).toContain("focusHistory: required array");
-    const errs = validateFocusTrapPayload({ focusHistory: [{ event: 42 }] });
-    expect(errs.some((e) => e.includes("focusHistory[0].event"))).toBe(true);
+  it("requires focusHistory to be an array of entries with string events, pinning JSON pointers", () => {
+    const missing = validateFocusTrapPayload({});
+    expect(missing[0]).toMatchObject({ pointer: "/focusHistory", field: "focusHistory" });
+
+    const badEvent = validateFocusTrapPayload({ focusHistory: [{ event: 42 }] });
+    expect(badEvent[0]).toMatchObject({ pointer: "/focusHistory/0/event", field: "event", message: "expected string" });
+    expect(badEvent[0].value).toBe("42");
   });
 });

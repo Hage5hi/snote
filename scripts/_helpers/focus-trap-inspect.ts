@@ -22,45 +22,72 @@ export type FocusTrapPayload = {
   artifactUrls?: Record<string, string> | null;
 };
 
+// Structured schema issue so callers can surface the exact JSON pointer
+// (RFC 6901), the field name that failed, and a short snippet of the
+// offending value. Kept dep-free.
+export type SchemaIssue = {
+  pointer: string;   // e.g. "/focusHistory/0/event"
+  field: string;     // e.g. "event"
+  message: string;   // e.g. "expected string"
+  value?: string;    // short JSON snippet of the bad value (<=80 chars)
+};
+
+const snippet = (v: unknown, max = 80): string => {
+  let s: string;
+  try { s = JSON.stringify(v); } catch { s = String(v); }
+  if (s == null) return "";
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+};
+
+export function formatIssue(i: SchemaIssue): string {
+  const v = i.value !== undefined ? ` (got ${i.value})` : "";
+  return `${i.pointer || "/"} [${i.field}]: ${i.message}${v}`;
+}
+
 // Minimal schema validator — no external deps. Returns [] when the
 // payload matches the shape produced by e2e/helpers/install-prompt.ts,
-// otherwise a list of human-readable error strings. Callers should
-// fail fast so a malformed artifact never silently degrades inspect
-// or replay output.
-export function validateFocusTrapPayload(input: unknown): string[] {
-  const errs: string[] = [];
+// otherwise a list of structured issues. Callers should fail fast so a
+// malformed artifact never silently degrades inspect or replay output.
+export function validateFocusTrapPayload(input: unknown): SchemaIssue[] {
+  const errs: SchemaIssue[] = [];
   if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return ["payload: expected top-level object"];
+    return [{ pointer: "", field: "payload", message: "expected top-level object", value: snippet(input) }];
   }
   const p = input as Record<string, unknown>;
   if (!Array.isArray(p.focusHistory)) {
-    errs.push("focusHistory: required array");
+    errs.push({ pointer: "/focusHistory", field: "focusHistory", message: "required array", value: snippet(p.focusHistory) });
   } else {
     p.focusHistory.forEach((e, i) => {
+      const ptr = `/focusHistory/${i}`;
       if (!e || typeof e !== "object") {
-        errs.push(`focusHistory[${i}]: expected object`);
+        errs.push({ pointer: ptr, field: `focusHistory[${i}]`, message: "expected object", value: snippet(e) });
         return;
       }
       const ev = (e as Record<string, unknown>).event;
-      if (typeof ev !== "string") errs.push(`focusHistory[${i}].event: expected string`);
+      if (typeof ev !== "string") {
+        errs.push({ pointer: `${ptr}/event`, field: "event", message: "expected string", value: snippet(ev) });
+      }
     });
   }
   if (p.iterTimings != null && (typeof p.iterTimings !== "object" || Array.isArray(p.iterTimings))) {
-    errs.push("iterTimings: expected object when present");
+    errs.push({ pointer: "/iterTimings", field: "iterTimings", message: "expected object when present", value: snippet(p.iterTimings) });
   }
   if (p.artifacts != null && (typeof p.artifacts !== "object" || Array.isArray(p.artifacts))) {
-    errs.push("artifacts: expected object when present");
+    errs.push({ pointer: "/artifacts", field: "artifacts", message: "expected object when present", value: snippet(p.artifacts) });
   }
   return errs;
 }
 
 // CSV column ordering is part of the CI contract — downstream jobs
-// index by column position. Do not reorder without updating consumers.
+// index by column position. `failureReason` is empty for healthy rows
+// and populated with the parse/schema issue (or matched failure label)
+// for invalid/mismatched artifacts.
 export const CSV_COLUMNS = [
   "file", "spec", "browser", "attempt", "label", "testTitle",
   "firstEscapeEvent", "firstEscapePerfMs",
   "relocatePath", "relocateUsedFallback",
   "iterCount",
+  "failureReason",
 ] as const;
 
 export function escCsv(v: unknown): string {
@@ -76,6 +103,7 @@ export function toCsvRow(entry: Record<string, unknown>): string {
     fe?.event ?? "", fe?.perf ?? "",
     rl?.path ?? "", rl?.usedFallback ?? "",
     Object.keys((entry.iterTimings as object) || {}).length,
+    entry.failureReason ?? "",
   ];
   return values.map(escCsv).join(",");
 }

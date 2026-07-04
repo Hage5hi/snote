@@ -8,16 +8,23 @@
 //   bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser chromium|firefox|webkit]
 //                                         [--spec SUBSTR] [--label SUBSTR]
 //                                         [--out PATH] [FILE ...]
-import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import {
   CSV_COLUMNS,
+  formatIssue,
   renderMarkdown,
   toCsvRow,
   validateFocusTrapPayload,
 } from "./_helpers/focus-trap-inspect";
 
-type Arg = { attempt?: number; browser?: string; spec?: string; label?: string; out: string; csv?: string; md?: string; files: string[] };
+type Arg = {
+  attempt?: number; browser?: string; spec?: string; label?: string;
+  out: string; csv?: string; md?: string;
+  validateOnly?: boolean;
+  invalidDir?: string;
+  files: string[];
+};
 function parseArgs(): Arg {
   const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", files: [] };
   const argv = process.argv.slice(2);
@@ -31,12 +38,15 @@ function parseArgs(): Arg {
       case "--out":     a.out = argv[++i]; break;
       case "--csv":     a.csv = argv[++i]; break;
       case "--md":      a.md = argv[++i]; break;
+      case "--validate-only": a.validateOnly = true; break;
+      case "--invalid-dir":   a.invalidDir = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--md PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--md PATH] [--validate-only] [--invalid-dir PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
   }
+  if (a.invalidDir == null) a.invalidDir = "reports/_ci/focus-trap-invalid";
   return a;
 }
 
@@ -79,20 +89,59 @@ if (!matched.length) {
   console.log("No focus-trap-escape files matched.");
 }
 
+// Copy a bad JSON artifact plus its sibling screenshot/HTML into a
+// dedicated CI folder so debuggers can jump straight to the broken
+// files without grepping the raw upload tree.
+function quarantine(file: string, reason: string, dir: string): string {
+  try {
+    mkdirSync(dir, { recursive: true });
+    const base = basename(file, ".json");
+    const targetJson = join(dir, `${base}.json`);
+    copyFileSync(file, targetJson);
+    for (const ext of [".png", ".html"]) {
+      const sib = join(dirname(file), `${base}${ext}`);
+      if (existsSync(sib)) copyFileSync(sib, join(dir, `${base}${ext}`));
+    }
+    writeFileSync(join(dir, `${base}.reason.txt`), reason + "\n");
+    return targetJson;
+  } catch (e) {
+    console.log(`  (warn) failed to quarantine ${file}: ${e}`);
+    return "";
+  }
+}
+
 const summary: Array<Record<string, unknown>> = [];
 let hadInvalid = false;
+let firstInvalidFile: string | null = null;
 for (const f of matched) {
   const m = meta(f);
   let p: Record<string, unknown> = {};
-  try { p = JSON.parse(readFileSync(f, "utf8")); } catch (e) { console.log(`\n=== ${f} ===\n  parse error: ${e}`); hadInvalid = true; continue; }
+  try { p = JSON.parse(readFileSync(f, "utf8")); } catch (e) {
+    const reason = `parse error: ${(e as Error).message}`;
+    console.log(`\n=== ${f} ===\n  ${reason}`);
+    hadInvalid = true;
+    firstInvalidFile ??= f;
+    const quarantined = args.invalidDir ? quarantine(f, reason, args.invalidDir) : "";
+    summary.push({ file: f, ...m, testTitle: null, triggerNonce: null, firstEscape: null, relocate: null, iterTimings: {}, artifacts: null, artifactUrls: null, failureReason: reason, quarantined });
+    if (args.validateOnly) break;
+    continue;
+  }
 
   const schemaErrs = validateFocusTrapPayload(p);
   if (schemaErrs.length) {
+    const lines = schemaErrs.map(formatIssue);
     console.log(`\n=== ${f} ===\n  ✗ malformed focus-trap-escape payload:`);
-    for (const err of schemaErrs) console.log(`    - ${err}`);
+    for (const l of lines) console.log(`    - ${l}`);
     hadInvalid = true;
+    firstInvalidFile ??= f;
+    const reason = `schema: ${lines.join(" | ")}`;
+    const quarantined = args.invalidDir ? quarantine(f, reason, args.invalidDir) : "";
+    summary.push({ file: f, ...m, testTitle: p.testTitle ?? null, triggerNonce: p.triggerNonce ?? null, firstEscape: null, relocate: null, iterTimings: {}, artifacts: null, artifactUrls: null, failureReason: reason, schemaIssues: schemaErrs, quarantined });
+    if (args.validateOnly) break;
     continue;
   }
+
+  if (args.validateOnly) continue;
 
   const hist = (p.focusHistory as Array<Record<string, unknown>>) || [];
   const firstEscape = hist.find((e) => {
@@ -130,7 +179,19 @@ for (const f of matched) {
     iterTimings: timings,
     artifacts: p.artifacts ?? null,
     artifactUrls: p.artifactUrls ?? null,
+    failureReason: firstEscape ? (m.label ?? "") : "",
   });
+}
+
+// --validate-only exits on the first invalid file without producing
+// CSV/MD or the full summary — just a short status line.
+if (args.validateOnly) {
+  if (hadInvalid) {
+    console.log(`\n✗ validation failed: ${firstInvalidFile}`);
+    process.exit(2);
+  }
+  console.log(`\n✓ validated ${matched.length} focus-trap-escape file(s)`);
+  process.exit(0);
 }
 
 const summaryDoc = {
@@ -138,6 +199,7 @@ const summaryDoc = {
   filters: { attempt: args.attempt ?? null, browser: args.browser ?? null, spec: args.spec ?? null, label: args.label ?? null },
   matched: matched.length,
   scanned: all.length,
+  invalid: summary.filter((e) => e.failureReason && String(e.failureReason).startsWith("parse") || String(e.failureReason).startsWith("schema")).length,
   entries: summary,
 };
 mkdirSync(dirname(args.out), { recursive: true });
