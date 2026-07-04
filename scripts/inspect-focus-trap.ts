@@ -389,6 +389,7 @@ if (args.jsonReport) {
     }));
   const meta = runMeta;
   const report = {
+    schemaVersion: JSON_REPORT_SCHEMA_VERSION,
     generatedAt: summaryDoc.generatedAt,
     meta,
     scanned: all.length, matched: matched.length,
