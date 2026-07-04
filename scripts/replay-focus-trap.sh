@@ -91,23 +91,39 @@ cat > "$OUT/index.html" <<'HTML'
         document.querySelectorAll('#tl li.active').forEach(n=>n.classList.remove('active'));
         li.classList.add('active');
         step.textContent = (active && active.outerHTML) || JSON.stringify(active, null, 2);
-        // Best-effort DOM highlight: mark any element inside the iframe
-        // whose outerHTML prefix matches the recorded activeElement.
+        // Prefer stable selectors: id → data-testid → aria-label →
+        // name → role+text → outerHTML prefix heuristic. First match
+        // wins so highlights stay accurate across replays.
         try {
           const doc = dom.contentDocument;
-          if (!doc || !active || !active.outerHTML) return;
-          doc.querySelectorAll('[data-ft-highlight]').forEach(n=>n.removeAttribute('data-ft-highlight'));
-          const needle = active.outerHTML.slice(0, 80);
-          const all = doc.querySelectorAll(active.tag || '*');
-          for (const n of all) {
-            if (n.outerHTML.startsWith(needle)) {
-              n.setAttribute('data-ft-highlight', '1');
-              n.style.outline = '3px solid #ff9800';
-              n.scrollIntoView({block:'center'});
-              break;
+          if (!doc || !active) return;
+          doc.querySelectorAll('[data-ft-highlight]').forEach(n=>{n.removeAttribute('data-ft-highlight');n.style.outline='';});
+          const q = (s) => { try { return doc.querySelector(s); } catch { return null; } };
+          const esc = (v) => (window.CSS && CSS.escape ? CSS.escape(v) : String(v).replace(/"/g,'\\"'));
+          let found =
+              (active.id && q(`#${esc(active.id)}`)) ||
+              (active.dataTestid && q(`[data-testid="${esc(active.dataTestid)}"]`)) ||
+              (active.ariaLabel && q(`[aria-label="${esc(active.ariaLabel)}"]`)) ||
+              (active.name && q(`[name="${esc(active.name)}"]`)) ||
+              null;
+          if (!found && active.role && active.text) {
+            for (const n of doc.querySelectorAll(`[role="${esc(active.role)}"]`)) {
+              if ((n.textContent||'').trim().startsWith(active.text)) { found = n; break; }
             }
           }
+          if (!found && active.outerHTML) {
+            const needle = active.outerHTML.slice(0, 80);
+            for (const n of doc.querySelectorAll(active.tag || '*')) {
+              if (n.outerHTML.startsWith(needle)) { found = n; break; }
+            }
+          }
+          if (found) {
+            found.setAttribute('data-ft-highlight', '1');
+            found.style.outline = '3px solid #ff9800';
+            found.scrollIntoView({block:'center'});
+          }
         } catch { /* cross-origin fallback */ }
+
       });
       tl.appendChild(li);
     });
