@@ -12,11 +12,15 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSyn
 import { basename, dirname, join } from "node:path";
 import {
   CSV_COLUMNS,
+  REQUIRED_DIFF_CSV_COLUMNS,
   formatIssue,
   renderMarkdown,
   toCsvRow,
+  validateDiffCsvHeader,
   validateFocusTrapPayload,
+  validateJsonReport,
 } from "./_helpers/focus-trap-inspect";
+
 
 type CsvFilter = "all" | "valid" | "invalid";
 type Arg = {
