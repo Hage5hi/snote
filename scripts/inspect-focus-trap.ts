@@ -586,10 +586,8 @@ if (args.htmlReport) {
   quarantined.sort((a, b) => a.file.localeCompare(b.file));
   const row = (k: string, c: number) => `<tr><td>${c}</td><td><code>${esc(k)}</code></td></tr>`;
   const qRow = (q: typeof quarantined[number]) => `<tr><td><code>${esc(q.file)}</code></td><td><a href="${esc(q.quarantined)}"><code>${esc(q.quarantined)}</code></a></td><td><code>${esc(q.schemaPointer || "—")}</code></td><td>${esc(q.failureReason || "—")}</td></tr>`;
-  // Top slice is always visible; the full list is collapsed by default
-  // so on-call sees the hot spots first but can expand for the tail.
+  // Top slice is always visible above the collapsible full list.
   const qTop = quarantined.slice(0, topN);
-  const qRest = quarantined.slice(topN);
   // Meta block at the top mirrors --json-report so triage links can
   // always be traced back to the exact commit/CI invocation.
   const metaRows = [
