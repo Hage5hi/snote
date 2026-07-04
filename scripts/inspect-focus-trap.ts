@@ -534,14 +534,21 @@ if (args.htmlReport) {
     const q = String(e.quarantined ?? "");
     if (q) quarantined.push({ file: String(e.file), quarantined: q, failureReason: String(e.failureReason ?? ""), schemaPointer: p });
   }
-  const topN = args.topN;
+  // --html-top-n overrides --top for the HTML view only. Default = --top
+  // (currently 5) so the CLI has a single knob unless callers want to
+  // widen the HTML triage view without spamming the step summary.
+  const topN = args.htmlTopN ?? args.topN;
   const topKinds = [...kindMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
   const topPtrs  = [...ptrMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
   quarantined.sort((a, b) => a.file.localeCompare(b.file));
   const row = (k: string, c: number) => `<tr><td>${c}</td><td><code>${esc(k)}</code></td></tr>`;
   const qRow = (q: typeof quarantined[number]) => `<tr><td><code>${esc(q.file)}</code></td><td><a href="${esc(q.quarantined)}"><code>${esc(q.quarantined)}</code></a></td><td><code>${esc(q.schemaPointer || "—")}</code></td><td>${esc(q.failureReason || "—")}</td></tr>`;
+  // Top slice is always visible; the full list is collapsed by default
+  // so on-call sees the hot spots first but can expand for the tail.
+  const qTop = quarantined.slice(0, topN);
+  const qRest = quarantined.slice(topN);
   const html = `<!doctype html><meta charset="utf-8"><title>Focus-trap triage</title>
-<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}</style>
+<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}details{margin-top:.5rem}summary{cursor:pointer;font-weight:600}</style>
 <h1>Focus-trap triage</h1>
 <p class="k">Scanned <b>${all.length}</b> · matched <b>${matched.length}</b> · ✅ valid <b>${validCount}</b> · ❌ invalid <b>${invalidCount}</b> · quarantine dir: <code>${esc(args.invalidDir ?? "")}</code></p>
 <h2>Top ${topKinds.length} failureKind</h2>
@@ -549,7 +556,11 @@ if (args.htmlReport) {
 <h2>Top ${topPtrs.length} schemaPointer</h2>
 <table><thead><tr><th>count</th><th>schemaPointer</th></tr></thead><tbody>${topPtrs.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
 <h2>Quarantined artifacts (${quarantined.length})</h2>
-<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
+<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${qTop.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
+${qRest.length ? `<details><summary>Show all ${quarantined.length} quarantined artifacts</summary>
+<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("")}</tbody></table>
+</details>` : ""}
+
 `;
   mkdirSync(dirname(args.htmlReport), { recursive: true });
   writeFileSync(args.htmlReport, html);
