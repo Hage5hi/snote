@@ -406,9 +406,13 @@ if (args.jsonReport) {
     process.exit(65);
   }
 
-  mkdirSync(dirname(args.jsonReport), { recursive: true });
-  writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
-  console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
+  if (args.reportValidateOnly) {
+    console.log(`✓ --json-report validated (artifacts=${artifacts.length} issues=${issues.length}) — skipped write per --report-validate-only`);
+  } else {
+    mkdirSync(dirname(args.jsonReport), { recursive: true });
+    writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
+    console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
+  }
 }
 
 
