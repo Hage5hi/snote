@@ -393,8 +393,8 @@ type DiffRow = { file: string; prev: { failureReason: string; schemaPointer: str
 let diffRows: DiffRow[] = [];
 if (args.diffWith) {
   const prev = new Map<string, { failureReason: string; schemaPointer: string }>();
-  const fileIdx = CSV_COLUMNS.indexOf("file");
-  const reasonIdx = CSV_COLUMNS.indexOf("failureReason");
+  void CSV_COLUMNS; // legacy indexer kept as reference for header validation below
+
   const parseCsv = (text: string) => {
     // Minimal CSV parser matching escCsv (RFC 4180 quotes + doubled quotes).
     const rows: string[][] = []; let row: string[] = []; let cell = ""; let q = false;
