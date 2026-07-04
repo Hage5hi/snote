@@ -30,6 +30,9 @@ type Arg = {
   jsonReport?: string;
   diffWith?: string;
   diffOut?: string;
+  diffRetries: number;
+  diffRetryDelayMs: number;
+  htmlReport?: string;
   topN: number;
   artifactValidUrl?: string;
   artifactInvalidUrl?: string;
@@ -37,8 +40,9 @@ type Arg = {
 };
 
 
+
 function parseArgs(): Arg {
-  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", topN: 5, files: [] };
+  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", topN: 5, diffRetries: 3, diffRetryDelayMs: 500, files: [] };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -66,6 +70,18 @@ function parseArgs(): Arg {
       case "--json-report":   a.jsonReport = argv[++i]; break;
       case "--diff-with":     a.diffWith = argv[++i]; break;
       case "--diff-out":      a.diffOut = argv[++i]; break;
+      case "--diff-retries": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 0) { console.error("--diff-retries must be >= 0"); process.exit(64); }
+        a.diffRetries = n; break;
+      }
+      case "--diff-retry-delay-ms": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 0) { console.error("--diff-retry-delay-ms must be >= 0"); process.exit(64); }
+        a.diffRetryDelayMs = n; break;
+      }
+      case "--html-report":   a.htmlReport = argv[++i]; break;
+
       case "--top": {
         const n = Number(argv[++i]);
         if (!Number.isFinite(n) || n < 1) { console.error("--top must be >= 1"); process.exit(64); }
@@ -334,18 +350,40 @@ if (args.jsonReport) {
       parseError: (e.parseError as string | null) ?? null,
       quarantined: String(e.quarantined ?? ""),
     }));
+  // Run metadata (git SHA, scan-root, argv, timestamp) so a report can
+  // always be traced back to the exact CI invocation that produced it.
+  const gitSha = process.env.GITHUB_SHA
+    || (() => { try { return require("node:child_process").execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return null; } })();
+  const meta = {
+    gitSha,
+    scanRoot: args.scanRoot,
+    invalidDir: args.invalidDir ?? null,
+    argv: process.argv.slice(2),
+    timestamp: summaryDoc.generatedAt,
+    ciRunId: process.env.GITHUB_RUN_ID ?? null,
+    ciRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+  };
   const report = {
     generatedAt: summaryDoc.generatedAt,
+    meta,
     scanned: all.length, matched: matched.length,
     valid: validCount, invalid: invalidCount,
     invalidDir: args.invalidDir ?? null,
     artifacts,
     issues,
   };
+  // Schema-validate before writing so a shape drift fails fast instead
+  // of shipping a broken artifact to downstream jobs.
+  const requiredArtifactKeys = ["file", "failureKind", "failureReason", "schemaPointer", "quarantined"] as const;
+  const requiredTopKeys = ["generatedAt", "meta", "scanned", "matched", "valid", "invalid", "artifacts", "issues"] as const;
+  for (const k of requiredTopKeys) if (!(k in report)) { console.error(`--json-report: missing required top-level key '${k}'`); process.exit(65); }
+  if (typeof report.valid !== "number" || typeof report.invalid !== "number") { console.error("--json-report: valid/invalid must be numbers"); process.exit(65); }
+  for (const a of report.artifacts) for (const k of requiredArtifactKeys) if (!(k in a)) { console.error(`--json-report: artifact missing required key '${k}': ${JSON.stringify(a)}`); process.exit(65); }
   mkdirSync(dirname(args.jsonReport), { recursive: true });
   writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
   console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
 }
+
 
 
 // --diff-with compares the current summary against a previous run's
@@ -355,8 +393,8 @@ type DiffRow = { file: string; prev: { failureReason: string; schemaPointer: str
 let diffRows: DiffRow[] = [];
 if (args.diffWith) {
   const prev = new Map<string, { failureReason: string; schemaPointer: string }>();
-  const fileIdx = CSV_COLUMNS.indexOf("file");
-  const reasonIdx = CSV_COLUMNS.indexOf("failureReason");
+  void CSV_COLUMNS; // legacy indexer kept as reference for header validation below
+
   const parseCsv = (text: string) => {
     // Minimal CSV parser matching escCsv (RFC 4180 quotes + doubled quotes).
     const rows: string[][] = []; let row: string[] = []; let cell = ""; let q = false;
@@ -386,13 +424,42 @@ if (args.diffWith) {
     } catch { /* missing dir → empty diff */ }
     return out;
   };
-  for (const csvPath of walkCsv(args.diffWith)) {
+  // Retry/backoff around the previous-run artifact read so a transient
+  // CI hiccup (still-syncing artifact mount, brief NFS blip, etc.)
+  // doesn't kill the diff. Uses exponential backoff capped by
+  // --diff-retries / --diff-retry-delay-ms.
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+  let csvPaths: string[] = [];
+  for (let attempt = 0; attempt <= args.diffRetries; attempt++) {
+    try {
+      if (!existsSync(args.diffWith)) throw new Error(`diff-with dir missing: ${args.diffWith}`);
+      csvPaths = walkCsv(args.diffWith);
+      if (csvPaths.length) break;
+      throw new Error(`no *.valid.csv / *.invalid.csv under ${args.diffWith}`);
+    } catch (e) {
+      if (attempt === args.diffRetries) {
+        console.log(`  (warn) diff-with read failed after ${attempt + 1} attempt(s): ${(e as Error).message}`);
+        break;
+      }
+      const delay = args.diffRetryDelayMs * Math.pow(2, attempt);
+      console.log(`  (retry) diff-with attempt ${attempt + 1} failed (${(e as Error).message}); sleeping ${delay}ms`);
+      await sleep(delay);
+    }
+  }
+  for (const csvPath of csvPaths) {
     const rows = parseCsv(readFileSync(csvPath, "utf8"));
     const header = rows.shift();
     if (!header) continue;
+    // Validate the previous CSV header carries the columns we depend on.
+    if (!header.includes("file") || !header.includes("failureReason")) {
+      console.log(`  (warn) skipping ${csvPath}: missing required columns (file, failureReason)`);
+      continue;
+    }
+    const prevFileIdx = header.indexOf("file");
+    const prevReasonIdx = header.indexOf("failureReason");
     for (const r of rows) {
-      const file = r[fileIdx] ?? "";
-      const reason = r[reasonIdx] ?? "";
+      const file = r[prevFileIdx] ?? "";
+      const reason = r[prevReasonIdx] ?? "";
       const ptr = reason.startsWith("schema:") ? (reason.match(/\/[\w[\]/-]*/)?.[0] ?? "") : "";
       if (file) prev.set(file, { failureReason: reason, schemaPointer: ptr });
     }
@@ -408,6 +475,7 @@ if (args.diffWith) {
   }
   // Sort by file so diff-out is byte-stable across runs.
   diffRows.sort((a, b) => a.file.localeCompare(b.file));
+
   console.log(`\n▶ Diff vs ${args.diffWith}: ${diffRows.length} changed row(s)`);
   for (const d of diffRows.slice(0, 20)) {
     console.log(`  ~ ${d.file}\n      prev: ${d.prev.failureReason || "—"} ${d.prev.schemaPointer ? `(${d.prev.schemaPointer})` : ""}\n      curr: ${d.curr.failureReason || "—"} ${d.curr.schemaPointer ? `(${d.curr.schemaPointer})` : ""}`);
@@ -415,7 +483,11 @@ if (args.diffWith) {
   if (args.diffOut) {
     // Stable CSV format so consumers can diff two runs' diff-outs directly.
     // Header + one row per changed artifact, sorted by file.
-    const header = ["file", "prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"];
+    const REQUIRED_DIFF_COLUMNS = ["file", "prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"] as const;
+    const header: string[] = [...REQUIRED_DIFF_COLUMNS];
+    // Schema-validate the header before writing (guards against
+    // accidental column-drift in this file).
+    for (const c of REQUIRED_DIFF_COLUMNS) if (!header.includes(c)) { console.error(`--diff-out: missing required column '${c}'`); process.exit(65); }
     const rows = diffRows.map((d) => [d.file, d.prev.failureReason, d.prev.schemaPointer, d.curr.failureReason, d.curr.schemaPointer]);
     const csv = [header, ...rows].map((r) => r.map((v) => {
       const s = v == null ? "" : String(v);
@@ -426,6 +498,45 @@ if (args.diffWith) {
     console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
   }
 }
+
+// --html-report renders a lightweight standalone triage page from the
+// summary: top-N failureKind / schemaPointer bars + a table of
+// quarantined files linking directly to the copies under --invalid-dir.
+if (args.htmlReport) {
+  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  const kindMap = new Map<string, number>();
+  const ptrMap = new Map<string, number>();
+  const quarantined: Array<{ file: string; quarantined: string; failureReason: string; schemaPointer: string }> = [];
+  for (const e of summary) {
+    const k = (e.failureKind as string | null) ?? "";
+    if (k && k !== "escape") kindMap.set(k, (kindMap.get(k) ?? 0) + 1);
+    const p = (e.schemaPointer as string | null) ?? "";
+    if (p) ptrMap.set(p, (ptrMap.get(p) ?? 0) + 1);
+    const q = String(e.quarantined ?? "");
+    if (q) quarantined.push({ file: String(e.file), quarantined: q, failureReason: String(e.failureReason ?? ""), schemaPointer: p });
+  }
+  const topN = args.topN;
+  const topKinds = [...kindMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
+  const topPtrs  = [...ptrMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
+  quarantined.sort((a, b) => a.file.localeCompare(b.file));
+  const row = (k: string, c: number) => `<tr><td>${c}</td><td><code>${esc(k)}</code></td></tr>`;
+  const qRow = (q: typeof quarantined[number]) => `<tr><td><code>${esc(q.file)}</code></td><td><a href="${esc(q.quarantined)}"><code>${esc(q.quarantined)}</code></a></td><td><code>${esc(q.schemaPointer || "—")}</code></td><td>${esc(q.failureReason || "—")}</td></tr>`;
+  const html = `<!doctype html><meta charset="utf-8"><title>Focus-trap triage</title>
+<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}</style>
+<h1>Focus-trap triage</h1>
+<p class="k">Scanned <b>${all.length}</b> · matched <b>${matched.length}</b> · ✅ valid <b>${validCount}</b> · ❌ invalid <b>${invalidCount}</b> · quarantine dir: <code>${esc(args.invalidDir ?? "")}</code></p>
+<h2>Top ${topKinds.length} failureKind</h2>
+<table><thead><tr><th>count</th><th>failureKind</th></tr></thead><tbody>${topKinds.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
+<h2>Top ${topPtrs.length} schemaPointer</h2>
+<table><thead><tr><th>count</th><th>schemaPointer</th></tr></thead><tbody>${topPtrs.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
+<h2>Quarantined artifacts (${quarantined.length})</h2>
+<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
+`;
+  mkdirSync(dirname(args.htmlReport), { recursive: true });
+  writeFileSync(args.htmlReport, html);
+  console.log(`▶ Wrote HTML report: ${args.htmlReport}`);
+}
+
 
 // Emit a short markdown report and, when running inside GitHub Actions,
 // also append it to the job's step summary so on-call can scan the
