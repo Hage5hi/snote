@@ -48,3 +48,20 @@ if ! bun run i18n:allowlist:summary --changed; then
   echo "   To bypass (not recommended): git commit --no-verify"
   exit 1
 fi
+
+# ── Schema TypeScript types drift guard ────────────────────────────────
+# If any schemas/focus-trap-inspect-*.schema.json or the generator or the
+# generated .d.ts is staged, regenerate the types and fail if the working
+# tree would differ from what's committed. Bypass with --no-verify.
+if echo "$STAGED" | grep -Eq \
+    -e '^schemas/focus-trap-inspect-.+\.schema\.json$' \
+    -e '^scripts/generate-focus-trap-schema-types\.ts$' \
+    -e '^scripts/_helpers/focus-trap-inspect-schema\.types\.gen\.ts$'; then
+  echo "▶ pre-commit: schema types drift check"
+  if ! bun run schema:types:check; then
+    echo ""
+    echo "❌ pre-commit: generated schema types are out of date."
+    echo "   Run: bun run schema:types  (then stage the .gen.ts file)"
+    exit 1
+  fi
+fi
