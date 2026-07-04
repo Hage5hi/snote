@@ -1498,7 +1498,7 @@ jobs:
           printf 'file,failureReason\n%s,\n' "$FX/test-results/a-spec-chromium-retry0/focus-trap-escape-x.json" \
             > "$FX/prev/focus-trap-inspect-summary.valid.csv"
 
-      - name: --report-validate-only must exit 0 and write nothing
+      - name: --report-validate-only must exit 0 and write NO files under out/
         run: |
           set -euo pipefail
           FX=/tmp/ft-fixture
@@ -1512,11 +1512,15 @@ jobs:
             --html-report "$FX/out/report.html" \
             --invalid-dir "$FX/out/_invalid" \
             --report-validate-only
-          for f in "$FX/out/summary.json" "$FX/out/report.json" "$FX/out/diff.csv" "$FX/out/diff.json" "$FX/out/report.html"; do
-            if [ -e "$f" ]; then echo "unexpected write in --report-validate-only: $f"; exit 1; fi
-          done
+          # Exact-set assertion: NOT just per-file existence — the whole
+          # out/ tree must be empty. Any surprise write (a new artifact
+          # flag that forgot to honour --report-validate-only) fails here.
+          actual="$(find "$FX/out" -mindepth 1 -printf '%P\n' | LC_ALL=C sort | tr '\n' ',' )"
+          if [ -n "$actual" ]; then
+            echo "unexpected files written under out/: $actual"; exit 1
+          fi
 
-      - name: --diff-json-out must exit 2 and produce a valid diff JSON
+      - name: --diff-json-out must exit 2, produce exact file set, validate against schema
         run: |
           set -euo pipefail
           FX=/tmp/ft-fixture
@@ -1531,16 +1535,51 @@ jobs:
           rc=$?
           set -e
           if [ "$rc" -ne 2 ]; then echo "expected exit 2, got $rc"; exit 1; fi
-          test -s "$FX/out/diff.json" || { echo "diff.json missing"; exit 1; }
+          # Exact-set assertion for the artifacts this invocation should
+          # produce. Directories under out/ (_invalid, dirname stubs) are
+          # allowed; the set of *files* is pinned. Any extra file fails.
+          expected="diff.csv
+          diff.json
+          summary.json"
+          actual="$(find "$FX/out" -type f -not -path '*/_invalid/*' -printf '%P\n' | LC_ALL=C sort)"
+          expected_sorted="$(printf '%s\n' $expected | LC_ALL=C sort)"
+          if [ "$actual" != "$expected_sorted" ]; then
+            echo "artifact set mismatch"; echo "expected:"; echo "$expected_sorted"; echo "actual:"; echo "$actual"; exit 1
+          fi
+          # Ajv-validate the diff JSON against the published schema so a
+          # shape drift here fails CI, not the downstream consumer.
+          bun add --dev ajv >/dev/null 2>&1 || true
           bun -e '
+            const Ajv = require("ajv");
+            const s = JSON.parse(require("fs").readFileSync("schemas/focus-trap-inspect-diff.schema.json", "utf8"));
             const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
-            if (d.schemaVersion !== "1.0.0") { console.error("bad schemaVersion", d.schemaVersion); process.exit(1); }
-            if (typeof d.changed !== "number" || d.changed < 1) { console.error("expected changed>=1"); process.exit(1); }
-            if (!Array.isArray(d.rows) || d.rows.length !== d.changed) { console.error("rows/changed mismatch"); process.exit(1); }
+            const v = new Ajv({ allErrors: true }).compile(s);
+            if (!v(d)) { console.error(JSON.stringify(v.errors, null, 2)); process.exit(1); }
             const files = d.rows.map(r => r.file);
-            const sorted = [...files].sort();
-            if (JSON.stringify(files) !== JSON.stringify(sorted)) { console.error("rows not sorted by file"); process.exit(1); }
+            if (JSON.stringify(files) !== JSON.stringify([...files].sort())) { console.error("rows not sorted"); process.exit(1); }
           ' "$FX/out/diff.json"
+
+      - name: --json-report must validate against the published schema
+        run: |
+          set -euo pipefail
+          FX=/tmp/ft-fixture
+          set +e
+          bun run scripts/inspect-focus-trap.ts \
+            --scan-root "$FX/test-results" \
+            --out "$FX/out/summary.json" \
+            --json-report "$FX/out/report.json" \
+            --invalid-dir "$FX/out/_invalid"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 2 ]; then echo "expected exit 2, got $rc"; exit 1; fi
+          bun -e '
+            const Ajv = require("ajv");
+            const s = JSON.parse(require("fs").readFileSync("schemas/focus-trap-inspect-report.schema.json", "utf8"));
+            const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            const v = new Ajv({ allErrors: true }).compile(s);
+            if (!v(d)) { console.error(JSON.stringify(v.errors, null, 2)); process.exit(1); }
+          ' "$FX/out/report.json"
+
 
 
 
