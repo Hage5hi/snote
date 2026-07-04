@@ -231,6 +231,37 @@ bun run scripts/inspect-focus-trap.ts \
   --report-validate-only
 ```
 
+## Published JSON Schemas
+
+Machine-readable Draft-07 schemas for the two structured outputs live in
+the repo so downstream consumers (CI dashboards, PR annotators, etc.)
+can validate against a pinned `schemaVersion`. The CLI-emitted
+`schemaVersion` and the `const` value in each schema file are asserted
+equal by the `focus-trap-inspect-contract` CI job — bump both together.
+
+| Artifact flag        | Schema file                                        | `schemaVersion` | Required top-level keys |
+| -------------------- | -------------------------------------------------- | --------------- | ----------------------- |
+| `--json-report`      | `schemas/focus-trap-inspect-report.schema.json`    | `1.0.0`         | `schemaVersion`, `generatedAt`, `meta`, `scanned`, `matched`, `valid`, `invalid`, `artifacts`, `issues` |
+| `--diff-json-out`    | `schemas/focus-trap-inspect-diff.schema.json`      | `1.0.0`         | `schemaVersion`, `generatedAt`, `meta`, `diffWith`, `changed`, `rows` |
+
+`meta` on both artifacts requires `gitSha`, `scanRoot`, `argv`, and
+`timestamp`. `--diff-json-out` `rows[]` require `file`,
+`prevFailureReason`, `prevSchemaPointer`, `currFailureReason`,
+`currSchemaPointer` and are sorted by `file` for deterministic diffs.
+
+Validate locally with ajv:
+
+```bash
+bunx ajv validate \
+  -s schemas/focus-trap-inspect-report.schema.json \
+  -d reports/_ci/focus-trap-inspect-report.json
+bunx ajv validate \
+  -s schemas/focus-trap-inspect-diff.schema.json \
+  -d reports/_ci/focus-trap-inspect-diff.json
+```
+
+
+
 
 
 

@@ -1580,6 +1580,39 @@ jobs:
             if (!v(d)) { console.error(JSON.stringify(v.errors, null, 2)); process.exit(1); }
           ' "$FX/out/report.json"
 
+      # Guardrail: the CLI-emitted schemaVersion constants and the `const`
+      # value pinned in each published JSON Schema must move together.
+      # A drift here would silently invalidate every downstream consumer.
+      - name: CLI schemaVersion must match published JSON Schemas
+        run: |
+          set -euo pipefail
+          bun -e '
+            const fs = require("fs");
+            const src = fs.readFileSync("scripts/_helpers/focus-trap-inspect.ts", "utf8");
+            const pick = (name) => {
+              const m = src.match(new RegExp(`${name}\\s*=\\s*"([^"]+)"`));
+              if (!m) throw new Error(`missing const ${name}`);
+              return m[1];
+            };
+            const report = JSON.parse(fs.readFileSync("schemas/focus-trap-inspect-report.schema.json","utf8"));
+            const diff   = JSON.parse(fs.readFileSync("schemas/focus-trap-inspect-diff.schema.json","utf8"));
+            const cliReport = pick("JSON_REPORT_SCHEMA_VERSION");
+            const cliDiff   = pick("DIFF_JSON_SCHEMA_VERSION");
+            const schemaReport = report.properties.schemaVersion.const;
+            const schemaDiff   = diff.properties.schemaVersion.const;
+            const rows = [
+              ["--json-report",   cliReport, schemaReport],
+              ["--diff-json-out", cliDiff,   schemaDiff],
+            ];
+            let ok = true;
+            for (const [name, cli, schema] of rows) {
+              if (cli !== schema) { console.error(`schemaVersion drift: ${name} CLI=${cli} schema=${schema}`); ok = false; }
+              else { console.log(`OK ${name} schemaVersion=${cli}`); }
+            }
+            if (!ok) process.exit(1);
+          '
+
+
 
 
 
