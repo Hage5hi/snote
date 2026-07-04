@@ -357,9 +357,29 @@ test.describe("focus-trap --html-report a11y", () => {
   test.describe("rapid-toggle live-region", () => {
     test.describe.configure({ retries: 2 });
 
-    test("rapid filter + disclosure toggles never leave the live region with a stale count", async ({ page }, testInfo) => {
+    // Per-browser timeout thresholds for the deterministic wait. Global
+    // config uses 4s; that's fine for Chromium but too tight for WebKit
+    // (slower input event dispatch on macOS + Linux CI) and generous
+    // enough that Firefox's MutationObserver batching still lands.
+    // Keeping the map here means one obvious knob when a browser gets
+    // faster/slower rather than one opaque number in the shared config.
+    const WAIT_TIMEOUT_MS: Record<string, number> = {
+      chromium: 4000,
+      firefox:  5000,
+      webkit:   7000,
+    };
+
+    test("rapid filter + disclosure toggles never leave the live region with a stale count", async ({ page, browserName }, testInfo) => {
       const htmlPath = seedAndGenerate();
       await page.goto("file://" + resolve(htmlPath));
+
+      // Force a Playwright trace for this specific test so a failure
+      // always produces a `trace.zip` in `test-results/`, even if the
+      // project default is `retain-on-failure` (which starts tracing
+      // only from `retry #1` when the first attempt already failed
+      // once). Screenshots are captured explicitly in the catch below.
+      await testInfo.attach.bind(testInfo); // no-op ref for lint
+      await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
 
       const details = page.locator("details:has(#q-search)");
       await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
@@ -379,9 +399,10 @@ test.describe("focus-trap --html-report a11y", () => {
         }).observe(el, { childList: true, characterData: true, subtree: true });
       });
 
-      // On any failure below, attach the full MutationObserver log and
-      // final aria-live text so CI artifacts (test-results/) capture the
-      // exact stale/duplicate sequence — no need to re-run locally.
+      // On any failure below, attach the full MutationObserver log, the
+      // final aria-live text, a full-page screenshot, and the Playwright
+      // trace.zip so CI artifacts capture the exact stale/duplicate
+      // sequence without needing a local re-run.
       const attachDiagnostics = async (label: string) => {
         try {
           const log = await page.evaluate(
@@ -390,13 +411,26 @@ test.describe("focus-trap --html-report a11y", () => {
           const finalText = (await live.textContent())?.trim() ?? "";
           await testInfo.attach("live-region-log.json", {
             contentType: "application/json",
-            body: Buffer.from(JSON.stringify({ label, finalText, log }, null, 2)),
+            body: Buffer.from(JSON.stringify({ label, browserName, finalText, log }, null, 2)),
           });
           await testInfo.attach("live-region-final-text.txt", {
             contentType: "text/plain",
             body: Buffer.from(finalText),
           });
+          const shot = await page.screenshot({ fullPage: true });
+          await testInfo.attach("live-region-failure.png", {
+            contentType: "image/png",
+            body: shot,
+          });
         } catch {/* best-effort */}
+        try {
+          const tracePath = testInfo.outputPath("live-region-trace.zip");
+          await page.context().tracing.stop({ path: tracePath });
+          await testInfo.attach("live-region-trace.zip", {
+            contentType: "application/zip",
+            path: tracePath,
+          });
+        } catch {/* tracing already stopped */}
       };
 
       try {
@@ -420,16 +454,15 @@ test.describe("focus-trap --html-report a11y", () => {
           }
         }
 
-        // Final state is a pure function of the final DOM: disclosure open,
-        // filter = "schema" (last text typed was "schema" at i=17; i=18/19
-        // only toggled the disclosure without editing the input). Wait for
-        // the aria-live region to EXACTLY match "<n> …" — exact-text wait
-        // is the deterministic strategy verified on chromium/firefox/webkit.
+        // Final state is a pure function of the final DOM. Use the
+        // per-browser wait budget so slower engines don't flake on the
+        // exact-text poll and faster engines still fail fast.
+        const waitMs = WAIT_TIMEOUT_MS[browserName] ?? 4000;
         const expectedVisible = await rows.locator(":scope:visible").count();
         const exactCount = new RegExp(`(^|\\D)${expectedVisible}(\\D|$)`);
         await expect
           .poll(async () => (await live.textContent())?.trim() ?? "",
-                { timeout: 4000, intervals: [50] })
+                { timeout: waitMs, intervals: [50] })
           .toMatch(exactCount);
         const stableText = (await live.textContent())?.trim() ?? "";
 
@@ -447,6 +480,9 @@ test.describe("focus-trap --html-report a11y", () => {
           return log.filter((x) => x === t).length;
         }, stableText);
         expect(tailCount, `final announcement "${stableText}" appeared ${tailCount}× in live log`).toBe(1);
+
+        // Success path: stop tracing without attaching (keeps artifacts small).
+        try { await page.context().tracing.stop(); } catch {/* noop */}
       } catch (err) {
         await attachDiagnostics(err instanceof Error ? err.message : String(err));
         throw err;
