@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://lovable.dev/schemas/focus-trap-inspect-report.schema.json",
+  "title": "focus-trap-inspect --json-report",
+  "description": "Machine-readable summary emitted by scripts/inspect-focus-trap.ts --json-report. Consumers should pin against schemaVersion and reject any other value.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "meta",
+    "scanned",
+    "matched",
+    "valid",
+    "invalid",
+    "artifacts",
+    "issues"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "generatedAt": { "type": "string" },
+    "scanned": { "type": "integer", "minimum": 0 },
+    "matched": { "type": "integer", "minimum": 0 },
+    "valid": { "type": "integer", "minimum": 0 },
+    "invalid": { "type": "integer", "minimum": 0 },
+    "invalidDir": { "type": ["string", "null"] },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["gitSha", "scanRoot", "argv", "timestamp"],
+      "properties": {
+        "gitSha": { "type": ["string", "null"] },
+        "scanRoot": { "type": "string" },
+        "invalidDir": { "type": ["string", "null"] },
+        "argv": { "type": "array", "items": { "type": "string" } },
+        "timestamp": { "type": "string" },
+        "ciRunId": { "type": ["string", "null"] },
+        "ciRunAttempt": { "type": ["string", "null"] }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["file", "failureKind", "failureReason", "schemaPointer", "quarantined"],
+        "properties": {
+          "file": { "type": "string" },
+          "failureKind": { "type": ["string", "null"] },
+          "failureReason": { "type": "string" },
+          "schemaPointer": { "type": ["string", "null"] },
+          "quarantined": { "type": "string" }
+        }
+      }
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["file", "failureKind", "failureReason"],
+        "properties": {
+          "file": { "type": "string" },
+          "failureKind": { "type": ["string", "null"] },
+          "failureReason": { "type": "string" },
+          "schemaPointer": { "type": ["string", "null"] },
+          "parseError": { "type": ["string", "null"] },
+          "quarantined": { "type": "string" }
+        }
+      }
+    }
+  }
+}
