@@ -498,12 +498,14 @@ if (args.diffWith) {
   }
   if (args.diffOut) {
     // Stable CSV format so consumers can diff two runs' diff-outs directly.
-    // Header + one row per changed artifact, sorted by file.
-    const REQUIRED_DIFF_COLUMNS = ["file", "prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"] as const;
-    const header: string[] = [...REQUIRED_DIFF_COLUMNS];
-    // Schema-validate the header before writing (guards against
-    // accidental column-drift in this file).
-    for (const c of REQUIRED_DIFF_COLUMNS) if (!header.includes(c)) { console.error(`--diff-out: missing required column '${c}'`); process.exit(65); }
+    // Header + one row per changed artifact, sorted by file. Use the
+    // shared helper so unit tests can pin the exact contract.
+    const header: string[] = [...REQUIRED_DIFF_CSV_COLUMNS];
+    const headerErrs = validateDiffCsvHeader(header);
+    if (headerErrs.length) {
+      for (const m of headerErrs) console.error(`--diff-out: ${m}`);
+      process.exit(65);
+    }
     const rows = diffRows.map((d) => [d.file, d.prev.failureReason, d.prev.schemaPointer, d.curr.failureReason, d.curr.schemaPointer]);
     const csv = [header, ...rows].map((r) => r.map((v) => {
       const s = v == null ? "" : String(v);
@@ -513,6 +515,7 @@ if (args.diffWith) {
     writeFileSync(args.diffOut, csv);
     console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
   }
+
 }
 
 // --html-report renders a lightweight standalone triage page from the
