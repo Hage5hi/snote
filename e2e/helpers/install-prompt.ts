@@ -325,7 +325,10 @@ const FOCUS_DESCRIBE_FN = `(el) => {
     active: el ? {
       tag: el.tagName.toLowerCase(),
       id: el.id || null,
+      dataTestid: el.getAttribute('data-testid'),
       ariaLabel: el.getAttribute('aria-label'),
+      role: el.getAttribute('role'),
+      name: el.getAttribute('name'),
       text: (el.textContent || '').trim().slice(0, 60),
       insideDialog: !!dlg?.contains(el),
       outerHTML: (el.outerHTML || '').slice(0, 800),

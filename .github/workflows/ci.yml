@@ -1052,6 +1052,11 @@ jobs:
         env:
           PLAYWRIGHT_HTML_REPORT: playwright-report/install-prompt
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/install-prompt-results.json
+          # Base URL for the focus-trap deep links in each JSON. Points
+          # at the run-artifact HTTP base; the helper joins the test's
+          # relative outputDir + filename onto this.
+          IP_ARTIFACT_BASE_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts
+
 
       # Always upload the HTML report, JSON results, screenshots, traces
       # and videos when the install-prompt specs run — regardless of
@@ -1131,6 +1136,34 @@ jobs:
             reports/_ci/focus-trap-debug-index.json
           retention-days: 14
           if-no-files-found: ignore
+
+      # Run the inspect script to produce a machine-readable summary +
+      # CSV row-per-failure, then upload both alongside the raw JSONs
+      # under the SAME base path used by IP_ARTIFACT_BASE_URL deep links
+      # so the URLs in each focus-trap-escape JSON resolve inside this
+      # artifact bundle.
+      - name: InstallPrompt — inspect focus-trap artifacts
+        if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        run: |
+          bun run scripts/inspect-focus-trap.ts \
+            --attempt ${{ github.run_attempt }} \
+            --out reports/_ci/focus-trap-inspect-summary.json \
+            --csv reports/_ci/focus-trap-inspect-summary.csv || true
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-prompt-focus-trap-inspect-attempt-${{ github.run_attempt }}
+          path: |
+            reports/_ci/focus-trap-inspect-summary.json
+            reports/_ci/focus-trap-inspect-summary.csv
+            reports/_ci/focus-trap-debug-index.json
+            test-results/**/focus-trap-escape-*.json
+            test-results/**/focus-trap-escape-*.png
+            test-results/**/focus-trap-escape-*.html
+          retention-days: 14
+          if-no-files-found: ignore
+
+
 
 
 
