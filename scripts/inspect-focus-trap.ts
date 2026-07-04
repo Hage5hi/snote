@@ -135,12 +135,13 @@ const summary: Array<Record<string, unknown>> = [];
 let hadInvalid = false;
 let firstInvalidFile: string | null = null;
 const invalidFiles: string[] = [];
+const canReport = () => args.maxErrors == null || invalidFiles.length < args.maxErrors;
 for (const f of matched) {
   const m = meta(f);
   let p: Record<string, unknown> = {};
   try { p = JSON.parse(readFileSync(f, "utf8")); } catch (e) {
     const reason = `parse error: ${(e as Error).message}`;
-    console.log(`\n=== ${f} ===\n  ${reason}`);
+    if (canReport()) console.log(`\n=== ${f} ===\n  ${reason}`);
     hadInvalid = true;
     firstInvalidFile ??= f;
     invalidFiles.push(f);
@@ -158,8 +159,10 @@ for (const f of matched) {
   const schemaErrs = validateFocusTrapPayload(p);
   if (schemaErrs.length) {
     const lines = schemaErrs.map(formatIssue);
-    console.log(`\n=== ${f} ===\n  ✗ malformed focus-trap-escape payload:`);
-    for (const l of lines) console.log(`    - ${l}`);
+    if (canReport()) {
+      console.log(`\n=== ${f} ===\n  ✗ malformed focus-trap-escape payload:`);
+      for (const l of lines) console.log(`    - ${l}`);
+    }
     hadInvalid = true;
     firstInvalidFile ??= f;
     invalidFiles.push(f);
@@ -174,6 +177,7 @@ for (const f of matched) {
     });
     continue;
   }
+
 
   if (args.validateOnly) {
     // Still emit a healthy entry so the summary JSON reflects every
