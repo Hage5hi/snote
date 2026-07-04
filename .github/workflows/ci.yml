@@ -1669,13 +1669,13 @@ jobs:
 
       # Regenerate the schema-derived .d.ts and fail if it differs from
       # the committed version — prevents silent drift between schemas/
-      # and the types imported by code/tests.
-      - name: Generated schema types must be up to date
+      # and the types imported by code/tests. Uses the same npm script
+      # invoked by the pre-commit hook so local and CI stay in lockstep.
+      - name: Generated schema types must be up to date (schema:types:check)
         run: |
           set -euo pipefail
-          bun run scripts/generate-focus-trap-schema-types.ts
-          git diff --exit-code -- scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
-            || { echo "generated types drifted — run: bun run scripts/generate-focus-trap-schema-types.ts"; exit 1; }
+          bun run schema:types:check \
+            || { echo "generated schema types drifted — run: bun run schema:types  (then commit scripts/_helpers/focus-trap-inspect-schema.types.gen.ts)"; exit 1; }
 
 
 
