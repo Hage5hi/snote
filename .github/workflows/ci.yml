@@ -1148,7 +1148,14 @@ jobs:
           bun run scripts/inspect-focus-trap.ts \
             --attempt ${{ github.run_attempt }} \
             --out reports/_ci/focus-trap-inspect-summary.json \
-            --csv reports/_ci/focus-trap-inspect-summary.csv || true
+            --csv reports/_ci/focus-trap-inspect-summary.csv \
+            --md  reports/_ci/focus-trap-inspect-summary.md || true
+          # Surface the short markdown report directly in the job's
+          # step summary so on-call sees first-failures without
+          # downloading artifacts.
+          if [ -f reports/_ci/focus-trap-inspect-summary.md ]; then
+            cat reports/_ci/focus-trap-inspect-summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
       - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
         uses: actions/upload-artifact@v4
         with:
@@ -1156,6 +1163,7 @@ jobs:
           path: |
             reports/_ci/focus-trap-inspect-summary.json
             reports/_ci/focus-trap-inspect-summary.csv
+            reports/_ci/focus-trap-inspect-summary.md
             reports/_ci/focus-trap-debug-index.json
             test-results/**/focus-trap-escape-*.json
             test-results/**/focus-trap-escape-*.png

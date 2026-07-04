@@ -10,8 +10,14 @@
 //                                         [--out PATH] [FILE ...]
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import {
+  CSV_COLUMNS,
+  renderMarkdown,
+  toCsvRow,
+  validateFocusTrapPayload,
+} from "./_helpers/focus-trap-inspect";
 
-type Arg = { attempt?: number; browser?: string; spec?: string; label?: string; out: string; csv?: string; files: string[] };
+type Arg = { attempt?: number; browser?: string; spec?: string; label?: string; out: string; csv?: string; md?: string; files: string[] };
 function parseArgs(): Arg {
   const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", files: [] };
   const argv = process.argv.slice(2);
@@ -24,8 +30,9 @@ function parseArgs(): Arg {
       case "--label":   a.label = argv[++i]; break;
       case "--out":     a.out = argv[++i]; break;
       case "--csv":     a.csv = argv[++i]; break;
+      case "--md":      a.md = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--md PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
@@ -73,10 +80,19 @@ if (!matched.length) {
 }
 
 const summary: Array<Record<string, unknown>> = [];
+let hadInvalid = false;
 for (const f of matched) {
   const m = meta(f);
   let p: Record<string, unknown> = {};
-  try { p = JSON.parse(readFileSync(f, "utf8")); } catch (e) { console.log(`\n=== ${f} ===\n  parse error: ${e}`); continue; }
+  try { p = JSON.parse(readFileSync(f, "utf8")); } catch (e) { console.log(`\n=== ${f} ===\n  parse error: ${e}`); hadInvalid = true; continue; }
+
+  const schemaErrs = validateFocusTrapPayload(p);
+  if (schemaErrs.length) {
+    console.log(`\n=== ${f} ===\n  ✗ malformed focus-trap-escape payload:`);
+    for (const err of schemaErrs) console.log(`    - ${err}`);
+    hadInvalid = true;
+    continue;
+  }
 
   const hist = (p.focusHistory as Array<Record<string, unknown>>) || [];
   const firstEscape = hist.find((e) => {
@@ -117,39 +133,42 @@ for (const f of matched) {
   });
 }
 
-mkdirSync(dirname(args.out), { recursive: true });
-writeFileSync(args.out, JSON.stringify({
+const summaryDoc = {
   generatedAt: new Date().toISOString(),
   filters: { attempt: args.attempt ?? null, browser: args.browser ?? null, spec: args.spec ?? null, label: args.label ?? null },
   matched: matched.length,
   scanned: all.length,
   entries: summary,
-}, null, 2));
+};
+mkdirSync(dirname(args.out), { recursive: true });
+writeFileSync(args.out, JSON.stringify(summaryDoc, null, 2));
 console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length})`);
 
 if (args.csv) {
-  const cols = [
-    "file", "spec", "browser", "attempt", "label", "testTitle",
-    "firstEscapeEvent", "firstEscapePerfMs",
-    "relocatePath", "relocateUsedFallback",
-    "iterCount",
-  ];
-  const esc = (v: unknown) => {
-    const s = v == null ? "" : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const rows = summary.map((r) => {
-    const fe = (r.firstEscape as Record<string, unknown> | null) || null;
-    const rl = (r.relocate as Record<string, unknown> | null) || null;
-    return [
-      r.file, r.spec, r.browser, r.attempt, r.label, r.testTitle,
-      fe?.event ?? "", fe?.perf ?? "",
-      rl?.path ?? "", rl?.usedFallback ?? "",
-      Object.keys((r.iterTimings as object) || {}).length,
-    ].map(esc).join(",");
-  });
+  const rows = summary.map(toCsvRow);
   mkdirSync(dirname(args.csv), { recursive: true });
-  writeFileSync(args.csv, [cols.join(","), ...rows].join("\n") + "\n");
+  writeFileSync(args.csv, [CSV_COLUMNS.join(","), ...rows].join("\n") + "\n");
   console.log(`▶ Wrote CSV:     ${args.csv}`);
 }
+
+// Emit a short markdown report and, when running inside GitHub Actions,
+// also append it to the job's step summary so on-call can scan the
+// first failures without opening artifacts.
+const md = renderMarkdown(summaryDoc);
+if (args.md) {
+  mkdirSync(dirname(args.md), { recursive: true });
+  writeFileSync(args.md, md);
+  console.log(`▶ Wrote markdown: ${args.md}`);
+}
+const stepSummary = process.env.GITHUB_STEP_SUMMARY;
+if (stepSummary) {
+  try {
+    const fs = await import("node:fs/promises");
+    await fs.appendFile(stepSummary, md + "\n");
+  } catch { /* best-effort */ }
+}
+
+// Fail fast on malformed artifacts so CI surfaces bad inputs rather
+// than pretending everything is fine with an empty summary.
+if (hadInvalid) process.exit(2);
 
