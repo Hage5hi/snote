@@ -1,5 +1,7 @@
 // Shared helpers for install-prompt e2e specs.
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { dict } from "../../src/i18n/index";
+
 
 /**
  * Reset the prompt() spy counters on `window` so every dialog open in a
