@@ -116,6 +116,78 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Job summary — top schemaVersion mismatches (on drift)
+        if: failure() && steps.schema_types_check.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          {
+            echo "## 🔀 schema-guard drift detected"
+            echo ""
+            echo "**Top schemaVersion mismatches** (CLI consts vs published JSON Schemas):"
+            echo ""
+            echo '```'
+            # Reuse the same CLI-vs-schema comparison logic and surface
+            # the drifting pairs. Reads cli-schema-versions.txt captured
+            # in the drift bundle so on-call sees the exact CLI values.
+            if [ -s _schema_drift/cli-schema-versions.txt ]; then
+              echo "# CLI-side (scripts/_helpers/focus-trap-inspect.ts):"
+              sed -e 's/^[[:space:]]*//' _schema_drift/cli-schema-versions.txt
+              echo ""
+            fi
+            echo "# Published schemas:"
+            for f in schemas/focus-trap-inspect-report.schema.json schemas/focus-trap-inspect-diff.schema.json; do
+              v=$(bun -e 'const j=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")); console.log(j.properties?.schemaVersion?.const ?? "<none>")' "$f" 2>/dev/null || echo "<parse-error>")
+              printf "  %-58s %s\n" "$f" "$v"
+            done
+            echo '```'
+            echo ""
+            echo "Full diff bundle: **schema-drift** artifact (committed/, regenerated/, per-file \`.diff\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment on drift (nightly / manual runs)
+        if: failure() && steps.schema_types_check.outcome == 'failure' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        uses: actions/github-script@v7
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          script: |
+            const fs = require("fs");
+            const readDiff = (p) => { try { return fs.readFileSync(p,"utf8").trim(); } catch { return ""; } };
+            const bundle = [
+              "_schema_drift/focus-trap-inspect-schema.types.gen.ts.diff",
+              "_schema_drift/focus-trap-inspect-report.schema.json.diff",
+              "_schema_drift/focus-trap-inspect-diff.schema.json.diff",
+            ].map((p) => ({ p, d: readDiff(p) })).filter((x) => x.d);
+            const cliVers = readDiff("_schema_drift/cli-schema-versions.txt");
+            const snippet = (s, n = 60) => s.split("\n").slice(0, n).join("\n");
+            const body = [
+              `### 🌙 Nightly schema-guard drift on \`${context.sha.slice(0, 7)}\``,
+              ``,
+              `Regenerated schema JSON / TypeScript no longer matches the committed files.`,
+              ``,
+              `**CLI schemaVersion consts:**\n\`\`\`\n${cliVers || "(none captured)"}\n\`\`\``,
+              ``,
+              ...bundle.map(({ p, d }) => `<details><summary>${p}</summary>\n\n\`\`\`diff\n${snippet(d)}\n\`\`\`\n</details>`),
+              ``,
+              `Run: ${process.env.RUN_URL}`,
+              `Fix: \`bun run schema:types\` then commit the regenerated files.`,
+            ].join("\n");
+            // Post to a dedicated tracking issue if one exists (labelled
+            // `schema-drift`); otherwise open a fresh one. Keeps signal
+            // in a single thread on-call can subscribe to.
+            const owner = context.repo.owner, repo = context.repo.repo;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: "open", labels: "schema-drift", per_page: 1,
+            });
+            if (issues.length) {
+              await github.rest.issues.createComment({ owner, repo, issue_number: issues[0].number, body });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title: "schema-guard: nightly drift detected",
+                labels: ["schema-drift"], body,
+              });
+            }
+
       - name: CLI schemaVersion must match published JSON Schemas
         run: |
           set -euo pipefail
