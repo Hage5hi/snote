@@ -98,9 +98,27 @@ export const REQUIRED_DIFF_CSV_COLUMNS = [
   "currFailureReason", "currSchemaPointer",
 ] as const;
 
+// Bump when the shape of the artifact changes in a way consumers care
+// about (new required key, removed key, semantic change). Keep the
+// bump minor for additive-only changes and major for breaks. Consumers
+// pin against a known set of versions and bail on anything else.
+export const JSON_REPORT_SCHEMA_VERSION = "1.0.0";
+export const DIFF_JSON_SCHEMA_VERSION = "1.0.0";
+
 export const REQUIRED_JSON_REPORT_TOP_KEYS = [
+  "schemaVersion",
   "generatedAt", "meta", "scanned", "matched",
   "valid", "invalid", "artifacts", "issues",
+] as const;
+
+export const REQUIRED_DIFF_JSON_TOP_KEYS = [
+  "schemaVersion",
+  "generatedAt", "meta", "diffWith", "changed", "rows",
+] as const;
+
+export const REQUIRED_DIFF_JSON_ROW_KEYS = [
+  "file", "prevFailureReason", "prevSchemaPointer",
+  "currFailureReason", "currSchemaPointer",
 ] as const;
 
 export const REQUIRED_JSON_REPORT_ARTIFACT_KEYS = [
