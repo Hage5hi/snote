@@ -116,7 +116,6 @@ export async function expectFocusInsideDialog(
  *   const same = await relocateInstallTrigger(page, trigger);
  *   await expect(same).toBeFocused();
  */
-const TRIGGER_NONCE_ATTR = "data-e2e-trigger-nonce";
 
 export interface CapturedTrigger {
   locator: Locator;
@@ -129,29 +128,41 @@ export async function captureInstallTrigger(page: Page): Promise<CapturedTrigger
   });
   await expect(base).toBeVisible();
   const nonce = `ip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  await base.evaluate((el, n) => el.setAttribute("data-e2e-trigger-nonce", n), nonce);
+  await base.evaluate(
+    (el, args) => el.setAttribute(args.attr, args.n),
+    { attr: TRIGGER_NONCE_ATTR, n: nonce },
+  );
   const locator = page.locator(`[${TRIGGER_NONCE_ATTR}="${nonce}"]`);
   await expect(locator).toHaveCount(1);
   return { locator, nonce };
 }
 
+/**
+ * Re-locate the install trigger by nonce; if Radix remounted the
+ * DialogTrigger and dropped our attribute, fall back to stable role +
+ * accessible name, re-tag the fresh node with the ORIGINAL nonce, and
+ * verify uniqueness before returning. This eliminates the flake where
+ * the pre-open locator becomes detached after dialog close.
+ */
 export async function relocateInstallTrigger(
   page: Page,
   captured: CapturedTrigger,
 ): Promise<Locator> {
   const byNonce = page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
-  const count = await byNonce.count();
-  if (count === 1) return byNonce;
-  // Radix re-mounted the trigger and dropped our attribute — re-tag
-  // the current trigger by accessible name and return the fresh handle.
+  if ((await byNonce.count()) === 1) return byNonce;
+
   const fresh = page.getByRole("button", {
     name: new RegExp(dict.en["install.title"]),
   });
   await expect(fresh).toHaveCount(1);
+  await expect(fresh).toBeVisible();
   await fresh.evaluate(
-    (el, n) => el.setAttribute("data-e2e-trigger-nonce", n),
-    captured.nonce,
+    (el, args) => el.setAttribute(args.attr, args.n),
+    { attr: TRIGGER_NONCE_ATTR, n: captured.nonce },
   );
-  return page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
+  const rebound = page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
+  await expect(rebound).toHaveCount(1);
+  return rebound;
 }
+
 
