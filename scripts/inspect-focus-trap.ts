@@ -29,9 +29,7 @@ type Arg = {
   invalidDir?: string;
   files: string[];
 };
-  invalidDir?: string;
-  files: string[];
-};
+
 function parseArgs(): Arg {
   const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", files: [] };
   const argv = process.argv.slice(2);
