@@ -16,11 +16,18 @@ function compile() {
 }
 
 function errorSignature(errs: unknown): string[] {
-  const list = (errs as { instancePath: string; keyword: string; params: Record<string, unknown> }[]) ?? [];
+  // Ajv v6 uses `dataPath`; v8+ uses `instancePath`. Support both.
+  const list = (errs as { instancePath?: string; dataPath?: string; keyword: string; params: Record<string, unknown> }[]) ?? [];
   return list
-    .map((e) => `${e.instancePath}|${e.keyword}|${JSON.stringify(e.params)}`)
+    .map((e) => `${e.instancePath ?? e.dataPath ?? ""}|${e.keyword}|${JSON.stringify(e.params)}`)
     .sort();
 }
+
+function findConstErr(errs: unknown, path: string) {
+  const list = (errs as { instancePath?: string; dataPath?: string; keyword: string; params: Record<string, unknown> }[]) ?? [];
+  return list.find((e) => e.keyword === "const" && (e.instancePath === path || e.dataPath === path || e.dataPath === path.replace(/^\//, ".")));
+}
+
 
 describe("focus-trap-inspect JSON Schemas — negative cases", () => {
   it("rejects --json-report missing multiple required top-level keys", () => {
