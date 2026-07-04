@@ -37,7 +37,9 @@ type Arg = {
   diffRetries: number;
   diffRetryDelayMs: number;
   htmlReport?: string;
+  htmlTopN?: number;
   topN: number;
+
   artifactValidUrl?: string;
   artifactInvalidUrl?: string;
   files: string[];
