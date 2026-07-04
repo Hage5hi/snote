@@ -1143,38 +1143,47 @@ jobs:
             if [ -f "$RESULTS_JSON" ]; then
               ARTIFACTS_URL="$ARTIFACTS_URL" node -e '
                 const fs = require("fs");
-                const r = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-                const url = process.env.ARTIFACTS_URL;
-                // file -> attempt -> array of { project, title, kind, base }
+                let r = {};
+                try { r = JSON.parse(fs.readFileSync(process.argv[1], "utf8")) || {}; }
+                catch (e) { console.error("[grouping] JSON parse failed:", e.message); }
+                const url = process.env.ARTIFACTS_URL || "";
+                // file -> attempt -> array of { project, title, status, items }
                 const bySpec = new Map();
                 const walk = (suite, file) => {
+                  if (!suite || typeof suite !== "object") return;
                   const f = file || suite.file || "";
                   for (const s of suite.suites || []) walk(s, f);
                   for (const spec of suite.specs || []) {
+                    if (!spec) continue;
                     for (const t of spec.tests || []) {
+                      if (!t) continue;
                       const project = t.projectName || t.projectId || "unknown";
-                      (t.results || []).forEach((res, i) => {
-                        if (res.status === "passed" && (t.results || []).length === 1) return;
-                        const items = (res.attachments || [])
-                          .filter(a => a.path)
+                      const results = Array.isArray(t.results) ? t.results : [];
+                      results.forEach((res, i) => {
+                        res = res || {};
+                        const status = res.status || "unknown";
+                        // Skip pure single-attempt passes with no attachments.
+                        if (status === "passed" && results.length === 1) return;
+                        const items = ((res.attachments || []))
+                          .filter(a => a && a.path)
                           .map(a => {
-                            const base = a.path.split(/[\\/]/).pop();
+                            const base = String(a.path).split(/[\\/]/).pop() || "artifact";
                             let kind = "artifact";
                             if (/\.png$/i.test(base)) kind = "screenshot";
                             else if (/\.webm$/i.test(base)) kind = "video";
                             else if (/trace(\.\w+)?\.zip$/i.test(base)) kind = "trace";
-                            else if (a.name) kind = a.name;
-                            return { kind, base };
+                            else if (a.name) kind = String(a.name);
+                            // Name the on-disk artifact so it always encodes
+                            // the exact retry attempt + browser, matching
+                            // the collapsed section grouping.
+                            const named = `${project}__attempt-${i}__${base}`;
+                            return { kind, base, named };
                           });
-                        if (!items.length && res.status === "passed") return;
                         if (!bySpec.has(f)) bySpec.set(f, new Map());
                         const byAtt = bySpec.get(f);
                         if (!byAtt.has(i)) byAtt.set(i, []);
                         byAtt.get(i).push({
-                          project,
-                          title: spec.title,
-                          status: res.status,
-                          items,
+                          project, title: spec.title || "(untitled)", status, items,
                         });
                       });
                     }
@@ -1188,7 +1197,7 @@ jobs:
                   out.push("_No per-spec evidence files were produced._");
                 } else {
                   for (const [file, byAtt] of [...bySpec.entries()].sort()) {
-                    out.push(`<details><summary><code>${file}</code></summary>`);
+                    out.push(`<details><summary><code>${file || "(unknown spec file)"}</code></summary>`);
                     out.push("");
                     for (const att of [...byAtt.keys()].sort((a,b)=>a-b)) {
                       const label = att === 0 ? "attempt 0 (initial)" : `attempt ${att}`;
@@ -1202,8 +1211,14 @@ jobs:
                           out.push("  | Kind | File |");
                           out.push("  |---|---|");
                           for (const it of entry.items) {
-                            out.push(`  | ${it.kind} | [\`${it.base}\`](${url}) |`);
+                            out.push(`  | ${it.kind} | [\`${it.named}\`](${url}) |`);
                           }
+                        } else {
+                          // Fallback: no trace/video/screenshot paths were
+                          // emitted (e.g. attachments field missing), but
+                          // we still surface the failing spec + test name
+                          // so reviewers know what broke.
+                          out.push(`  _no artifact paths for this attempt — see HTML report_`);
                         }
                         out.push("");
                       }
@@ -1214,6 +1229,7 @@ jobs:
                 }
                 process.stdout.write(out.join("\n"));
               ' "$RESULTS_JSON" > "$GROUPED_MD"
+
             else
               echo '_No Playwright JSON report was produced; cannot group artifacts._' > "$GROUPED_MD"
             fi

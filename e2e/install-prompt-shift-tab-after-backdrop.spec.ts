@@ -4,6 +4,7 @@
 // never escape to the underlying page.
 import { test, expect } from "@playwright/test";
 import { dict } from "../src/i18n/index";
+import { expectFocusInsideDialog, resetPromptSpy } from "./helpers/install-prompt";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -12,16 +13,10 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function focusInsideDialog(page: import("@playwright/test").Page) {
-  return page.evaluate(() => {
-    const dlg = document.querySelector('[role="dialog"]');
-    const active = document.activeElement;
-    return !!dlg && !!active && dlg.contains(active);
-  });
-}
 
-test("Shift+Tab after backdrop click never escapes focus trap", async ({ page }) => {
+test("Shift+Tab after backdrop click never escapes focus trap", async ({ page }, testInfo) => {
   await page.goto("/");
+  await resetPromptSpy(page);
 
   await page.evaluate(() => {
     const ev = new Event("beforeinstallprompt") as Event & {
@@ -61,9 +56,7 @@ test("Shift+Tab after backdrop click never escapes focus trap", async ({ page })
   // Shift+Tab through the full set + 2 extra to force at least one wrap.
   for (let i = 0; i < focusableCount + 2; i++) {
     await page.keyboard.press("Shift+Tab");
-    expect(
-      await focusInsideDialog(page),
-      `Shift+Tab #${i + 1} after backdrop click escaped focus trap`,
-    ).toBe(true);
+    await expectFocusInsideDialog(page, testInfo, `shiftTab-${i + 1}`);
   }
 });
+
