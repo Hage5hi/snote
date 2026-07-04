@@ -91,4 +91,69 @@ test.describe("focus-trap --html-report a11y", () => {
       expect(focused?.tag, `stop ${i}: expected an <a>, got ${focused?.tag}`).toBe("A");
     }
   });
+
+  test("search box is keyboard-operable, filters rows, and preserves a11y state", async ({ page }) => {
+    const htmlPath = seedAndGenerate();
+    await page.goto("file://" + resolve(htmlPath));
+
+    const details = page.locator("details:has(#q-search)");
+    await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+
+    const search = page.locator("#q-search");
+    const rows = page.locator("#q-all tbody tr");
+    const totalRows = await rows.count();
+    expect(totalRows).toBeGreaterThan(0);
+
+    // Focus the search input via keyboard (Tab from the summary).
+    const summary = details.locator("summary").first();
+    await summary.focus();
+    await page.keyboard.press("Tab");
+    await expect(search).toBeFocused();
+
+    // Accessible label persists while focused/typing.
+    await expect(search).toHaveAttribute("aria-label", /filter.*quarantined/i);
+
+    // Type a query that should match only rows whose failureReason or
+    // schemaPointer contains the token. `charlie` was seeded as the
+    // broken JSON entry, so its file path is a stable substring.
+    await page.keyboard.type("charlie", { delay: 5 });
+
+    // Wait for the client-side filter to settle: visible row count drops
+    // below the unfiltered total, and every visible row references the query.
+    await expect
+      .poll(async () => await rows.locator(":scope:visible").count(), { timeout: 2000 })
+      .toBeLessThan(totalRows);
+
+    const visibleCount = await rows.locator(":scope:visible").count();
+    expect(visibleCount).toBeGreaterThan(0);
+    for (let i = 0; i < visibleCount; i++) {
+      const text = (await rows.locator(":scope:visible").nth(i).textContent())?.toLowerCase() ?? "";
+      expect(text).toContain("charlie");
+    }
+
+    // Hidden rows must be hidden in an a11y-correct way: either removed
+    // from the a11y tree via `hidden`/`aria-hidden`, or by `display:none`.
+    // Assert they are not exposed to AT while filtered.
+    const hiddenExposed = await rows.evaluateAll((els) =>
+      els.filter((el) => {
+        const style = getComputedStyle(el as HTMLElement);
+        if (style.display === "none" || style.visibility === "hidden") return false;
+        if ((el as HTMLElement).hidden) return false;
+        if (el.getAttribute("aria-hidden") === "true") return false;
+        return !(el.textContent ?? "").toLowerCase().includes("charlie");
+      }).length,
+    );
+    expect(hiddenExposed, "non-matching rows must not remain in the a11y tree").toBe(0);
+
+    // Clearing the query restores the full row set — with keyboard only.
+    await search.focus();
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Delete");
+    await expect
+      .poll(async () => await rows.locator(":scope:visible").count(), { timeout: 2000 })
+      .toBe(totalRows);
+
+    // Label survives round-trip.
+    await expect(search).toHaveAttribute("aria-label", /filter.*quarantined/i);
+  });
 });
