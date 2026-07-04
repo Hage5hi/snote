@@ -168,9 +168,19 @@ export async function relocateInstallTrigger(
   page: Page,
   captured: CapturedTrigger,
 ): Promise<Locator> {
-  const byNonce = page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
-  if ((await byNonce.count()) === 1) return byNonce;
+  const nonceSelector = `[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`;
+  const byNonce = page.locator(nonceSelector);
+  if ((await byNonce.count()) === 1) {
+    await page.evaluate(
+      (info) => {
+        (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+      },
+      { path: "nonce", selector: nonceSelector, nonce: captured.nonce, at: Date.now() },
+    );
+    return byNonce;
+  }
 
+  const nameRegexSrc = `/${dict.en["install.title"]}/`;
   const fresh = page.getByRole("button", {
     name: new RegExp(dict.en["install.title"]),
   });
@@ -180,9 +190,22 @@ export async function relocateInstallTrigger(
     (el, args) => el.setAttribute(args.attr, args.n),
     { attr: TRIGGER_NONCE_ATTR, n: captured.nonce },
   );
-  const rebound = page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
+  const rebound = page.locator(nonceSelector);
   await expect(rebound).toHaveCount(1);
+  await page.evaluate(
+    (info) => {
+      (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+    },
+    {
+      path: "role-name-fallback",
+      roleName: nameRegexSrc,
+      finalSelector: nonceSelector,
+      nonce: captured.nonce,
+      at: Date.now(),
+    },
+  );
   return rebound;
 }
+
 
 
