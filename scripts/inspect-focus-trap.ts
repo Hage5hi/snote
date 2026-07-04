@@ -87,6 +87,14 @@ function parseArgs(): Arg {
         a.diffRetryDelayMs = n; break;
       }
       case "--html-report":   a.htmlReport = argv[++i]; break;
+      case "--html-top-n": {
+        // Default = --top (currently 5). Explicit override lets on-call
+        // widen the visible top lists in the HTML triage view.
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 1) { console.error("--html-top-n must be >= 1"); process.exit(64); }
+        a.htmlTopN = n; break;
+      }
+
 
       case "--top": {
         const n = Number(argv[++i]);
