@@ -42,7 +42,7 @@ type Arg = {
 
 
 function parseArgs(): Arg {
-  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", topN: 5, files: [] };
+  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", topN: 5, diffRetries: 3, diffRetryDelayMs: 500, files: [] };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
