@@ -126,3 +126,30 @@ writeFileSync(args.out, JSON.stringify({
   entries: summary,
 }, null, 2));
 console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length})`);
+
+if (args.csv) {
+  const cols = [
+    "file", "spec", "browser", "attempt", "label", "testTitle",
+    "firstEscapeEvent", "firstEscapePerfMs",
+    "relocatePath", "relocateUsedFallback",
+    "iterCount",
+  ];
+  const esc = (v: unknown) => {
+    const s = v == null ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const rows = summary.map((r) => {
+    const fe = (r.firstEscape as Record<string, unknown> | null) || null;
+    const rl = (r.relocate as Record<string, unknown> | null) || null;
+    return [
+      r.file, r.spec, r.browser, r.attempt, r.label, r.testTitle,
+      fe?.event ?? "", fe?.perf ?? "",
+      rl?.path ?? "", rl?.usedFallback ?? "",
+      Object.keys((r.iterTimings as object) || {}).length,
+    ].map(esc).join(",");
+  });
+  mkdirSync(dirname(args.csv), { recursive: true });
+  writeFileSync(args.csv, [cols.join(","), ...rows].join("\n") + "\n");
+  console.log(`▶ Wrote CSV:     ${args.csv}`);
+}
+
