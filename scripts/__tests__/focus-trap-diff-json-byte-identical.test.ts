@@ -22,7 +22,8 @@ function stripVolatile(obj: Record<string, unknown>): Record<string, unknown> {
   const clone = JSON.parse(JSON.stringify(obj)) as Record<string, unknown>;
   delete clone.generatedAt;
   const meta = clone.meta as Record<string, unknown> | undefined;
-  if (meta) { delete meta.timestamp; delete meta.argv; }
+  if (meta) { delete meta.timestamp; delete meta.argv; delete meta.scanRoot; }
+  if ("diffWith" in clone) delete clone.diffWith;
   return clone;
 }
 
