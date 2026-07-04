@@ -24,6 +24,7 @@
     "test:e2e:replay:focus-trap": "./scripts/replay-focus-trap.sh",
     "schema:types": "bun run scripts/generate-focus-trap-schema-types.ts",
     "schema:types:check": "bun run scripts/generate-focus-trap-schema-types.ts && git diff --exit-code -- scripts/_helpers/focus-trap-inspect-schema.types.gen.ts",
+    "schema-guard": "./scripts/schema-guard.sh",
     "theme:isolation": "bun run scripts/check-home-theme-isolation.ts",
     "i18n:check": "bun run scripts/i18n-coverage.ts",
     "i18n:audit": "bun run scripts/i18n-audit.ts",
