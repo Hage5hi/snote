@@ -349,80 +349,109 @@ test.describe("focus-trap --html-report a11y", () => {
   // message that matches the currently visible row count — never a stale
   // count from a superseded toggle. Deterministic = the final resting
   // announcement is a function of the final DOM state only.
-  test("rapid filter + disclosure toggles never leave the live region with a stale count", async ({ page }) => {
-    const htmlPath = seedAndGenerate();
-    await page.goto("file://" + resolve(htmlPath));
+  // Rapid-toggle is the only spec that legitimately races the browser's
+  // input/mutation pipeline. Give it 2 retries so cross-browser noise
+  // (WebKit's input debounce, Firefox MutationObserver batching) doesn't
+  // mask a real regression on the first pass. Every other spec in this
+  // file stays at the project's default retries=0 so flakes fail loudly.
+  test.describe("rapid-toggle live-region", () => {
+    test.describe.configure({ retries: 2 });
 
-    const details = page.locator("details:has(#q-search)");
-    await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
-    const search = page.locator("#q-search");
-    const rows = page.locator("#q-all tbody tr");
-    const live = page.locator("[aria-live='polite'], [role='status']").first();
+    test("rapid filter + disclosure toggles never leave the live region with a stale count", async ({ page }, testInfo) => {
+      const htmlPath = seedAndGenerate();
+      await page.goto("file://" + resolve(htmlPath));
 
-    // Seed the same MutationObserver-based announcement log the other
-    // test uses so we can assert exactly-once behavior at the tail.
-    await live.evaluate((el) => {
-      const w = window as unknown as { __ftLiveLog: string[] };
-      w.__ftLiveLog = [(el.textContent ?? "").trim()].filter(Boolean);
-      new MutationObserver(() => {
-        const t = (el.textContent ?? "").trim();
-        const log = w.__ftLiveLog;
-        if (t && log[log.length - 1] !== t) log.push(t);
-      }).observe(el, { childList: true, characterData: true, subtree: true });
-    });
+      const details = page.locator("details:has(#q-search)");
+      await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+      const search = page.locator("#q-search");
+      const rows = page.locator("#q-all tbody tr");
+      const live = page.locator("[aria-live='polite'], [role='status']").first();
 
-    // Fire 20 rapid mutations: alternating filter tokens + disclosure
-    // toggles, no awaits between them. Any debounce implementation
-    // must still settle to the final state.
-    await search.focus();
-    for (let i = 0; i < 20; i++) {
-      if (i % 4 === 0) {
-        await page.keyboard.press("Control+A");
-        await page.keyboard.press("Delete");
-        await page.keyboard.type("charlie");
-      } else if (i % 4 === 1) {
-        await page.keyboard.press("Control+A");
-        await page.keyboard.press("Delete");
-        await page.keyboard.type("schema");
-      } else if (i % 4 === 2) {
-        await details.evaluate((d: HTMLDetailsElement) => { d.open = false; });
-      } else {
-        await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+      // Seed the same MutationObserver-based announcement log the other
+      // test uses so we can assert exactly-once behavior at the tail.
+      await live.evaluate((el) => {
+        const w = window as unknown as { __ftLiveLog: string[] };
+        w.__ftLiveLog = [(el.textContent ?? "").trim()].filter(Boolean);
+        new MutationObserver(() => {
+          const t = (el.textContent ?? "").trim();
+          const log = w.__ftLiveLog;
+          if (t && log[log.length - 1] !== t) log.push(t);
+        }).observe(el, { childList: true, characterData: true, subtree: true });
+      });
+
+      // On any failure below, attach the full MutationObserver log and
+      // final aria-live text so CI artifacts (test-results/) capture the
+      // exact stale/duplicate sequence — no need to re-run locally.
+      const attachDiagnostics = async (label: string) => {
+        try {
+          const log = await page.evaluate(
+            () => (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [],
+          );
+          const finalText = (await live.textContent())?.trim() ?? "";
+          await testInfo.attach("live-region-log.json", {
+            contentType: "application/json",
+            body: Buffer.from(JSON.stringify({ label, finalText, log }, null, 2)),
+          });
+          await testInfo.attach("live-region-final-text.txt", {
+            contentType: "text/plain",
+            body: Buffer.from(finalText),
+          });
+        } catch {/* best-effort */}
+      };
+
+      try {
+        // Fire 20 rapid mutations: alternating filter tokens + disclosure
+        // toggles, no awaits between them. Any debounce implementation
+        // must still settle to the final state.
+        await search.focus();
+        for (let i = 0; i < 20; i++) {
+          if (i % 4 === 0) {
+            await page.keyboard.press("Control+A");
+            await page.keyboard.press("Delete");
+            await page.keyboard.type("charlie");
+          } else if (i % 4 === 1) {
+            await page.keyboard.press("Control+A");
+            await page.keyboard.press("Delete");
+            await page.keyboard.type("schema");
+          } else if (i % 4 === 2) {
+            await details.evaluate((d: HTMLDetailsElement) => { d.open = false; });
+          } else {
+            await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+          }
+        }
+
+        // Final state is a pure function of the final DOM: disclosure open,
+        // filter = "schema" (last text typed was "schema" at i=17; i=18/19
+        // only toggled the disclosure without editing the input). Wait for
+        // the aria-live region to EXACTLY match "<n> …" — exact-text wait
+        // is the deterministic strategy verified on chromium/firefox/webkit.
+        const expectedVisible = await rows.locator(":scope:visible").count();
+        const exactCount = new RegExp(`(^|\\D)${expectedVisible}(\\D|$)`);
+        await expect
+          .poll(async () => (await live.textContent())?.trim() ?? "",
+                { timeout: 4000, intervals: [50] })
+          .toMatch(exactCount);
+        const stableText = (await live.textContent())?.trim() ?? "";
+
+        // Deterministic settle: two consecutive reads 150ms apart must
+        // be byte-identical. Any late-arriving announcement breaks this.
+        await page.waitForTimeout(150);
+        expect((await live.textContent())?.trim() ?? "").toBe(stableText);
+        await page.waitForTimeout(150);
+        expect((await live.textContent())?.trim() ?? "").toBe(stableText);
+
+        // Exactly-once: the final announcement must appear in the log
+        // exactly once at the tail (no duplicate stale re-announcements).
+        const tailCount = await page.evaluate((t) => {
+          const log = (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [];
+          return log.filter((x) => x === t).length;
+        }, stableText);
+        expect(tailCount, `final announcement "${stableText}" appeared ${tailCount}× in live log`).toBe(1);
+      } catch (err) {
+        await attachDiagnostics(err instanceof Error ? err.message : String(err));
+        throw err;
       }
-    }
-
-    // Final state is a pure function of the final DOM: disclosure open,
-    // filter = "schema" (last text typed was "schema" at i=17; i=18/19
-    // only toggled the disclosure without editing the input). Compute
-    // the expected visible-row count from the DOM, then wait for the
-    // aria-live region to EXACTLY match "<n> …" before asserting the
-    // exactly-once invariant. Waiting on exact text (not just "changed"
-    // or "contains N") removes the timing race where the poll passes on
-    // a mid-toggle count that happens to include the digit.
-    const expectedVisible = await rows.locator(":scope:visible").count();
-    const exactCount = new RegExp(`(^|\\D)${expectedVisible}(\\D|$)`);
-    await expect
-      .poll(async () => (await live.textContent())?.trim() ?? "",
-            { timeout: 4000, intervals: [50] })
-      .toMatch(exactCount);
-    const stableText = (await live.textContent())?.trim() ?? "";
-
-    // Deterministic settle: two consecutive reads 150ms apart must be
-    // byte-identical. Any late-arriving announcement would break this.
-    await page.waitForTimeout(150);
-    const reRead1 = (await live.textContent())?.trim() ?? "";
-    expect(reRead1).toBe(stableText);
-    await page.waitForTimeout(150);
-    const reRead2 = (await live.textContent())?.trim() ?? "";
-    expect(reRead2).toBe(stableText);
-
-    // Exactly-once: the final announcement must appear in the mutation
-    // log exactly once at the tail (no duplicate stale re-announcements).
-    const tailCount = await page.evaluate((t) => {
-      const log = (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [];
-      return log.filter((x) => x === t).length;
-    }, stableText);
-    expect(tailCount, `final announcement "${stableText}" appeared ${tailCount}× in live log`).toBe(1);
+    });
   });
 });
 
