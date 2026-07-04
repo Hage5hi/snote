@@ -27,8 +27,15 @@ type Arg = {
   maxErrors?: number;
   scanRoot: string;
   invalidDir?: string;
+  jsonReport?: string;
+  diffWith?: string;
+  diffOut?: string;
+  topN: number;
+  artifactValidUrl?: string;
+  artifactInvalidUrl?: string;
   files: string[];
 };
+
 
 function parseArgs(): Arg {
   const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", files: [] };
