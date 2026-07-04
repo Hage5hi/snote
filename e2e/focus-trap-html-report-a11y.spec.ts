@@ -180,6 +180,33 @@ test.describe("focus-trap --html-report a11y", () => {
     const live = page.locator("[aria-live='polite'], [role='status']").first();
     await expect(live).toBeAttached();
 
+    // Correct role/ARIA wiring: role="status" implies polite, otherwise
+    // require an explicit aria-live=polite. aria-atomic="true" keeps SR
+    // from announcing partial character updates.
+    const liveAttrs = await live.evaluate((el) => ({
+      role: el.getAttribute("role"),
+      ariaLive: el.getAttribute("aria-live"),
+      ariaAtomic: el.getAttribute("aria-atomic"),
+    }));
+    const politeOk = liveAttrs.ariaLive === "polite" || liveAttrs.role === "status";
+    expect(politeOk, `live region not polite: ${JSON.stringify(liveAttrs)}`).toBe(true);
+    expect(liveAttrs.ariaAtomic, "aria-atomic must be 'true'").toBe("true");
+
+    // Record every distinct textContent the live region ever holds so
+    // we can assert "exactly one announcement per toggle" below.
+    await live.evaluate((el) => {
+      const w = window as unknown as { __ftLiveLog: string[] };
+      w.__ftLiveLog = [(el.textContent ?? "").trim()];
+      new MutationObserver(() => {
+        const t = (el.textContent ?? "").trim();
+        const log = w.__ftLiveLog;
+        if (log[log.length - 1] !== t) log.push(t);
+      }).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    const readLog = async (): Promise<string[]> =>
+      await page.evaluate(() => (window as unknown as { __ftLiveLog: string[] }).__ftLiveLog.slice());
+    const before = await readLog();
+
     const total = await rows.count();
     await search.focus();
 
