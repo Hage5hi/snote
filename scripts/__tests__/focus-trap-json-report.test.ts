@@ -36,7 +36,7 @@ describe("inspect-focus-trap --json-report", () => {
         "--scan-root", root,
         "--out", outJson,
         "--json-report", jsonReport,
-        "--invalid-dir", join(root, "_invalid")],
+        "--invalid-dir", join(root, "..", "ft-jr-inv-" + Date.now())],
       { encoding: "utf8" },
     );
     // Two invalid artifacts → exit 2, but the JSON report must still exist.
@@ -80,7 +80,7 @@ describe("inspect-focus-trap --json-report", () => {
       ["run", "scripts/inspect-focus-trap.ts",
         "--scan-root", root, "--out", outJson,
         "--json-report", jsonReport,
-        "--invalid-dir", join(root, "_invalid")],
+        "--invalid-dir", join(root, "..", "ft-jr-inv-" + Date.now())],
       { encoding: "utf8" },
     );
     expect(res2.status).toBe(2);
