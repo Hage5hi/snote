@@ -526,9 +526,37 @@ if (args.diffWith) {
       const s = v == null ? "" : String(v);
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(",")).join("\n") + "\n";
-    mkdirSync(dirname(args.diffOut), { recursive: true });
-    writeFileSync(args.diffOut, csv);
-    console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
+    if (args.reportValidateOnly) {
+      console.log(`✓ --diff-out validated (${rows.length} row(s)) — skipped write per --report-validate-only`);
+    } else {
+      mkdirSync(dirname(args.diffOut), { recursive: true });
+      writeFileSync(args.diffOut, csv);
+      console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
+    }
+  }
+  // --diff-json-out is a machine-readable sibling of --diff-out for
+  // downstream automation that would rather not re-parse CSV.
+  if (args.diffJsonOut) {
+    const payload = {
+      generatedAt: summaryDoc.generatedAt,
+      meta: runMeta,
+      diffWith: args.diffWith,
+      changed: diffRows.length,
+      rows: diffRows.map((d) => ({
+        file: d.file,
+        prevFailureReason: d.prev.failureReason,
+        prevSchemaPointer: d.prev.schemaPointer,
+        currFailureReason: d.curr.failureReason,
+        currSchemaPointer: d.curr.schemaPointer,
+      })),
+    };
+    if (args.reportValidateOnly) {
+      console.log(`✓ --diff-json-out validated (${payload.rows.length} row(s)) — skipped write per --report-validate-only`);
+    } else {
+      mkdirSync(dirname(args.diffJsonOut), { recursive: true });
+      writeFileSync(args.diffJsonOut, JSON.stringify(payload, null, 2));
+      console.log(`▶ Wrote diff JSON: ${args.diffJsonOut}`);
+    }
   }
 
 }
