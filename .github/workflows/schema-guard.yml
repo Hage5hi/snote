@@ -1,0 +1,93 @@
+name: schema-guard
+# Runs on every PR (and pushes to main) to fail fast if the published
+# JSON Schemas or their generated TypeScript types are out of sync, or
+# if the CLI-emitted schemaVersion drifts from the pinned schema const.
+# Kept separate from the big CI matrix so PR authors get feedback in
+# under a minute instead of waiting for the full suite.
+
+on:
+  pull_request:
+    paths:
+      - "schemas/focus-trap-inspect-*.schema.json"
+      - "scripts/_helpers/focus-trap-inspect.ts"
+      - "scripts/_helpers/focus-trap-inspect-schema.types.gen.ts"
+      - "scripts/generate-focus-trap-schema-types.ts"
+      - "scripts/inspect-focus-trap.ts"
+      - "scripts/__tests__/focus-trap-json-schemas*.test.ts"
+      - ".github/workflows/schema-guard.yml"
+  push:
+    branches: [main]
+    paths:
+      - "schemas/focus-trap-inspect-*.schema.json"
+      - "scripts/_helpers/focus-trap-inspect.ts"
+      - "scripts/_helpers/focus-trap-inspect-schema.types.gen.ts"
+      - "scripts/generate-focus-trap-schema-types.ts"
+
+concurrency:
+  group: schema-guard-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  schema-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Published JSON Schema files must exist + parse
+        run: |
+          set -euo pipefail
+          for f in \
+            schemas/focus-trap-inspect-report.schema.json \
+            schemas/focus-trap-inspect-diff.schema.json; do
+            [ -s "$f" ] || { echo "missing/empty schema: $f"; exit 1; }
+            bun -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$f" \
+              || { echo "invalid JSON in schema: $f"; exit 1; }
+            echo "OK $f"
+          done
+
+      - name: schema:types:check (regenerate + fail on drift)
+        run: |
+          set -euo pipefail
+          bun run schema:types:check \
+            || { echo "generated schema types drifted — run: bun run schema:types  (then commit scripts/_helpers/focus-trap-inspect-schema.types.gen.ts)"; exit 1; }
+
+      - name: CLI schemaVersion must match published JSON Schemas
+        run: |
+          set -euo pipefail
+          bun -e '
+            const fs = require("fs");
+            const src = fs.readFileSync("scripts/_helpers/focus-trap-inspect.ts","utf8");
+            const pick = (n) => {
+              const m = src.match(new RegExp(`${n}\\s*=\\s*"([^"]+)"`));
+              if (!m) throw new Error("missing const "+n);
+              return m[1];
+            };
+            const report = JSON.parse(fs.readFileSync("schemas/focus-trap-inspect-report.schema.json","utf8"));
+            const diff   = JSON.parse(fs.readFileSync("schemas/focus-trap-inspect-diff.schema.json","utf8"));
+            const pairs = [
+              ["JSON_REPORT_SCHEMA_VERSION", pick("JSON_REPORT_SCHEMA_VERSION"), report.properties.schemaVersion.const],
+              ["DIFF_JSON_SCHEMA_VERSION",   pick("DIFF_JSON_SCHEMA_VERSION"),   diff.properties.schemaVersion.const],
+            ];
+            let ok = true;
+            for (const [n, cli, schema] of pairs) {
+              if (cli !== schema) { console.error(`drift: ${n} CLI=${cli} schema=${schema}`); ok = false; }
+              else console.log(`OK ${n}=${cli}`);
+            }
+            process.exit(ok ? 0 : 1);
+          '
+
+      - name: Schema contract tests (Vitest)
+        run: |
+          bunx vitest run \
+            scripts/__tests__/focus-trap-json-schemas.test.ts \
+            scripts/__tests__/focus-trap-json-schemas-negative.test.ts \
+            scripts/__tests__/focus-trap-schema-types.test.ts \
+            scripts/__tests__/focus-trap-validator-json-pointer.test.ts \
+            scripts/__tests__/focus-trap-validator-pointer-escape.test.ts \
+            scripts/__tests__/focus-trap-validator-pointer-format.test.ts
