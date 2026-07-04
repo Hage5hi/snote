@@ -668,10 +668,11 @@ if (quarantinedFiles.length) {
   for (const q of quarantinedFiles.slice(0, args.topN)) topLines.push(`- [\`${q}\`](${q})`);
   if (quarantinedFiles.length > args.topN) topLines.push(`- …and ${quarantinedFiles.length - args.topN} more in \`${args.invalidDir}\``);
 }
-if (args.artifactValidUrl || args.artifactInvalidUrl) {
+if (args.artifactValidUrl || args.artifactInvalidUrl || args.artifactHtmlUrl) {
   topLines.push("", "### Artifacts");
   if (args.artifactValidUrl)   topLines.push(`- ✅ valid CSV: ${args.artifactValidUrl}`);
   if (args.artifactInvalidUrl) topLines.push(`- ❌ invalid CSV: ${args.artifactInvalidUrl}`);
+  if (args.artifactHtmlUrl)    topLines.push(`- 🖥️ HTML report: ${args.artifactHtmlUrl}`);
 }
 if (diffRows.length) {
   topLines.push("", `### Diff vs previous run`, "", `- changed rows: **${diffRows.length}**`);
@@ -679,18 +680,37 @@ if (diffRows.length) {
 if (topLines.length) md += topLines.join("\n") + "\n";
 
 
-if (args.md) {
+if (args.md && !args.reportValidateOnly) {
   mkdirSync(dirname(args.md), { recursive: true });
   writeFileSync(args.md, md);
   console.log(`▶ Wrote markdown: ${args.md}`);
 }
 const stepSummary = process.env.GITHUB_STEP_SUMMARY;
-if (stepSummary) {
+if (stepSummary && !args.reportValidateOnly) {
   try {
     const fs = await import("node:fs/promises");
     await fs.appendFile(stepSummary, md + "\n");
   } catch { /* best-effort */ }
 }
+
+// GitHub Actions workflow annotations — surface the top failureKind /
+// schemaPointer rows and link to the uploaded CSV/HTML artifacts so the
+// PR "Checks" tab shows them without needing to open the step summary.
+// Uses ::warning:: (bad artifacts present) / ::notice:: (clean run).
+if (process.env.GITHUB_ACTIONS && !args.reportValidateOnly) {
+  const oneLine = (s: string) => s.replace(/\r?\n/g, " ").replace(/::/g, ":\u200b:");
+  const level = invalidCount > 0 ? "warning" : "notice";
+  const headline = `focus-trap: scanned=${all.length} valid=${validCount} invalid=${invalidCount}`;
+  const topKindStr = topKinds.length ? `top failureKind: ${topKinds.map(([k, c]) => `${k}(${c})`).join(", ")}` : "";
+  const topPtrStr  = topPtrs.length  ? `top schemaPointer: ${topPtrs.map(([k, c]) => `${k}(${c})`).join(", ")}` : "";
+  const links: string[] = [];
+  if (args.artifactValidUrl)   links.push(`validCSV=${args.artifactValidUrl}`);
+  if (args.artifactInvalidUrl) links.push(`invalidCSV=${args.artifactInvalidUrl}`);
+  if (args.artifactHtmlUrl)    links.push(`html=${args.artifactHtmlUrl}`);
+  const body = [headline, topKindStr, topPtrStr, links.join(" | ")].filter(Boolean).join(" — ");
+  console.log(`::${level} title=focus-trap-inspect::${oneLine(body)}`);
+}
+
 
 // Fail fast on malformed artifacts so CI surfaces bad inputs rather
 // than pretending everything is fine with an empty summary.
