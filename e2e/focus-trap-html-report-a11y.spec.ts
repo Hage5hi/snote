@@ -374,11 +374,7 @@ test.describe("focus-trap --html-report a11y", () => {
       await page.goto("file://" + resolve(htmlPath));
 
       // Force a Playwright trace for this specific test so a failure
-      // always produces a `trace.zip` in `test-results/`, even if the
-      // project default is `retain-on-failure` (which starts tracing
-      // only from `retry #1` when the first attempt already failed
-      // once). Screenshots are captured explicitly in the catch below.
-      await testInfo.attach.bind(testInfo); // no-op ref for lint
+      // always produces a `trace.zip` in `test-results/`.
       await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
 
       const details = page.locator("details:has(#q-search)");
@@ -387,8 +383,6 @@ test.describe("focus-trap --html-report a11y", () => {
       const rows = page.locator("#q-all tbody tr");
       const live = page.locator("[aria-live='polite'], [role='status']").first();
 
-      // Seed the same MutationObserver-based announcement log the other
-      // test uses so we can assert exactly-once behavior at the tail.
       await live.evaluate((el) => {
         const w = window as unknown as { __ftLiveLog: string[] };
         w.__ftLiveLog = [(el.textContent ?? "").trim()].filter(Boolean);
@@ -399,93 +393,141 @@ test.describe("focus-trap --html-report a11y", () => {
         }).observe(el, { childList: true, characterData: true, subtree: true });
       });
 
-      // On any failure below, attach the full MutationObserver log, the
-      // final aria-live text, a full-page screenshot, and the Playwright
-      // trace.zip so CI artifacts capture the exact stale/duplicate
-      // sequence without needing a local re-run.
-      const attachDiagnostics = async (label: string) => {
+      // Reusable diagnostics collector — always dumps DOM snapshot,
+      // aria-live innerText, screenshot, and trace.zip. Called from the
+      // `finally` block so it runs on pass AND fail; on pass we skip
+      // the heavy trace attach to keep artifacts small, on fail we
+      // attach everything unconditionally.
+      let attached = false;
+      const collectDiagnostics = async (opts: { attachTrace: boolean; label: string }) => {
+        if (attached) return;
+        attached = true;
         try {
           const log = await page.evaluate(
             () => (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [],
           );
+          const liveText = await live.evaluate((el) => (el as HTMLElement).innerText).catch(() => "");
+          const domSnapshot = await page.content();
           const finalText = (await live.textContent())?.trim() ?? "";
           await testInfo.attach("live-region-log.json", {
             contentType: "application/json",
-            body: Buffer.from(JSON.stringify({ label, browserName, finalText, log }, null, 2)),
+            body: Buffer.from(JSON.stringify({ label: opts.label, browserName, finalText, liveInnerText: liveText, log }, null, 2)),
           });
-          await testInfo.attach("live-region-final-text.txt", {
+          await testInfo.attach("live-region-innertext.txt", {
             contentType: "text/plain",
-            body: Buffer.from(finalText),
+            body: Buffer.from(liveText),
           });
-          const shot = await page.screenshot({ fullPage: true });
-          await testInfo.attach("live-region-failure.png", {
-            contentType: "image/png",
-            body: shot,
+          await testInfo.attach("dom-snapshot.html", {
+            contentType: "text/html",
+            body: Buffer.from(domSnapshot),
           });
+          if (opts.attachTrace) {
+            const shot = await page.screenshot({ fullPage: true });
+            await testInfo.attach("live-region-failure.png", { contentType: "image/png", body: shot });
+          }
         } catch {/* best-effort */}
         try {
-          const tracePath = testInfo.outputPath("live-region-trace.zip");
-          await page.context().tracing.stop({ path: tracePath });
-          await testInfo.attach("live-region-trace.zip", {
-            contentType: "application/zip",
-            path: tracePath,
-          });
+          if (opts.attachTrace) {
+            const tracePath = testInfo.outputPath("live-region-trace.zip");
+            await page.context().tracing.stop({ path: tracePath });
+            await testInfo.attach("live-region-trace.zip", { contentType: "application/zip", path: tracePath });
+          } else {
+            await page.context().tracing.stop();
+          }
         } catch {/* tracing already stopped */}
       };
 
+      // Per-iteration DOM state snapshot so we can later assert the
+      // aria-live log is a valid *ordered subsequence* of the visible
+      // counts we actually produced — no announcement may reference a
+      // count the DOM never held at some point in this run.
+      const observedVisible: number[] = [];
+      const WAIT_TIMEOUT_MS: Record<string, number> = { chromium: 4000, firefox: 5000, webkit: 7000 };
+      const waitMs = WAIT_TIMEOUT_MS[browserName] ?? 4000;
+      const t0 = Date.now();
+
       try {
-        // Fire 20 rapid mutations: alternating filter tokens + disclosure
-        // toggles, no awaits between them. Any debounce implementation
-        // must still settle to the final state.
         await search.focus();
         for (let i = 0; i < 20; i++) {
           if (i % 4 === 0) {
-            await page.keyboard.press("Control+A");
-            await page.keyboard.press("Delete");
+            await page.keyboard.press("Control+A"); await page.keyboard.press("Delete");
             await page.keyboard.type("charlie");
           } else if (i % 4 === 1) {
-            await page.keyboard.press("Control+A");
-            await page.keyboard.press("Delete");
+            await page.keyboard.press("Control+A"); await page.keyboard.press("Delete");
             await page.keyboard.type("schema");
           } else if (i % 4 === 2) {
             await details.evaluate((d: HTMLDetailsElement) => { d.open = false; });
           } else {
             await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
           }
+          observedVisible.push(await rows.locator(":scope:visible").count());
         }
 
-        // Final state is a pure function of the final DOM. Use the
-        // per-browser wait budget so slower engines don't flake on the
-        // exact-text poll and faster engines still fail fast.
-        const waitMs = WAIT_TIMEOUT_MS[browserName] ?? 4000;
         const expectedVisible = await rows.locator(":scope:visible").count();
         const exactCount = new RegExp(`(^|\\D)${expectedVisible}(\\D|$)`);
+        const waitStart = Date.now();
         await expect
           .poll(async () => (await live.textContent())?.trim() ?? "",
                 { timeout: waitMs, intervals: [50] })
           .toMatch(exactCount);
+        const waitDurationMs = Date.now() - waitStart;
         const stableText = (await live.textContent())?.trim() ?? "";
 
-        // Deterministic settle: two consecutive reads 150ms apart must
-        // be byte-identical. Any late-arriving announcement breaks this.
         await page.waitForTimeout(150);
         expect((await live.textContent())?.trim() ?? "").toBe(stableText);
         await page.waitForTimeout(150);
         expect((await live.textContent())?.trim() ?? "").toBe(stableText);
 
-        // Exactly-once: the final announcement must appear in the log
-        // exactly once at the tail (no duplicate stale re-announcements).
-        const tailCount = await page.evaluate((t) => {
-          const log = (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [];
-          return log.filter((x) => x === t).length;
-        }, stableText);
-        expect(tailCount, `final announcement "${stableText}" appeared ${tailCount}× in live log`).toBe(1);
+        // Tightened exactly-once: verify the FULL ORDERED log — not
+        // just that the final message is unique. Every announcement in
+        // the log must:
+        //   (a) reference a visible-row count the DOM actually held at
+        //       some point during the run (subsequence of observedVisible,
+        //       de-duped adjacently), and
+        //   (b) never repeat consecutively (the observer already dedupes,
+        //       but re-check so a regression in that code fails here), and
+        //   (c) end with `stableText` at exactly one position.
+        const log: string[] = await page.evaluate(
+          () => (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [],
+        );
+        // (b) no adjacent duplicates
+        for (let i = 1; i < log.length; i++) {
+          expect(log[i], `adjacent duplicate at ${i}: ${JSON.stringify(log)}`).not.toBe(log[i - 1]);
+        }
+        // (c) final text appears exactly once and at the tail
+        const finalOccurrences = log.filter((x) => x === stableText).length;
+        expect(finalOccurrences, `final "${stableText}" appeared ${finalOccurrences}× in ${JSON.stringify(log)}`).toBe(1);
+        expect(log[log.length - 1]).toBe(stableText);
+        // (a) each log entry's numeric count is a subsequence of the
+        // dedup-adjacent observedVisible sequence (no stale counts).
+        const dedupAdj = (a: number[]) => a.filter((v, i) => i === 0 || v !== a[i - 1]);
+        const observedSeq = dedupAdj(observedVisible);
+        const logCounts = log
+          .map((s) => { const m = s.match(/\d+/); return m ? Number(m[0]) : NaN; })
+          .filter((n) => Number.isFinite(n));
+        let j = 0;
+        for (const n of logCounts) {
+          while (j < observedSeq.length && observedSeq[j] !== n) j++;
+          expect(j, `stale count ${n} in log not seen in DOM sequence ${JSON.stringify(observedSeq)} (log=${JSON.stringify(log)})`).toBeLessThan(observedSeq.length);
+          j++;
+        }
 
-        // Success path: stop tracing without attaching (keeps artifacts small).
-        try { await page.context().tracing.stop(); } catch {/* noop */}
-      } catch (err) {
-        await attachDiagnostics(err instanceof Error ? err.message : String(err));
-        throw err;
+        // Per-browser debug logging — surfaces in the Playwright `list`
+        // reporter and each browser's job log so timing flakes are
+        // trivially attributable to a specific engine.
+        console.log(`[live-region ${browserName}] announcements=${log.length} waitMs=${waitDurationMs} totalMs=${Date.now() - t0} budget=${waitMs}`);
+        testInfo.annotations.push({
+          type: "live-region-timing",
+          description: `browser=${browserName} announcements=${log.length} waitMs=${waitDurationMs} budget=${waitMs}`,
+        });
+      } finally {
+        // Always collect. On pass: keep it cheap (no trace/screenshot).
+        // On fail: attach everything including trace.zip + screenshot.
+        const failed = testInfo.errors.length > 0 || testInfo.status === "failed";
+        await collectDiagnostics({
+          attachTrace: failed,
+          label: failed ? "rapid-toggle-failure" : "rapid-toggle-pass",
+        });
       }
     });
   });
