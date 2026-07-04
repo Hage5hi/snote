@@ -4,6 +4,7 @@
 // never escape to the underlying page.
 import { test, expect } from "@playwright/test";
 import { dict } from "../src/i18n/index";
+import { expectFocusInsideDialog, resetPromptSpy } from "./helpers/install-prompt";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -12,13 +13,6 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-async function focusInsideDialog(page: import("@playwright/test").Page) {
-  return page.evaluate(() => {
-    const dlg = document.querySelector('[role="dialog"]');
-    const active = document.activeElement;
-    return !!dlg && !!active && dlg.contains(active);
-  });
-}
 
 test("Shift+Tab after backdrop click never escapes focus trap", async ({ page }) => {
   await page.goto("/");
