@@ -313,28 +313,40 @@ if (args.csv) {
 // counts plus every schema/parse issue) alongside the full summary JSON,
 // so downstream CI jobs don't have to re-parse the verbose entries doc.
 if (args.jsonReport) {
-  const issues = summary
+  // Sort by file so downstream diffs are stable across runs regardless
+  // of filesystem walk order.
+  const bySortedFile = [...summary].sort((a, b) => String(a.file).localeCompare(String(b.file)));
+  const artifacts = bySortedFile.map((e) => ({
+    file: String(e.file),
+    failureKind: (e.failureKind as string | null) ?? null,
+    failureReason: String(e.failureReason ?? ""),
+    schemaPointer: (e.schemaPointer as string | null) ?? null,
+    quarantined: String(e.quarantined ?? ""),
+  }));
+  const issues = bySortedFile
     .filter((e) => e.failureKind === "parse" || e.failureKind === "schema")
     .map((e) => ({
-      file: e.file,
+      file: String(e.file),
       failureKind: e.failureKind,
-      failureReason: e.failureReason,
-      schemaPointer: e.schemaPointer ?? null,
+      failureReason: String(e.failureReason ?? ""),
+      schemaPointer: (e.schemaPointer as string | null) ?? null,
       schemaIssues: e.schemaIssues ?? null,
-      parseError: e.parseError ?? null,
-      quarantined: e.quarantined ?? "",
+      parseError: (e.parseError as string | null) ?? null,
+      quarantined: String(e.quarantined ?? ""),
     }));
   const report = {
     generatedAt: summaryDoc.generatedAt,
     scanned: all.length, matched: matched.length,
     valid: validCount, invalid: invalidCount,
     invalidDir: args.invalidDir ?? null,
+    artifacts,
     issues,
   };
   mkdirSync(dirname(args.jsonReport), { recursive: true });
   writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
-  console.log(`▶ Wrote JSON report: ${args.jsonReport} (issues=${issues.length})`);
+  console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
 }
+
 
 // --diff-with compares the current summary against a previous run's
 // downloaded CSVs (looks for *.valid.csv / *.invalid.csv under the given
