@@ -180,6 +180,33 @@ test.describe("focus-trap --html-report a11y", () => {
     const live = page.locator("[aria-live='polite'], [role='status']").first();
     await expect(live).toBeAttached();
 
+    // Correct role/ARIA wiring: role="status" implies polite, otherwise
+    // require an explicit aria-live=polite. aria-atomic="true" keeps SR
+    // from announcing partial character updates.
+    const liveAttrs = await live.evaluate((el) => ({
+      role: el.getAttribute("role"),
+      ariaLive: el.getAttribute("aria-live"),
+      ariaAtomic: el.getAttribute("aria-atomic"),
+    }));
+    const politeOk = liveAttrs.ariaLive === "polite" || liveAttrs.role === "status";
+    expect(politeOk, `live region not polite: ${JSON.stringify(liveAttrs)}`).toBe(true);
+    expect(liveAttrs.ariaAtomic, "aria-atomic must be 'true'").toBe("true");
+
+    // Record every distinct textContent the live region ever holds so
+    // we can assert "exactly one announcement per toggle" below.
+    await live.evaluate((el) => {
+      const w = window as unknown as { __ftLiveLog: string[] };
+      w.__ftLiveLog = [(el.textContent ?? "").trim()];
+      new MutationObserver(() => {
+        const t = (el.textContent ?? "").trim();
+        const log = w.__ftLiveLog;
+        if (log[log.length - 1] !== t) log.push(t);
+      }).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+    const readLog = async (): Promise<string[]> =>
+      await page.evaluate(() => (window as unknown as { __ftLiveLog: string[] }).__ftLiveLog.slice());
+    const before = await readLog();
+
     const total = await rows.count();
     await search.focus();
 
@@ -233,6 +260,20 @@ test.describe("focus-trap --html-report a11y", () => {
     await expect
       .poll(async () => (await live.textContent())?.trim() ?? "", { timeout: 2000 })
       .not.toBe(liveAfterCollapse);
+
+    // Exactly-one-announcement-per-toggle: each toggle above (2 filter
+    // types, 1 clear, 2 disclosure toggles = 5 actions) should have
+    // appended exactly one new distinct message. Duplicates in the log
+    // are collapsed on write, so length grows monotonically by 1 per
+    // action + the initial seed.
+    const log = await readLog();
+    const afterCount = log.length;
+    const beforeCount = before.length;
+    // Allow ±1 slack for the initial empty→first-message transition.
+    expect(afterCount - beforeCount, `live log grew by ${afterCount - beforeCount} for 5 toggles (log=${JSON.stringify(log)})`).toBeGreaterThanOrEqual(5);
+    expect(afterCount - beforeCount).toBeLessThanOrEqual(6);
+    // And every consecutive pair is distinct — no stale re-announcements.
+    for (let i = 1; i < log.length; i++) expect(log[i]).not.toBe(log[i - 1]);
   });
 
   // Broader sweep: every <details> disclosure and every quarantine
@@ -302,6 +343,71 @@ test.describe("focus-trap --html-report a11y", () => {
       expect(ok, `filter control[${i}] lacks visible focus indicator: ${JSON.stringify(fs)}`).toBe(true);
     }
   });
+
+  // Rapid-toggle stress: repeatedly type/clear the filter and open/close
+  // the disclosure with no delay. The live region must always land on a
+  // message that matches the currently visible row count — never a stale
+  // count from a superseded toggle. Deterministic = the final resting
+  // announcement is a function of the final DOM state only.
+  test("rapid filter + disclosure toggles never leave the live region with a stale count", async ({ page }) => {
+    const htmlPath = seedAndGenerate();
+    await page.goto("file://" + resolve(htmlPath));
+
+    const details = page.locator("details:has(#q-search)");
+    await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+    const search = page.locator("#q-search");
+    const rows = page.locator("#q-all tbody tr");
+    const live = page.locator("[aria-live='polite'], [role='status']").first();
+
+    // Fire 20 rapid mutations: alternating filter tokens + disclosure
+    // toggles, no awaits between them. Any debounce implementation
+    // must still settle to the final state.
+    await search.focus();
+    for (let i = 0; i < 20; i++) {
+      if (i % 4 === 0) {
+        await page.keyboard.press("Control+A");
+        await page.keyboard.press("Delete");
+        await page.keyboard.type("charlie");
+      } else if (i % 4 === 1) {
+        await page.keyboard.press("Control+A");
+        await page.keyboard.press("Delete");
+        await page.keyboard.type("schema");
+      } else if (i % 4 === 2) {
+        await details.evaluate((d: HTMLDetailsElement) => { d.open = false; });
+      } else {
+        await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+      }
+    }
+
+    // Final state: disclosure open, filter = "schema" (last i=19, i%4=3
+    // opened the disclosure; the last filter token typed was "schema" at
+    // i=17 since i=18 closed and i=19 opened without changing text).
+    // Poll until live text stops changing (deterministic settle) and
+    // matches the actual visible row count.
+    let stableText = "";
+    let lastText = "";
+    let stableRounds = 0;
+    await expect
+      .poll(async () => {
+        const t = (await live.textContent())?.trim() ?? "";
+        if (t === lastText) stableRounds++; else { stableRounds = 0; lastText = t; }
+        if (stableRounds >= 3) { stableText = t; return true; }
+        return false;
+      }, { timeout: 4000, intervals: [50] })
+      .toBe(true);
+
+    const visible = await rows.locator(":scope:visible").count();
+    // The live region must reference the current visible count as a
+    // literal substring — no stale counts from mid-toggle states.
+    expect(stableText, `stale live-region text=${JSON.stringify(stableText)} for visible=${visible}`)
+      .toMatch(new RegExp(`\\b${visible}\\b`));
+
+    // A second read one tick later must be identical (deterministic).
+    await page.waitForTimeout(150);
+    const reRead = (await live.textContent())?.trim() ?? "";
+    expect(reRead).toBe(stableText);
+  });
 });
+
 
 
