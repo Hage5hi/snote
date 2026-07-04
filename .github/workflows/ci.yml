@@ -1150,9 +1150,18 @@ jobs:
             --out reports/_ci/focus-trap-inspect-summary.json \
             --csv reports/_ci/focus-trap-inspect-summary.csv \
             --md  reports/_ci/focus-trap-inspect-summary.md || true
-          # Surface the short markdown report directly in the job's
-          # step summary so on-call sees first-failures without
-          # downloading artifacts.
+          # Also emit valid-only and invalid-only CSVs so downstream jobs
+          # can ingest either slice without re-filtering the combined CSV.
+          bun run scripts/inspect-focus-trap.ts \
+            --attempt ${{ github.run_attempt }} \
+            --out reports/_ci/focus-trap-inspect-summary.valid.json \
+            --csv reports/_ci/focus-trap-inspect-summary.valid.csv \
+            --csv-filter valid || true
+          bun run scripts/inspect-focus-trap.ts \
+            --attempt ${{ github.run_attempt }} \
+            --out reports/_ci/focus-trap-inspect-summary.invalid.json \
+            --csv reports/_ci/focus-trap-inspect-summary.invalid.csv \
+            --csv-filter invalid || true
           if [ -f reports/_ci/focus-trap-inspect-summary.md ]; then
             cat reports/_ci/focus-trap-inspect-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -1164,6 +1173,10 @@ jobs:
             reports/_ci/focus-trap-inspect-summary.json
             reports/_ci/focus-trap-inspect-summary.csv
             reports/_ci/focus-trap-inspect-summary.md
+            reports/_ci/focus-trap-inspect-summary.valid.csv
+            reports/_ci/focus-trap-inspect-summary.valid.json
+            reports/_ci/focus-trap-inspect-summary.invalid.csv
+            reports/_ci/focus-trap-inspect-summary.invalid.json
             reports/_ci/focus-trap-debug-index.json
             reports/_ci/focus-trap-invalid/**
             test-results/**/focus-trap-escape-*.json
@@ -1171,6 +1184,7 @@ jobs:
             test-results/**/focus-trap-escape-*.html
           retention-days: 14
           if-no-files-found: ignore
+
 
 
 
