@@ -359,6 +359,18 @@ test.describe("focus-trap --html-report a11y", () => {
     const rows = page.locator("#q-all tbody tr");
     const live = page.locator("[aria-live='polite'], [role='status']").first();
 
+    // Seed the same MutationObserver-based announcement log the other
+    // test uses so we can assert exactly-once behavior at the tail.
+    await live.evaluate((el) => {
+      const w = window as unknown as { __ftLiveLog: string[] };
+      w.__ftLiveLog = [(el.textContent ?? "").trim()].filter(Boolean);
+      new MutationObserver(() => {
+        const t = (el.textContent ?? "").trim();
+        const log = w.__ftLiveLog;
+        if (t && log[log.length - 1] !== t) log.push(t);
+      }).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+
     // Fire 20 rapid mutations: alternating filter tokens + disclosure
     // toggles, no awaits between them. Any debounce implementation
     // must still settle to the final state.
