@@ -48,7 +48,7 @@ describe("focus-trap-inspect JSON Schemas — negative cases", () => {
       scanned: 0, matched: 0, valid: 0, invalid: 0, artifacts: [], issues: [],
     };
     expect(report(bad)).toBe(false);
-    const constErr = (report.errors ?? []).find((e) => e.keyword === "const" && e.instancePath === "/schemaVersion");
+    const constErr = findConstErr(report.errors, "/schemaVersion");
     expect(constErr, "expected a const violation on /schemaVersion").toBeDefined();
     expect((constErr as { params: { allowedValue: string } }).params.allowedValue).toBe("1.0.0");
   });
@@ -62,13 +62,22 @@ describe("focus-trap-inspect JSON Schemas — negative cases", () => {
     };
     expect(diff(bad)).toBe(false);
     const sig = errorSignature(diff.errors);
+    // Ajv v6 emits one `required` error per missing key with dataPath="".
+    // Ajv v8+ emits with instancePath="". Accept both — check the params.
     for (const key of ["generatedAt", "meta", "diffWith", "changed"]) {
-      expect(sig.some((s) => s.startsWith("|required|") && s.includes(`"missingProperty":"${key}"`))).toBe(true);
+      expect(
+        sig.some((s) => s.includes("|required|") && s.includes(`"missingProperty":"${key}"`)),
+        `missing required '${key}' at top level`,
+      ).toBe(true);
     }
     for (const key of ["prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"]) {
-      expect(sig.some((s) => s.startsWith("/rows/0|required|") && s.includes(`"missingProperty":"${key}"`))).toBe(true);
+      expect(
+        sig.some((s) => (s.startsWith("/rows/0|required|") || s.startsWith(".rows[0]|required|")) && s.includes(`"missingProperty":"${key}"`)),
+        `missing required '${key}' in rows[0]`,
+      ).toBe(true);
     }
-    expect(sig.some((s) => s.startsWith("/rows/1|type|"))).toBe(true);
+    expect(sig.some((s) => s.startsWith("/rows/1|type|") || s.startsWith(".rows[1]|type|"))).toBe(true);
+
   });
 
   it("Ajv error signature is deterministic across compilations", () => {
