@@ -34,6 +34,8 @@ type Arg = {
   jsonReport?: string;
   diffWith?: string;
   diffOut?: string;
+  diffJsonOut?: string;
+  reportValidateOnly?: boolean;
   diffRetries: number;
   diffRetryDelayMs: number;
   htmlReport?: string;
@@ -42,6 +44,7 @@ type Arg = {
 
   artifactValidUrl?: string;
   artifactInvalidUrl?: string;
+  artifactHtmlUrl?: string;
   files: string[];
 };
 
