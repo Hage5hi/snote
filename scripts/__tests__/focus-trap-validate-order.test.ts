@@ -28,9 +28,8 @@ describe("inspect-focus-trap --validate-only", () => {
       makeArtifact(join(root, "a-spec-firefox-retry0"), false),
       makeArtifact(join(root, "m-spec-webkit-retry0"), false),
     ];
-    const expected = files
-      .map((f) => relative(process.cwd(), f))
-      .sort((a, b) => a.localeCompare(b));
+    const expected = [...files].sort((a, b) => a.localeCompare(b));
+
 
     const outJson = join(root, "summary.json");
     const res = spawnSync(
