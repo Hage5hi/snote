@@ -166,12 +166,70 @@ gh run download <prev-run-id> \
   -n focus-trap-inspect-valid--test-results--<sha>--attempt-1 \
   -D /tmp/ft-prev
 
-# Diff the current run against it:
+# Diff the current run against it — CSV + JSON side-by-side:
 bun run scripts/inspect-focus-trap.ts \
   --scan-root test-results \
-  --diff-with /tmp/ft-prev \
-  --diff-out  reports/_ci/focus-trap-inspect-diff.csv
+  --diff-with     /tmp/ft-prev \
+  --diff-out      reports/_ci/focus-trap-inspect-diff.csv \
+  --diff-json-out reports/_ci/focus-trap-inspect-diff.json
 ```
+
+### Machine-readable diff (`--diff-json-out`)
+
+`--diff-json-out PATH` writes the same changed rows as `--diff-out`, but
+as JSON so downstream automation (bots, dashboards) does not need to
+re-parse CSV. Rows are sorted by `file` and re-runs on identical inputs
+are byte-stable (modulo `generatedAt` / `meta.timestamp`).
+
+```jsonc
+{
+  "generatedAt": "2026-07-04T…Z",
+  "meta": {
+    "gitSha": "abc123…",
+    "scanRoot": "test-results",
+    "argv": ["--scan-root", "test-results", "--diff-with", "/tmp/ft-prev", …],
+    "timestamp": "2026-07-04T…Z",
+    "ciRunId": "12345",
+    "ciRunAttempt": "1"
+  },
+  "diffWith": "/tmp/ft-prev",
+  "changed": 2,
+  "rows": [
+    {
+      "file": "test-results/a-spec-chromium-retry0/focus-trap-escape-x.json",
+      "prevFailureReason": "",
+      "prevSchemaPointer": "",
+      "currFailureReason": "schema: /focusHistory/0/event [event]: expected string",
+      "currSchemaPointer": "/focusHistory/0/event"
+    }
+  ]
+}
+```
+
+### Validate reports without writing (`--report-validate-only`)
+
+Runs the schema/header validators against the shapes the CLI would
+otherwise write (`--json-report`, `--diff-out`, `--diff-json-out`,
+`--html-report`, `--csv`, `--md`, and the step-summary) and exits:
+
+- `0` — every shape is well-formed. **No artifacts written.**
+- `65` — `validateJsonReport` / `validateDiffCsvHeader` reported errors
+  (missing/reordered columns, missing required keys). Nothing written.
+- `2` — invalid focus-trap-escape artifacts were found (unchanged from
+  the normal run). Still nothing written.
+
+```bash
+# Dry-run in CI to prove the artifact shapes are still contract-compliant
+# before a "real" upload step runs:
+bun run scripts/inspect-focus-trap.ts \
+  --scan-root test-results \
+  --json-report reports/_ci/focus-trap-inspect-report.json \
+  --diff-with /tmp/ft-prev \
+  --diff-out  reports/_ci/focus-trap-inspect-diff.csv \
+  --diff-json-out reports/_ci/focus-trap-inspect-diff.json \
+  --report-validate-only
+```
+
 
 
 
