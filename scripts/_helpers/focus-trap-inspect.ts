@@ -148,23 +148,23 @@ export function validateDiffCsvHeader(header: readonly string[]): string[] {
 export function validateJsonReport(report: unknown): string[] {
   const errs: string[] = [];
   if (!report || typeof report !== "object" || Array.isArray(report)) {
-    return ["report must be a top-level object"];
+    return ["report must be a top-level object [pointer=/]"];
   }
   const r = report as Record<string, unknown>;
   for (const k of REQUIRED_JSON_REPORT_TOP_KEYS) {
-    if (!(k in r)) errs.push(`missing required top-level key '${k}'`);
+    if (!(k in r)) errs.push(`missing required top-level key '${k}' [pointer=/${k}]`);
   }
   if ("schemaVersion" in r && r.schemaVersion !== JSON_REPORT_SCHEMA_VERSION) {
-    errs.push(`'schemaVersion' must be '${JSON_REPORT_SCHEMA_VERSION}', got '${String(r.schemaVersion)}'`);
+    errs.push(`'schemaVersion' must be '${JSON_REPORT_SCHEMA_VERSION}', got '${String(r.schemaVersion)}' [pointer=/schemaVersion]`);
   }
-  if ("valid" in r && typeof r.valid !== "number")     errs.push(`'valid' must be a number, got ${typeof r.valid}`);
-  if ("invalid" in r && typeof r.invalid !== "number") errs.push(`'invalid' must be a number, got ${typeof r.invalid}`);
+  if ("valid" in r && typeof r.valid !== "number")     errs.push(`'valid' must be a number, got ${typeof r.valid} [pointer=/valid]`);
+  if ("invalid" in r && typeof r.invalid !== "number") errs.push(`'invalid' must be a number, got ${typeof r.invalid} [pointer=/invalid]`);
   if ("artifacts" in r) {
-    if (!Array.isArray(r.artifacts)) errs.push("'artifacts' must be an array");
+    if (!Array.isArray(r.artifacts)) errs.push("'artifacts' must be an array [pointer=/artifacts]");
     else r.artifacts.forEach((a, i) => {
-      if (!a || typeof a !== "object") { errs.push(`artifacts[${i}]: expected object`); return; }
+      if (!a || typeof a !== "object") { errs.push(`artifacts[${i}]: expected object [pointer=/artifacts/${i}]`); return; }
       for (const k of REQUIRED_JSON_REPORT_ARTIFACT_KEYS) {
-        if (!(k in (a as Record<string, unknown>))) errs.push(`artifacts[${i}]: missing required key '${k}'`);
+        if (!(k in (a as Record<string, unknown>))) errs.push(`artifacts[${i}]: missing required key '${k}' [pointer=/artifacts/${i}/${k}]`);
       }
     });
   }
@@ -176,22 +176,22 @@ export function validateJsonReport(report: unknown): string[] {
 export function validateDiffJson(report: unknown): string[] {
   const errs: string[] = [];
   if (!report || typeof report !== "object" || Array.isArray(report)) {
-    return ["diff report must be a top-level object"];
+    return ["diff report must be a top-level object [pointer=/]"];
   }
   const r = report as Record<string, unknown>;
   for (const k of REQUIRED_DIFF_JSON_TOP_KEYS) {
-    if (!(k in r)) errs.push(`missing required top-level key '${k}'`);
+    if (!(k in r)) errs.push(`missing required top-level key '${k}' [pointer=/${k}]`);
   }
   if ("schemaVersion" in r && r.schemaVersion !== DIFF_JSON_SCHEMA_VERSION) {
-    errs.push(`'schemaVersion' must be '${DIFF_JSON_SCHEMA_VERSION}', got '${String(r.schemaVersion)}'`);
+    errs.push(`'schemaVersion' must be '${DIFF_JSON_SCHEMA_VERSION}', got '${String(r.schemaVersion)}' [pointer=/schemaVersion]`);
   }
-  if ("changed" in r && typeof r.changed !== "number") errs.push(`'changed' must be a number, got ${typeof r.changed}`);
+  if ("changed" in r && typeof r.changed !== "number") errs.push(`'changed' must be a number, got ${typeof r.changed} [pointer=/changed]`);
   if ("rows" in r) {
-    if (!Array.isArray(r.rows)) errs.push("'rows' must be an array");
+    if (!Array.isArray(r.rows)) errs.push("'rows' must be an array [pointer=/rows]");
     else r.rows.forEach((row, i) => {
-      if (!row || typeof row !== "object") { errs.push(`rows[${i}]: expected object`); return; }
+      if (!row || typeof row !== "object") { errs.push(`rows[${i}]: expected object [pointer=/rows/${i}]`); return; }
       for (const k of REQUIRED_DIFF_JSON_ROW_KEYS) {
-        if (!(k in (row as Record<string, unknown>))) errs.push(`rows[${i}]: missing required key '${k}'`);
+        if (!(k in (row as Record<string, unknown>))) errs.push(`rows[${i}]: missing required key '${k}' [pointer=/rows/${i}/${k}]`);
       }
     });
   }
