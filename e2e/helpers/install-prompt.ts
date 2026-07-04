@@ -29,8 +29,9 @@ export async function expectFocusInsideDialog(
   page: Page,
   testInfo: TestInfo,
   label: string,
+  opts: { triggerNonce?: string } = {},
 ) {
-  const info = await page.evaluate(() => {
+  const info = await page.evaluate((nonceAttr) => {
     const dlg = document.querySelector('[role="dialog"]');
     const active = document.activeElement as HTMLElement | null;
     const sel = [
@@ -48,29 +49,54 @@ export async function expectFocusInsideDialog(
             id: (el as HTMLElement).id || null,
             name: el.getAttribute("name"),
             ariaLabel: el.getAttribute("aria-label"),
+            role: el.getAttribute("role"),
             text: (el.textContent || "").trim().slice(0, 60),
           }
         : null;
     const focusables = dlg
       ? Array.from(dlg.querySelectorAll<HTMLElement>(sel)).map(describe)
       : [];
+    const nonceEl = document.querySelector(`[${nonceAttr}]`);
     return {
       dialogPresent: !!dlg,
       dialogContainsActive: !!(dlg && active && dlg.contains(active)),
       activeElement: describe(active),
       focusables,
+      latestTriggerNonce: nonceEl?.getAttribute(nonceAttr) ?? null,
       dialogHtmlPreview: dlg ? (dlg as HTMLElement).outerHTML.slice(0, 2000) : null,
     };
-  });
+  }, TRIGGER_NONCE_ATTR);
+
+  const payload = {
+    label,
+    testTitle: testInfo.title,
+    triggerNonce: opts.triggerNonce ?? info.latestTriggerNonce,
+    ...info,
+  };
 
   if (!info.dialogContainsActive) {
-    await testInfo.attach(`focus-trap-escape-${label}.json`, {
-      body: JSON.stringify(info, null, 2),
+    const fileName = `focus-trap-escape-${label}.json`;
+    await testInfo.attach(fileName, {
+      body: JSON.stringify(payload, null, 2),
       contentType: "application/json",
     });
+    // Also write to the test's outputDir so CI can list the exact path
+    // per attempt/browser without parsing the JSON report.
+    try {
+      const fs = await import("node:fs/promises");
+      const path = await import("node:path");
+      await fs.mkdir(testInfo.outputDir, { recursive: true });
+      await fs.writeFile(
+        path.join(testInfo.outputDir, fileName),
+        JSON.stringify(payload, null, 2),
+      );
+    } catch {
+      /* best-effort */
+    }
   }
   expect(info.dialogContainsActive, `focus escaped at ${label}`).toBe(true);
 }
+
 
 /**
  * Robust re-location of the install trigger button after the dialog
