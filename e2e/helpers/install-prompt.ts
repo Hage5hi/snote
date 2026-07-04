@@ -217,13 +217,28 @@ export async function resetFocusHistory(page: Page) {
   });
 }
 
-const FOCUS_DESCRIBE_FN = `(el) => el ? ({
-  tag: el.tagName.toLowerCase(),
-  id: el.id || null,
-  ariaLabel: el.getAttribute("aria-label"),
-  text: (el.textContent || "").trim().slice(0, 60),
-  insideDialog: !!document.querySelector('[role="dialog"]')?.contains(el),
-}) : null`;
+// In-page describe fn: activeElement + dialog focusable stats used in
+// every history entry so each checkpoint carries enough context to
+// diagnose the escape without cross-referencing other entries.
+const FOCUS_DESCRIBE_FN = `(el) => {
+  const dlg = document.querySelector('[role="dialog"]');
+  const sel = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  const focusables = dlg ? Array.from(dlg.querySelectorAll(sel)) : [];
+  const labelOf = (n) => (n.getAttribute('aria-label') || (n.textContent||'').trim() || n.tagName.toLowerCase()).slice(0,60);
+  return {
+    active: el ? {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || null,
+      ariaLabel: el.getAttribute('aria-label'),
+      text: (el.textContent || '').trim().slice(0, 60),
+      insideDialog: !!dlg?.contains(el),
+      outerHTML: (el.outerHTML || '').slice(0, 800),
+    } : null,
+    focusableElementsCount: focusables.length,
+    firstFocusableLabels: focusables.slice(0, 6).map(labelOf),
+  };
+}`;
+
 
 /**
  * Press a key, recording before/after activeElement into
