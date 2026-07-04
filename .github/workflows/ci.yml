@@ -1612,6 +1612,50 @@ jobs:
             if (!ok) process.exit(1);
           '
 
+      # Negative case: a fixture with a wrong schemaVersion must be
+      # rejected by Ajv against the published schema (const violation).
+      # Belt-and-braces for the CLI's own validators.
+      - name: Wrong schemaVersion fixture must fail Ajv validation
+        run: |
+          set -euo pipefail
+          FX=/tmp/ft-fixture
+          mkdir -p "$FX/wrong"
+          cat > "$FX/wrong/report.json" <<'JSON'
+          {
+            "schemaVersion": "9.9.9",
+            "generatedAt": "2026-07-04T00:00:00Z",
+            "meta": {"gitSha": null, "scanRoot": "r", "argv": [], "timestamp": "t"},
+            "scanned": 0, "matched": 0, "valid": 0, "invalid": 0,
+            "artifacts": [], "issues": []
+          }
+          JSON
+          set +e
+          bun -e '
+            const Ajv = require("ajv");
+            const s = JSON.parse(require("fs").readFileSync("schemas/focus-trap-inspect-report.schema.json","utf8"));
+            const d = JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+            const v = new Ajv({ allErrors: true }).compile(s);
+            if (v(d)) { console.error("expected failure but Ajv accepted wrong schemaVersion"); process.exit(0); }
+            const constErr = (v.errors||[]).find(e => e.keyword==="const" && e.instancePath==="/schemaVersion");
+            if (!constErr) { console.error("no const error on /schemaVersion:", JSON.stringify(v.errors)); process.exit(0); }
+            console.error("OK: rejected schemaVersion=" + d.schemaVersion + " (allowed=" + constErr.params.allowedValue + ")");
+            process.exit(2);
+          ' "$FX/wrong/report.json"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 2 ]; then echo "wrong-schemaVersion fixture did not fail as expected (rc=$rc)"; exit 1; fi
+
+      # Regenerate the schema-derived .d.ts and fail if it differs from
+      # the committed version — prevents silent drift between schemas/
+      # and the types imported by code/tests.
+      - name: Generated schema types must be up to date
+        run: |
+          set -euo pipefail
+          bun run scripts/generate-focus-trap-schema-types.ts
+          git diff --exit-code -- scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
+            || { echo "generated types drifted — run: bun run scripts/generate-focus-trap-schema-types.ts"; exit 1; }
+
+
 
 
 
