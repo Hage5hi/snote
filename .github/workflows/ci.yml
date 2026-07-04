@@ -1165,6 +1165,7 @@ jobs:
           if [ -f reports/_ci/focus-trap-inspect-summary.md ]; then
             cat reports/_ci/focus-trap-inspect-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
+      # Combined summary + raw artifacts (unchanged name for backward compat).
       - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
         uses: actions/upload-artifact@v4
         with:
@@ -1173,10 +1174,6 @@ jobs:
             reports/_ci/focus-trap-inspect-summary.json
             reports/_ci/focus-trap-inspect-summary.csv
             reports/_ci/focus-trap-inspect-summary.md
-            reports/_ci/focus-trap-inspect-summary.valid.csv
-            reports/_ci/focus-trap-inspect-summary.valid.json
-            reports/_ci/focus-trap-inspect-summary.invalid.csv
-            reports/_ci/focus-trap-inspect-summary.invalid.json
             reports/_ci/focus-trap-debug-index.json
             reports/_ci/focus-trap-invalid/**
             test-results/**/focus-trap-escape-*.json
@@ -1184,6 +1181,28 @@ jobs:
             test-results/**/focus-trap-escape-*.html
           retention-days: 14
           if-no-files-found: ignore
+      # Standalone valid/invalid CSVs uploaded under unique, comparable
+      # names (sha + scan-root) so on-call can diff the same slice across
+      # runs without unzipping the combined bundle.
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: focus-trap-inspect-valid--test-results--${{ github.sha }}--attempt-${{ github.run_attempt }}
+          path: |
+            reports/_ci/focus-trap-inspect-summary.valid.csv
+            reports/_ci/focus-trap-inspect-summary.valid.json
+          retention-days: 14
+          if-no-files-found: ignore
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: focus-trap-inspect-invalid--test-results--${{ github.sha }}--attempt-${{ github.run_attempt }}
+          path: |
+            reports/_ci/focus-trap-inspect-summary.invalid.csv
+            reports/_ci/focus-trap-inspect-summary.invalid.json
+          retention-days: 14
+          if-no-files-found: ignore
+
 
 
 
