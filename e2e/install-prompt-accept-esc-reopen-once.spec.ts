@@ -3,6 +3,7 @@
 // accumulation would double the call count for a single activation.
 import { test, expect } from "@playwright/test";
 import { dict } from "../src/i18n/index";
+import { resetPromptSpy } from "./helpers/install-prompt";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -26,10 +27,11 @@ async function dispatchBip(page: import("@playwright/test").Page) {
   });
 }
 
+const getCalls = (page: import("@playwright/test").Page) =>
+  page.evaluate(() => (window as unknown as { __calls: number }).__calls);
+
 test("accept → ESC → reopen: Install fires exactly once per open", async ({ page }) => {
   await page.goto("/");
-
-  await dispatchBip(page);
 
   const trigger = page.getByRole("button", {
     name: new RegExp(dict.en["install.title"]),
@@ -38,26 +40,28 @@ test("accept → ESC → reopen: Install fires exactly once per open", async ({ 
   const installBtn = () =>
     dialog.getByRole("button", { name: new RegExp(`^${dict.en["install.btn"]}$`) });
 
-  // First open + accept.
-  await trigger.click();
-  await expect(dialog).toBeVisible();
-  await expect(installBtn()).toBeVisible();
-  await installBtn().click();
-  await expect(installBtn()).toHaveCount(0);
-  expect(await page.evaluate(() => (window as unknown as { __calls: number }).__calls)).toBe(1);
-
-  // ESC-close and reopen with a fresh BIP.
-  await page.keyboard.press("Escape");
-  await expect(dialog).toBeHidden();
-
+  // First open + accept — reset spy so this open starts from zero.
+  await resetPromptSpy(page, ["__calls"]);
   await dispatchBip(page);
   await trigger.click();
   await expect(dialog).toBeVisible();
   await expect(installBtn()).toBeVisible();
   await installBtn().click();
   await expect(installBtn()).toHaveCount(0);
+  expect(await getCalls(page)).toBe(1);
 
-  // Exactly 2 total (one per Install click). A doubled listener would
-  // give 3 (1 + 2) here.
-  expect(await page.evaluate(() => (window as unknown as { __calls: number }).__calls)).toBe(2);
+  // ESC-close, reset spy, reopen with a fresh BIP — this open must ALSO
+  // observe exactly 1 call (accumulated listeners would produce >= 2).
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await resetPromptSpy(page, ["__calls"]);
+  await dispatchBip(page);
+  await trigger.click();
+  await expect(dialog).toBeVisible();
+  await expect(installBtn()).toBeVisible();
+  await installBtn().click();
+  await expect(installBtn()).toHaveCount(0);
+  expect(await getCalls(page)).toBe(1);
 });
+
