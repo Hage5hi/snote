@@ -67,13 +67,14 @@ jobs:
 
       - name: schema:types:check (regenerate + fail on drift)
         id: schema_types_check
+        env:
+          # Dry-run mode: available on workflow_dispatch. Regenerates,
+          # captures the same diff bundle, but exits 0 so on-call can
+          # preview drift before it blocks a merge on a real PR.
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           set -euo pipefail
           mkdir -p _schema_drift/committed _schema_drift/regenerated
-          # Snapshot every committed schema-related artifact so we can
-          # diff each one after regeneration. Includes the generated TS
-          # types AND the published JSON Schemas — a drift in either
-          # (or a version-const change) should surface as a diff file.
           cp scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
              _schema_drift/committed/focus-trap-inspect-schema.types.gen.ts
           cp schemas/focus-trap-inspect-report.schema.json \
@@ -81,10 +82,9 @@ jobs:
           cp schemas/focus-trap-inspect-diff.schema.json \
              _schema_drift/committed/focus-trap-inspect-diff.schema.json
 
+          drift=0
           if ! bun run schema:types:check > _schema_drift/check.log 2>&1; then
-            # Regenerate to produce the "after" files, then capture a
-            # unified diff for each so PR authors see the exact CLI /
-            # schemaVersion drift without running the generator locally.
+            drift=1
             bun run schema:types || true
 
             cp scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
@@ -102,26 +102,32 @@ jobs:
                 > "_schema_drift/${f}.diff" || true
             done
 
-            # Also snapshot the CLI-side schemaVersion consts so a drift
-            # that only touches those (without regenerating types) is
-            # visible in the artifact bundle.
             grep -E 'SCHEMA_VERSION\s*=' scripts/_helpers/focus-trap-inspect.ts \
               > _schema_drift/cli-schema-versions.txt || true
+          fi
+          # Expose drift state to later steps regardless of exit code so
+          # the artifact upload / summary run in dry-run mode too.
+          echo "drift=${drift}" >> "$GITHUB_OUTPUT"
 
-            echo "schema/types drift — see the 'schema-drift' CI artifact"
-            echo "(committed/, regenerated/, per-file *.diff, check.log, cli-schema-versions.txt)."
+          if [ "$drift" = "1" ]; then
+            echo "schema/types drift — see the 'schema-drift' CI artifact."
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "::notice title=schema-guard dry-run::drift detected — NOT failing the job (dry_run=true)"
+              exit 0
+            fi
             echo "Then run: bun run schema:types  and commit the regenerated files."
             exit 1
           fi
 
       - name: Upload regenerated schema diff bundle (on drift)
-        if: failure() && steps.schema_types_check.outcome == 'failure'
+        if: (failure() || steps.schema_types_check.outputs.drift == '1')
         uses: actions/upload-artifact@v4
         with:
           name: schema-drift
           path: _schema_drift/
           if-no-files-found: warn
           retention-days: 14
+
 
       - name: Job summary — top schemaVersion mismatches (on drift)
         if: failure() && steps.schema_types_check.outcome == 'failure'
