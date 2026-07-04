@@ -85,6 +85,8 @@ export async function expectFocusInsideDialog(
       latestTriggerNonce: nonceEl?.getAttribute(nonceAttr) ?? null,
       dialogHtmlSanitized: dialogHtml,
       lastRelocate: (window as unknown as { __ipRelocate?: unknown }).__ipRelocate ?? null,
+      focusHistory:
+        (window as unknown as { __ipFocusHistory?: unknown[] }).__ipFocusHistory ?? [],
     };
   }, TRIGGER_NONCE_ATTR);
 
@@ -94,6 +96,7 @@ export async function expectFocusInsideDialog(
     triggerNonce: opts.triggerNonce ?? info.latestTriggerNonce,
     ...info,
   };
+
 
 
   if (!info.dialogContainsActive) {
