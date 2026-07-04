@@ -174,11 +174,21 @@ export async function relocateInstallTrigger(
   const nonceSelector = `[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`;
   const byNonce = page.locator(nonceSelector);
   if ((await byNonce.count()) === 1) {
+    const matched = await byNonce.evaluate((el) => ({
+      tag: el.tagName.toLowerCase(),
+      id: el.id || null,
+      ariaLabel: el.getAttribute("aria-label"),
+      text: (el.textContent || "").trim().slice(0, 60),
+      outerHTML: el.outerHTML.slice(0, 400),
+    }));
     await page.evaluate(
-      (info) => {
-        (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+      (entry) => {
+        (window as unknown as { __ipRelocate: unknown }).__ipRelocate = entry;
+        const w = window as unknown as { __ipFocusHistory?: unknown[] };
+        w.__ipFocusHistory = w.__ipFocusHistory || [];
+        w.__ipFocusHistory.push({ at: Date.now(), perf: performance.now(), event: "relocate", ...entry });
       },
-      { path: "nonce", selector: nonceSelector, nonce: captured.nonce, at: Date.now() },
+      { path: "nonce", usedFallback: false, selector: nonceSelector, nonce: captured.nonce, matched },
     );
     return byNonce;
   }
@@ -195,20 +205,32 @@ export async function relocateInstallTrigger(
   );
   const rebound = page.locator(nonceSelector);
   await expect(rebound).toHaveCount(1);
+  const matched = await rebound.evaluate((el) => ({
+    tag: el.tagName.toLowerCase(),
+    id: el.id || null,
+    ariaLabel: el.getAttribute("aria-label"),
+    text: (el.textContent || "").trim().slice(0, 60),
+    outerHTML: el.outerHTML.slice(0, 400),
+  }));
   await page.evaluate(
-    (info) => {
-      (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+    (entry) => {
+      (window as unknown as { __ipRelocate: unknown }).__ipRelocate = entry;
+      const w = window as unknown as { __ipFocusHistory?: unknown[] };
+      w.__ipFocusHistory = w.__ipFocusHistory || [];
+      w.__ipFocusHistory.push({ at: Date.now(), perf: performance.now(), event: "relocate", ...entry });
     },
     {
       path: "role-name-fallback",
+      usedFallback: true,
       roleName: nameRegexSrc,
       finalSelector: nonceSelector,
       nonce: captured.nonce,
-      at: Date.now(),
+      matched,
     },
   );
   return rebound;
 }
+
 
 /** Reset the in-page focus-transition history buffer. */
 export async function resetFocusHistory(page: Page) {
