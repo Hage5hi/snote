@@ -18,15 +18,18 @@ import {
   validateFocusTrapPayload,
 } from "./_helpers/focus-trap-inspect";
 
+type CsvFilter = "all" | "valid" | "invalid";
 type Arg = {
   attempt?: number; browser?: string; spec?: string; label?: string;
   out: string; csv?: string; md?: string;
+  csvFilter: CsvFilter;
   validateOnly?: boolean;
+  scanRoot: string;
   invalidDir?: string;
   files: string[];
 };
 function parseArgs(): Arg {
-  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", files: [] };
+  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", files: [] };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -38,10 +41,16 @@ function parseArgs(): Arg {
       case "--out":     a.out = argv[++i]; break;
       case "--csv":     a.csv = argv[++i]; break;
       case "--md":      a.md = argv[++i]; break;
+      case "--csv-filter": {
+        const f = argv[++i] as CsvFilter;
+        if (f !== "all" && f !== "valid" && f !== "invalid") { console.error(`--csv-filter must be all|valid|invalid`); process.exit(64); }
+        a.csvFilter = f; break;
+      }
       case "--validate-only": a.validateOnly = true; break;
+      case "--scan-root":     a.scanRoot = argv[++i]; break;
       case "--invalid-dir":   a.invalidDir = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--md PATH] [--validate-only] [--invalid-dir PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
@@ -72,9 +81,12 @@ function meta(file: string) {
 }
 
 const args = parseArgs();
-const all = args.files.length
+// Sort deterministically so --validate-only always processes files in
+// the same order across runs, which stabilises "first invalid" output.
+const all = (args.files.length
   ? args.files.filter((f) => { try { return statSync(f).isFile(); } catch { return false; } })
-  : walk("test-results");
+  : walk(args.scanRoot)
+).sort((a, b) => a.localeCompare(b));
 
 const matched = all.filter((f) => {
   const m = meta(f);
@@ -113,6 +125,7 @@ function quarantine(file: string, reason: string, dir: string): string {
 const summary: Array<Record<string, unknown>> = [];
 let hadInvalid = false;
 let firstInvalidFile: string | null = null;
+const invalidFiles: string[] = [];
 for (const f of matched) {
   const m = meta(f);
   let p: Record<string, unknown> = {};
@@ -121,9 +134,15 @@ for (const f of matched) {
     console.log(`\n=== ${f} ===\n  ${reason}`);
     hadInvalid = true;
     firstInvalidFile ??= f;
+    invalidFiles.push(f);
     const quarantined = args.invalidDir ? quarantine(f, reason, args.invalidDir) : "";
-    summary.push({ file: f, ...m, testTitle: null, triggerNonce: null, firstEscape: null, relocate: null, iterTimings: {}, artifacts: null, artifactUrls: null, failureReason: reason, quarantined });
-    if (args.validateOnly) break;
+    summary.push({
+      file: f, ...m, testTitle: null, triggerNonce: null,
+      firstEscape: null, relocate: null, iterTimings: {},
+      artifacts: null, artifactUrls: null,
+      failureReason: reason, failureKind: "parse", parseError: (e as Error).message,
+      schemaIssues: null, schemaPointer: null, quarantined,
+    });
     continue;
   }
 
@@ -134,14 +153,31 @@ for (const f of matched) {
     for (const l of lines) console.log(`    - ${l}`);
     hadInvalid = true;
     firstInvalidFile ??= f;
+    invalidFiles.push(f);
     const reason = `schema: ${lines.join(" | ")}`;
     const quarantined = args.invalidDir ? quarantine(f, reason, args.invalidDir) : "";
-    summary.push({ file: f, ...m, testTitle: p.testTitle ?? null, triggerNonce: p.triggerNonce ?? null, firstEscape: null, relocate: null, iterTimings: {}, artifacts: null, artifactUrls: null, failureReason: reason, schemaIssues: schemaErrs, quarantined });
-    if (args.validateOnly) break;
+    summary.push({
+      file: f, ...m, testTitle: p.testTitle ?? null, triggerNonce: p.triggerNonce ?? null,
+      firstEscape: null, relocate: null, iterTimings: {},
+      artifacts: null, artifactUrls: null,
+      failureReason: reason, failureKind: "schema", parseError: null,
+      schemaIssues: schemaErrs, schemaPointer: schemaErrs[0]?.pointer ?? null, quarantined,
+    });
     continue;
   }
 
-  if (args.validateOnly) continue;
+  if (args.validateOnly) {
+    // Still emit a healthy entry so the summary JSON reflects every
+    // scanned file, but skip the verbose per-file console block.
+    summary.push({
+      file: f, ...m, testTitle: p.testTitle ?? null, triggerNonce: p.triggerNonce ?? null,
+      firstEscape: null, relocate: null, iterTimings: {},
+      artifacts: null, artifactUrls: null,
+      failureReason: "", failureKind: null, parseError: null,
+      schemaIssues: null, schemaPointer: null, quarantined: "",
+    });
+    continue;
+  }
 
   const hist = (p.focusHistory as Array<Record<string, unknown>>) || [];
   const firstEscape = hist.find((e) => {
@@ -179,18 +215,39 @@ for (const f of matched) {
     iterTimings: timings,
     artifacts: p.artifacts ?? null,
     artifactUrls: p.artifactUrls ?? null,
+    // failureReason is always present so CI can filter programmatically:
+    // parse:*, schema:*, "" (healthy), or the label of a matched escape.
     failureReason: firstEscape ? (m.label ?? "") : "",
+    failureKind: firstEscape ? "escape" : null,
+    parseError: null,
+    schemaIssues: null,
+    schemaPointer: null,
+    quarantined: "",
   });
 }
 
-// --validate-only exits on the first invalid file without producing
-// CSV/MD or the full summary — just a short status line.
+const validCount = summary.filter((e) => e.failureKind == null || e.failureKind === "escape").length;
+const invalidCount = summary.length - validCount;
+
+// --validate-only walks every matched file in deterministic order, then
+// exits nonzero if any were invalid — reporting the first one for quick
+// triage. CSV/MD are skipped by default; downstream consumers can still
+// read the summary JSON.
 if (args.validateOnly) {
+  console.log(`\n▶ validate-only: scanned ${matched.length}  valid=${validCount}  invalid=${invalidCount}`);
   if (hadInvalid) {
-    console.log(`\n✗ validation failed: ${firstInvalidFile}`);
+    console.log(`✗ first invalid: ${firstInvalidFile}`);
+    // Persist a summary even on failure so CI can surface the details.
+    mkdirSync(dirname(args.out), { recursive: true });
+    writeFileSync(args.out, JSON.stringify({
+      generatedAt: new Date().toISOString(), mode: "validate-only",
+      scanned: all.length, matched: matched.length,
+      valid: validCount, invalid: invalidCount,
+      firstInvalidFile, invalidFiles, entries: summary,
+    }, null, 2));
     process.exit(2);
   }
-  console.log(`\n✓ validated ${matched.length} focus-trap-escape file(s)`);
+  console.log(`✓ validated ${matched.length} focus-trap-escape file(s)`);
   process.exit(0);
 }
 
@@ -199,18 +256,26 @@ const summaryDoc = {
   filters: { attempt: args.attempt ?? null, browser: args.browser ?? null, spec: args.spec ?? null, label: args.label ?? null },
   matched: matched.length,
   scanned: all.length,
-  invalid: summary.filter((e) => e.failureReason && String(e.failureReason).startsWith("parse") || String(e.failureReason).startsWith("schema")).length,
+  valid: validCount,
+  invalid: invalidCount,
+  invalidDir: args.invalidDir ?? null,
   entries: summary,
 };
 mkdirSync(dirname(args.out), { recursive: true });
 writeFileSync(args.out, JSON.stringify(summaryDoc, null, 2));
-console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length})`);
+console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length}  valid=${validCount}  invalid=${invalidCount})`);
 
 if (args.csv) {
-  const rows = summary.map(toCsvRow);
+  const filtered = summary.filter((e) => {
+    const isInvalid = e.failureKind === "parse" || e.failureKind === "schema";
+    if (args.csvFilter === "valid")   return !isInvalid;
+    if (args.csvFilter === "invalid") return isInvalid;
+    return true;
+  });
+  const rows = filtered.map(toCsvRow);
   mkdirSync(dirname(args.csv), { recursive: true });
   writeFileSync(args.csv, [CSV_COLUMNS.join(","), ...rows].join("\n") + "\n");
-  console.log(`▶ Wrote CSV:     ${args.csv}`);
+  console.log(`▶ Wrote CSV:     ${args.csv}  (filter=${args.csvFilter}, rows=${rows.length})`);
 }
 
 // Emit a short markdown report and, when running inside GitHub Actions,
