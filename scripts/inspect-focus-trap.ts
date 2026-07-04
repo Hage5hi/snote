@@ -30,8 +30,9 @@ function parseArgs(): Arg {
       case "--label":   a.label = argv[++i]; break;
       case "--out":     a.out = argv[++i]; break;
       case "--csv":     a.csv = argv[++i]; break;
+      case "--md":      a.md = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--md PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
