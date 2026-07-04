@@ -1559,6 +1559,23 @@ jobs:
             if (JSON.stringify(files) !== JSON.stringify([...files].sort())) { console.error("rows not sorted"); process.exit(1); }
           ' "$FX/out/diff.json"
 
+      # Preflight: fail fast (with a clear message) if the published
+      # schema files referenced by the CLI + contract steps are missing
+      # or unreadable before we run any Ajv validation against them.
+      - name: Published JSON Schema files must exist
+        run: |
+          set -euo pipefail
+          missing=0
+          for f in \
+            schemas/focus-trap-inspect-report.schema.json \
+            schemas/focus-trap-inspect-diff.schema.json; do
+            if [ ! -s "$f" ]; then echo "missing or empty schema: $f"; missing=1; continue; fi
+            bun -e 'JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))' "$f" \
+              || { echo "invalid JSON in schema: $f"; missing=1; }
+            echo "OK $f"
+          done
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+
       - name: --json-report must validate against the published schema
         run: |
           set -euo pipefail
