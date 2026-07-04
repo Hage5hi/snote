@@ -11,9 +11,19 @@
 # devtools shows the exact DOM, and shows the screenshot side-by-side.
 set -euo pipefail
 
-INPUT="${1:-}"
+DEBUG_SELECTORS=0
+INPUT=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --debug-selectors) DEBUG_SELECTORS=1; shift;;
+    -h|--help)
+      echo "Usage: $0 [--debug-selectors] <focus-trap-escape-*.json | *.html>"; exit 0;;
+    *) INPUT="$1"; shift;;
+  esac
+done
+
 if [ -z "$INPUT" ] || [ ! -f "$INPUT" ]; then
-  echo "Usage: $0 <focus-trap-escape-*.json | *.html>" >&2
+  echo "Usage: $0 [--debug-selectors] <focus-trap-escape-*.json | *.html>" >&2
   exit 2
 fi
 
@@ -28,6 +38,19 @@ JSON="$DIR/${BASE}.json"
 if [ ! -f "$HTML" ]; then
   echo "Missing HTML snapshot: $HTML" >&2
   exit 3
+fi
+
+# Fail fast on malformed focus-trap-escape JSON so the replay harness
+# never boots against a broken payload. Uses a tiny node check to keep
+# the script dep-free (node ships with the toolchain).
+if [ -f "$JSON" ]; then
+  node -e '
+    const p = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const errs = [];
+    if (!p || typeof p !== "object" || Array.isArray(p)) errs.push("payload: expected object");
+    if (!Array.isArray(p.focusHistory)) errs.push("focusHistory: required array");
+    if (errs.length) { console.error("✗ malformed focus-trap-escape JSON:\n  - " + errs.join("\n  - ")); process.exit(4); }
+  ' "$JSON"
 fi
 
 OUT="/tmp/focus-trap-replay"
