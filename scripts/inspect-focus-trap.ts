@@ -349,7 +349,7 @@ if (!args.reportValidateOnly) {
   console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length}  valid=${validCount}  invalid=${invalidCount})`);
 }
 
-if (args.csv) {
+if (args.csv && !args.reportValidateOnly) {
   const filtered = summary.filter((e) => {
     const isInvalid = e.failureKind === "parse" || e.failureKind === "schema";
     if (args.csvFilter === "valid")   return !isInvalid;
