@@ -1076,8 +1076,11 @@ jobs:
             test-results/**/*.png
             test-results/**/*.webm
             test-results/**/trace.zip
+            test-results/**/*.json
+            test-results/**/focus-trap-escape-*.json
           retention-days: 14
           if-no-files-found: warn
+
       # Print direct download links for every trace/video/screenshot
       # produced by failing install-prompt specs to the workflow run
       # summary. Reviewers can jump straight to evidence for a flaky
