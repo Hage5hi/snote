@@ -260,6 +260,20 @@ test.describe("focus-trap --html-report a11y", () => {
     await expect
       .poll(async () => (await live.textContent())?.trim() ?? "", { timeout: 2000 })
       .not.toBe(liveAfterCollapse);
+
+    // Exactly-one-announcement-per-toggle: each toggle above (2 filter
+    // types, 1 clear, 2 disclosure toggles = 5 actions) should have
+    // appended exactly one new distinct message. Duplicates in the log
+    // are collapsed on write, so length grows monotonically by 1 per
+    // action + the initial seed.
+    const log = await readLog();
+    const afterCount = log.length;
+    const beforeCount = before.length;
+    // Allow ±1 slack for the initial empty→first-message transition.
+    expect(afterCount - beforeCount, `live log grew by ${afterCount - beforeCount} for 5 toggles (log=${JSON.stringify(log)})`).toBeGreaterThanOrEqual(5);
+    expect(afterCount - beforeCount).toBeLessThanOrEqual(6);
+    // And every consecutive pair is distinct — no stale re-announcements.
+    for (let i = 1; i < log.length; i++) expect(log[i]).not.toBe(log[i - 1]);
   });
 
   // Broader sweep: every <details> disclosure and every quarantine
