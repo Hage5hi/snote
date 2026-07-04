@@ -590,9 +590,24 @@ if (args.htmlReport) {
   // so on-call sees the hot spots first but can expand for the tail.
   const qTop = quarantined.slice(0, topN);
   const qRest = quarantined.slice(topN);
+  // Meta block at the top mirrors --json-report so triage links can
+  // always be traced back to the exact commit/CI invocation.
+  const metaRows = [
+    ["gitSha", runMeta.gitSha ?? "—"],
+    ["scanRoot", runMeta.scanRoot],
+    ["timestamp", runMeta.timestamp],
+    ["ciRunId", runMeta.ciRunId ?? "—"],
+    ["ciRunAttempt", runMeta.ciRunAttempt ?? "—"],
+    ["argv", runMeta.argv.join(" ")],
+  ].map(([k, v]) => `<tr><th>${esc(k)}</th><td><code>${esc(v)}</code></td></tr>`).join("");
+  // Client-side filter for the full quarantined table so on-call can
+  // narrow down by failureReason / schemaPointer without leaving the page.
+  const qFullRows = quarantined.map(qRow).join("");
   const html = `<!doctype html><meta charset="utf-8"><title>Focus-trap triage</title>
-<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}details{margin-top:.5rem}summary{cursor:pointer;font-weight:600}</style>
+<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}details{margin-top:.5rem}summary{cursor:pointer;font-weight:600}#q-search{width:100%;padding:.4rem .5rem;font:inherit;margin:.5rem 0;border:1px solid #ccc;border-radius:3px}.meta th{width:8rem;background:#fafafa}</style>
 <h1>Focus-trap triage</h1>
+<h2>Run metadata</h2>
+<table class="meta"><tbody>${metaRows}</tbody></table>
 <p class="k">Scanned <b>${all.length}</b> · matched <b>${matched.length}</b> · ✅ valid <b>${validCount}</b> · ❌ invalid <b>${invalidCount}</b> · quarantine dir: <code>${esc(args.invalidDir ?? "")}</code></p>
 <h2>Top ${topKinds.length} failureKind</h2>
 <table><thead><tr><th>count</th><th>failureKind</th></tr></thead><tbody>${topKinds.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
@@ -600,14 +615,20 @@ if (args.htmlReport) {
 <table><thead><tr><th>count</th><th>schemaPointer</th></tr></thead><tbody>${topPtrs.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
 <h2>Quarantined artifacts (${quarantined.length})</h2>
 <table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${qTop.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
-${qRest.length ? `<details><summary>Show all ${quarantined.length} quarantined artifacts</summary>
-<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("")}</tbody></table>
+${quarantined.length ? `<details><summary>Search &amp; show all ${quarantined.length} quarantined artifacts</summary>
+<input id="q-search" type="search" placeholder="Filter by failureReason or schemaPointer…" aria-label="Filter quarantined artifacts">
+<table id="q-all"><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${qFullRows}</tbody></table>
+<script>(function(){var i=document.getElementById('q-search'),t=document.querySelector('#q-all tbody');if(!i||!t)return;i.addEventListener('input',function(){var q=i.value.toLowerCase();for(var r of t.rows){r.style.display=r.textContent.toLowerCase().indexOf(q)>=0?'':'none';}});})();</script>
 </details>` : ""}
 
 `;
-  mkdirSync(dirname(args.htmlReport), { recursive: true });
-  writeFileSync(args.htmlReport, html);
-  console.log(`▶ Wrote HTML report: ${args.htmlReport}`);
+  if (args.reportValidateOnly) {
+    console.log(`✓ --html-report validated (${quarantined.length} quarantined) — skipped write per --report-validate-only`);
+  } else {
+    mkdirSync(dirname(args.htmlReport), { recursive: true });
+    writeFileSync(args.htmlReport, html);
+    console.log(`▶ Wrote HTML report: ${args.htmlReport}`);
+  }
 }
 
 
