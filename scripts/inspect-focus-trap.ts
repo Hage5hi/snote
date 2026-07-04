@@ -424,13 +424,42 @@ if (args.diffWith) {
     } catch { /* missing dir → empty diff */ }
     return out;
   };
-  for (const csvPath of walkCsv(args.diffWith)) {
+  // Retry/backoff around the previous-run artifact read so a transient
+  // CI hiccup (still-syncing artifact mount, brief NFS blip, etc.)
+  // doesn't kill the diff. Uses exponential backoff capped by
+  // --diff-retries / --diff-retry-delay-ms.
+  const sleep = (ms: number) => Bun.sleepSync ? Bun.sleepSync(ms) : new Promise((r) => setTimeout(r, ms));
+  let csvPaths: string[] = [];
+  for (let attempt = 0; attempt <= args.diffRetries; attempt++) {
+    try {
+      if (!existsSync(args.diffWith)) throw new Error(`diff-with dir missing: ${args.diffWith}`);
+      csvPaths = walkCsv(args.diffWith);
+      if (csvPaths.length) break;
+      throw new Error(`no *.valid.csv / *.invalid.csv under ${args.diffWith}`);
+    } catch (e) {
+      if (attempt === args.diffRetries) {
+        console.log(`  (warn) diff-with read failed after ${attempt + 1} attempt(s): ${(e as Error).message}`);
+        break;
+      }
+      const delay = args.diffRetryDelayMs * Math.pow(2, attempt);
+      console.log(`  (retry) diff-with attempt ${attempt + 1} failed (${(e as Error).message}); sleeping ${delay}ms`);
+      await sleep(delay);
+    }
+  }
+  for (const csvPath of csvPaths) {
     const rows = parseCsv(readFileSync(csvPath, "utf8"));
     const header = rows.shift();
     if (!header) continue;
+    // Validate the previous CSV header carries the columns we depend on.
+    if (!header.includes("file") || !header.includes("failureReason")) {
+      console.log(`  (warn) skipping ${csvPath}: missing required columns (file, failureReason)`);
+      continue;
+    }
+    const prevFileIdx = header.indexOf("file");
+    const prevReasonIdx = header.indexOf("failureReason");
     for (const r of rows) {
-      const file = r[fileIdx] ?? "";
-      const reason = r[reasonIdx] ?? "";
+      const file = r[prevFileIdx] ?? "";
+      const reason = r[prevReasonIdx] ?? "";
       const ptr = reason.startsWith("schema:") ? (reason.match(/\/[\w[\]/-]*/)?.[0] ?? "") : "";
       if (file) prev.set(file, { failureReason: reason, schemaPointer: ptr });
     }
@@ -446,6 +475,7 @@ if (args.diffWith) {
   }
   // Sort by file so diff-out is byte-stable across runs.
   diffRows.sort((a, b) => a.file.localeCompare(b.file));
+
   console.log(`\n▶ Diff vs ${args.diffWith}: ${diffRows.length} changed row(s)`);
   for (const d of diffRows.slice(0, 20)) {
     console.log(`  ~ ${d.file}\n      prev: ${d.prev.failureReason || "—"} ${d.prev.schemaPointer ? `(${d.prev.schemaPointer})` : ""}\n      curr: ${d.curr.failureReason || "—"} ${d.curr.schemaPointer ? `(${d.curr.schemaPointer})` : ""}`);
