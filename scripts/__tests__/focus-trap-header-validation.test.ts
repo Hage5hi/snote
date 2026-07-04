@@ -48,7 +48,8 @@ describe("validateJsonReport", () => {
       k,
       k === "valid" || k === "invalid" || k === "scanned" || k === "matched" ? 0
         : k === "artifacts" || k === "issues" ? []
-        : k === "meta" ? {} : "x",
+        : k === "meta" ? {}
+        : k === "schemaVersion" ? "1.0.0" : "x",
     ]),
   );
 

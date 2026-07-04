@@ -1469,5 +1469,79 @@ jobs:
           header: install-prompt-failure-evidence
           path: reports/_ci/install-prompt-pr-comment.md
 
+  # Contract check for scripts/inspect-focus-trap.ts:
+  #   - synthesise a tiny fixture tree (1 healthy + 2 invalid artifacts)
+  #     and a "previous run" CSV so --diff-with has something to compare;
+  #   - run --report-validate-only  → must exit 0 AND write no artifacts;
+  #   - run --diff-json-out         → must exit 2, write the JSON with a
+  #     pinned schemaVersion + at least one changed row.
+  # Any deviation (unexpected exit code, missing/extra file) fails the job.
+  focus-trap-inspect-contract:
+    name: focus-trap inspect · report-validate-only + diff-json-out fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+
+      - name: Seed fixture
+        run: |
+          set -euo pipefail
+          FX=/tmp/ft-fixture
+          rm -rf "$FX"; mkdir -p "$FX/test-results/a-spec-chromium-retry0" \
+                                  "$FX/test-results/b-spec-chromium-retry0" \
+                                  "$FX/test-results/c-spec-chromium-retry0" \
+                                  "$FX/prev" "$FX/out"
+          echo '{"focusHistory":[{"event":"keydown"}]}' > "$FX/test-results/a-spec-chromium-retry0/focus-trap-escape-x.json"
+          echo '{"focusHistory":[{"event":42}]}'         > "$FX/test-results/b-spec-chromium-retry0/focus-trap-escape-x.json"
+          echo '{broken'                                  > "$FX/test-results/c-spec-chromium-retry0/focus-trap-escape-x.json"
+          printf 'file,failureReason\n%s,\n' "$FX/test-results/a-spec-chromium-retry0/focus-trap-escape-x.json" \
+            > "$FX/prev/focus-trap-inspect-summary.valid.csv"
+
+      - name: --report-validate-only must exit 0 and write nothing
+        run: |
+          set -euo pipefail
+          FX=/tmp/ft-fixture
+          bun run scripts/inspect-focus-trap.ts \
+            --scan-root "$FX/test-results" \
+            --out "$FX/out/summary.json" \
+            --json-report "$FX/out/report.json" \
+            --diff-with "$FX/prev" \
+            --diff-out "$FX/out/diff.csv" \
+            --diff-json-out "$FX/out/diff.json" \
+            --html-report "$FX/out/report.html" \
+            --invalid-dir "$FX/out/_invalid" \
+            --report-validate-only
+          for f in "$FX/out/summary.json" "$FX/out/report.json" "$FX/out/diff.csv" "$FX/out/diff.json" "$FX/out/report.html"; do
+            if [ -e "$f" ]; then echo "unexpected write in --report-validate-only: $f"; exit 1; fi
+          done
+
+      - name: --diff-json-out must exit 2 and produce a valid diff JSON
+        run: |
+          set -euo pipefail
+          FX=/tmp/ft-fixture
+          set +e
+          bun run scripts/inspect-focus-trap.ts \
+            --scan-root "$FX/test-results" \
+            --out "$FX/out/summary.json" \
+            --diff-with "$FX/prev" \
+            --diff-out "$FX/out/diff.csv" \
+            --diff-json-out "$FX/out/diff.json" \
+            --invalid-dir "$FX/out/_invalid"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 2 ]; then echo "expected exit 2, got $rc"; exit 1; fi
+          test -s "$FX/out/diff.json" || { echo "diff.json missing"; exit 1; }
+          bun -e '
+            const d = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+            if (d.schemaVersion !== "1.0.0") { console.error("bad schemaVersion", d.schemaVersion); process.exit(1); }
+            if (typeof d.changed !== "number" || d.changed < 1) { console.error("expected changed>=1"); process.exit(1); }
+            if (!Array.isArray(d.rows) || d.rows.length !== d.changed) { console.error("rows/changed mismatch"); process.exit(1); }
+            const files = d.rows.map(r => r.file);
+            const sorted = [...files].sort();
+            if (JSON.stringify(files) !== JSON.stringify(sorted)) { console.error("rows not sorted by file"); process.exit(1); }
+          ' "$FX/out/diff.json"
+
+
 
 

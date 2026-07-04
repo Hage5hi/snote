@@ -98,9 +98,27 @@ export const REQUIRED_DIFF_CSV_COLUMNS = [
   "currFailureReason", "currSchemaPointer",
 ] as const;
 
+// Bump when the shape of the artifact changes in a way consumers care
+// about (new required key, removed key, semantic change). Keep the
+// bump minor for additive-only changes and major for breaks. Consumers
+// pin against a known set of versions and bail on anything else.
+export const JSON_REPORT_SCHEMA_VERSION = "1.0.0";
+export const DIFF_JSON_SCHEMA_VERSION = "1.0.0";
+
 export const REQUIRED_JSON_REPORT_TOP_KEYS = [
+  "schemaVersion",
   "generatedAt", "meta", "scanned", "matched",
   "valid", "invalid", "artifacts", "issues",
+] as const;
+
+export const REQUIRED_DIFF_JSON_TOP_KEYS = [
+  "schemaVersion",
+  "generatedAt", "meta", "diffWith", "changed", "rows",
+] as const;
+
+export const REQUIRED_DIFF_JSON_ROW_KEYS = [
+  "file", "prevFailureReason", "prevSchemaPointer",
+  "currFailureReason", "currSchemaPointer",
 ] as const;
 
 export const REQUIRED_JSON_REPORT_ARTIFACT_KEYS = [
@@ -136,6 +154,9 @@ export function validateJsonReport(report: unknown): string[] {
   for (const k of REQUIRED_JSON_REPORT_TOP_KEYS) {
     if (!(k in r)) errs.push(`missing required top-level key '${k}'`);
   }
+  if ("schemaVersion" in r && r.schemaVersion !== JSON_REPORT_SCHEMA_VERSION) {
+    errs.push(`'schemaVersion' must be '${JSON_REPORT_SCHEMA_VERSION}', got '${String(r.schemaVersion)}'`);
+  }
   if ("valid" in r && typeof r.valid !== "number")     errs.push(`'valid' must be a number, got ${typeof r.valid}`);
   if ("invalid" in r && typeof r.invalid !== "number") errs.push(`'invalid' must be a number, got ${typeof r.invalid}`);
   if ("artifacts" in r) {
@@ -144,6 +165,33 @@ export function validateJsonReport(report: unknown): string[] {
       if (!a || typeof a !== "object") { errs.push(`artifacts[${i}]: expected object`); return; }
       for (const k of REQUIRED_JSON_REPORT_ARTIFACT_KEYS) {
         if (!(k in (a as Record<string, unknown>))) errs.push(`artifacts[${i}]: missing required key '${k}'`);
+      }
+    });
+  }
+  return errs;
+}
+
+// Same idea for --diff-json-out: pin top keys, schemaVersion, and each
+// row's contract so downstream automation can rely on the shape.
+export function validateDiffJson(report: unknown): string[] {
+  const errs: string[] = [];
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
+    return ["diff report must be a top-level object"];
+  }
+  const r = report as Record<string, unknown>;
+  for (const k of REQUIRED_DIFF_JSON_TOP_KEYS) {
+    if (!(k in r)) errs.push(`missing required top-level key '${k}'`);
+  }
+  if ("schemaVersion" in r && r.schemaVersion !== DIFF_JSON_SCHEMA_VERSION) {
+    errs.push(`'schemaVersion' must be '${DIFF_JSON_SCHEMA_VERSION}', got '${String(r.schemaVersion)}'`);
+  }
+  if ("changed" in r && typeof r.changed !== "number") errs.push(`'changed' must be a number, got ${typeof r.changed}`);
+  if ("rows" in r) {
+    if (!Array.isArray(r.rows)) errs.push("'rows' must be an array");
+    else r.rows.forEach((row, i) => {
+      if (!row || typeof row !== "object") { errs.push(`rows[${i}]: expected object`); return; }
+      for (const k of REQUIRED_DIFF_JSON_ROW_KEYS) {
+        if (!(k in (row as Record<string, unknown>))) errs.push(`rows[${i}]: missing required key '${k}'`);
       }
     });
   }
