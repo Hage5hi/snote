@@ -2,6 +2,8 @@
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
 import { dict } from "../../src/i18n/index";
 
+const TRIGGER_NONCE_ATTR = "data-e2e-trigger-nonce";
+
 
 /**
  * Reset the prompt() spy counters on `window` so every dialog open in a
