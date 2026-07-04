@@ -1161,10 +1161,15 @@ jobs:
             --attempt ${{ github.run_attempt }} \
             --out reports/_ci/focus-trap-inspect-summary.invalid.json \
             --csv reports/_ci/focus-trap-inspect-summary.invalid.csv \
+            --json-report reports/_ci/focus-trap-inspect-report.json \
+            --artifact-valid-url   "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts" \
+            --artifact-invalid-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts" \
+            --top 5 \
             --csv-filter invalid || true
           if [ -f reports/_ci/focus-trap-inspect-summary.md ]; then
             cat reports/_ci/focus-trap-inspect-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
+
       # Combined summary + raw artifacts (unchanged name for backward compat).
       - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
         uses: actions/upload-artifact@v4
