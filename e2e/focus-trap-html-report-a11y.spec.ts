@@ -217,5 +217,74 @@ test.describe("focus-trap --html-report a11y", () => {
       .poll(async () => await rows.locator(":scope:visible").count(), { timeout: 2000 })
       .toBe(total);
   });
+
+  // Broader sweep: every <details> disclosure and every quarantine
+  // filter control (currently the search input) must expose an
+  // accessible name and show a visible focus indicator when focused.
+  // Prevents a regression where a new filter control (checkbox,
+  // <select>, extra <details>) ships without keyboard/AT affordances.
+  test("every disclosure toggle and quarantine filter control has an accessible name + visible focus", async ({ page }) => {
+    const htmlPath = seedAndGenerate();
+    await page.goto("file://" + resolve(htmlPath));
+
+    // --- Every <details>/<summary> disclosure on the page ---
+    const summaries = page.locator("details > summary");
+    const sCount = await summaries.count();
+    expect(sCount, "expected at least one disclosure").toBeGreaterThan(0);
+    for (let i = 0; i < sCount; i++) {
+      const s = summaries.nth(i);
+      const text = (await s.textContent())?.trim() ?? "";
+      const aria = (await s.getAttribute("aria-label")) ?? "";
+      expect((text || aria).length, `summary[${i}] has no accessible name`).toBeGreaterThan(0);
+
+      // Keyboard: focusable and toggles its parent <details> via Enter.
+      const parent = s.locator("xpath=..");
+      await parent.evaluate((d: HTMLDetailsElement) => { d.open = false; });
+      await s.focus();
+      await expect(s).toBeFocused();
+      const focusStyle = await s.evaluate((el) => {
+        const st = getComputedStyle(el as HTMLElement);
+        return { w: st.outlineWidth, style: st.outlineStyle, shadow: st.boxShadow };
+      });
+      const okOutline = parseFloat(focusStyle.w) > 0 && focusStyle.style !== "none";
+      const okShadow = Boolean(focusStyle.shadow) && focusStyle.shadow !== "none";
+      expect(okOutline || okShadow,
+        `summary[${i}] lacks visible focus indicator: ${JSON.stringify(focusStyle)}`).toBe(true);
+      await page.keyboard.press("Enter");
+      await expect(parent).toHaveJSProperty("open", true);
+    }
+
+    // --- Every quarantine filter control (form controls under the
+    //     search disclosure). Currently just #q-search; the loop
+    //     future-proofs the assertion set. ---
+    const filterRoot = page.locator("details:has(#q-search)");
+    await filterRoot.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+    const controls = filterRoot.locator("input, select, textarea, button");
+    const cCount = await controls.count();
+    expect(cCount, "expected at least one filter control").toBeGreaterThan(0);
+    for (let i = 0; i < cCount; i++) {
+      const c = controls.nth(i);
+      const aria = (await c.getAttribute("aria-label")) ?? "";
+      const labelledBy = (await c.getAttribute("aria-labelledby")) ?? "";
+      const id = (await c.getAttribute("id")) ?? "";
+      const labelForCount = id
+        ? await page.locator(`label[for="${id}"]`).count()
+        : 0;
+      const title = (await c.getAttribute("title")) ?? "";
+      const text = (await c.textContent())?.trim() ?? "";
+      const hasName = aria.length > 0 || labelledBy.length > 0 || labelForCount > 0 || title.length > 0 || text.length > 0;
+      expect(hasName, `filter control[${i}] (${await c.evaluate((e) => e.tagName)}) has no accessible name`).toBe(true);
+
+      await c.focus();
+      await expect(c).toBeFocused();
+      const fs = await c.evaluate((el) => {
+        const st = getComputedStyle(el as HTMLElement);
+        return { w: st.outlineWidth, style: st.outlineStyle, shadow: st.boxShadow };
+      });
+      const ok = (parseFloat(fs.w) > 0 && fs.style !== "none") || (Boolean(fs.shadow) && fs.shadow !== "none");
+      expect(ok, `filter control[${i}] lacks visible focus indicator: ${JSON.stringify(fs)}`).toBe(true);
+    }
+  });
 });
+
 
