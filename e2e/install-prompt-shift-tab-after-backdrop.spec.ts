@@ -14,8 +14,9 @@ test.beforeEach(async ({ page }) => {
 });
 
 
-test("Shift+Tab after backdrop click never escapes focus trap", async ({ page }) => {
+test("Shift+Tab after backdrop click never escapes focus trap", async ({ page }, testInfo) => {
   await page.goto("/");
+  await resetPromptSpy(page);
 
   await page.evaluate(() => {
     const ev = new Event("beforeinstallprompt") as Event & {
@@ -55,9 +56,7 @@ test("Shift+Tab after backdrop click never escapes focus trap", async ({ page })
   // Shift+Tab through the full set + 2 extra to force at least one wrap.
   for (let i = 0; i < focusableCount + 2; i++) {
     await page.keyboard.press("Shift+Tab");
-    expect(
-      await focusInsideDialog(page),
-      `Shift+Tab #${i + 1} after backdrop click escaped focus trap`,
-    ).toBe(true);
+    await expectFocusInsideDialog(page, testInfo, `shiftTab-${i + 1}`);
   }
 });
+
