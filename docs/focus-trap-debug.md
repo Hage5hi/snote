@@ -183,6 +183,7 @@ are byte-stable (modulo `generatedAt` / `meta.timestamp`).
 
 ```jsonc
 {
+  "schemaVersion": "1.0.0",
   "generatedAt": "2026-07-04T…Z",
   "meta": {
     "gitSha": "abc123…",
