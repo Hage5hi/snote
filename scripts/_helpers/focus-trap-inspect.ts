@@ -90,6 +90,67 @@ export const CSV_COLUMNS = [
   "failureReason",
 ] as const;
 
+// Column contracts for --json-report / --diff-out. Kept as exported
+// constants so tests can pin the exact required set and callers can
+// validate any header (including a rearranged one) before writing.
+export const REQUIRED_DIFF_CSV_COLUMNS = [
+  "file", "prevFailureReason", "prevSchemaPointer",
+  "currFailureReason", "currSchemaPointer",
+] as const;
+
+export const REQUIRED_JSON_REPORT_TOP_KEYS = [
+  "generatedAt", "meta", "scanned", "matched",
+  "valid", "invalid", "artifacts", "issues",
+] as const;
+
+export const REQUIRED_JSON_REPORT_ARTIFACT_KEYS = [
+  "file", "failureKind", "failureReason",
+  "schemaPointer", "quarantined",
+] as const;
+
+// Returns [] when the CSV header matches the pinned contract in the
+// pinned order, else a list of human-readable errors. Callers should
+// print each error and exit non-zero without writing the artifact.
+export function validateDiffCsvHeader(header: readonly string[]): string[] {
+  const errs: string[] = [];
+  for (const c of REQUIRED_DIFF_CSV_COLUMNS) {
+    if (!header.includes(c)) errs.push(`missing required column '${c}'`);
+  }
+  for (let i = 0; i < REQUIRED_DIFF_CSV_COLUMNS.length; i++) {
+    if (header[i] !== REQUIRED_DIFF_CSV_COLUMNS[i]) {
+      errs.push(`column ${i} must be '${REQUIRED_DIFF_CSV_COLUMNS[i]}', got '${header[i] ?? "<missing>"}'`);
+      break; // first ordering error is enough
+    }
+  }
+  return errs;
+}
+
+// Same idea for --json-report: enforce top-level keys and per-artifact
+// keys so a shape drift fails fast.
+export function validateJsonReport(report: unknown): string[] {
+  const errs: string[] = [];
+  if (!report || typeof report !== "object" || Array.isArray(report)) {
+    return ["report must be a top-level object"];
+  }
+  const r = report as Record<string, unknown>;
+  for (const k of REQUIRED_JSON_REPORT_TOP_KEYS) {
+    if (!(k in r)) errs.push(`missing required top-level key '${k}'`);
+  }
+  if ("valid" in r && typeof r.valid !== "number")     errs.push(`'valid' must be a number, got ${typeof r.valid}`);
+  if ("invalid" in r && typeof r.invalid !== "number") errs.push(`'invalid' must be a number, got ${typeof r.invalid}`);
+  if ("artifacts" in r) {
+    if (!Array.isArray(r.artifacts)) errs.push("'artifacts' must be an array");
+    else r.artifacts.forEach((a, i) => {
+      if (!a || typeof a !== "object") { errs.push(`artifacts[${i}]: expected object`); return; }
+      for (const k of REQUIRED_JSON_REPORT_ARTIFACT_KEYS) {
+        if (!(k in (a as Record<string, unknown>))) errs.push(`artifacts[${i}]: missing required key '${k}'`);
+      }
+    });
+  }
+  return errs;
+}
+
+
 export function escCsv(v: unknown): string {
   const s = v == null ? "" : String(v);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

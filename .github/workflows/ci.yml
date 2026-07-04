@@ -1162,10 +1162,13 @@ jobs:
             --out reports/_ci/focus-trap-inspect-summary.invalid.json \
             --csv reports/_ci/focus-trap-inspect-summary.invalid.csv \
             --json-report reports/_ci/focus-trap-inspect-report.json \
+            --html-report reports/_ci/focus-trap-inspect-report.html \
+            --html-top-n 10 \
             --artifact-valid-url   "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts" \
             --artifact-invalid-url "https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts" \
             --top 5 \
             --csv-filter invalid || true
+
           if [ -f reports/_ci/focus-trap-inspect-summary.md ]; then
             cat reports/_ci/focus-trap-inspect-summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
@@ -1220,6 +1223,17 @@ jobs:
             reports/_ci/focus-trap-invalid/**
           retention-days: 14
           if-no-files-found: ignore
+      # Standalone HTML triage report — same sha + scan-root naming as
+      # the CSV artifacts so on-call can open it directly from the run.
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: focus-trap-inspect-html--test-results--${{ github.sha }}--attempt-${{ github.run_attempt }}
+          path: |
+            reports/_ci/focus-trap-inspect-report.html
+          retention-days: 14
+          if-no-files-found: ignore
+
 
 
 

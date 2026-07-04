@@ -12,11 +12,15 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSyn
 import { basename, dirname, join } from "node:path";
 import {
   CSV_COLUMNS,
+  REQUIRED_DIFF_CSV_COLUMNS,
   formatIssue,
   renderMarkdown,
   toCsvRow,
+  validateDiffCsvHeader,
   validateFocusTrapPayload,
+  validateJsonReport,
 } from "./_helpers/focus-trap-inspect";
+
 
 type CsvFilter = "all" | "valid" | "invalid";
 type Arg = {
@@ -33,7 +37,9 @@ type Arg = {
   diffRetries: number;
   diffRetryDelayMs: number;
   htmlReport?: string;
+  htmlTopN?: number;
   topN: number;
+
   artifactValidUrl?: string;
   artifactInvalidUrl?: string;
   files: string[];
@@ -81,6 +87,14 @@ function parseArgs(): Arg {
         a.diffRetryDelayMs = n; break;
       }
       case "--html-report":   a.htmlReport = argv[++i]; break;
+      case "--html-top-n": {
+        // Default = --top (currently 5). Explicit override lets on-call
+        // widen the visible top lists in the HTML triage view.
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 1) { console.error("--html-top-n must be >= 1"); process.exit(64); }
+        a.htmlTopN = n; break;
+      }
+
 
       case "--top": {
         const n = Number(argv[++i]);
@@ -373,12 +387,14 @@ if (args.jsonReport) {
     issues,
   };
   // Schema-validate before writing so a shape drift fails fast instead
-  // of shipping a broken artifact to downstream jobs.
-  const requiredArtifactKeys = ["file", "failureKind", "failureReason", "schemaPointer", "quarantined"] as const;
-  const requiredTopKeys = ["generatedAt", "meta", "scanned", "matched", "valid", "invalid", "artifacts", "issues"] as const;
-  for (const k of requiredTopKeys) if (!(k in report)) { console.error(`--json-report: missing required top-level key '${k}'`); process.exit(65); }
-  if (typeof report.valid !== "number" || typeof report.invalid !== "number") { console.error("--json-report: valid/invalid must be numbers"); process.exit(65); }
-  for (const a of report.artifacts) for (const k of requiredArtifactKeys) if (!(k in a)) { console.error(`--json-report: artifact missing required key '${k}': ${JSON.stringify(a)}`); process.exit(65); }
+  // of shipping a broken artifact to downstream jobs. Uses the shared
+  // helper so unit tests can exercise the same rules.
+  const jsonErrs = validateJsonReport(report);
+  if (jsonErrs.length) {
+    for (const m of jsonErrs) console.error(`--json-report: ${m}`);
+    process.exit(65);
+  }
+
   mkdirSync(dirname(args.jsonReport), { recursive: true });
   writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
   console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
@@ -482,12 +498,14 @@ if (args.diffWith) {
   }
   if (args.diffOut) {
     // Stable CSV format so consumers can diff two runs' diff-outs directly.
-    // Header + one row per changed artifact, sorted by file.
-    const REQUIRED_DIFF_COLUMNS = ["file", "prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"] as const;
-    const header: string[] = [...REQUIRED_DIFF_COLUMNS];
-    // Schema-validate the header before writing (guards against
-    // accidental column-drift in this file).
-    for (const c of REQUIRED_DIFF_COLUMNS) if (!header.includes(c)) { console.error(`--diff-out: missing required column '${c}'`); process.exit(65); }
+    // Header + one row per changed artifact, sorted by file. Use the
+    // shared helper so unit tests can pin the exact contract.
+    const header: string[] = [...REQUIRED_DIFF_CSV_COLUMNS];
+    const headerErrs = validateDiffCsvHeader(header);
+    if (headerErrs.length) {
+      for (const m of headerErrs) console.error(`--diff-out: ${m}`);
+      process.exit(65);
+    }
     const rows = diffRows.map((d) => [d.file, d.prev.failureReason, d.prev.schemaPointer, d.curr.failureReason, d.curr.schemaPointer]);
     const csv = [header, ...rows].map((r) => r.map((v) => {
       const s = v == null ? "" : String(v);
@@ -497,6 +515,7 @@ if (args.diffWith) {
     writeFileSync(args.diffOut, csv);
     console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
   }
+
 }
 
 // --html-report renders a lightweight standalone triage page from the
@@ -515,14 +534,21 @@ if (args.htmlReport) {
     const q = String(e.quarantined ?? "");
     if (q) quarantined.push({ file: String(e.file), quarantined: q, failureReason: String(e.failureReason ?? ""), schemaPointer: p });
   }
-  const topN = args.topN;
+  // --html-top-n overrides --top for the HTML view only. Default = --top
+  // (currently 5) so the CLI has a single knob unless callers want to
+  // widen the HTML triage view without spamming the step summary.
+  const topN = args.htmlTopN ?? args.topN;
   const topKinds = [...kindMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
   const topPtrs  = [...ptrMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
   quarantined.sort((a, b) => a.file.localeCompare(b.file));
   const row = (k: string, c: number) => `<tr><td>${c}</td><td><code>${esc(k)}</code></td></tr>`;
   const qRow = (q: typeof quarantined[number]) => `<tr><td><code>${esc(q.file)}</code></td><td><a href="${esc(q.quarantined)}"><code>${esc(q.quarantined)}</code></a></td><td><code>${esc(q.schemaPointer || "—")}</code></td><td>${esc(q.failureReason || "—")}</td></tr>`;
+  // Top slice is always visible; the full list is collapsed by default
+  // so on-call sees the hot spots first but can expand for the tail.
+  const qTop = quarantined.slice(0, topN);
+  const qRest = quarantined.slice(topN);
   const html = `<!doctype html><meta charset="utf-8"><title>Focus-trap triage</title>
-<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}</style>
+<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}details{margin-top:.5rem}summary{cursor:pointer;font-weight:600}</style>
 <h1>Focus-trap triage</h1>
 <p class="k">Scanned <b>${all.length}</b> · matched <b>${matched.length}</b> · ✅ valid <b>${validCount}</b> · ❌ invalid <b>${invalidCount}</b> · quarantine dir: <code>${esc(args.invalidDir ?? "")}</code></p>
 <h2>Top ${topKinds.length} failureKind</h2>
@@ -530,7 +556,11 @@ if (args.htmlReport) {
 <h2>Top ${topPtrs.length} schemaPointer</h2>
 <table><thead><tr><th>count</th><th>schemaPointer</th></tr></thead><tbody>${topPtrs.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
 <h2>Quarantined artifacts (${quarantined.length})</h2>
-<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
+<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${qTop.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
+${qRest.length ? `<details><summary>Show all ${quarantined.length} quarantined artifacts</summary>
+<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("")}</tbody></table>
+</details>` : ""}
+
 `;
   mkdirSync(dirname(args.htmlReport), { recursive: true });
   writeFileSync(args.htmlReport, html);
