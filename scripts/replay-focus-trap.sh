@@ -41,15 +41,29 @@ if [ ! -f "$HTML" ]; then
 fi
 
 # Fail fast on malformed focus-trap-escape JSON so the replay harness
-# never boots against a broken payload. Uses a tiny node check to keep
-# the script dep-free (node ships with the toolchain).
+# never boots against a broken payload. Prints exact JSON pointer, field
+# and value snippet for each schema violation.
 if [ -f "$JSON" ]; then
   node -e '
-    const p = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+    const fs = require("fs");
+    const snip = (v) => { let s; try { s = JSON.stringify(v); } catch { s = String(v); } return s == null ? "" : (s.length > 80 ? s.slice(0,79)+"…" : s); };
+    let p;
+    try { p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
+    catch (e) { console.error("✗ parse error: " + e.message); process.exit(4); }
     const errs = [];
-    if (!p || typeof p !== "object" || Array.isArray(p)) errs.push("payload: expected object");
-    if (!Array.isArray(p.focusHistory)) errs.push("focusHistory: required array");
-    if (errs.length) { console.error("✗ malformed focus-trap-escape JSON:\n  - " + errs.join("\n  - ")); process.exit(4); }
+    if (!p || typeof p !== "object" || Array.isArray(p)) errs.push({ pointer: "", field: "payload", message: "expected object", value: snip(p) });
+    else {
+      if (!Array.isArray(p.focusHistory)) errs.push({ pointer: "/focusHistory", field: "focusHistory", message: "required array", value: snip(p.focusHistory) });
+      else p.focusHistory.forEach((e, i) => {
+        if (!e || typeof e !== "object") errs.push({ pointer: `/focusHistory/${i}`, field: `focusHistory[${i}]`, message: "expected object", value: snip(e) });
+        else if (typeof e.event !== "string") errs.push({ pointer: `/focusHistory/${i}/event`, field: "event", message: "expected string", value: snip(e.event) });
+      });
+    }
+    if (errs.length) {
+      console.error("✗ malformed focus-trap-escape JSON:");
+      for (const e of errs) console.error(`  - ${e.pointer || "/"} [${e.field}]: ${e.message} (got ${e.value})`);
+      process.exit(4);
+    }
   ' "$JSON"
 fi
 
