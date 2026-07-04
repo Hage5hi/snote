@@ -95,7 +95,15 @@ jq '.entries[] | select(.quarantined != "") | {file, quarantined, failureReason}
 
 # Distinct failureReason values with counts:
 jq '[.entries[].failureReason] | group_by(.) | map({reason:.[0], count:length})' $S
+
+# Just the quarantined file paths (newline-separated, feed into xargs):
+jq -r '.entries[] | select(.quarantined != "") | .quarantined' $S
+
+# Deduplicated set of schemaPointer values across all schema failures:
+jq -r '[.entries[] | select(.failureKind=="schema") | .schemaPointer]
+       | unique | .[]' $S
 ```
+
 
 
 ## Replay a captured DOM offline
