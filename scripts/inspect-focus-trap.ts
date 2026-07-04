@@ -350,18 +350,40 @@ if (args.jsonReport) {
       parseError: (e.parseError as string | null) ?? null,
       quarantined: String(e.quarantined ?? ""),
     }));
+  // Run metadata (git SHA, scan-root, argv, timestamp) so a report can
+  // always be traced back to the exact CI invocation that produced it.
+  const gitSha = process.env.GITHUB_SHA
+    || (() => { try { return require("node:child_process").execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return null; } })();
+  const meta = {
+    gitSha,
+    scanRoot: args.scanRoot,
+    invalidDir: args.invalidDir ?? null,
+    argv: process.argv.slice(2),
+    timestamp: summaryDoc.generatedAt,
+    ciRunId: process.env.GITHUB_RUN_ID ?? null,
+    ciRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+  };
   const report = {
     generatedAt: summaryDoc.generatedAt,
+    meta,
     scanned: all.length, matched: matched.length,
     valid: validCount, invalid: invalidCount,
     invalidDir: args.invalidDir ?? null,
     artifacts,
     issues,
   };
+  // Schema-validate before writing so a shape drift fails fast instead
+  // of shipping a broken artifact to downstream jobs.
+  const requiredArtifactKeys = ["file", "failureKind", "failureReason", "schemaPointer", "quarantined"] as const;
+  const requiredTopKeys = ["generatedAt", "meta", "scanned", "matched", "valid", "invalid", "artifacts", "issues"] as const;
+  for (const k of requiredTopKeys) if (!(k in report)) { console.error(`--json-report: missing required top-level key '${k}'`); process.exit(65); }
+  if (typeof report.valid !== "number" || typeof report.invalid !== "number") { console.error("--json-report: valid/invalid must be numbers"); process.exit(65); }
+  for (const a of report.artifacts) for (const k of requiredArtifactKeys) if (!(k in a)) { console.error(`--json-report: artifact missing required key '${k}': ${JSON.stringify(a)}`); process.exit(65); }
   mkdirSync(dirname(args.jsonReport), { recursive: true });
   writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
   console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
 }
+
 
 
 // --diff-with compares the current summary against a previous run's
