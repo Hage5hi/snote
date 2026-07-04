@@ -34,6 +34,8 @@ type Arg = {
   jsonReport?: string;
   diffWith?: string;
   diffOut?: string;
+  diffJsonOut?: string;
+  reportValidateOnly?: boolean;
   diffRetries: number;
   diffRetryDelayMs: number;
   htmlReport?: string;
@@ -42,6 +44,7 @@ type Arg = {
 
   artifactValidUrl?: string;
   artifactInvalidUrl?: string;
+  artifactHtmlUrl?: string;
   files: string[];
 };
 
@@ -76,6 +79,8 @@ function parseArgs(): Arg {
       case "--json-report":   a.jsonReport = argv[++i]; break;
       case "--diff-with":     a.diffWith = argv[++i]; break;
       case "--diff-out":      a.diffOut = argv[++i]; break;
+      case "--diff-json-out": a.diffJsonOut = argv[++i]; break;
+      case "--report-validate-only": a.reportValidateOnly = true; break;
       case "--diff-retries": {
         const n = Number(argv[++i]);
         if (!Number.isFinite(n) || n < 0) { console.error("--diff-retries must be >= 0"); process.exit(64); }
@@ -103,8 +108,9 @@ function parseArgs(): Arg {
       }
       case "--artifact-valid-url":   a.artifactValidUrl = argv[++i]; break;
       case "--artifact-invalid-url": a.artifactInvalidUrl = argv[++i]; break;
+      case "--artifact-html-url":    a.artifactHtmlUrl = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [--json-report PATH] [--diff-with DIR] [--diff-out PATH] [--top N] [--artifact-valid-url URL] [--artifact-invalid-url URL] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--report-validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [--json-report PATH] [--diff-with DIR] [--diff-out PATH] [--diff-json-out PATH] [--html-report PATH] [--html-top-n N] [--top N] [--artifact-valid-url URL] [--artifact-invalid-url URL] [--artifact-html-url URL] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
@@ -322,11 +328,28 @@ const summaryDoc = {
   invalidDir: args.invalidDir ?? null,
   entries: summary,
 };
-mkdirSync(dirname(args.out), { recursive: true });
-writeFileSync(args.out, JSON.stringify(summaryDoc, null, 2));
-console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length}  valid=${validCount}  invalid=${invalidCount})`);
 
-if (args.csv) {
+// Shared run metadata (git SHA, scan-root, argv, timestamp) used by
+// both --json-report and --html-report so every artifact traces back
+// to the exact CI invocation that produced it.
+const runMeta = {
+  gitSha: process.env.GITHUB_SHA
+    || (() => { try { return require("node:child_process").execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return null; } })(),
+  scanRoot: args.scanRoot,
+  invalidDir: args.invalidDir ?? null,
+  argv: process.argv.slice(2),
+  timestamp: summaryDoc.generatedAt,
+  ciRunId: process.env.GITHUB_RUN_ID ?? null,
+  ciRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+};
+
+if (!args.reportValidateOnly) {
+  mkdirSync(dirname(args.out), { recursive: true });
+  writeFileSync(args.out, JSON.stringify(summaryDoc, null, 2));
+  console.log(`\n▶ Wrote summary: ${args.out} (matched ${matched.length}/${all.length}  valid=${validCount}  invalid=${invalidCount})`);
+}
+
+if (args.csv && !args.reportValidateOnly) {
   const filtered = summary.filter((e) => {
     const isInvalid = e.failureKind === "parse" || e.failureKind === "schema";
     if (args.csvFilter === "valid")   return !isInvalid;
@@ -364,19 +387,7 @@ if (args.jsonReport) {
       parseError: (e.parseError as string | null) ?? null,
       quarantined: String(e.quarantined ?? ""),
     }));
-  // Run metadata (git SHA, scan-root, argv, timestamp) so a report can
-  // always be traced back to the exact CI invocation that produced it.
-  const gitSha = process.env.GITHUB_SHA
-    || (() => { try { return require("node:child_process").execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return null; } })();
-  const meta = {
-    gitSha,
-    scanRoot: args.scanRoot,
-    invalidDir: args.invalidDir ?? null,
-    argv: process.argv.slice(2),
-    timestamp: summaryDoc.generatedAt,
-    ciRunId: process.env.GITHUB_RUN_ID ?? null,
-    ciRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-  };
+  const meta = runMeta;
   const report = {
     generatedAt: summaryDoc.generatedAt,
     meta,
@@ -395,9 +406,13 @@ if (args.jsonReport) {
     process.exit(65);
   }
 
-  mkdirSync(dirname(args.jsonReport), { recursive: true });
-  writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
-  console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
+  if (args.reportValidateOnly) {
+    console.log(`✓ --json-report validated (artifacts=${artifacts.length} issues=${issues.length}) — skipped write per --report-validate-only`);
+  } else {
+    mkdirSync(dirname(args.jsonReport), { recursive: true });
+    writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
+    console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
+  }
 }
 
 
@@ -511,9 +526,37 @@ if (args.diffWith) {
       const s = v == null ? "" : String(v);
       return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     }).join(",")).join("\n") + "\n";
-    mkdirSync(dirname(args.diffOut), { recursive: true });
-    writeFileSync(args.diffOut, csv);
-    console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
+    if (args.reportValidateOnly) {
+      console.log(`✓ --diff-out validated (${rows.length} row(s)) — skipped write per --report-validate-only`);
+    } else {
+      mkdirSync(dirname(args.diffOut), { recursive: true });
+      writeFileSync(args.diffOut, csv);
+      console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
+    }
+  }
+  // --diff-json-out is a machine-readable sibling of --diff-out for
+  // downstream automation that would rather not re-parse CSV.
+  if (args.diffJsonOut) {
+    const payload = {
+      generatedAt: summaryDoc.generatedAt,
+      meta: runMeta,
+      diffWith: args.diffWith,
+      changed: diffRows.length,
+      rows: diffRows.map((d) => ({
+        file: d.file,
+        prevFailureReason: d.prev.failureReason,
+        prevSchemaPointer: d.prev.schemaPointer,
+        currFailureReason: d.curr.failureReason,
+        currSchemaPointer: d.curr.schemaPointer,
+      })),
+    };
+    if (args.reportValidateOnly) {
+      console.log(`✓ --diff-json-out validated (${payload.rows.length} row(s)) — skipped write per --report-validate-only`);
+    } else {
+      mkdirSync(dirname(args.diffJsonOut), { recursive: true });
+      writeFileSync(args.diffJsonOut, JSON.stringify(payload, null, 2));
+      console.log(`▶ Wrote diff JSON: ${args.diffJsonOut}`);
+    }
   }
 
 }
@@ -543,13 +586,26 @@ if (args.htmlReport) {
   quarantined.sort((a, b) => a.file.localeCompare(b.file));
   const row = (k: string, c: number) => `<tr><td>${c}</td><td><code>${esc(k)}</code></td></tr>`;
   const qRow = (q: typeof quarantined[number]) => `<tr><td><code>${esc(q.file)}</code></td><td><a href="${esc(q.quarantined)}"><code>${esc(q.quarantined)}</code></a></td><td><code>${esc(q.schemaPointer || "—")}</code></td><td>${esc(q.failureReason || "—")}</td></tr>`;
-  // Top slice is always visible; the full list is collapsed by default
-  // so on-call sees the hot spots first but can expand for the tail.
+  // Top slice is always visible above the collapsible full list.
   const qTop = quarantined.slice(0, topN);
-  const qRest = quarantined.slice(topN);
+  // Meta block at the top mirrors --json-report so triage links can
+  // always be traced back to the exact commit/CI invocation.
+  const metaRows = [
+    ["gitSha", runMeta.gitSha ?? "—"],
+    ["scanRoot", runMeta.scanRoot],
+    ["timestamp", runMeta.timestamp],
+    ["ciRunId", runMeta.ciRunId ?? "—"],
+    ["ciRunAttempt", runMeta.ciRunAttempt ?? "—"],
+    ["argv", runMeta.argv.join(" ")],
+  ].map(([k, v]) => `<tr><th>${esc(k)}</th><td><code>${esc(v)}</code></td></tr>`).join("");
+  // Client-side filter for the full quarantined table so on-call can
+  // narrow down by failureReason / schemaPointer without leaving the page.
+  const qFullRows = quarantined.map(qRow).join("");
   const html = `<!doctype html><meta charset="utf-8"><title>Focus-trap triage</title>
-<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}details{margin-top:.5rem}summary{cursor:pointer;font-weight:600}</style>
+<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}details{margin-top:.5rem}summary{cursor:pointer;font-weight:600}#q-search{width:100%;padding:.4rem .5rem;font:inherit;margin:.5rem 0;border:1px solid #ccc;border-radius:3px}.meta th{width:8rem;background:#fafafa}</style>
 <h1>Focus-trap triage</h1>
+<h2>Run metadata</h2>
+<table class="meta"><tbody>${metaRows}</tbody></table>
 <p class="k">Scanned <b>${all.length}</b> · matched <b>${matched.length}</b> · ✅ valid <b>${validCount}</b> · ❌ invalid <b>${invalidCount}</b> · quarantine dir: <code>${esc(args.invalidDir ?? "")}</code></p>
 <h2>Top ${topKinds.length} failureKind</h2>
 <table><thead><tr><th>count</th><th>failureKind</th></tr></thead><tbody>${topKinds.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
@@ -557,14 +613,20 @@ if (args.htmlReport) {
 <table><thead><tr><th>count</th><th>schemaPointer</th></tr></thead><tbody>${topPtrs.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
 <h2>Quarantined artifacts (${quarantined.length})</h2>
 <table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${qTop.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
-${qRest.length ? `<details><summary>Show all ${quarantined.length} quarantined artifacts</summary>
-<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("")}</tbody></table>
+${quarantined.length ? `<details><summary>Search &amp; show all ${quarantined.length} quarantined artifacts</summary>
+<input id="q-search" type="search" placeholder="Filter by failureReason or schemaPointer…" aria-label="Filter quarantined artifacts">
+<table id="q-all"><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${qFullRows}</tbody></table>
+<script>(function(){var i=document.getElementById('q-search'),t=document.querySelector('#q-all tbody');if(!i||!t)return;i.addEventListener('input',function(){var q=i.value.toLowerCase();for(var r of t.rows){r.style.display=r.textContent.toLowerCase().indexOf(q)>=0?'':'none';}});})();</script>
 </details>` : ""}
 
 `;
-  mkdirSync(dirname(args.htmlReport), { recursive: true });
-  writeFileSync(args.htmlReport, html);
-  console.log(`▶ Wrote HTML report: ${args.htmlReport}`);
+  if (args.reportValidateOnly) {
+    console.log(`✓ --html-report validated (${quarantined.length} quarantined) — skipped write per --report-validate-only`);
+  } else {
+    mkdirSync(dirname(args.htmlReport), { recursive: true });
+    writeFileSync(args.htmlReport, html);
+    console.log(`▶ Wrote HTML report: ${args.htmlReport}`);
+  }
 }
 
 
@@ -606,10 +668,11 @@ if (quarantinedFiles.length) {
   for (const q of quarantinedFiles.slice(0, args.topN)) topLines.push(`- [\`${q}\`](${q})`);
   if (quarantinedFiles.length > args.topN) topLines.push(`- …and ${quarantinedFiles.length - args.topN} more in \`${args.invalidDir}\``);
 }
-if (args.artifactValidUrl || args.artifactInvalidUrl) {
+if (args.artifactValidUrl || args.artifactInvalidUrl || args.artifactHtmlUrl) {
   topLines.push("", "### Artifacts");
   if (args.artifactValidUrl)   topLines.push(`- ✅ valid CSV: ${args.artifactValidUrl}`);
   if (args.artifactInvalidUrl) topLines.push(`- ❌ invalid CSV: ${args.artifactInvalidUrl}`);
+  if (args.artifactHtmlUrl)    topLines.push(`- 🖥️ HTML report: ${args.artifactHtmlUrl}`);
 }
 if (diffRows.length) {
   topLines.push("", `### Diff vs previous run`, "", `- changed rows: **${diffRows.length}**`);
@@ -617,18 +680,37 @@ if (diffRows.length) {
 if (topLines.length) md += topLines.join("\n") + "\n";
 
 
-if (args.md) {
+if (args.md && !args.reportValidateOnly) {
   mkdirSync(dirname(args.md), { recursive: true });
   writeFileSync(args.md, md);
   console.log(`▶ Wrote markdown: ${args.md}`);
 }
 const stepSummary = process.env.GITHUB_STEP_SUMMARY;
-if (stepSummary) {
+if (stepSummary && !args.reportValidateOnly) {
   try {
     const fs = await import("node:fs/promises");
     await fs.appendFile(stepSummary, md + "\n");
   } catch { /* best-effort */ }
 }
+
+// GitHub Actions workflow annotations — surface the top failureKind /
+// schemaPointer rows and link to the uploaded CSV/HTML artifacts so the
+// PR "Checks" tab shows them without needing to open the step summary.
+// Uses ::warning:: (bad artifacts present) / ::notice:: (clean run).
+if (process.env.GITHUB_ACTIONS && !args.reportValidateOnly) {
+  const oneLine = (s: string) => s.replace(/\r?\n/g, " ").replace(/::/g, ":\u200b:");
+  const level = invalidCount > 0 ? "warning" : "notice";
+  const headline = `focus-trap: scanned=${all.length} valid=${validCount} invalid=${invalidCount}`;
+  const topKindStr = topKinds.length ? `top failureKind: ${topKinds.map(([k, c]) => `${k}(${c})`).join(", ")}` : "";
+  const topPtrStr  = topPtrs.length  ? `top schemaPointer: ${topPtrs.map(([k, c]) => `${k}(${c})`).join(", ")}` : "";
+  const links: string[] = [];
+  if (args.artifactValidUrl)   links.push(`validCSV=${args.artifactValidUrl}`);
+  if (args.artifactInvalidUrl) links.push(`invalidCSV=${args.artifactInvalidUrl}`);
+  if (args.artifactHtmlUrl)    links.push(`html=${args.artifactHtmlUrl}`);
+  const body = [headline, topKindStr, topPtrStr, links.join(" | ")].filter(Boolean).join(" — ");
+  console.log(`::${level} title=focus-trap-inspect::${oneLine(body)}`);
+}
+
 
 // Fail fast on malformed artifacts so CI surfaces bad inputs rather
 // than pretending everything is fine with an empty summary.
