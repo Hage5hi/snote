@@ -55,29 +55,56 @@ jobs:
         id: schema_types_check
         run: |
           set -euo pipefail
-          mkdir -p _schema_drift
-          # Snapshot the committed types so we can diff after regeneration.
+          mkdir -p _schema_drift/committed _schema_drift/regenerated
+          # Snapshot every committed schema-related artifact so we can
+          # diff each one after regeneration. Includes the generated TS
+          # types AND the published JSON Schemas — a drift in either
+          # (or a version-const change) should surface as a diff file.
           cp scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
-             _schema_drift/committed.d.ts
+             _schema_drift/committed/focus-trap-inspect-schema.types.gen.ts
+          cp schemas/focus-trap-inspect-report.schema.json \
+             _schema_drift/committed/focus-trap-inspect-report.schema.json
+          cp schemas/focus-trap-inspect-diff.schema.json \
+             _schema_drift/committed/focus-trap-inspect-diff.schema.json
+
           if ! bun run schema:types:check > _schema_drift/check.log 2>&1; then
-            # Regenerate to produce the "after" file, then capture a
-            # unified diff so PR authors can see exactly what changed
-            # without running the generator locally.
+            # Regenerate to produce the "after" files, then capture a
+            # unified diff for each so PR authors see the exact CLI /
+            # schemaVersion drift without running the generator locally.
             bun run schema:types || true
+
             cp scripts/_helpers/focus-trap-inspect-schema.types.gen.ts \
-               _schema_drift/regenerated.d.ts
-            diff -u _schema_drift/committed.d.ts _schema_drift/regenerated.d.ts \
-              > _schema_drift/types.diff || true
-            echo "generated schema types drifted — see the 'schema-types-drift' CI artifact,"
-            echo "then run: bun run schema:types  (and commit scripts/_helpers/focus-trap-inspect-schema.types.gen.ts)"
+               _schema_drift/regenerated/focus-trap-inspect-schema.types.gen.ts
+            cp schemas/focus-trap-inspect-report.schema.json \
+               _schema_drift/regenerated/focus-trap-inspect-report.schema.json
+            cp schemas/focus-trap-inspect-diff.schema.json \
+               _schema_drift/regenerated/focus-trap-inspect-diff.schema.json
+
+            for f in \
+              focus-trap-inspect-schema.types.gen.ts \
+              focus-trap-inspect-report.schema.json \
+              focus-trap-inspect-diff.schema.json; do
+              diff -u "_schema_drift/committed/$f" "_schema_drift/regenerated/$f" \
+                > "_schema_drift/${f}.diff" || true
+            done
+
+            # Also snapshot the CLI-side schemaVersion consts so a drift
+            # that only touches those (without regenerating types) is
+            # visible in the artifact bundle.
+            grep -E 'SCHEMA_VERSION\s*=' scripts/_helpers/focus-trap-inspect.ts \
+              > _schema_drift/cli-schema-versions.txt || true
+
+            echo "schema/types drift — see the 'schema-drift' CI artifact"
+            echo "(committed/, regenerated/, per-file *.diff, check.log, cli-schema-versions.txt)."
+            echo "Then run: bun run schema:types  and commit the regenerated files."
             exit 1
           fi
 
-      - name: Upload regenerated schema type diff (on drift)
+      - name: Upload regenerated schema diff bundle (on drift)
         if: failure() && steps.schema_types_check.outcome == 'failure'
         uses: actions/upload-artifact@v4
         with:
-          name: schema-types-drift
+          name: schema-drift
           path: _schema_drift/
           if-no-files-found: warn
           retention-days: 14
