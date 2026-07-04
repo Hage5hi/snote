@@ -18,15 +18,18 @@ import {
   validateFocusTrapPayload,
 } from "./_helpers/focus-trap-inspect";
 
+type CsvFilter = "all" | "valid" | "invalid";
 type Arg = {
   attempt?: number; browser?: string; spec?: string; label?: string;
   out: string; csv?: string; md?: string;
+  csvFilter: CsvFilter;
   validateOnly?: boolean;
+  scanRoot: string;
   invalidDir?: string;
   files: string[];
 };
 function parseArgs(): Arg {
-  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", files: [] };
+  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", files: [] };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -38,10 +41,16 @@ function parseArgs(): Arg {
       case "--out":     a.out = argv[++i]; break;
       case "--csv":     a.csv = argv[++i]; break;
       case "--md":      a.md = argv[++i]; break;
+      case "--csv-filter": {
+        const f = argv[++i] as CsvFilter;
+        if (f !== "all" && f !== "valid" && f !== "invalid") { console.error(`--csv-filter must be all|valid|invalid`); process.exit(64); }
+        a.csvFilter = f; break;
+      }
       case "--validate-only": a.validateOnly = true; break;
+      case "--scan-root":     a.scanRoot = argv[++i]; break;
       case "--invalid-dir":   a.invalidDir = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--md PATH] [--validate-only] [--invalid-dir PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
