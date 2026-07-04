@@ -94,6 +94,29 @@ cat > "$OUT/index.html" <<'HTML'
   <ol id="tl"></ol>
 </section>
 <script>
+  // %DEBUG_SELECTORS% is replaced by the shell after the heredoc.
+  const DEBUG_SELECTORS = /*__DEBUG_SELECTORS__*/ false;
+  function matchActive(doc, active) {
+    const q = (s) => { try { return doc.querySelector(s); } catch { return null; } };
+    const esc = (v) => (window.CSS && CSS.escape ? CSS.escape(v) : String(v).replace(/"/g,'\\"'));
+    if (active.id) { const el = q(`#${esc(active.id)}`); if (el) return { el, path: 'id' }; }
+    if (active.dataTestid) { const el = q(`[data-testid="${esc(active.dataTestid)}"]`); if (el) return { el, path: 'data-testid' }; }
+    if (active.ariaLabel) { const el = q(`[aria-label="${esc(active.ariaLabel)}"]`); if (el) return { el, path: 'aria-label' }; }
+    if (active.name) { const el = q(`[name="${esc(active.name)}"]`); if (el) return { el, path: 'name' }; }
+    if (active.role && active.text) {
+      for (const n of doc.querySelectorAll(`[role="${esc(active.role)}"]`)) {
+        if ((n.textContent||'').trim().startsWith(active.text)) return { el: n, path: 'role+text' };
+      }
+    }
+    if (active.outerHTML) {
+      const needle = active.outerHTML.slice(0, 80);
+      for (const n of doc.querySelectorAll(active.tag || '*')) {
+        if (n.outerHTML.startsWith(needle)) return { el: n, path: 'outerHTML-prefix' };
+      }
+    }
+    return { el: null, path: 'none' };
+  }
+
   fetch('snapshot.json').then(r=>r.ok?r.json():null).then(payload=>{
     document.getElementById('j').textContent = payload ? JSON.stringify(payload,null,2) : 'no json';
     const hist = (payload && payload.focusHistory) || [];
@@ -114,31 +137,15 @@ cat > "$OUT/index.html" <<'HTML'
         document.querySelectorAll('#tl li.active').forEach(n=>n.classList.remove('active'));
         li.classList.add('active');
         step.textContent = (active && active.outerHTML) || JSON.stringify(active, null, 2);
-        // Prefer stable selectors: id → data-testid → aria-label →
-        // name → role+text → outerHTML prefix heuristic. First match
-        // wins so highlights stay accurate across replays.
         try {
           const doc = dom.contentDocument;
           if (!doc || !active) return;
           doc.querySelectorAll('[data-ft-highlight]').forEach(n=>{n.removeAttribute('data-ft-highlight');n.style.outline='';});
-          const q = (s) => { try { return doc.querySelector(s); } catch { return null; } };
-          const esc = (v) => (window.CSS && CSS.escape ? CSS.escape(v) : String(v).replace(/"/g,'\\"'));
-          let found =
-              (active.id && q(`#${esc(active.id)}`)) ||
-              (active.dataTestid && q(`[data-testid="${esc(active.dataTestid)}"]`)) ||
-              (active.ariaLabel && q(`[aria-label="${esc(active.ariaLabel)}"]`)) ||
-              (active.name && q(`[name="${esc(active.name)}"]`)) ||
-              null;
-          if (!found && active.role && active.text) {
-            for (const n of doc.querySelectorAll(`[role="${esc(active.role)}"]`)) {
-              if ((n.textContent||'').trim().startsWith(active.text)) { found = n; break; }
-            }
-          }
-          if (!found && active.outerHTML) {
-            const needle = active.outerHTML.slice(0, 80);
-            for (const n of doc.querySelectorAll(active.tag || '*')) {
-              if (n.outerHTML.startsWith(needle)) { found = n; break; }
-            }
+          const { el: found, path } = matchActive(doc, active);
+          if (DEBUG_SELECTORS) {
+            // Log which stable-selector path matched so on-call can see
+            // why an element did (or did not) get highlighted.
+            console.log(`[replay] step ${i} event=${e.event} matched via: ${path}`, active);
           }
           if (found) {
             found.setAttribute('data-ft-highlight', '1');
@@ -146,13 +153,18 @@ cat > "$OUT/index.html" <<'HTML'
             found.scrollIntoView({block:'center'});
           }
         } catch { /* cross-origin fallback */ }
-
       });
       tl.appendChild(li);
     });
   });
 </script>
 HTML
+
+if [ "$DEBUG_SELECTORS" = "1" ]; then
+  sed -i.bak 's|/\*__DEBUG_SELECTORS__\*/ false|/*__DEBUG_SELECTORS__*/ true|' "$OUT/index.html"
+  rm -f "$OUT/index.html.bak"
+  echo "▶ Debug mode ON — open devtools console to see selector paths."
+fi
 
 
 URL="file://$OUT/index.html"
