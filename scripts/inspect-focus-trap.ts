@@ -70,6 +70,18 @@ function parseArgs(): Arg {
       case "--json-report":   a.jsonReport = argv[++i]; break;
       case "--diff-with":     a.diffWith = argv[++i]; break;
       case "--diff-out":      a.diffOut = argv[++i]; break;
+      case "--diff-retries": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 0) { console.error("--diff-retries must be >= 0"); process.exit(64); }
+        a.diffRetries = n; break;
+      }
+      case "--diff-retry-delay-ms": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 0) { console.error("--diff-retry-delay-ms must be >= 0"); process.exit(64); }
+        a.diffRetryDelayMs = n; break;
+      }
+      case "--html-report":   a.htmlReport = argv[++i]; break;
+
       case "--top": {
         const n = Number(argv[++i]);
         if (!Number.isFinite(n) || n < 1) { console.error("--top must be >= 1"); process.exit(64); }
