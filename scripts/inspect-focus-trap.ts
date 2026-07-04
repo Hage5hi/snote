@@ -135,7 +135,8 @@ for (const f of matched) {
     firstInvalidFile ??= f;
     const quarantined = args.invalidDir ? quarantine(f, reason, args.invalidDir) : "";
     summary.push({ file: f, ...m, testTitle: null, triggerNonce: null, firstEscape: null, relocate: null, iterTimings: {}, artifacts: null, artifactUrls: null, failureReason: reason, quarantined });
-    if (args.validateOnly) break;
+    // --validate-only scans everything in deterministic order; do not break.
+    continue;
     continue;
   }
 
