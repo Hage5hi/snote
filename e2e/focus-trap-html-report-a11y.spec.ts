@@ -357,17 +357,10 @@ test.describe("focus-trap --html-report a11y", () => {
   test.describe("rapid-toggle live-region", () => {
     test.describe.configure({ retries: 2 });
 
-    // Per-browser timeout thresholds for the deterministic wait. Global
-    // config uses 4s; that's fine for Chromium but too tight for WebKit
-    // (slower input event dispatch on macOS + Linux CI) and generous
-    // enough that Firefox's MutationObserver batching still lands.
-    // Keeping the map here means one obvious knob when a browser gets
-    // faster/slower rather than one opaque number in the shared config.
-    const WAIT_TIMEOUT_MS: Record<string, number> = {
-      chromium: 4000,
-      firefox:  5000,
-      webkit:   7000,
-    };
+    // Per-browser timeout thresholds live inside the test (see WAIT_TIMEOUT_MS)
+    // so they can be logged alongside the observed wait duration.
+
+
 
     test("rapid filter + disclosure toggles never leave the live region with a stale count", async ({ page, browserName }, testInfo) => {
       const htmlPath = seedAndGenerate();
