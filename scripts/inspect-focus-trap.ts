@@ -12,11 +12,14 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSyn
 import { basename, dirname, join } from "node:path";
 import {
   CSV_COLUMNS,
+  DIFF_JSON_SCHEMA_VERSION,
+  JSON_REPORT_SCHEMA_VERSION,
   REQUIRED_DIFF_CSV_COLUMNS,
   formatIssue,
   renderMarkdown,
   toCsvRow,
   validateDiffCsvHeader,
+  validateDiffJson,
   validateFocusTrapPayload,
   validateJsonReport,
 } from "./_helpers/focus-trap-inspect";
