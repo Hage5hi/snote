@@ -156,4 +156,66 @@ test.describe("focus-trap --html-report a11y", () => {
     // Label survives round-trip.
     await expect(search).toHaveAttribute("aria-label", /filter.*quarantined/i);
   });
+
+  test("filter announces results via aria-live, updates aria-expanded, and shows a visible focus outline", async ({ page }) => {
+    const htmlPath = seedAndGenerate();
+    await page.goto("file://" + resolve(htmlPath));
+
+    const details = page.locator("details:has(#q-search)");
+    const summary = details.locator("summary").first();
+    const search = page.locator("#q-search");
+    const rows = page.locator("#q-all tbody tr");
+
+    // <summary> reflects the disclosure state via aria-expanded (either
+    // native <details> semantics or explicit attribute — accept both).
+    await details.evaluate((d: HTMLDetailsElement) => { d.open = false; });
+    const expandedWhenClosed = await summary.evaluate((el) => el.getAttribute("aria-expanded"));
+    if (expandedWhenClosed !== null) expect(expandedWhenClosed).toBe("false");
+    await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+    const expandedWhenOpen = await summary.evaluate((el) => el.getAttribute("aria-expanded"));
+    if (expandedWhenOpen !== null) expect(expandedWhenOpen).toBe("true");
+
+    // A live region must exist so AT users hear the result count change
+    // when filtering. Accept either aria-live=polite or role=status.
+    const live = page.locator("[aria-live='polite'], [role='status']").first();
+    await expect(live).toBeAttached();
+
+    const total = await rows.count();
+    await search.focus();
+
+    // Keyboard focus must produce a visible outline (outline > 0
+    // OR box-shadow present). Colour-only focus indicators fail WCAG 2.4.7.
+    const outline = await search.evaluate((el) => {
+      const s = getComputedStyle(el as HTMLElement);
+      return { width: s.outlineWidth, style: s.outlineStyle, shadow: s.boxShadow };
+    });
+    const hasOutline = parseFloat(outline.width) > 0 && outline.style !== "none";
+    const hasShadow = Boolean(outline.shadow) && outline.shadow !== "none";
+    expect(hasOutline || hasShadow, `focused search has no visible focus indicator: ${JSON.stringify(outline)}`).toBe(true);
+
+    // Filter by a failureReason substring; live region updates to reflect
+    // the new visible-row count.
+    await page.keyboard.type("schema", { delay: 5 });
+    await expect
+      .poll(async () => await rows.locator(":scope:visible").count(), { timeout: 2000 })
+      .toBeLessThan(total);
+    const liveAfterReason = (await live.textContent())?.trim() ?? "";
+    expect(liveAfterReason.length, "live region empty after filter").toBeGreaterThan(0);
+
+    // Filter by a schemaPointer fragment. Live text must change again.
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Delete");
+    await page.keyboard.type("/focusHistory", { delay: 5 });
+    await expect
+      .poll(async () => (await live.textContent())?.trim() ?? "", { timeout: 2000 })
+      .not.toBe(liveAfterReason);
+
+    // Clear and confirm the live region reports the restored total.
+    await page.keyboard.press("Control+A");
+    await page.keyboard.press("Delete");
+    await expect
+      .poll(async () => await rows.locator(":scope:visible").count(), { timeout: 2000 })
+      .toBe(total);
+  });
 });
+
