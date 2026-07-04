@@ -103,6 +103,7 @@ export function toCsvRow(entry: Record<string, unknown>): string {
     fe?.event ?? "", fe?.perf ?? "",
     rl?.path ?? "", rl?.usedFallback ?? "",
     Object.keys((entry.iterTimings as object) || {}).length,
+    entry.failureReason ?? "",
   ];
   return values.map(escCsv).join(",");
 }
