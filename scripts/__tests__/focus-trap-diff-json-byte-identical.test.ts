@@ -27,34 +27,49 @@ function stripVolatile(obj: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("inspect-focus-trap byte-identical outputs across randomized input ordering", () => {
-  it("shuffled prev-CSV row order yields identical diff-json + json-report", () => {
+  it("shuffled prev-CSV row order + shuffled fixture write order yields identical outputs", () => {
     const root = mkdtempSync(join(tmpdir(), "ft-bytes-"));
     const scan = join(root, "test-results");
-    const mk = (spec: string, payload: unknown) => {
-      const d = join(scan, spec); mkdirSync(d, { recursive: true });
-      const f = join(d, "focus-trap-escape-x.json");
-      writeFileSync(f, JSON.stringify(payload));
-      return f;
-    };
-    const fA = mk("a-spec-chromium-retry0", { focusHistory: [{ event: 42 }] });
-    const fB = mk("b-spec-chromium-retry0", { focusHistory: [{ event: "keydown" }] });
-    const fC = mk("c-spec-chromium-retry0", { focusHistory: [{ event: "focus" }] });
 
-    const writePrev = (order: string[]) => {
+    // Distinct payloads with multiple attachment-like entries (focusHistory)
+    // so any hidden dependency on write order or attachment order would
+    // surface as a byte diff in --json-report / --diff-json-out.
+    const specs = [
+      { spec: "a-spec-chromium-retry0", payload: { focusHistory: [{ event: 42 }, { event: 7 }] } },
+      { spec: "b-spec-chromium-retry0", payload: { focusHistory: [{ event: "keydown" }, { event: "keyup" }] } },
+      { spec: "c-spec-chromium-retry0", payload: { focusHistory: [{ event: "focus" }, { event: "blur" }] } },
+    ];
+
+    const writeFixtures = (order: number[]) => {
+      // fresh scan root per run so directory-listing order is not shared
+      const s = join(root, `scan-${order.join("")}`); mkdirSync(s, { recursive: true });
+      const files: string[] = [];
+      for (const i of order) {
+        const d = join(s, specs[i].spec); mkdirSync(d, { recursive: true });
+        const f = join(d, "focus-trap-escape-x.json");
+        // shuffle attachment (focusHistory) order across runs too
+        const shuffled = { focusHistory: [...specs[i].payload.focusHistory].reverse() };
+        writeFileSync(f, JSON.stringify(order[0] === i ? specs[i].payload : shuffled));
+        files.push(f);
+      }
+      return { scanRoot: s, files: files.slice().sort((x, y) => x.localeCompare(y)) };
+    };
+
+    const writePrev = (validRows: string[], invalidRows: string[]) => {
       const prev = mkdtempSync(join(root, "prev-"));
       writeFileSync(join(prev, "focus-trap-inspect-summary.valid.csv"),
-        [CSV_COLUMNS.join(","), ...order.map((f) => csvRow(f, ""))].join("\n") + "\n");
+        [CSV_COLUMNS.join(","), ...validRows.map((f) => csvRow(f, ""))].join("\n") + "\n");
       writeFileSync(join(prev, "focus-trap-inspect-summary.invalid.csv"),
-        CSV_COLUMNS.join(",") + "\n");
+        [CSV_COLUMNS.join(","), ...invalidRows.map((f) => csvRow(f, "schema: /focusHistory/0/event [event]: expected string"))].join("\n") + "\n");
       return prev;
     };
 
-    const run = (prev: string, tag: string) => {
+    const run = (scanRoot: string, prev: string, tag: string) => {
       const djo = join(root, `diff-${tag}.json`);
       const rep = join(root, `report-${tag}.json`);
       const res = spawnSync("bun",
         ["run", "scripts/inspect-focus-trap.ts",
-          "--scan-root", scan,
+          "--scan-root", scanRoot,
           "--out", join(root, `sum-${tag}.json`),
           "--diff-with", prev,
           "--diff-json-out", djo,
@@ -68,13 +83,23 @@ describe("inspect-focus-trap byte-identical outputs across randomized input orde
       };
     };
 
-    const a = run(writePrev([fA, fB, fC]), "a");
-    const b = run(writePrev([fC, fA, fB]), "b");
-    const c = run(writePrev([fB, fC, fA]), "c");
+    // Run three times with different write order, different prev-CSV row
+    // order, and different partitioning between valid/invalid CSVs.
+    const A = writeFixtures([0, 1, 2]);
+    const B = writeFixtures([2, 0, 1]);
+    const C = writeFixtures([1, 2, 0]);
+    const a = run(A.scanRoot, writePrev([A.files[0], A.files[1], A.files[2]], []), "a");
+    const b = run(B.scanRoot, writePrev([B.files[2], B.files[0]], [B.files[1]]), "b");
+    const c = run(C.scanRoot, writePrev([C.files[1]], [C.files[2], C.files[0]]), "c");
 
-    expect(JSON.stringify(b.diff)).toBe(JSON.stringify(a.diff));
-    expect(JSON.stringify(c.diff)).toBe(JSON.stringify(a.diff));
-    expect(JSON.stringify(b.report)).toBe(JSON.stringify(a.report));
-    expect(JSON.stringify(c.report)).toBe(JSON.stringify(a.report));
-  }, 90_000);
+    // Files live under different scan roots per run — normalize by
+    // stripping the scanRoot prefix from every `file` field before
+    // comparing bytes. Everything else must match exactly.
+    const norm = (o: unknown, sr: string) =>
+      JSON.stringify(o).replaceAll(sr, "<SCAN>");
+    expect(norm(b.diff, B.scanRoot)).toBe(norm(a.diff, A.scanRoot));
+    expect(norm(c.diff, C.scanRoot)).toBe(norm(a.diff, A.scanRoot));
+    expect(norm(b.report, B.scanRoot)).toBe(norm(a.report, A.scanRoot));
+    expect(norm(c.report, C.scanRoot)).toBe(norm(a.report, A.scanRoot));
+  }, 120_000);
 });
