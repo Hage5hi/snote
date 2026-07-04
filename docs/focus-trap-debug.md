@@ -104,6 +104,55 @@ jq -r '[.entries[] | select(.failureKind=="schema") | .schemaPointer]
        | unique | .[]' $S
 ```
 
+### Machine-readable JSON report (`--json-report`)
+
+Focused report separate from the full summary — always includes
+`valid` / `invalid` counts, an `artifacts[]` list sorted by `file`
+(stable across runs), and an `issues[]` list restricted to parse /
+schema failures. Safe to diff two runs' reports byte-for-byte.
+
+```bash
+bun run scripts/inspect-focus-trap.ts \
+  --scan-root test-results \
+  --json-report reports/_ci/focus-trap-inspect-report.json
+
+# Every schema failure with its JSON pointer + quarantined path:
+jq '.issues[] | select(.failureKind=="schema")
+    | {file, schemaPointer, quarantined, failureReason}' \
+   reports/_ci/focus-trap-inspect-report.json
+
+# Deduplicated schemaPointer set straight from the report:
+jq -r '[.issues[] | select(.failureKind=="schema") | .schemaPointer]
+       | unique | .[]' \
+   reports/_ci/focus-trap-inspect-report.json
+```
+
+### Diff two runs (`--diff-with` / `--diff-out`)
+
+Point `--diff-with` at a directory holding the previous run's
+`*.valid.csv` / `*.invalid.csv` (typically the downloaded
+`focus-trap-inspect-valid--…` / `…-invalid--…` artifacts). Rows are
+matched by `file`; the diff surfaces any change in `failureReason`
+**or** `schemaPointer`. `--diff-out` writes a stable, sorted CSV with
+header `file,prevFailureReason,prevSchemaPointer,currFailureReason,currSchemaPointer`.
+
+```bash
+# Download prev run's artifacts:
+gh run download <prev-run-id> \
+  -n focus-trap-inspect-invalid--test-results--<sha>--attempt-1 \
+  -D /tmp/ft-prev
+gh run download <prev-run-id> \
+  -n focus-trap-inspect-valid--test-results--<sha>--attempt-1 \
+  -D /tmp/ft-prev
+
+# Diff the current run against it:
+bun run scripts/inspect-focus-trap.ts \
+  --scan-root test-results \
+  --diff-with /tmp/ft-prev \
+  --diff-out  reports/_ci/focus-trap-inspect-diff.csv
+```
+
+
 
 
 ## Replay a captured DOM offline
