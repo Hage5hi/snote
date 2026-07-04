@@ -483,7 +483,11 @@ if (args.diffWith) {
   if (args.diffOut) {
     // Stable CSV format so consumers can diff two runs' diff-outs directly.
     // Header + one row per changed artifact, sorted by file.
-    const header = ["file", "prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"];
+    const REQUIRED_DIFF_COLUMNS = ["file", "prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"] as const;
+    const header: string[] = [...REQUIRED_DIFF_COLUMNS];
+    // Schema-validate the header before writing (guards against
+    // accidental column-drift in this file).
+    for (const c of REQUIRED_DIFF_COLUMNS) if (!header.includes(c)) { console.error(`--diff-out: missing required column '${c}'`); process.exit(65); }
     const rows = diffRows.map((d) => [d.file, d.prev.failureReason, d.prev.schemaPointer, d.curr.failureReason, d.curr.schemaPointer]);
     const csv = [header, ...rows].map((r) => r.map((v) => {
       const s = v == null ? "" : String(v);
@@ -494,6 +498,45 @@ if (args.diffWith) {
     console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
   }
 }
+
+// --html-report renders a lightweight standalone triage page from the
+// summary: top-N failureKind / schemaPointer bars + a table of
+// quarantined files linking directly to the copies under --invalid-dir.
+if (args.htmlReport) {
+  const esc = (s: unknown) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  const kindMap = new Map<string, number>();
+  const ptrMap = new Map<string, number>();
+  const quarantined: Array<{ file: string; quarantined: string; failureReason: string; schemaPointer: string }> = [];
+  for (const e of summary) {
+    const k = (e.failureKind as string | null) ?? "";
+    if (k && k !== "escape") kindMap.set(k, (kindMap.get(k) ?? 0) + 1);
+    const p = (e.schemaPointer as string | null) ?? "";
+    if (p) ptrMap.set(p, (ptrMap.get(p) ?? 0) + 1);
+    const q = String(e.quarantined ?? "");
+    if (q) quarantined.push({ file: String(e.file), quarantined: q, failureReason: String(e.failureReason ?? ""), schemaPointer: p });
+  }
+  const topN = args.topN;
+  const topKinds = [...kindMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
+  const topPtrs  = [...ptrMap.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, topN);
+  quarantined.sort((a, b) => a.file.localeCompare(b.file));
+  const row = (k: string, c: number) => `<tr><td>${c}</td><td><code>${esc(k)}</code></td></tr>`;
+  const qRow = (q: typeof quarantined[number]) => `<tr><td><code>${esc(q.file)}</code></td><td><a href="${esc(q.quarantined)}"><code>${esc(q.quarantined)}</code></a></td><td><code>${esc(q.schemaPointer || "—")}</code></td><td>${esc(q.failureReason || "—")}</td></tr>`;
+  const html = `<!doctype html><meta charset="utf-8"><title>Focus-trap triage</title>
+<style>body{font:14px/1.4 system-ui,sans-serif;max-width:960px;margin:2rem auto;padding:0 1rem}h1{margin-top:0}h2{margin-top:2rem;border-bottom:1px solid #ddd;padding-bottom:.25rem}table{border-collapse:collapse;width:100%}td,th{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;vertical-align:top}code{background:#f4f4f4;padding:0 .25rem;border-radius:3px}.k{color:#555}</style>
+<h1>Focus-trap triage</h1>
+<p class="k">Scanned <b>${all.length}</b> · matched <b>${matched.length}</b> · ✅ valid <b>${validCount}</b> · ❌ invalid <b>${invalidCount}</b> · quarantine dir: <code>${esc(args.invalidDir ?? "")}</code></p>
+<h2>Top ${topKinds.length} failureKind</h2>
+<table><thead><tr><th>count</th><th>failureKind</th></tr></thead><tbody>${topKinds.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
+<h2>Top ${topPtrs.length} schemaPointer</h2>
+<table><thead><tr><th>count</th><th>schemaPointer</th></tr></thead><tbody>${topPtrs.map(([k, c]) => row(k, c)).join("") || "<tr><td colspan=2>—</td></tr>"}</tbody></table>
+<h2>Quarantined artifacts (${quarantined.length})</h2>
+<table><thead><tr><th>original</th><th>quarantined copy</th><th>schemaPointer</th><th>failureReason</th></tr></thead><tbody>${quarantined.map(qRow).join("") || "<tr><td colspan=4>None.</td></tr>"}</tbody></table>
+`;
+  mkdirSync(dirname(args.htmlReport), { recursive: true });
+  writeFileSync(args.htmlReport, html);
+  console.log(`▶ Wrote HTML report: ${args.htmlReport}`);
+}
+
 
 // Emit a short markdown report and, when running inside GitHub Actions,
 // also append it to the job's step summary so on-call can scan the
