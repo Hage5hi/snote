@@ -81,9 +81,12 @@ function meta(file: string) {
 }
 
 const args = parseArgs();
-const all = args.files.length
+// Sort deterministically so --validate-only always processes files in
+// the same order across runs, which stabilises "first invalid" output.
+const all = (args.files.length
   ? args.files.filter((f) => { try { return statSync(f).isFile(); } catch { return false; } })
-  : walk("test-results");
+  : walk(args.scanRoot)
+).sort((a, b) => a.localeCompare(b));
 
 const matched = all.filter((f) => {
   const m = meta(f);
