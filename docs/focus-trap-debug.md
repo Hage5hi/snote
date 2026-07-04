@@ -59,6 +59,45 @@ bun run scripts/inspect-focus-trap.ts \
   --csv reports/_ci/focus-trap-inspect-summary.csv
 ```
 
+### Validate-only fast-fail
+
+```bash
+# Recursively validate every focus-trap-escape-*.json under test-results/,
+# exit 2 on the first invalid file. Deterministic sorted order.
+bun run scripts/inspect-focus-trap.ts --validate-only
+
+# Cap invalid-file console output but still scan (and quarantine) every file:
+bun run scripts/inspect-focus-trap.ts --validate-only --max-errors 5
+```
+
+### jq recipes over `focus-trap-inspect-summary.json`
+
+Every entry always carries `failureReason`, `failureKind`
+(`parse` | `schema` | `escape` | `null`), `schemaPointer`, and
+`quarantined`, so triage is a single `jq` filter away:
+
+```bash
+S=reports/_ci/focus-trap-inspect-summary.json
+
+# All invalid artifacts (parse or schema errors):
+jq '.entries[] | select(.failureKind=="parse" or .failureKind=="schema")' $S
+
+# Schema failures grouped by JSON-pointer of the offending field:
+jq '[.entries[] | select(.failureKind=="schema")] | group_by(.schemaPointer)
+    | map({pointer:.[0].schemaPointer, count:length})' $S
+
+# Escapes only (well-formed payloads with a real focus-trap failure):
+jq '.entries[] | select(.failureKind=="escape")
+    | {spec, browser, attempt, label, failureReason}' $S
+
+# Everything that got quarantined + its copied-out path:
+jq '.entries[] | select(.quarantined != "") | {file, quarantined, failureReason}' $S
+
+# Distinct failureReason values with counts:
+jq '[.entries[].failureReason] | group_by(.) | map({reason:.[0], count:length})' $S
+```
+
+
 ## Replay a captured DOM offline
 
 ```bash
