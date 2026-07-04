@@ -114,16 +114,27 @@ export function toCsv(entries: Array<Record<string, unknown>>): string {
 
 // Short human-readable markdown report attached to the CI step summary
 // so on-call can scan first-failures without downloading artifacts.
+// Includes valid/invalid counts and (when present) a direct link to the
+// quarantine folder holding malformed artifacts.
 export function renderMarkdown(summary: {
   matched: number;
   scanned: number;
+  valid?: number;
+  invalid?: number;
+  invalidDir?: string | null;
   filters: Record<string, unknown>;
   entries: Array<Record<string, unknown>>;
 }): string {
   const lines: string[] = [];
+  const valid = summary.valid ?? summary.entries.filter((e) => !e.failureKind || e.failureKind === "escape").length;
+  const invalid = summary.invalid ?? summary.entries.length - valid;
   lines.push(`## Focus-trap inspect summary`);
   lines.push("");
   lines.push(`- matched: **${summary.matched}** / scanned ${summary.scanned}`);
+  lines.push(`- artifacts: ✅ valid **${valid}** · ❌ invalid **${invalid}**`);
+  if (invalid > 0 && summary.invalidDir) {
+    lines.push(`- quarantine folder: [\`${summary.invalidDir}\`](${summary.invalidDir}) (bundled in the CI artifact)`);
+  }
   const activeFilters = Object.entries(summary.filters).filter(([, v]) => v != null && v !== "");
   if (activeFilters.length) {
     lines.push(`- filters: ${activeFilters.map(([k, v]) => `\`${k}=${v}\``).join(", ")}`);
@@ -133,14 +144,14 @@ export function renderMarkdown(summary: {
     lines.push("_No matching focus-trap-escape artifacts._");
     return lines.join("\n") + "\n";
   }
-  lines.push("| spec | browser | attempt | label | first escape | relocate |");
-  lines.push("| --- | --- | --- | --- | --- | --- |");
+  lines.push("| spec | browser | attempt | label | first escape | relocate | failure |");
+  lines.push("| --- | --- | --- | --- | --- | --- | --- |");
   for (const e of summary.entries) {
     const fe = (e.firstEscape as Record<string, unknown> | null) || null;
     const rl = (e.relocate as Record<string, unknown> | null) || null;
     const cell = (v: unknown) => String(v ?? "").replace(/\|/g, "\\|");
     lines.push(
-      `| ${cell(e.spec)} | ${cell(e.browser)} | ${cell(e.attempt)} | ${cell(e.label)} | ${cell(fe ? `${fe.event}@${fe.perf}ms` : "—")} | ${cell(rl ? `${rl.path} (fallback=${rl.usedFallback})` : "—")} |`,
+      `| ${cell(e.spec)} | ${cell(e.browser)} | ${cell(e.attempt)} | ${cell(e.label)} | ${cell(fe ? `${fe.event}@${fe.perf}ms` : "—")} | ${cell(rl ? `${rl.path} (fallback=${rl.usedFallback})` : "—")} | ${cell(e.failureReason || "—")} |`,
     );
   }
   return lines.join("\n") + "\n";
