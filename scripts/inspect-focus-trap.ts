@@ -51,10 +51,15 @@ function parseArgs(): Arg {
         a.csvFilter = f; break;
       }
       case "--validate-only": a.validateOnly = true; break;
+      case "--max-errors": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 0) { console.error("--max-errors must be >= 0"); process.exit(64); }
+        a.maxErrors = n; break;
+      }
       case "--scan-root":     a.scanRoot = argv[++i]; break;
       case "--invalid-dir":   a.invalidDir = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
