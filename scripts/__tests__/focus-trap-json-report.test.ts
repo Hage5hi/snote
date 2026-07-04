@@ -26,21 +26,25 @@ function seed(root: string) {
 
 describe("inspect-focus-trap --json-report", () => {
   it("writes valid/invalid counts and per-artifact failureReason/schemaPointer in deterministic sorted order", () => {
-    const root = mkdtempSync(join(tmpdir(), "ft-jr-"));
+    const workRoot = mkdtempSync(join(tmpdir(), "ft-jr-"));
+    const root = join(workRoot, "scan");        // scanned artifacts
+    const invalidDir = join(workRoot, "inv");   // outside scan-root (stable path)
+    mkdirSync(root, { recursive: true });
     seed(root);
-    const outJson = join(root, "summary.json");
-    const jsonReport = join(root, "report.json");
+    const outJson = join(workRoot, "summary.json");
+    const jsonReport = join(workRoot, "report.json");
     const res = spawnSync(
       "bun",
       ["run", "scripts/inspect-focus-trap.ts",
         "--scan-root", root,
         "--out", outJson,
         "--json-report", jsonReport,
-        "--invalid-dir", join(root, "..", "ft-jr-inv-" + Date.now())],
+        "--invalid-dir", invalidDir],
       { encoding: "utf8" },
     );
     // Two invalid artifacts → exit 2, but the JSON report must still exist.
     expect(res.status).toBe(2);
+
 
     const doc = JSON.parse(readFileSync(jsonReport, "utf8"));
     expect(doc.valid).toBe(1);
