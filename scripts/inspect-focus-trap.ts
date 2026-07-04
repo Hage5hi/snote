@@ -38,7 +38,7 @@ type Arg = {
 
 
 function parseArgs(): Arg {
-  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", files: [] };
+  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", topN: 5, files: [] };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -63,8 +63,18 @@ function parseArgs(): Arg {
       }
       case "--scan-root":     a.scanRoot = argv[++i]; break;
       case "--invalid-dir":   a.invalidDir = argv[++i]; break;
+      case "--json-report":   a.jsonReport = argv[++i]; break;
+      case "--diff-with":     a.diffWith = argv[++i]; break;
+      case "--diff-out":      a.diffOut = argv[++i]; break;
+      case "--top": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 1) { console.error("--top must be >= 1"); process.exit(64); }
+        a.topN = n; break;
+      }
+      case "--artifact-valid-url":   a.artifactValidUrl = argv[++i]; break;
+      case "--artifact-invalid-url": a.artifactInvalidUrl = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [--json-report PATH] [--diff-with DIR] [--diff-out PATH] [--top N] [--artifact-valid-url URL] [--artifact-invalid-url URL] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
@@ -72,6 +82,7 @@ function parseArgs(): Arg {
   if (a.invalidDir == null) a.invalidDir = "reports/_ci/focus-trap-invalid";
   return a;
 }
+
 
 
 function walk(dir: string, out: string[] = []): string[] {
