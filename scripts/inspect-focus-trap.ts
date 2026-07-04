@@ -406,14 +406,24 @@ if (args.diffWith) {
       diffRows.push({ file, prev: p, curr: { failureReason: currReason, schemaPointer: currPtr } });
     }
   }
+  // Sort by file so diff-out is byte-stable across runs.
+  diffRows.sort((a, b) => a.file.localeCompare(b.file));
   console.log(`\n▶ Diff vs ${args.diffWith}: ${diffRows.length} changed row(s)`);
   for (const d of diffRows.slice(0, 20)) {
     console.log(`  ~ ${d.file}\n      prev: ${d.prev.failureReason || "—"} ${d.prev.schemaPointer ? `(${d.prev.schemaPointer})` : ""}\n      curr: ${d.curr.failureReason || "—"} ${d.curr.schemaPointer ? `(${d.curr.schemaPointer})` : ""}`);
   }
   if (args.diffOut) {
+    // Stable CSV format so consumers can diff two runs' diff-outs directly.
+    // Header + one row per changed artifact, sorted by file.
+    const header = ["file", "prevFailureReason", "prevSchemaPointer", "currFailureReason", "currSchemaPointer"];
+    const rows = diffRows.map((d) => [d.file, d.prev.failureReason, d.prev.schemaPointer, d.curr.failureReason, d.curr.schemaPointer]);
+    const csv = [header, ...rows].map((r) => r.map((v) => {
+      const s = v == null ? "" : String(v);
+      return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(",")).join("\n") + "\n";
     mkdirSync(dirname(args.diffOut), { recursive: true });
-    writeFileSync(args.diffOut, JSON.stringify({ generatedAt: new Date().toISOString(), prevDir: args.diffWith, changed: diffRows }, null, 2));
-    console.log(`▶ Wrote diff:    ${args.diffOut}`);
+    writeFileSync(args.diffOut, csv);
+    console.log(`▶ Wrote diff CSV: ${args.diffOut}`);
   }
 }
 
@@ -422,20 +432,38 @@ if (args.diffWith) {
 // first failures without opening artifacts.
 let md = renderMarkdown(summaryDoc);
 
-// Append top-N failureKind/schemaPointer combos + artifact links so
-// on-call can triage from the step summary alone.
+// Append top-N breakdowns (separate lists for failureKind and
+// schemaPointer) + artifact links + quarantined-file links so on-call
+// can triage from the step summary alone.
 const topLines: string[] = [];
-const combos = new Map<string, number>();
+const kindCounts = new Map<string, number>();
+const pointerCounts = new Map<string, number>();
+const quarantinedFiles: string[] = [];
 for (const e of summary) {
   const kind = (e.failureKind as string | null) ?? "";
-  if (!kind || kind === "escape") continue;
-  const key = `${kind}${e.schemaPointer ? ` @ ${e.schemaPointer}` : ""}`;
-  combos.set(key, (combos.get(key) ?? 0) + 1);
+  if (kind && kind !== "escape") {
+    kindCounts.set(kind, (kindCounts.get(kind) ?? 0) + 1);
+  }
+  const ptr = (e.schemaPointer as string | null) ?? "";
+  if (ptr) pointerCounts.set(ptr, (pointerCounts.get(ptr) ?? 0) + 1);
+  const q = String(e.quarantined ?? "");
+  if (q) quarantinedFiles.push(q);
 }
-const sorted = [...combos.entries()].sort((a, b) => b[1] - a[1]).slice(0, args.topN);
-if (sorted.length) {
-  topLines.push("", `### Top ${sorted.length} failure combos`, "", "| count | failureKind @ schemaPointer |", "| --- | --- |");
-  for (const [k, c] of sorted) topLines.push(`| ${c} | \`${k}\` |`);
+const topKinds = [...kindCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, args.topN);
+const topPtrs  = [...pointerCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, args.topN);
+if (topKinds.length) {
+  topLines.push("", `### Top ${topKinds.length} failureKind`, "", "| count | failureKind |", "| --- | --- |");
+  for (const [k, c] of topKinds) topLines.push(`| ${c} | \`${k}\` |`);
+}
+if (topPtrs.length) {
+  topLines.push("", `### Top ${topPtrs.length} schemaPointer`, "", "| count | schemaPointer |", "| --- | --- |");
+  for (const [k, c] of topPtrs) topLines.push(`| ${c} | \`${k}\` |`);
+}
+if (quarantinedFiles.length) {
+  quarantinedFiles.sort((a, b) => a.localeCompare(b));
+  topLines.push("", `### Quarantined artifacts (${quarantinedFiles.length})`, "");
+  for (const q of quarantinedFiles.slice(0, args.topN)) topLines.push(`- [\`${q}\`](${q})`);
+  if (quarantinedFiles.length > args.topN) topLines.push(`- …and ${quarantinedFiles.length - args.topN} more in \`${args.invalidDir}\``);
 }
 if (args.artifactValidUrl || args.artifactInvalidUrl) {
   topLines.push("", "### Artifacts");
@@ -446,6 +474,7 @@ if (diffRows.length) {
   topLines.push("", `### Diff vs previous run`, "", `- changed rows: **${diffRows.length}**`);
 }
 if (topLines.length) md += topLines.join("\n") + "\n";
+
 
 if (args.md) {
   mkdirSync(dirname(args.md), { recursive: true });
