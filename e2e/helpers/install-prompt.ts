@@ -137,6 +137,24 @@ export async function expectFocusInsideDialog(
       pageHtml: captureDisabled ? null : htmlName,
     };
 
+    // Clickable deep links: build against IP_ARTIFACT_BASE_URL when set
+    // by CI (e.g. the artifact HTTP base for the run). The URL is joined
+    // with the test's outputDir relative to repo root so reviewers can
+    // open the PNG/HTML straight from the JSON.
+    const base = (process.env.IP_ARTIFACT_BASE_URL || "").replace(/\/+$/, "");
+    if (base) {
+      const path = await import("node:path");
+      const rel = path.relative(process.cwd(), testInfo.outputDir).replace(/\\/g, "/");
+      const mk = (name: string | null) => (name ? `${base}/${rel}/${name}` : null);
+      payload.artifactUrls = {
+        json: mk(jsonName),
+        screenshot: captureDisabled ? null : mk(pngName),
+        pageHtml: captureDisabled ? null : mk(htmlName),
+      };
+    }
+
+
+
     if (!captureDisabled) {
       try {
         const shotPath = `${testInfo.outputDir}/${pngName}`;
