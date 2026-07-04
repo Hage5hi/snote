@@ -1,5 +1,7 @@
 // Shared helpers for install-prompt e2e specs.
-import { expect, type Page, type TestInfo } from "@playwright/test";
+import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
+import { dict } from "../../src/i18n/index";
+
 
 /**
  * Reset the prompt() spy counters on `window` so every dialog open in a
@@ -69,3 +71,59 @@ export async function expectFocusInsideDialog(
   }
   expect(info.dialogContainsActive, `focus escaped at ${label}`).toBe(true);
 }
+
+/**
+ * Robust re-location of the install trigger button after the dialog
+ * closes. Radix re-renders / re-mounts DialogTrigger, so a Locator
+ * captured before opening can become detached. This helper:
+ *   1. Tags the element with a stable data attribute + a unique nonce
+ *      before opening so we can re-select the SAME node afterwards.
+ *   2. Returns a locator that filters by that nonce, and asserts it
+ *      resolves to exactly one element before use.
+ *
+ * Usage:
+ *   const trigger = await captureInstallTrigger(page);
+ *   await trigger.click();
+ *   // ... open + close dialog ...
+ *   const same = await relocateInstallTrigger(page, trigger);
+ *   await expect(same).toBeFocused();
+ */
+const TRIGGER_NONCE_ATTR = "data-e2e-trigger-nonce";
+
+export interface CapturedTrigger {
+  locator: Locator;
+  nonce: string;
+}
+
+export async function captureInstallTrigger(page: Page): Promise<CapturedTrigger> {
+  const base = page.getByRole("button", {
+    name: new RegExp(dict.en["install.title"]),
+  });
+  await expect(base).toBeVisible();
+  const nonce = `ip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  await base.evaluate((el, n) => el.setAttribute("data-e2e-trigger-nonce", n), nonce);
+  const locator = page.locator(`[${TRIGGER_NONCE_ATTR}="${nonce}"]`);
+  await expect(locator).toHaveCount(1);
+  return { locator, nonce };
+}
+
+export async function relocateInstallTrigger(
+  page: Page,
+  captured: CapturedTrigger,
+): Promise<Locator> {
+  const byNonce = page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
+  const count = await byNonce.count();
+  if (count === 1) return byNonce;
+  // Radix re-mounted the trigger and dropped our attribute — re-tag
+  // the current trigger by accessible name and return the fresh handle.
+  const fresh = page.getByRole("button", {
+    name: new RegExp(dict.en["install.title"]),
+  });
+  await expect(fresh).toHaveCount(1);
+  await fresh.evaluate(
+    (el, n) => el.setAttribute("data-e2e-trigger-nonce", n),
+    captured.nonce,
+  );
+  return page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
+}
+
