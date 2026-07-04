@@ -65,8 +65,15 @@ describe("inspect-focus-trap --validate-only", () => {
     );
     expect(res.status).toBe(2);
     const doc = JSON.parse(readFileSync(outJson, "utf8"));
-    expect(doc.invalid).toBe(3);          // still scanned everything
+    expect(doc.invalid).toBe(3);          // still scanned every artifact
     expect(doc.entries).toHaveLength(3);  // full summary preserved
-    expect(res.stdout).toContain("--max-errors=1");
+    expect(doc.invalidFiles).toHaveLength(3); // deterministic full listing
+    // Deterministic sort → first invalid is a-dir, and reporting is
+    // capped at exactly one per-file console block ("=== <path> ===").
+    expect(doc.firstInvalidFile).toContain("a-dir");
+    const perFileBlocks = (res.stdout.match(/=== .*focus-trap-escape-.*\.json ===/g) || []);
+    expect(perFileBlocks).toHaveLength(1);
+    expect(res.stdout).toContain("(reporting capped at --max-errors=1)");
   }, 30_000);
 });
+
