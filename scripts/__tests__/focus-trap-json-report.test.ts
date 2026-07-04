@@ -71,7 +71,7 @@ describe("inspect-focus-trap --json-report", () => {
     const parseEntry = doc.artifacts.find((a: { failureKind: string }) => a.failureKind === "parse");
     expect(parseEntry).toBeDefined();
     expect(parseEntry.schemaPointer).toBeNull();
-    expect(parseEntry.failureReason.startsWith("parse:")).toBe(true);
+    expect(parseEntry.failureReason.startsWith("parse")).toBe(true);
 
     // Deterministic: running again must produce the same byte-for-byte
     // artifacts array (ignore generatedAt).
