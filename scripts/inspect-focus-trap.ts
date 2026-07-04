@@ -108,8 +108,9 @@ function parseArgs(): Arg {
       }
       case "--artifact-valid-url":   a.artifactValidUrl = argv[++i]; break;
       case "--artifact-invalid-url": a.artifactInvalidUrl = argv[++i]; break;
+      case "--artifact-html-url":    a.artifactHtmlUrl = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [--json-report PATH] [--diff-with DIR] [--diff-out PATH] [--top N] [--artifact-valid-url URL] [--artifact-invalid-url URL] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--report-validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [--json-report PATH] [--diff-with DIR] [--diff-out PATH] [--diff-json-out PATH] [--html-report PATH] [--html-top-n N] [--top N] [--artifact-valid-url URL] [--artifact-invalid-url URL] [--artifact-html-url URL] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
