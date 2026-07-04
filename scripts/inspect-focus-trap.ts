@@ -11,7 +11,7 @@
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-type Arg = { attempt?: number; browser?: string; spec?: string; label?: string; out: string; files: string[] };
+type Arg = { attempt?: number; browser?: string; spec?: string; label?: string; out: string; csv?: string; files: string[] };
 function parseArgs(): Arg {
   const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", files: [] };
   const argv = process.argv.slice(2);
@@ -23,14 +23,16 @@ function parseArgs(): Arg {
       case "--spec":    a.spec = argv[++i]; break;
       case "--label":   a.label = argv[++i]; break;
       case "--out":     a.out = argv[++i]; break;
+      case "--csv":     a.csv = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
   }
   return a;
 }
+
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: import("node:fs").Dirent[] = [];
