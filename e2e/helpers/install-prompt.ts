@@ -90,29 +90,72 @@ export async function expectFocusInsideDialog(
     };
   }, TRIGGER_NONCE_ATTR);
 
-  const payload = {
+  // Compute per-iteration durations from `note:iter-N-*` checkpoints.
+  const iterDurations: Record<string, Record<string, number>> = {};
+  const notes = (info.focusHistory as Array<{ event?: string; perf?: number }>).filter(
+    (e) => typeof e.event === "string" && e.event.startsWith("note:iter-"),
+  );
+  for (const e of notes) {
+    const m = /^note:iter-(\d+)-(before-open|after-open|after-close)$/.exec(e.event!);
+    if (!m || typeof e.perf !== "number") continue;
+    const key = `iter-${m[1]}`;
+    (iterDurations[key] ||= {})[m[2]] = e.perf;
+  }
+  const iterTimings = Object.fromEntries(
+    Object.entries(iterDurations).map(([k, v]) => [
+      k,
+      {
+        ...v,
+        openMs: v["after-open"] != null && v["before-open"] != null ? v["after-open"] - v["before-open"] : null,
+        closeMs: v["after-close"] != null && v["after-open"] != null ? v["after-close"] - v["after-open"] : null,
+        totalMs: v["after-close"] != null && v["before-open"] != null ? v["after-close"] - v["before-open"] : null,
+      },
+    ]),
+  );
+
+  const payload: Record<string, unknown> = {
     label,
     testTitle: testInfo.title,
     triggerNonce: opts.triggerNonce ?? info.latestTriggerNonce,
+    iterTimings,
     ...info,
   };
 
-
-
   if (!info.dialogContainsActive) {
-    const fileName = `focus-trap-escape-${label}.json`;
-    await testInfo.attach(fileName, {
+    const base = `focus-trap-escape-${label}`;
+    const jsonName = `${base}.json`;
+    const pngName = `${base}.png`;
+    const htmlName = `${base}.html`;
+
+    // Immediate screenshot + full-page HTML snippet before anything
+    // else re-renders. Paths are recorded in the JSON payload for
+    // one-click navigation from the artifact.
+    try {
+      const shotPath = `${testInfo.outputDir}/${pngName}`;
+      const htmlPath = `${testInfo.outputDir}/${htmlName}`;
+      const fs = await import("node:fs/promises");
+      await fs.mkdir(testInfo.outputDir, { recursive: true });
+      await page.screenshot({ path: shotPath, fullPage: false });
+      const html = await page.content();
+      await fs.writeFile(htmlPath, html.slice(0, 200_000));
+      payload.screenshotPath = shotPath;
+      payload.pageHtmlPath = htmlPath;
+      await testInfo.attach(pngName, { path: shotPath, contentType: "image/png" });
+      await testInfo.attach(htmlName, { path: htmlPath, contentType: "text/html" });
+    } catch (err) {
+      payload.captureError = String(err);
+    }
+
+    await testInfo.attach(jsonName, {
       body: JSON.stringify(payload, null, 2),
       contentType: "application/json",
     });
-    // Also write to the test's outputDir so CI can list the exact path
-    // per attempt/browser without parsing the JSON report.
     try {
       const fs = await import("node:fs/promises");
       const path = await import("node:path");
       await fs.mkdir(testInfo.outputDir, { recursive: true });
       await fs.writeFile(
-        path.join(testInfo.outputDir, fileName),
+        path.join(testInfo.outputDir, jsonName),
         JSON.stringify(payload, null, 2),
       );
     } catch {
@@ -121,6 +164,7 @@ export async function expectFocusInsideDialog(
   }
   expect(info.dialogContainsActive, `focus escaped at ${label}`).toBe(true);
 }
+
 
 
 /**
@@ -174,11 +218,21 @@ export async function relocateInstallTrigger(
   const nonceSelector = `[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`;
   const byNonce = page.locator(nonceSelector);
   if ((await byNonce.count()) === 1) {
+    const matched = await byNonce.evaluate((el) => ({
+      tag: el.tagName.toLowerCase(),
+      id: el.id || null,
+      ariaLabel: el.getAttribute("aria-label"),
+      text: (el.textContent || "").trim().slice(0, 60),
+      outerHTML: el.outerHTML.slice(0, 400),
+    }));
     await page.evaluate(
-      (info) => {
-        (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+      (entry) => {
+        (window as unknown as { __ipRelocate: unknown }).__ipRelocate = entry;
+        const w = window as unknown as { __ipFocusHistory?: unknown[] };
+        w.__ipFocusHistory = w.__ipFocusHistory || [];
+        w.__ipFocusHistory.push({ at: Date.now(), perf: performance.now(), event: "relocate", ...entry });
       },
-      { path: "nonce", selector: nonceSelector, nonce: captured.nonce, at: Date.now() },
+      { path: "nonce", usedFallback: false, selector: nonceSelector, nonce: captured.nonce, matched },
     );
     return byNonce;
   }
@@ -195,20 +249,32 @@ export async function relocateInstallTrigger(
   );
   const rebound = page.locator(nonceSelector);
   await expect(rebound).toHaveCount(1);
+  const matched = await rebound.evaluate((el) => ({
+    tag: el.tagName.toLowerCase(),
+    id: el.id || null,
+    ariaLabel: el.getAttribute("aria-label"),
+    text: (el.textContent || "").trim().slice(0, 60),
+    outerHTML: el.outerHTML.slice(0, 400),
+  }));
   await page.evaluate(
-    (info) => {
-      (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+    (entry) => {
+      (window as unknown as { __ipRelocate: unknown }).__ipRelocate = entry;
+      const w = window as unknown as { __ipFocusHistory?: unknown[] };
+      w.__ipFocusHistory = w.__ipFocusHistory || [];
+      w.__ipFocusHistory.push({ at: Date.now(), perf: performance.now(), event: "relocate", ...entry });
     },
     {
       path: "role-name-fallback",
+      usedFallback: true,
       roleName: nameRegexSrc,
       finalSelector: nonceSelector,
       nonce: captured.nonce,
-      at: Date.now(),
+      matched,
     },
   );
   return rebound;
 }
+
 
 /** Reset the in-page focus-transition history buffer. */
 export async function resetFocusHistory(page: Page) {
@@ -217,13 +283,28 @@ export async function resetFocusHistory(page: Page) {
   });
 }
 
-const FOCUS_DESCRIBE_FN = `(el) => el ? ({
-  tag: el.tagName.toLowerCase(),
-  id: el.id || null,
-  ariaLabel: el.getAttribute("aria-label"),
-  text: (el.textContent || "").trim().slice(0, 60),
-  insideDialog: !!document.querySelector('[role="dialog"]')?.contains(el),
-}) : null`;
+// In-page describe fn: activeElement + dialog focusable stats used in
+// every history entry so each checkpoint carries enough context to
+// diagnose the escape without cross-referencing other entries.
+const FOCUS_DESCRIBE_FN = `(el) => {
+  const dlg = document.querySelector('[role="dialog"]');
+  const sel = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  const focusables = dlg ? Array.from(dlg.querySelectorAll(sel)) : [];
+  const labelOf = (n) => (n.getAttribute('aria-label') || (n.textContent||'').trim() || n.tagName.toLowerCase()).slice(0,60);
+  return {
+    active: el ? {
+      tag: el.tagName.toLowerCase(),
+      id: el.id || null,
+      ariaLabel: el.getAttribute('aria-label'),
+      text: (el.textContent || '').trim().slice(0, 60),
+      insideDialog: !!dlg?.contains(el),
+      outerHTML: (el.outerHTML || '').slice(0, 800),
+    } : null,
+    focusableElementsCount: focusables.length,
+    firstFocusableLabels: focusables.slice(0, 6).map(labelOf),
+  };
+}`;
+
 
 /**
  * Press a key, recording before/after activeElement into
@@ -239,6 +320,7 @@ export async function pressAndRecord(page: Page, key: string) {
       w.__ipFocusHistory = w.__ipFocusHistory || [];
       w.__ipFocusHistory.push({
         at: Date.now(),
+        perf: performance.now(),
         event: `press:${k}`,
         before: describe(document.activeElement),
       });
@@ -252,6 +334,7 @@ export async function pressAndRecord(page: Page, key: string) {
       const w = window as unknown as { __ipFocusHistory?: unknown[] };
       (w.__ipFocusHistory as unknown[]).push({
         at: Date.now(),
+        perf: performance.now(),
         event: `after:${k}`,
         after: describe(document.activeElement),
       });
@@ -260,7 +343,7 @@ export async function pressAndRecord(page: Page, key: string) {
   );
 }
 
-/** Record a labeled focus checkpoint (e.g. "after-close"). */
+/** Record a labeled focus checkpoint (e.g. "iter-1-after-close"). */
 export async function noteFocus(page: Page, label: string) {
   await page.evaluate(
     ({ l, fnSrc }) => {
@@ -269,11 +352,13 @@ export async function noteFocus(page: Page, label: string) {
       w.__ipFocusHistory = w.__ipFocusHistory || [];
       w.__ipFocusHistory.push({
         at: Date.now(),
+        perf: performance.now(),
         event: `note:${l}`,
-        active: describe(document.activeElement),
+        snapshot: describe(document.activeElement),
       });
     },
     { l: label, fnSrc: FOCUS_DESCRIBE_FN },
   );
 }
+
 
