@@ -150,6 +150,21 @@ export function escapeJsonPointerSegment(seg: string): string {
   return seg.replace(/~/g, "~0").replace(/\//g, "~1");
 }
 
+// Live-region announcement dedupe. The HTML report's client-side
+// filter can fire many `input` events per keystroke and multiple
+// disclosure toggles per user gesture; if we push every candidate
+// verbatim into aria-live, screen readers announce stale/duplicate
+// counts. This tiny reducer collapses consecutive duplicates and
+// rejects empty strings so the announcement log is always a strict,
+// monotonically-changing sequence — the same invariant the e2e test
+// polls for. Pure + dep-free so it round-trips through unit tests.
+export function dedupeAnnouncement(log: readonly string[], next: string): string[] {
+  const t = (next ?? "").trim();
+  if (!t) return log.slice();
+  if (log.length && log[log.length - 1] === t) return log.slice();
+  return [...log, t];
+}
+
 // Same idea for --json-report: enforce top-level keys and per-artifact
 // keys so a shape drift fails fast.
 export function validateJsonReport(report: unknown): string[] {

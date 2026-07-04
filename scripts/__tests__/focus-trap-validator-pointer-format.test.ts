@@ -26,6 +26,18 @@ describe("CLI schema-validation error pointer format is stable + escaped", () =>
       ["~1", "~01"],       // literal `~1` MUST NOT round-trip to `/`
       ["/~", "~1~0"],
       ["~/~1/~", "~0~1~01~1~0"],
+      // Multi-segment / repeated escape combinations. Each pair must
+      // remain order-sensitive (`~` first, then `/`) — a wrong order
+      // would decode `a~1b` back to `a/b`.
+      ["//", "~1~1"],
+      ["~~", "~0~0"],
+      ["a//b", "a~1~1b"],
+      ["a~~b", "a~0~0b"],
+      ["~0", "~00"],                                   // literal `~0` survives
+      ["~0~1", "~00~01"],                              // interleaved literals
+      ["/a/~/b/", "~1a~1~0~1b~1"],                    // trailing + inner mix
+      ["a/b/c~d~e/f", "a~1b~1c~0d~0e~1f"],            // many segments in one token
+      ["~/~1/~0/~", "~0~1~01~1~00~1~0"],              // combined with both literals
     ];
     for (const [input, expected] of cases) {
       expect(escapeJsonPointerSegment(input)).toBe(expected);

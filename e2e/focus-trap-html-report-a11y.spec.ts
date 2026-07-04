@@ -359,6 +359,18 @@ test.describe("focus-trap --html-report a11y", () => {
     const rows = page.locator("#q-all tbody tr");
     const live = page.locator("[aria-live='polite'], [role='status']").first();
 
+    // Seed the same MutationObserver-based announcement log the other
+    // test uses so we can assert exactly-once behavior at the tail.
+    await live.evaluate((el) => {
+      const w = window as unknown as { __ftLiveLog: string[] };
+      w.__ftLiveLog = [(el.textContent ?? "").trim()].filter(Boolean);
+      new MutationObserver(() => {
+        const t = (el.textContent ?? "").trim();
+        const log = w.__ftLiveLog;
+        if (t && log[log.length - 1] !== t) log.push(t);
+      }).observe(el, { childList: true, characterData: true, subtree: true });
+    });
+
     // Fire 20 rapid mutations: alternating filter tokens + disclosure
     // toggles, no awaits between them. Any debounce implementation
     // must still settle to the final state.
@@ -379,33 +391,38 @@ test.describe("focus-trap --html-report a11y", () => {
       }
     }
 
-    // Final state: disclosure open, filter = "schema" (last i=19, i%4=3
-    // opened the disclosure; the last filter token typed was "schema" at
-    // i=17 since i=18 closed and i=19 opened without changing text).
-    // Poll until live text stops changing (deterministic settle) and
-    // matches the actual visible row count.
-    let stableText = "";
-    let lastText = "";
-    let stableRounds = 0;
+    // Final state is a pure function of the final DOM: disclosure open,
+    // filter = "schema" (last text typed was "schema" at i=17; i=18/19
+    // only toggled the disclosure without editing the input). Compute
+    // the expected visible-row count from the DOM, then wait for the
+    // aria-live region to EXACTLY match "<n> …" before asserting the
+    // exactly-once invariant. Waiting on exact text (not just "changed"
+    // or "contains N") removes the timing race where the poll passes on
+    // a mid-toggle count that happens to include the digit.
+    const expectedVisible = await rows.locator(":scope:visible").count();
+    const exactCount = new RegExp(`(^|\\D)${expectedVisible}(\\D|$)`);
     await expect
-      .poll(async () => {
-        const t = (await live.textContent())?.trim() ?? "";
-        if (t === lastText) stableRounds++; else { stableRounds = 0; lastText = t; }
-        if (stableRounds >= 3) { stableText = t; return true; }
-        return false;
-      }, { timeout: 4000, intervals: [50] })
-      .toBe(true);
+      .poll(async () => (await live.textContent())?.trim() ?? "",
+            { timeout: 4000, intervals: [50] })
+      .toMatch(exactCount);
+    const stableText = (await live.textContent())?.trim() ?? "";
 
-    const visible = await rows.locator(":scope:visible").count();
-    // The live region must reference the current visible count as a
-    // literal substring — no stale counts from mid-toggle states.
-    expect(stableText, `stale live-region text=${JSON.stringify(stableText)} for visible=${visible}`)
-      .toMatch(new RegExp(`\\b${visible}\\b`));
-
-    // A second read one tick later must be identical (deterministic).
+    // Deterministic settle: two consecutive reads 150ms apart must be
+    // byte-identical. Any late-arriving announcement would break this.
     await page.waitForTimeout(150);
-    const reRead = (await live.textContent())?.trim() ?? "";
-    expect(reRead).toBe(stableText);
+    const reRead1 = (await live.textContent())?.trim() ?? "";
+    expect(reRead1).toBe(stableText);
+    await page.waitForTimeout(150);
+    const reRead2 = (await live.textContent())?.trim() ?? "";
+    expect(reRead2).toBe(stableText);
+
+    // Exactly-once: the final announcement must appear in the mutation
+    // log exactly once at the tail (no duplicate stale re-announcements).
+    const tailCount = await page.evaluate((t) => {
+      const log = (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [];
+      return log.filter((x) => x === t).length;
+    }, stableText);
+    expect(tailCount, `final announcement "${stableText}" appeared ${tailCount}× in live log`).toBe(1);
   });
 });
 
