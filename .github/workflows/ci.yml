@@ -1081,18 +1081,58 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      # Dedicated artifact bundle containing ONLY the focus-trap debug
-      # JSON files, one entry per failed retry. Playwright writes them
-      # under test-results/<spec>-<project>[-retryN]/, so the folder
-      # structure preserved inside the artifact makes the browser + PW
-      # attempt index visible at a glance on the run page.
+      # Build a single index JSON listing every focus-trap-escape-*.json
+      # emitted this attempt, then bundle it alongside the raw files into
+      # ONE downloadable artifact (upload-artifact@v4 = single .zip on
+      # the run page). The index gives spec, browser, retry, and path
+      # for fast navigation without unzipping to look around.
+      - name: InstallPrompt — build focus-trap debug index
+        if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        run: |
+          mkdir -p reports/_ci
+          OUT=reports/_ci/focus-trap-debug-index.json
+          node -e '
+            const fs=require("fs"), path=require("path");
+            const walk=(d,acc=[])=>{for(const e of fs.readdirSync(d,{withFileTypes:true})){
+              const p=path.join(d,e.name);
+              if(e.isDirectory())walk(p,acc);
+              else if(/^focus-trap-escape-.*\.json$/.test(e.name))acc.push(p);
+            }return acc;};
+            const files=fs.existsSync("test-results")?walk("test-results"):[];
+            const entries=files.map(f=>{
+              const dir=path.basename(path.dirname(f));
+              const proj=(dir.match(/(chromium|firefox|webkit)/)||[])[1]||null;
+              const retry=Number((dir.match(/retry(\d+)/)||[0,0])[1]);
+              const spec=dir.replace(/-(chromium|firefox|webkit)(-retry\d+)?$/,"");
+              let payload=null; try{payload=JSON.parse(fs.readFileSync(f,"utf8"));}catch{}
+              return {file:f, spec, browser:proj, retry, label:payload?.label??null, testTitle:payload?.testTitle??null};
+            });
+            fs.writeFileSync(process.env.OUT, JSON.stringify({
+              attempt: Number(process.env.GITHUB_RUN_ATTEMPT||1),
+              generatedAt: new Date().toISOString(),
+              count: entries.length,
+              entries,
+            }, null, 2));
+            console.log(`Indexed ${entries.length} focus-trap JSON file(s) -> ${process.env.OUT}`);
+          '
+        env:
+          OUT: reports/_ci/focus-trap-debug-index.json
+
+      # Dedicated single-ZIP artifact: raw focus-trap JSONs + the index.
+      # upload-artifact@v4 packages `path:` inputs into ONE downloadable
+      # archive per artifact name, so this whole bundle downloads as
+      # `install-prompt-focus-trap-debug-attempt-N.zip`.
       - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
         uses: actions/upload-artifact@v4
         with:
           name: install-prompt-focus-trap-debug-attempt-${{ github.run_attempt }}
-          path: test-results/**/focus-trap-escape-*.json
+          path: |
+            test-results/**/focus-trap-escape-*.json
+            reports/_ci/focus-trap-debug-index.json
           retention-days: 14
           if-no-files-found: ignore
+
+
 
 
 

@@ -85,6 +85,8 @@ export async function expectFocusInsideDialog(
       latestTriggerNonce: nonceEl?.getAttribute(nonceAttr) ?? null,
       dialogHtmlSanitized: dialogHtml,
       lastRelocate: (window as unknown as { __ipRelocate?: unknown }).__ipRelocate ?? null,
+      focusHistory:
+        (window as unknown as { __ipFocusHistory?: unknown[] }).__ipFocusHistory ?? [],
     };
   }, TRIGGER_NONCE_ATTR);
 
@@ -94,6 +96,7 @@ export async function expectFocusInsideDialog(
     triggerNonce: opts.triggerNonce ?? info.latestTriggerNonce,
     ...info,
   };
+
 
 
   if (!info.dialogContainsActive) {
@@ -207,5 +210,70 @@ export async function relocateInstallTrigger(
   return rebound;
 }
 
+/** Reset the in-page focus-transition history buffer. */
+export async function resetFocusHistory(page: Page) {
+  await page.evaluate(() => {
+    (window as unknown as { __ipFocusHistory: unknown[] }).__ipFocusHistory = [];
+  });
+}
 
+const FOCUS_DESCRIBE_FN = `(el) => el ? ({
+  tag: el.tagName.toLowerCase(),
+  id: el.id || null,
+  ariaLabel: el.getAttribute("aria-label"),
+  text: (el.textContent || "").trim().slice(0, 60),
+  insideDialog: !!document.querySelector('[role="dialog"]')?.contains(el),
+}) : null`;
+
+/**
+ * Press a key, recording before/after activeElement into
+ * `window.__ipFocusHistory`. `expectFocusInsideDialog` surfaces the
+ * buffer as `focusHistory` in the JSON dump so every transition that
+ * led up to a focus-trap escape is visible.
+ */
+export async function pressAndRecord(page: Page, key: string) {
+  await page.evaluate(
+    ({ k, fnSrc }) => {
+      const describe = eval(`(${fnSrc})`) as (el: Element | null) => unknown;
+      const w = window as unknown as { __ipFocusHistory?: unknown[] };
+      w.__ipFocusHistory = w.__ipFocusHistory || [];
+      w.__ipFocusHistory.push({
+        at: Date.now(),
+        event: `press:${k}`,
+        before: describe(document.activeElement),
+      });
+    },
+    { k: key, fnSrc: FOCUS_DESCRIBE_FN },
+  );
+  await page.keyboard.press(key);
+  await page.evaluate(
+    ({ k, fnSrc }) => {
+      const describe = eval(`(${fnSrc})`) as (el: Element | null) => unknown;
+      const w = window as unknown as { __ipFocusHistory?: unknown[] };
+      (w.__ipFocusHistory as unknown[]).push({
+        at: Date.now(),
+        event: `after:${k}`,
+        after: describe(document.activeElement),
+      });
+    },
+    { k: key, fnSrc: FOCUS_DESCRIBE_FN },
+  );
+}
+
+/** Record a labeled focus checkpoint (e.g. "after-close"). */
+export async function noteFocus(page: Page, label: string) {
+  await page.evaluate(
+    ({ l, fnSrc }) => {
+      const describe = eval(`(${fnSrc})`) as (el: Element | null) => unknown;
+      const w = window as unknown as { __ipFocusHistory?: unknown[] };
+      w.__ipFocusHistory = w.__ipFocusHistory || [];
+      w.__ipFocusHistory.push({
+        at: Date.now(),
+        event: `note:${l}`,
+        active: describe(document.activeElement),
+      });
+    },
+    { l: label, fnSrc: FOCUS_DESCRIBE_FN },
+  );
+}
 
