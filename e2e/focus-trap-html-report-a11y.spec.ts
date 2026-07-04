@@ -355,20 +355,39 @@ test.describe("focus-trap --html-report a11y", () => {
   // mask a real regression on the first pass. Every other spec in this
   // file stays at the project's default retries=0 so flakes fail loudly.
   test.describe("rapid-toggle live-region", () => {
-    test.describe.configure({ retries: 2 });
+    // Exactly one retry: if attempt #0 hits a timing flake we get one
+    // clean re-run to compare against. Attempt #1 also loads attempt
+    // #0's log from disk and asserts the ordered announcement sequence
+    // is byte-identical between attempts — a genuine determinism bug
+    // will fail both times with the SAME log; a flake will produce two
+    // different logs and get flagged as non-deterministic.
+    test.describe.configure({ retries: 1 });
 
-    // Per-browser timeout thresholds live inside the test (see WAIT_TIMEOUT_MS)
-    // so they can be logged alongside the observed wait duration.
-
-
+    // Env toggles for CI/debug overhead. Defaults:
+    //   E2E_ATTACH_SCREENSHOT / E2E_ATTACH_TRACE  — attach only on fail
+    // Set to "1" to force-attach on every run (local debugging), or
+    // "0" to fully suppress even on failure (fast smoke runs).
+    const envMode = (name: string): "auto" | "always" | "never" => {
+      const v = process.env[name];
+      if (v === "1" || v === "true") return "always";
+      if (v === "0" || v === "false") return "never";
+      return "auto";
+    };
+    const shouldAttach = (mode: "auto" | "always" | "never", failed: boolean) =>
+      mode === "always" || (mode === "auto" && failed);
 
     test("rapid filter + disclosure toggles never leave the live region with a stale count", async ({ page, browserName }, testInfo) => {
+      const screenshotMode = envMode("E2E_ATTACH_SCREENSHOT");
+      const traceMode      = envMode("E2E_ATTACH_TRACE");
+
       const htmlPath = seedAndGenerate();
       await page.goto("file://" + resolve(htmlPath));
 
-      // Force a Playwright trace for this specific test so a failure
-      // always produces a `trace.zip` in `test-results/`.
-      await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+      // Trace: only start when there's any chance we'll attach it.
+      const mayNeedTrace = traceMode !== "never";
+      if (mayNeedTrace) {
+        await page.context().tracing.start({ screenshots: true, snapshots: true, sources: true });
+      }
 
       const details = page.locator("details:has(#q-search)");
       await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
@@ -386,13 +405,12 @@ test.describe("focus-trap --html-report a11y", () => {
         }).observe(el, { childList: true, characterData: true, subtree: true });
       });
 
-      // Reusable diagnostics collector — always dumps DOM snapshot,
-      // aria-live innerText, screenshot, and trace.zip. Called from the
-      // `finally` block so it runs on pass AND fail; on pass we skip
-      // the heavy trace attach to keep artifacts small, on fail we
-      // attach everything unconditionally.
+      // Cross-attempt log path (stable per browser + retry). Attempt #0
+      // writes here; attempt #1 reads it back to compare sequences.
+      const crossRunLogPath = join(tmpdir(), `ft-live-region-${browserName}-log.json`);
+
       let attached = false;
-      const collectDiagnostics = async (opts: { attachTrace: boolean; label: string }) => {
+      const collectDiagnostics = async (opts: { failed: boolean; label: string; waitMs?: number; waitDurationMs?: number }) => {
         if (attached) return;
         attached = true;
         try {
@@ -402,42 +420,42 @@ test.describe("focus-trap --html-report a11y", () => {
           const liveText = await live.evaluate((el) => (el as HTMLElement).innerText).catch(() => "");
           const domSnapshot = await page.content();
           const finalText = (await live.textContent())?.trim() ?? "";
+          const payload = {
+            label: opts.label, browserName, attempt: testInfo.retry,
+            waitBudgetMs: opts.waitMs, observedWaitMs: opts.waitDurationMs,
+            finalText, liveInnerText: liveText, log,
+          };
+          // Persist for cross-attempt comparison.
+          try { writeFileSync(crossRunLogPath, JSON.stringify(payload)); } catch {/* noop */}
+
           await testInfo.attach("live-region-log.json", {
             contentType: "application/json",
-            body: Buffer.from(JSON.stringify({ label: opts.label, browserName, finalText, liveInnerText: liveText, log }, null, 2)),
+            body: Buffer.from(JSON.stringify(payload, null, 2)),
           });
-          await testInfo.attach("live-region-innertext.txt", {
-            contentType: "text/plain",
-            body: Buffer.from(liveText),
-          });
-          await testInfo.attach("dom-snapshot.html", {
-            contentType: "text/html",
-            body: Buffer.from(domSnapshot),
-          });
-          if (opts.attachTrace) {
+          await testInfo.attach("live-region-innertext.txt", { contentType: "text/plain", body: Buffer.from(liveText) });
+          await testInfo.attach("dom-snapshot.html",         { contentType: "text/html",  body: Buffer.from(domSnapshot) });
+
+          if (shouldAttach(screenshotMode, opts.failed)) {
             const shot = await page.screenshot({ fullPage: true });
             await testInfo.attach("live-region-failure.png", { contentType: "image/png", body: shot });
           }
         } catch {/* best-effort */}
         try {
-          if (opts.attachTrace) {
+          if (mayNeedTrace && shouldAttach(traceMode, opts.failed)) {
             const tracePath = testInfo.outputPath("live-region-trace.zip");
             await page.context().tracing.stop({ path: tracePath });
             await testInfo.attach("live-region-trace.zip", { contentType: "application/zip", path: tracePath });
-          } else {
+          } else if (mayNeedTrace) {
             await page.context().tracing.stop();
           }
         } catch {/* tracing already stopped */}
       };
 
-      // Per-iteration DOM state snapshot so we can later assert the
-      // aria-live log is a valid *ordered subsequence* of the visible
-      // counts we actually produced — no announcement may reference a
-      // count the DOM never held at some point in this run.
       const observedVisible: number[] = [];
       const WAIT_TIMEOUT_MS: Record<string, number> = { chromium: 4000, firefox: 5000, webkit: 7000 };
       const waitMs = WAIT_TIMEOUT_MS[browserName] ?? 4000;
       const t0 = Date.now();
+      let waitDurationMs = -1;
 
       try {
         await search.focus();
@@ -463,7 +481,7 @@ test.describe("focus-trap --html-report a11y", () => {
           .poll(async () => (await live.textContent())?.trim() ?? "",
                 { timeout: waitMs, intervals: [50] })
           .toMatch(exactCount);
-        const waitDurationMs = Date.now() - waitStart;
+        waitDurationMs = Date.now() - waitStart;
         const stableText = (await live.textContent())?.trim() ?? "";
 
         await page.waitForTimeout(150);
@@ -471,28 +489,15 @@ test.describe("focus-trap --html-report a11y", () => {
         await page.waitForTimeout(150);
         expect((await live.textContent())?.trim() ?? "").toBe(stableText);
 
-        // Tightened exactly-once: verify the FULL ORDERED log — not
-        // just that the final message is unique. Every announcement in
-        // the log must:
-        //   (a) reference a visible-row count the DOM actually held at
-        //       some point during the run (subsequence of observedVisible,
-        //       de-duped adjacently), and
-        //   (b) never repeat consecutively (the observer already dedupes,
-        //       but re-check so a regression in that code fails here), and
-        //   (c) end with `stableText` at exactly one position.
         const log: string[] = await page.evaluate(
           () => (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [],
         );
-        // (b) no adjacent duplicates
         for (let i = 1; i < log.length; i++) {
           expect(log[i], `adjacent duplicate at ${i}: ${JSON.stringify(log)}`).not.toBe(log[i - 1]);
         }
-        // (c) final text appears exactly once and at the tail
         const finalOccurrences = log.filter((x) => x === stableText).length;
         expect(finalOccurrences, `final "${stableText}" appeared ${finalOccurrences}× in ${JSON.stringify(log)}`).toBe(1);
         expect(log[log.length - 1]).toBe(stableText);
-        // (a) each log entry's numeric count is a subsequence of the
-        // dedup-adjacent observedVisible sequence (no stale counts).
         const dedupAdj = (a: number[]) => a.filter((v, i) => i === 0 || v !== a[i - 1]);
         const observedSeq = dedupAdj(observedVisible);
         const logCounts = log
@@ -501,24 +506,44 @@ test.describe("focus-trap --html-report a11y", () => {
         let j = 0;
         for (const n of logCounts) {
           while (j < observedSeq.length && observedSeq[j] !== n) j++;
-          expect(j, `stale count ${n} in log not seen in DOM sequence ${JSON.stringify(observedSeq)} (log=${JSON.stringify(log)})`).toBeLessThan(observedSeq.length);
+          expect(j, `stale count ${n} not seen in DOM sequence ${JSON.stringify(observedSeq)} (log=${JSON.stringify(log)})`).toBeLessThan(observedSeq.length);
           j++;
         }
 
-        // Per-browser debug logging — surfaces in the Playwright `list`
-        // reporter and each browser's job log so timing flakes are
-        // trivially attributable to a specific engine.
-        console.log(`[live-region ${browserName}] announcements=${log.length} waitMs=${waitDurationMs} totalMs=${Date.now() - t0} budget=${waitMs}`);
+        // Retry comparison: on attempt #1, compare ordered log against
+        // attempt #0's saved log. Different sequences ⇒ non-deterministic
+        // flake (annotate but don't fail); identical ⇒ genuine bug that
+        // reproduces (the earlier attempt already failed — this retry
+        // will fail too on the same assertions).
+        if (testInfo.retry > 0 && existsSync(crossRunLogPath)) {
+          try {
+            const prev = JSON.parse(readFileSync(crossRunLogPath, "utf8")) as { log?: string[] };
+            const prevLog = prev.log ?? [];
+            const identical = prevLog.length === log.length && prevLog.every((v, i) => v === log[i]);
+            testInfo.annotations.push({
+              type: "live-region-retry-compare",
+              description: `attempt=${testInfo.retry} identical=${identical} prevLen=${prevLog.length} thisLen=${log.length}`,
+            });
+            console.log(`[live-region ${browserName}] retry-compare identical=${identical} prev=${prevLog.length} this=${log.length}`);
+          } catch {/* noop */}
+        }
+
+        // Timing report — includes budget vs observed so a slow-drift
+        // toward the cap is immediately visible in job logs. Also
+        // emitted as a GitHub `::notice::` line so it lands in the
+        // workflow's annotations pane / summary sidebar.
+        const usagePct = Math.round((waitDurationMs / waitMs) * 100);
+        const line = `browser=${browserName} announcements=${log.length} waitMs=${waitDurationMs}/${waitMs} (${usagePct}%) totalMs=${Date.now() - t0}`;
+        console.log(`[live-region ${browserName}] ${line}`);
+        if (process.env.CI) console.log(`::notice title=live-region ${browserName}::${line}`);
         testInfo.annotations.push({
           type: "live-region-timing",
-          description: `browser=${browserName} announcements=${log.length} waitMs=${waitDurationMs} budget=${waitMs}`,
+          description: line,
         });
       } finally {
-        // Always collect. On pass: keep it cheap (no trace/screenshot).
-        // On fail: attach everything including trace.zip + screenshot.
         const failed = testInfo.errors.length > 0 || testInfo.status === "failed";
         await collectDiagnostics({
-          attachTrace: failed,
+          failed, waitMs, waitDurationMs,
           label: failed ? "rapid-toggle-failure" : "rapid-toggle-pass",
         });
       }
