@@ -150,7 +150,7 @@ for (const f of matched) {
     const reason = `schema: ${lines.join(" | ")}`;
     const quarantined = args.invalidDir ? quarantine(f, reason, args.invalidDir) : "";
     summary.push({ file: f, ...m, testTitle: p.testTitle ?? null, triggerNonce: p.triggerNonce ?? null, firstEscape: null, relocate: null, iterTimings: {}, artifacts: null, artifactUrls: null, failureReason: reason, schemaIssues: schemaErrs, quarantined });
-    if (args.validateOnly) break;
+    continue;
     continue;
   }
 
