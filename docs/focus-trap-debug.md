@@ -119,10 +119,12 @@ Per-attempt artifact bundles uploaded when install-prompt specs fail:
 - `install-prompt-focus-trap-debug-attempt-N.zip` — raw
   `focus-trap-escape-*.json` files + `focus-trap-debug-index.json`.
 - `install-prompt-focus-trap-inspect-attempt-N.zip` — the inspect
-  summary (`.json` + `.csv`), the debug index, and the raw JSON / PNG
-  / HTML files. Layout inside the ZIP mirrors `IP_ARTIFACT_BASE_URL`
-  so the `artifactUrls.pageHtml` / `.screenshot` links in each JSON
-  resolve when the artifact is served.
+  summary (`.json` + `.csv` + `.md`), plus `focus-trap-inspect-summary.valid.csv`
+  / `.invalid.csv` (from `--csv-filter valid|invalid`), the debug index,
+  and the raw JSON / PNG / HTML files. Layout inside the ZIP mirrors
+  `IP_ARTIFACT_BASE_URL` so the `artifactUrls.pageHtml` / `.screenshot`
+  links in each JSON resolve when the artifact is served.
+
 - `install-prompt-failure-evidence-attempt-N.zip` — screenshots,
   videos, traces, and JSON attachments produced by Playwright itself.
 
