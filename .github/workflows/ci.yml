@@ -1081,6 +1081,21 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+      # Dedicated artifact bundle containing ONLY the focus-trap debug
+      # JSON files, one entry per failed retry. Playwright writes them
+      # under test-results/<spec>-<project>[-retryN]/, so the folder
+      # structure preserved inside the artifact makes the browser + PW
+      # attempt index visible at a glance on the run page.
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: install-prompt-focus-trap-debug-attempt-${{ github.run_attempt }}
+          path: test-results/**/focus-trap-escape-*.json
+          retention-days: 14
+          if-no-files-found: ignore
+
+
+
       # Print direct download links for every trace/video/screenshot
       # produced by failing install-prompt specs to the workflow run
       # summary. Reviewers can jump straight to evidence for a flaky
