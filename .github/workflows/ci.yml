@@ -1097,6 +1097,27 @@ jobs:
             echo "Workflow attempt **${{ github.run_attempt }}** — Playwright retried each failing test up to **2** additional times (\`--retries=2\`)."
             echo "Download the [\`${BUNDLE}\`](${ARTIFACTS_URL}) bundle or the full [\`install-prompt-a11y-report\`](${ARTIFACTS_URL})."
             echo ''
+            # List every focus-trap debug JSON emitted this run. Playwright
+            # writes them under test-results/<spec>-<project>[-retryN]/ so
+            # the path itself encodes the browser + attempt index — no
+            # searching needed to open the right artifact.
+            FT_FILES=$(find test-results -type f -name 'focus-trap-escape-*.json' 2>/dev/null | sort)
+            if [ -n "$FT_FILES" ]; then
+              echo '#### Focus-trap debug JSON (per attempt / browser)'
+              echo ''
+              echo '| File | Browser | Attempt |'
+              echo '| --- | --- | --- |'
+              printf '%s\n' "$FT_FILES" | while read -r f; do
+                dir=$(basename "$(dirname "$f")")
+                proj=$(printf '%s' "$dir" | grep -oE '(chromium|firefox|webkit)' | head -1)
+                att=$(printf '%s' "$dir" | grep -oE 'retry[0-9]+' | grep -oE '[0-9]+' | head -1)
+                [ -z "$att" ] && att=0
+                echo "| \`$f\` | ${proj:-?} | $att |"
+              done
+              echo ''
+            fi
+            echo ''
+
             # Per-test retry breakdown parsed from the Playwright JSON report.
             # Playwright records one entry per attempt in `test.results[]`, so
             # `retry` counts how many re-runs a spec needed before its final
