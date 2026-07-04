@@ -387,12 +387,14 @@ if (args.jsonReport) {
     issues,
   };
   // Schema-validate before writing so a shape drift fails fast instead
-  // of shipping a broken artifact to downstream jobs.
-  const requiredArtifactKeys = ["file", "failureKind", "failureReason", "schemaPointer", "quarantined"] as const;
-  const requiredTopKeys = ["generatedAt", "meta", "scanned", "matched", "valid", "invalid", "artifacts", "issues"] as const;
-  for (const k of requiredTopKeys) if (!(k in report)) { console.error(`--json-report: missing required top-level key '${k}'`); process.exit(65); }
-  if (typeof report.valid !== "number" || typeof report.invalid !== "number") { console.error("--json-report: valid/invalid must be numbers"); process.exit(65); }
-  for (const a of report.artifacts) for (const k of requiredArtifactKeys) if (!(k in a)) { console.error(`--json-report: artifact missing required key '${k}': ${JSON.stringify(a)}`); process.exit(65); }
+  // of shipping a broken artifact to downstream jobs. Uses the shared
+  // helper so unit tests can exercise the same rules.
+  const jsonErrs = validateJsonReport(report);
+  if (jsonErrs.length) {
+    for (const m of jsonErrs) console.error(`--json-report: ${m}`);
+    process.exit(65);
+  }
+
   mkdirSync(dirname(args.jsonReport), { recursive: true });
   writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
   console.log(`▶ Wrote JSON report: ${args.jsonReport} (artifacts=${artifacts.length} issues=${issues.length})`);
