@@ -24,7 +24,11 @@ type Arg = {
   out: string; csv?: string; md?: string;
   csvFilter: CsvFilter;
   validateOnly?: boolean;
+  maxErrors?: number;
   scanRoot: string;
+  invalidDir?: string;
+  files: string[];
+};
   invalidDir?: string;
   files: string[];
 };
