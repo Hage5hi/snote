@@ -34,6 +34,8 @@ BROWSER="chromium"
 RETRY="0"
 SLOWMO="${SLOWMO:-150}"
 REOPEN=""
+CAPTURE="1"           # --no-capture disables screenshot+HTML on failure
+HTML_MAX="200000"     # bytes, cap for the HTML snippet written to disk
 EXTRA=()
 
 while [ $# -gt 0 ]; do
@@ -43,11 +45,18 @@ while [ $# -gt 0 ]; do
     -r|--retry)        RETRY="$2"; shift 2 ;;
     -m|--slowmo)       SLOWMO="$2"; shift 2 ;;
     -c|--reopen-count) REOPEN="$2"; shift 2 ;;
+    --no-capture)      CAPTURE="0"; shift ;;
+    --capture)         CAPTURE="1"; shift ;;
+    --html-max-size)   HTML_MAX="$2"; shift 2 ;;
     -h|--help)         sed -n '2,30p' "$0"; exit 0 ;;
     --)                shift; EXTRA=("$@"); break ;;
     *)                 echo "Unknown flag: $1" >&2; exit 2 ;;
   esac
 done
+
+export IP_CAPTURE_DISABLED="$([ "$CAPTURE" = "0" ] && echo 1 || echo 0)"
+export IP_HTML_MAX="$HTML_MAX"
+
 
 if [ -z "$SPEC" ]; then
   if [ -n "$REOPEN" ]; then
