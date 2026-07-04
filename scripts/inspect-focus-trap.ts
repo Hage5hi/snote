@@ -428,7 +428,7 @@ if (args.diffWith) {
   // CI hiccup (still-syncing artifact mount, brief NFS blip, etc.)
   // doesn't kill the diff. Uses exponential backoff capped by
   // --diff-retries / --diff-retry-delay-ms.
-  const sleep = (ms: number) => Bun.sleepSync ? Bun.sleepSync(ms) : new Promise((r) => setTimeout(r, ms));
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
   let csvPaths: string[] = [];
   for (let attempt = 0; attempt <= args.diffRetries; attempt++) {
     try {
