@@ -27,11 +27,18 @@ type Arg = {
   maxErrors?: number;
   scanRoot: string;
   invalidDir?: string;
+  jsonReport?: string;
+  diffWith?: string;
+  diffOut?: string;
+  topN: number;
+  artifactValidUrl?: string;
+  artifactInvalidUrl?: string;
   files: string[];
 };
 
+
 function parseArgs(): Arg {
-  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", files: [] };
+  const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", csvFilter: "all", scanRoot: "test-results", topN: 5, files: [] };
   const argv = process.argv.slice(2);
   for (let i = 0; i < argv.length; i++) {
     const v = argv[i];
@@ -56,8 +63,18 @@ function parseArgs(): Arg {
       }
       case "--scan-root":     a.scanRoot = argv[++i]; break;
       case "--invalid-dir":   a.invalidDir = argv[++i]; break;
+      case "--json-report":   a.jsonReport = argv[++i]; break;
+      case "--diff-with":     a.diffWith = argv[++i]; break;
+      case "--diff-out":      a.diffOut = argv[++i]; break;
+      case "--top": {
+        const n = Number(argv[++i]);
+        if (!Number.isFinite(n) || n < 1) { console.error("--top must be >= 1"); process.exit(64); }
+        a.topN = n; break;
+      }
+      case "--artifact-valid-url":   a.artifactValidUrl = argv[++i]; break;
+      case "--artifact-invalid-url": a.artifactInvalidUrl = argv[++i]; break;
       case "-h": case "--help":
-        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [FILE...]");
+        console.log("bun run scripts/inspect-focus-trap.ts [--attempt N] [--browser NAME] [--spec S] [--label S] [--out PATH] [--csv PATH] [--csv-filter all|valid|invalid] [--md PATH] [--validate-only] [--max-errors N] [--scan-root DIR] [--invalid-dir PATH] [--json-report PATH] [--diff-with DIR] [--diff-out PATH] [--top N] [--artifact-valid-url URL] [--artifact-invalid-url URL] [FILE...]");
         process.exit(0);
       default: a.files.push(v);
     }
@@ -65,6 +82,7 @@ function parseArgs(): Arg {
   if (a.invalidDir == null) a.invalidDir = "reports/_ci/focus-trap-invalid";
   return a;
 }
+
 
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -291,10 +309,132 @@ if (args.csv) {
   console.log(`▶ Wrote CSV:     ${args.csv}  (filter=${args.csvFilter}, rows=${rows.length})`);
 }
 
+// --json-report writes a focused machine-readable summary (valid/invalid
+// counts plus every schema/parse issue) alongside the full summary JSON,
+// so downstream CI jobs don't have to re-parse the verbose entries doc.
+if (args.jsonReport) {
+  const issues = summary
+    .filter((e) => e.failureKind === "parse" || e.failureKind === "schema")
+    .map((e) => ({
+      file: e.file,
+      failureKind: e.failureKind,
+      failureReason: e.failureReason,
+      schemaPointer: e.schemaPointer ?? null,
+      schemaIssues: e.schemaIssues ?? null,
+      parseError: e.parseError ?? null,
+      quarantined: e.quarantined ?? "",
+    }));
+  const report = {
+    generatedAt: summaryDoc.generatedAt,
+    scanned: all.length, matched: matched.length,
+    valid: validCount, invalid: invalidCount,
+    invalidDir: args.invalidDir ?? null,
+    issues,
+  };
+  mkdirSync(dirname(args.jsonReport), { recursive: true });
+  writeFileSync(args.jsonReport, JSON.stringify(report, null, 2));
+  console.log(`▶ Wrote JSON report: ${args.jsonReport} (issues=${issues.length})`);
+}
+
+// --diff-with compares the current summary against a previous run's
+// downloaded CSVs (looks for *.valid.csv / *.invalid.csv under the given
+// directory). Emits rows whose failureReason or schemaPointer changed.
+type DiffRow = { file: string; prev: { failureReason: string; schemaPointer: string }; curr: { failureReason: string; schemaPointer: string } };
+let diffRows: DiffRow[] = [];
+if (args.diffWith) {
+  const prev = new Map<string, { failureReason: string; schemaPointer: string }>();
+  const fileIdx = CSV_COLUMNS.indexOf("file");
+  const reasonIdx = CSV_COLUMNS.indexOf("failureReason");
+  const parseCsv = (text: string) => {
+    // Minimal CSV parser matching escCsv (RFC 4180 quotes + doubled quotes).
+    const rows: string[][] = []; let row: string[] = []; let cell = ""; let q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+        else if (c === '"') q = false;
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(cell); cell = ""; }
+      else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+      else if (c === "\r") { /* skip */ }
+      else cell += c;
+    }
+    if (cell.length || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter((r) => r.length > 1);
+  };
+  const walkCsv = (dir: string): string[] => {
+    const out: string[] = [];
+    try {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, e.name);
+        if (e.isDirectory()) out.push(...walkCsv(p));
+        else if (/\.(valid|invalid)\.csv$/.test(e.name)) out.push(p);
+      }
+    } catch { /* missing dir → empty diff */ }
+    return out;
+  };
+  for (const csvPath of walkCsv(args.diffWith)) {
+    const rows = parseCsv(readFileSync(csvPath, "utf8"));
+    const header = rows.shift();
+    if (!header) continue;
+    for (const r of rows) {
+      const file = r[fileIdx] ?? "";
+      const reason = r[reasonIdx] ?? "";
+      const ptr = reason.startsWith("schema:") ? (reason.match(/\/[\w[\]/-]*/)?.[0] ?? "") : "";
+      if (file) prev.set(file, { failureReason: reason, schemaPointer: ptr });
+    }
+  }
+  for (const e of summary) {
+    const file = String(e.file);
+    const currReason = String(e.failureReason ?? "");
+    const currPtr = String(e.schemaPointer ?? "");
+    const p = prev.get(file) ?? { failureReason: "", schemaPointer: "" };
+    if (p.failureReason !== currReason || p.schemaPointer !== currPtr) {
+      diffRows.push({ file, prev: p, curr: { failureReason: currReason, schemaPointer: currPtr } });
+    }
+  }
+  console.log(`\n▶ Diff vs ${args.diffWith}: ${diffRows.length} changed row(s)`);
+  for (const d of diffRows.slice(0, 20)) {
+    console.log(`  ~ ${d.file}\n      prev: ${d.prev.failureReason || "—"} ${d.prev.schemaPointer ? `(${d.prev.schemaPointer})` : ""}\n      curr: ${d.curr.failureReason || "—"} ${d.curr.schemaPointer ? `(${d.curr.schemaPointer})` : ""}`);
+  }
+  if (args.diffOut) {
+    mkdirSync(dirname(args.diffOut), { recursive: true });
+    writeFileSync(args.diffOut, JSON.stringify({ generatedAt: new Date().toISOString(), prevDir: args.diffWith, changed: diffRows }, null, 2));
+    console.log(`▶ Wrote diff:    ${args.diffOut}`);
+  }
+}
+
 // Emit a short markdown report and, when running inside GitHub Actions,
 // also append it to the job's step summary so on-call can scan the
 // first failures without opening artifacts.
-const md = renderMarkdown(summaryDoc);
+let md = renderMarkdown(summaryDoc);
+
+// Append top-N failureKind/schemaPointer combos + artifact links so
+// on-call can triage from the step summary alone.
+const topLines: string[] = [];
+const combos = new Map<string, number>();
+for (const e of summary) {
+  const kind = (e.failureKind as string | null) ?? "";
+  if (!kind || kind === "escape") continue;
+  const key = `${kind}${e.schemaPointer ? ` @ ${e.schemaPointer}` : ""}`;
+  combos.set(key, (combos.get(key) ?? 0) + 1);
+}
+const sorted = [...combos.entries()].sort((a, b) => b[1] - a[1]).slice(0, args.topN);
+if (sorted.length) {
+  topLines.push("", `### Top ${sorted.length} failure combos`, "", "| count | failureKind @ schemaPointer |", "| --- | --- |");
+  for (const [k, c] of sorted) topLines.push(`| ${c} | \`${k}\` |`);
+}
+if (args.artifactValidUrl || args.artifactInvalidUrl) {
+  topLines.push("", "### Artifacts");
+  if (args.artifactValidUrl)   topLines.push(`- ✅ valid CSV: ${args.artifactValidUrl}`);
+  if (args.artifactInvalidUrl) topLines.push(`- ❌ invalid CSV: ${args.artifactInvalidUrl}`);
+}
+if (diffRows.length) {
+  topLines.push("", `### Diff vs previous run`, "", `- changed rows: **${diffRows.length}**`);
+}
+if (topLines.length) md += topLines.join("\n") + "\n";
+
 if (args.md) {
   mkdirSync(dirname(args.md), { recursive: true });
   writeFileSync(args.md, md);
@@ -311,4 +451,5 @@ if (stepSummary) {
 // Fail fast on malformed artifacts so CI surfaces bad inputs rather
 // than pretending everything is fine with an empty summary.
 if (hadInvalid) process.exit(2);
+
 
