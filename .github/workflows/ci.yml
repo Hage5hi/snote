@@ -1223,6 +1223,17 @@ jobs:
             reports/_ci/focus-trap-invalid/**
           retention-days: 14
           if-no-files-found: ignore
+      # Standalone HTML triage report — same sha + scan-root naming as
+      # the CSV artifacts so on-call can open it directly from the run.
+      - if: failure() && (steps.changes.outputs.ip == 'true' || github.event_name == 'push')
+        uses: actions/upload-artifact@v4
+        with:
+          name: focus-trap-inspect-html--test-results--${{ github.sha }}--attempt-${{ github.run_attempt }}
+          path: |
+            reports/_ci/focus-trap-inspect-report.html
+          retention-days: 14
+          if-no-files-found: ignore
+
 
 
 
