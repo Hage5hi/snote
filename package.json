@@ -20,6 +20,8 @@
     "test:e2e:changed": "bun run scripts/e2e-run-changed-scenes.ts",
     "test:e2e:summary": "bun run scripts/ci-e2e-summary.ts test-results/e2e-results.json",
     "test:e2e:debug:install": "PWDEBUG=${PWDEBUG:-0} DEBUG=${DEBUG:-pw:api} PWTEST_SLOW_MO=${SLOWMO:-150} ./scripts/debug-install-prompt-focus.sh",
+    "test:e2e:inspect:focus-trap": "bun run scripts/inspect-focus-trap.ts",
+    "test:e2e:replay:focus-trap": "./scripts/replay-focus-trap.sh",
     "theme:isolation": "bun run scripts/check-home-theme-isolation.ts",
     "i18n:check": "bun run scripts/i18n-coverage.ts",
     "i18n:audit": "bun run scripts/i18n-audit.ts",

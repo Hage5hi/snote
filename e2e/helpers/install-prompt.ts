@@ -126,25 +126,37 @@ export async function expectFocusInsideDialog(
     const jsonName = `${base}.json`;
     const pngName = `${base}.png`;
     const htmlName = `${base}.html`;
+    const captureDisabled = process.env.IP_CAPTURE_DISABLED === "1";
+    const htmlMax = Math.max(1024, Number(process.env.IP_HTML_MAX) || 200_000);
 
-    // Immediate screenshot + full-page HTML snippet before anything
-    // else re-renders. Paths are recorded in the JSON payload for
-    // one-click navigation from the artifact.
-    try {
-      const shotPath = `${testInfo.outputDir}/${pngName}`;
-      const htmlPath = `${testInfo.outputDir}/${htmlName}`;
-      const fs = await import("node:fs/promises");
-      await fs.mkdir(testInfo.outputDir, { recursive: true });
-      await page.screenshot({ path: shotPath, fullPage: false });
-      const html = await page.content();
-      await fs.writeFile(htmlPath, html.slice(0, 200_000));
-      payload.screenshotPath = shotPath;
-      payload.pageHtmlPath = htmlPath;
-      await testInfo.attach(pngName, { path: shotPath, contentType: "image/png" });
-      await testInfo.attach(htmlName, { path: htmlPath, contentType: "text/html" });
-    } catch (err) {
-      payload.captureError = String(err);
+    // Relative filenames (basename only) are stable across CI ZIPs and
+    // let reviewers click straight from the JSON to sibling artifacts.
+    payload.artifacts = {
+      json: jsonName,
+      screenshot: captureDisabled ? null : pngName,
+      pageHtml: captureDisabled ? null : htmlName,
+    };
+
+    if (!captureDisabled) {
+      try {
+        const shotPath = `${testInfo.outputDir}/${pngName}`;
+        const htmlPath = `${testInfo.outputDir}/${htmlName}`;
+        const fs = await import("node:fs/promises");
+        await fs.mkdir(testInfo.outputDir, { recursive: true });
+        await page.screenshot({ path: shotPath, fullPage: false });
+        const html = await page.content();
+        await fs.writeFile(htmlPath, html.slice(0, htmlMax));
+        payload.screenshotPath = shotPath;
+        payload.pageHtmlPath = htmlPath;
+        payload.pageHtmlBytes = Math.min(html.length, htmlMax);
+        await testInfo.attach(pngName, { path: shotPath, contentType: "image/png" });
+        await testInfo.attach(htmlName, { path: htmlPath, contentType: "text/html" });
+      } catch (err) {
+        payload.captureError = String(err);
+      }
     }
+
+
 
     await testInfo.attach(jsonName, {
       body: JSON.stringify(payload, null, 2),
