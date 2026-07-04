@@ -30,11 +30,15 @@ type Arg = {
   jsonReport?: string;
   diffWith?: string;
   diffOut?: string;
+  diffRetries: number;
+  diffRetryDelayMs: number;
+  htmlReport?: string;
   topN: number;
   artifactValidUrl?: string;
   artifactInvalidUrl?: string;
   files: string[];
 };
+
 
 
 function parseArgs(): Arg {
