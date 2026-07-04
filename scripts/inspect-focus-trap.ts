@@ -79,6 +79,8 @@ function parseArgs(): Arg {
       case "--json-report":   a.jsonReport = argv[++i]; break;
       case "--diff-with":     a.diffWith = argv[++i]; break;
       case "--diff-out":      a.diffOut = argv[++i]; break;
+      case "--diff-json-out": a.diffJsonOut = argv[++i]; break;
+      case "--report-validate-only": a.reportValidateOnly = true; break;
       case "--diff-retries": {
         const n = Number(argv[++i]);
         if (!Number.isFinite(n) || n < 0) { console.error("--diff-retries must be >= 0"); process.exit(64); }
