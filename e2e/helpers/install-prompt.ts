@@ -59,13 +59,32 @@ export async function expectFocusInsideDialog(
       ? Array.from(dlg.querySelectorAll<HTMLElement>(sel)).map(describe)
       : [];
     const nonceEl = document.querySelector(`[${nonceAttr}]`);
+    // Sanitize the dialog HTML: strip inline event handlers, <script>
+    // tags, and mask input `value` attributes so nothing user-typed
+    // (e.g. tokens) leaks into CI artifacts. Preserve structure so the
+    // rendered DOM shape is diagnosable.
+    let dialogHtml: string | null = null;
+    if (dlg) {
+      const clone = (dlg as HTMLElement).cloneNode(true) as HTMLElement;
+      clone.querySelectorAll("script,style").forEach((n) => n.remove());
+      clone.querySelectorAll<HTMLElement>("*").forEach((n) => {
+        for (const a of Array.from(n.attributes)) {
+          if (a.name.startsWith("on")) n.removeAttribute(a.name);
+        }
+        if (n.tagName === "INPUT" || n.tagName === "TEXTAREA") {
+          if (n.hasAttribute("value")) n.setAttribute("value", "[redacted]");
+        }
+      });
+      dialogHtml = clone.outerHTML.slice(0, 4000);
+    }
     return {
       dialogPresent: !!dlg,
       dialogContainsActive: !!(dlg && active && dlg.contains(active)),
       activeElement: describe(active),
       focusables,
       latestTriggerNonce: nonceEl?.getAttribute(nonceAttr) ?? null,
-      dialogHtmlPreview: dlg ? (dlg as HTMLElement).outerHTML.slice(0, 2000) : null,
+      dialogHtmlSanitized: dialogHtml,
+      lastRelocate: (window as unknown as { __ipRelocate?: unknown }).__ipRelocate ?? null,
     };
   }, TRIGGER_NONCE_ATTR);
 
@@ -75,6 +94,7 @@ export async function expectFocusInsideDialog(
     triggerNonce: opts.triggerNonce ?? info.latestTriggerNonce,
     ...info,
   };
+
 
   if (!info.dialogContainsActive) {
     const fileName = `focus-trap-escape-${label}.json`;
