@@ -539,6 +539,7 @@ if (args.diffWith) {
   // downstream automation that would rather not re-parse CSV.
   if (args.diffJsonOut) {
     const payload = {
+      schemaVersion: DIFF_JSON_SCHEMA_VERSION,
       generatedAt: summaryDoc.generatedAt,
       meta: runMeta,
       diffWith: args.diffWith,
@@ -551,6 +552,13 @@ if (args.diffWith) {
         currSchemaPointer: d.curr.schemaPointer,
       })),
     };
+    // Schema-validate before writing so downstream automation can rely
+    // on the shape (and pin against DIFF_JSON_SCHEMA_VERSION).
+    const diffErrs = validateDiffJson(payload);
+    if (diffErrs.length) {
+      for (const m of diffErrs) console.error(`--diff-json-out: ${m}`);
+      process.exit(65);
+    }
     if (args.reportValidateOnly) {
       console.log(`✓ --diff-json-out validated (${payload.rows.length} row(s)) — skipped write per --report-validate-only`);
     } else {
