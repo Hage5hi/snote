@@ -254,6 +254,7 @@ export async function pressAndRecord(page: Page, key: string) {
       w.__ipFocusHistory = w.__ipFocusHistory || [];
       w.__ipFocusHistory.push({
         at: Date.now(),
+        perf: performance.now(),
         event: `press:${k}`,
         before: describe(document.activeElement),
       });
@@ -267,6 +268,7 @@ export async function pressAndRecord(page: Page, key: string) {
       const w = window as unknown as { __ipFocusHistory?: unknown[] };
       (w.__ipFocusHistory as unknown[]).push({
         at: Date.now(),
+        perf: performance.now(),
         event: `after:${k}`,
         after: describe(document.activeElement),
       });
@@ -275,7 +277,7 @@ export async function pressAndRecord(page: Page, key: string) {
   );
 }
 
-/** Record a labeled focus checkpoint (e.g. "after-close"). */
+/** Record a labeled focus checkpoint (e.g. "iter-1-after-close"). */
 export async function noteFocus(page: Page, label: string) {
   await page.evaluate(
     ({ l, fnSrc }) => {
@@ -284,11 +286,13 @@ export async function noteFocus(page: Page, label: string) {
       w.__ipFocusHistory = w.__ipFocusHistory || [];
       w.__ipFocusHistory.push({
         at: Date.now(),
+        perf: performance.now(),
         event: `note:${l}`,
-        active: describe(document.activeElement),
+        snapshot: describe(document.activeElement),
       });
     },
     { l: label, fnSrc: FOCUS_DESCRIBE_FN },
   );
 }
+
 
