@@ -143,6 +143,13 @@ export function validateDiffCsvHeader(header: readonly string[]): string[] {
   return errs;
 }
 
+// RFC 6901 JSON Pointer reference-token escaping. Order matters: `~`
+// must be replaced first (as `~0`) so a subsequent `/`→`~1` pass does
+// not turn a literal `~1` back into `/`. Exported for tests + reuse.
+export function escapeJsonPointerSegment(seg: string): string {
+  return seg.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
 // Same idea for --json-report: enforce top-level keys and per-artifact
 // keys so a shape drift fails fast.
 export function validateJsonReport(report: unknown): string[] {
@@ -151,8 +158,9 @@ export function validateJsonReport(report: unknown): string[] {
     return ["report must be a top-level object [pointer=/]"];
   }
   const r = report as Record<string, unknown>;
+  const P = escapeJsonPointerSegment;
   for (const k of REQUIRED_JSON_REPORT_TOP_KEYS) {
-    if (!(k in r)) errs.push(`missing required top-level key '${k}' [pointer=/${k}]`);
+    if (!(k in r)) errs.push(`missing required top-level key '${k}' [pointer=/${P(k)}]`);
   }
   if ("schemaVersion" in r && r.schemaVersion !== JSON_REPORT_SCHEMA_VERSION) {
     errs.push(`'schemaVersion' must be '${JSON_REPORT_SCHEMA_VERSION}', got '${String(r.schemaVersion)}' [pointer=/schemaVersion]`);
@@ -164,7 +172,7 @@ export function validateJsonReport(report: unknown): string[] {
     else r.artifacts.forEach((a, i) => {
       if (!a || typeof a !== "object") { errs.push(`artifacts[${i}]: expected object [pointer=/artifacts/${i}]`); return; }
       for (const k of REQUIRED_JSON_REPORT_ARTIFACT_KEYS) {
-        if (!(k in (a as Record<string, unknown>))) errs.push(`artifacts[${i}]: missing required key '${k}' [pointer=/artifacts/${i}/${k}]`);
+        if (!(k in (a as Record<string, unknown>))) errs.push(`artifacts[${i}]: missing required key '${k}' [pointer=/artifacts/${i}/${P(k)}]`);
       }
     });
   }
@@ -179,8 +187,9 @@ export function validateDiffJson(report: unknown): string[] {
     return ["diff report must be a top-level object [pointer=/]"];
   }
   const r = report as Record<string, unknown>;
+  const P = escapeJsonPointerSegment;
   for (const k of REQUIRED_DIFF_JSON_TOP_KEYS) {
-    if (!(k in r)) errs.push(`missing required top-level key '${k}' [pointer=/${k}]`);
+    if (!(k in r)) errs.push(`missing required top-level key '${k}' [pointer=/${P(k)}]`);
   }
   if ("schemaVersion" in r && r.schemaVersion !== DIFF_JSON_SCHEMA_VERSION) {
     errs.push(`'schemaVersion' must be '${DIFF_JSON_SCHEMA_VERSION}', got '${String(r.schemaVersion)}' [pointer=/schemaVersion]`);
@@ -191,7 +200,7 @@ export function validateDiffJson(report: unknown): string[] {
     else r.rows.forEach((row, i) => {
       if (!row || typeof row !== "object") { errs.push(`rows[${i}]: expected object [pointer=/rows/${i}]`); return; }
       for (const k of REQUIRED_DIFF_JSON_ROW_KEYS) {
-        if (!(k in (row as Record<string, unknown>))) errs.push(`rows[${i}]: missing required key '${k}' [pointer=/rows/${i}/${k}]`);
+        if (!(k in (row as Record<string, unknown>))) errs.push(`rows[${i}]: missing required key '${k}' [pointer=/rows/${i}/${P(k)}]`);
       }
     });
   }

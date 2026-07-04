@@ -216,6 +216,23 @@ test.describe("focus-trap --html-report a11y", () => {
     await expect
       .poll(async () => await rows.locator(":scope:visible").count(), { timeout: 2000 })
       .toBe(total);
+    const liveAfterClear = (await live.textContent())?.trim() ?? "";
+    expect(liveAfterClear.length, "live region empty after clearing filter").toBeGreaterThan(0);
+
+    // Toggling the disclosure closed/open must re-announce the current
+    // result count via the same live region. Screen readers rely on
+    // this to know the quarantine list changed reachability.
+    await details.evaluate((d: HTMLDetailsElement) => { d.open = false; });
+    await expect
+      .poll(async () => (await live.textContent())?.trim() ?? "", { timeout: 2000 })
+      .not.toBe(liveAfterClear);
+    const liveAfterCollapse = (await live.textContent())?.trim() ?? "";
+    expect(liveAfterCollapse.length, "live region empty after collapse").toBeGreaterThan(0);
+
+    await details.evaluate((d: HTMLDetailsElement) => { d.open = true; });
+    await expect
+      .poll(async () => (await live.textContent())?.trim() ?? "", { timeout: 2000 })
+      .not.toBe(liveAfterCollapse);
   });
 
   // Broader sweep: every <details> disclosure and every quarantine
