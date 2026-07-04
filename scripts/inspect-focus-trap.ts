@@ -387,19 +387,7 @@ if (args.jsonReport) {
       parseError: (e.parseError as string | null) ?? null,
       quarantined: String(e.quarantined ?? ""),
     }));
-  // Run metadata (git SHA, scan-root, argv, timestamp) so a report can
-  // always be traced back to the exact CI invocation that produced it.
-  const gitSha = process.env.GITHUB_SHA
-    || (() => { try { return require("node:child_process").execSync("git rev-parse HEAD", { stdio: ["ignore", "pipe", "ignore"] }).toString().trim(); } catch { return null; } })();
-  const meta = {
-    gitSha,
-    scanRoot: args.scanRoot,
-    invalidDir: args.invalidDir ?? null,
-    argv: process.argv.slice(2),
-    timestamp: summaryDoc.generatedAt,
-    ciRunId: process.env.GITHUB_RUN_ID ?? null,
-    ciRunAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-  };
+  const meta = runMeta;
   const report = {
     generatedAt: summaryDoc.generatedAt,
     meta,
