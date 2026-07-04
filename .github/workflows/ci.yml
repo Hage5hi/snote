@@ -1052,6 +1052,11 @@ jobs:
         env:
           PLAYWRIGHT_HTML_REPORT: playwright-report/install-prompt
           PLAYWRIGHT_JSON_OUTPUT_NAME: test-results/install-prompt-results.json
+          # Base URL for the focus-trap deep links in each JSON. Points
+          # at the run-artifact HTTP base; the helper joins the test's
+          # relative outputDir + filename onto this.
+          IP_ARTIFACT_BASE_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts
+
 
       # Always upload the HTML report, JSON results, screenshots, traces
       # and videos when the install-prompt specs run — regardless of
