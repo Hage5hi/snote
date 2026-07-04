@@ -59,13 +59,32 @@ export async function expectFocusInsideDialog(
       ? Array.from(dlg.querySelectorAll<HTMLElement>(sel)).map(describe)
       : [];
     const nonceEl = document.querySelector(`[${nonceAttr}]`);
+    // Sanitize the dialog HTML: strip inline event handlers, <script>
+    // tags, and mask input `value` attributes so nothing user-typed
+    // (e.g. tokens) leaks into CI artifacts. Preserve structure so the
+    // rendered DOM shape is diagnosable.
+    let dialogHtml: string | null = null;
+    if (dlg) {
+      const clone = (dlg as HTMLElement).cloneNode(true) as HTMLElement;
+      clone.querySelectorAll("script,style").forEach((n) => n.remove());
+      clone.querySelectorAll<HTMLElement>("*").forEach((n) => {
+        for (const a of Array.from(n.attributes)) {
+          if (a.name.startsWith("on")) n.removeAttribute(a.name);
+        }
+        if (n.tagName === "INPUT" || n.tagName === "TEXTAREA") {
+          if (n.hasAttribute("value")) n.setAttribute("value", "[redacted]");
+        }
+      });
+      dialogHtml = clone.outerHTML.slice(0, 4000);
+    }
     return {
       dialogPresent: !!dlg,
       dialogContainsActive: !!(dlg && active && dlg.contains(active)),
       activeElement: describe(active),
       focusables,
       latestTriggerNonce: nonceEl?.getAttribute(nonceAttr) ?? null,
-      dialogHtmlPreview: dlg ? (dlg as HTMLElement).outerHTML.slice(0, 2000) : null,
+      dialogHtmlSanitized: dialogHtml,
+      lastRelocate: (window as unknown as { __ipRelocate?: unknown }).__ipRelocate ?? null,
     };
   }, TRIGGER_NONCE_ATTR);
 
@@ -75,6 +94,7 @@ export async function expectFocusInsideDialog(
     triggerNonce: opts.triggerNonce ?? info.latestTriggerNonce,
     ...info,
   };
+
 
   if (!info.dialogContainsActive) {
     const fileName = `focus-trap-escape-${label}.json`;
@@ -148,9 +168,19 @@ export async function relocateInstallTrigger(
   page: Page,
   captured: CapturedTrigger,
 ): Promise<Locator> {
-  const byNonce = page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
-  if ((await byNonce.count()) === 1) return byNonce;
+  const nonceSelector = `[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`;
+  const byNonce = page.locator(nonceSelector);
+  if ((await byNonce.count()) === 1) {
+    await page.evaluate(
+      (info) => {
+        (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+      },
+      { path: "nonce", selector: nonceSelector, nonce: captured.nonce, at: Date.now() },
+    );
+    return byNonce;
+  }
 
+  const nameRegexSrc = `/${dict.en["install.title"]}/`;
   const fresh = page.getByRole("button", {
     name: new RegExp(dict.en["install.title"]),
   });
@@ -160,9 +190,22 @@ export async function relocateInstallTrigger(
     (el, args) => el.setAttribute(args.attr, args.n),
     { attr: TRIGGER_NONCE_ATTR, n: captured.nonce },
   );
-  const rebound = page.locator(`[${TRIGGER_NONCE_ATTR}="${captured.nonce}"]`);
+  const rebound = page.locator(nonceSelector);
   await expect(rebound).toHaveCount(1);
+  await page.evaluate(
+    (info) => {
+      (window as unknown as { __ipRelocate: unknown }).__ipRelocate = info;
+    },
+    {
+      path: "role-name-fallback",
+      roleName: nameRegexSrc,
+      finalSelector: nonceSelector,
+      nonce: captured.nonce,
+      at: Date.now(),
+    },
+  );
   return rebound;
 }
+
 
 
