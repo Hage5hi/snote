@@ -90,29 +90,72 @@ export async function expectFocusInsideDialog(
     };
   }, TRIGGER_NONCE_ATTR);
 
-  const payload = {
+  // Compute per-iteration durations from `note:iter-N-*` checkpoints.
+  const iterDurations: Record<string, Record<string, number>> = {};
+  const notes = (info.focusHistory as Array<{ event?: string; perf?: number }>).filter(
+    (e) => typeof e.event === "string" && e.event.startsWith("note:iter-"),
+  );
+  for (const e of notes) {
+    const m = /^note:iter-(\d+)-(before-open|after-open|after-close)$/.exec(e.event!);
+    if (!m || typeof e.perf !== "number") continue;
+    const key = `iter-${m[1]}`;
+    (iterDurations[key] ||= {})[m[2]] = e.perf;
+  }
+  const iterTimings = Object.fromEntries(
+    Object.entries(iterDurations).map(([k, v]) => [
+      k,
+      {
+        ...v,
+        openMs: v["after-open"] != null && v["before-open"] != null ? v["after-open"] - v["before-open"] : null,
+        closeMs: v["after-close"] != null && v["after-open"] != null ? v["after-close"] - v["after-open"] : null,
+        totalMs: v["after-close"] != null && v["before-open"] != null ? v["after-close"] - v["before-open"] : null,
+      },
+    ]),
+  );
+
+  const payload: Record<string, unknown> = {
     label,
     testTitle: testInfo.title,
     triggerNonce: opts.triggerNonce ?? info.latestTriggerNonce,
+    iterTimings,
     ...info,
   };
 
-
-
   if (!info.dialogContainsActive) {
-    const fileName = `focus-trap-escape-${label}.json`;
-    await testInfo.attach(fileName, {
+    const base = `focus-trap-escape-${label}`;
+    const jsonName = `${base}.json`;
+    const pngName = `${base}.png`;
+    const htmlName = `${base}.html`;
+
+    // Immediate screenshot + full-page HTML snippet before anything
+    // else re-renders. Paths are recorded in the JSON payload for
+    // one-click navigation from the artifact.
+    try {
+      const shotPath = `${testInfo.outputDir}/${pngName}`;
+      const htmlPath = `${testInfo.outputDir}/${htmlName}`;
+      const fs = await import("node:fs/promises");
+      await fs.mkdir(testInfo.outputDir, { recursive: true });
+      await page.screenshot({ path: shotPath, fullPage: false });
+      const html = await page.content();
+      await fs.writeFile(htmlPath, html.slice(0, 200_000));
+      payload.screenshotPath = shotPath;
+      payload.pageHtmlPath = htmlPath;
+      await testInfo.attach(pngName, { path: shotPath, contentType: "image/png" });
+      await testInfo.attach(htmlName, { path: htmlPath, contentType: "text/html" });
+    } catch (err) {
+      payload.captureError = String(err);
+    }
+
+    await testInfo.attach(jsonName, {
       body: JSON.stringify(payload, null, 2),
       contentType: "application/json",
     });
-    // Also write to the test's outputDir so CI can list the exact path
-    // per attempt/browser without parsing the JSON report.
     try {
       const fs = await import("node:fs/promises");
       const path = await import("node:path");
       await fs.mkdir(testInfo.outputDir, { recursive: true });
       await fs.writeFile(
-        path.join(testInfo.outputDir, fileName),
+        path.join(testInfo.outputDir, jsonName),
         JSON.stringify(payload, null, 2),
       );
     } catch {
@@ -121,6 +164,7 @@ export async function expectFocusInsideDialog(
   }
   expect(info.dialogContainsActive, `focus escaped at ${label}`).toBe(true);
 }
+
 
 
 /**
