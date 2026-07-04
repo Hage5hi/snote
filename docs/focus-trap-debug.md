@@ -127,7 +127,28 @@ jq -r '[.issues[] | select(.failureKind=="schema") | .schemaPointer]
    reports/_ci/focus-trap-inspect-report.json
 ```
 
+### HTML triage report (`--html-report` / `--html-top-n`)
+
+`--html-report PATH` renders a standalone triage page from the same
+scan: top-N `failureKind` and `schemaPointer` tables, then a
+`Quarantined artifacts` table showing the top-N entries with a
+collapsible `<details>` block that expands to every quarantine entry.
+
+`--html-top-n N` controls how many rows show in the top tables and in
+the always-visible quarantine slice. **Default: value of `--top`
+(currently `5`).** The collapsible section always lists every
+quarantined artifact regardless of `--html-top-n`.
+
+```bash
+bun run scripts/inspect-focus-trap.ts \
+  --scan-root test-results \
+  --json-report reports/_ci/focus-trap-inspect-report.json \
+  --html-report reports/_ci/focus-trap-inspect-report.html \
+  --html-top-n 10
+```
+
 ### Diff two runs (`--diff-with` / `--diff-out`)
+
 
 Point `--diff-with` at a directory holding the previous run's
 `*.valid.csv` / `*.invalid.csv` (typically the downloaded
