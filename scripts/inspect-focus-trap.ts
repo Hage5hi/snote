@@ -10,8 +10,14 @@
 //                                         [--out PATH] [FILE ...]
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import {
+  CSV_COLUMNS,
+  renderMarkdown,
+  toCsvRow,
+  validateFocusTrapPayload,
+} from "./_helpers/focus-trap-inspect";
 
-type Arg = { attempt?: number; browser?: string; spec?: string; label?: string; out: string; csv?: string; files: string[] };
+type Arg = { attempt?: number; browser?: string; spec?: string; label?: string; out: string; csv?: string; md?: string; files: string[] };
 function parseArgs(): Arg {
   const a: Arg = { out: "reports/_ci/focus-trap-inspect-summary.json", files: [] };
   const argv = process.argv.slice(2);
