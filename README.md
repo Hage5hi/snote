@@ -244,7 +244,6 @@ with `✅ present` or `⚠️ missing`) into the job summary and echoes any
 missing files as `::warning::` annotations so they surface in the run's
 annotations pane. The same manifest is reproducible locally via
 `--dry-run` — no CI artifact download required.
-```
 
 Drift diffs are always written to **`_schema_drift/`** in the repo root:
 
