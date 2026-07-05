@@ -9,8 +9,10 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  renderAnnotations,
   renderPrComment,
   selectFailures,
+  anchorFor,
   type Report,
 } from "../schema-drift-pr-comment";
 import { renderSummary } from "../schema-drift-summary";
@@ -101,12 +103,12 @@ describe("renderPrComment", () => {
     const md = renderPrComment(FAILING);
     const rowOrder = md
       .split("\n")
-      .filter((l) => l.startsWith("| `/"))
-      .map((l) => l.split("|")[1].trim());
+      .filter((l) => l.startsWith("| <a id="))
+      .map((l) => (l.match(/`([^`]+\.json)`/) ?? [])[1]);
     expect(rowOrder).toEqual([
-      "`/a/drift-chromium.json`",
-      "`/a/drift-combined.json`",
-      "`/z/drift-webkit.json`",
+      "/a/drift-chromium.json",
+      "/a/drift-combined.json",
+      "/z/drift-webkit.json",
     ]);
   });
 
@@ -232,5 +234,52 @@ describe("CLI: schema-drift-summary.ts", () => {
     const { code, stdout } = bun(SUM_SCRIPT, [p]);
     expect(code).toBe(0);
     expect(stdout).toMatch(/OK.*3\/3/);
+  });
+});
+
+describe("renderAnnotations + anchors", () => {
+  it("anchorFor is deterministic and stable for the same (path, browser)", () => {
+    const f = FAILING.files[0];
+    expect(anchorFor(f)).toBe(anchorFor(f));
+    expect(anchorFor(f)).toMatch(/^fail-/);
+  });
+
+  it("pr-comment rows include stable HTML anchors matching anchorFor", () => {
+    const md = renderPrComment(FAILING);
+    for (const f of selectFailures(FAILING)) {
+      const a = anchorFor(f);
+      expect(md).toContain(`<a id="${a}"></a>`);
+    }
+  });
+
+  it("renderAnnotations emits one ::error:: workflow command per selected failure with kind + anchor", () => {
+    const txt = renderAnnotations(FAILING, { commentUrl: "PR_COMMENT_URL" });
+    const lines = txt.trim().split("\n");
+    // Selected failures: chromium (mistyped), combined (missing), webkit (missing+extra)
+    expect(lines).toHaveLength(3);
+    for (const l of lines) {
+      expect(l).toMatch(/^::error file=/);
+      expect(l).toContain("kind=");
+      expect(l).toContain("PR_COMMENT_URL#fail-");
+    }
+    expect(txt).toContain("kind=mistyped");
+    expect(txt).toMatch(/kind=[a-z,]*missing/);
+    expect(txt).toMatch(/kind=[a-z,]*extra/);
+  });
+
+  it("empty report → no annotation lines", () => {
+    expect(renderAnnotations(EMPTY)).toBe("");
+  });
+
+  it("--annotations-file writes the file and pr-comment still goes to stdout", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const outAnn = join(dir, "annotations.txt");
+    const { code, stdout } = bun(PR_SCRIPT, [p, "--annotations-file", outAnn]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("| Manifest |");
+    const written = require("node:fs").readFileSync(outAnn, "utf8");
+    expect(written).toMatch(/^::error file=/m);
+    expect(written).toContain("kind=");
   });
 });

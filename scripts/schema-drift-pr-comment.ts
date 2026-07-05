@@ -108,6 +108,31 @@ export function selectFailures(r: Report, opts: FilterOpts = {}): FileEntry[] {
   return out;
 }
 
+/**
+ * Stable HTML anchor id for a failure row. Deterministic in (path,
+ * browser) — safe to reference from GitHub Actions annotations and from
+ * external tools that link into pr-comment.md.
+ */
+export function anchorFor(f: FileEntry): string {
+  const base = (f.path.split("/").pop() ?? f.path).replace(/\.[^.]+$/, "");
+  const scope = f.combined ? "combined" : (f.browser ?? "unknown");
+  const slug = `${scope}-${base}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `fail-${slug}`;
+}
+
+/** Which failure kinds a given entry exhibits, in stable order. */
+function kindsOf(f: FileEntry): Kind[] {
+  const out: Kind[] = [];
+  if (f.parseError) out.push("parseError");
+  if (f.missing?.length) out.push("missing");
+  if (f.mistyped?.length) out.push("mistyped");
+  if (f.extra?.length) out.push("extra");
+  return out;
+}
+
 export function renderPrComment(r: Report, opts: RenderOpts = {}): string {
   const MAX = opts.max ?? intEnv("SCHEMA_DRIFT_ANNOTATION_MAX", 10);
   const MISS = opts.missingCap ?? intEnv("SCHEMA_DRIFT_MISSING_CAP", 20);
@@ -137,7 +162,8 @@ export function renderPrComment(r: Report, opts: RenderOpts = {}): string {
       );
     if (f.extra?.length)
       parts.push(`extra: \`${cap(f.extra, EXTRA).join(", ")}\``);
-    lines.push(`| \`${f.path}\` | ${label} | ${parts.join("<br>")} |`);
+    const anchor = `<a id="${anchorFor(f)}"></a>`;
+    lines.push(`| ${anchor}\`${f.path}\` | ${label} | ${parts.join("<br>")} |`);
   }
   if (bad.length > MAX)
     lines.push(
@@ -146,10 +172,44 @@ export function renderPrComment(r: Report, opts: RenderOpts = {}): string {
   return lines.join("\n") + "\n";
 }
 
-function parseArgs(argv: string[]): { reportPath: string; out: string; opts: RenderOpts } {
+/**
+ * Emit one GitHub Actions `::error::` workflow command per selected
+ * failure. When printed to stdout the runner turns each line into an
+ * inline annotation; when written to a file the CI job can `cat` it
+ * later. Each line references the stable anchor into pr-comment.md so
+ * reviewers can jump straight to the failing row.
+ */
+export function renderAnnotations(
+  r: Report,
+  opts: RenderOpts & { commentUrl?: string } = {},
+): string {
+  const bad = selectFailures(r, opts);
+  const MAX = opts.max ?? intEnv("SCHEMA_DRIFT_ANNOTATION_MAX", 10);
+  const base = opts.commentUrl ?? "";
+  const out: string[] = [];
+  for (const f of bad.slice(0, MAX)) {
+    const kinds = kindsOf(f).join(",") || "unknown";
+    const scope = f.combined ? "combined" : `browser=${f.browser ?? "?"}`;
+    const href = `${base}#${anchorFor(f)}`;
+    out.push(
+      `::error file=${f.path},title=schema-drift ${scope}::[kind=${kinds}] ${href}`,
+    );
+  }
+  return out.length ? out.join("\n") + "\n" : "";
+}
+
+function parseArgs(argv: string[]): {
+  reportPath: string;
+  out: string;
+  annotationsFile: string;
+  commentUrl: string;
+  opts: RenderOpts;
+} {
   const opts: RenderOpts = {};
   let reportPath = "";
   let out = "";
+  let annotationsFile = "";
+  let commentUrl = "";
   const kinds: Kind[] = [];
   const need = (i: number, name: string) => {
     const v = argv[i + 1];
@@ -171,6 +231,10 @@ function parseArgs(argv: string[]): { reportPath: string; out: string; opts: Ren
     const a = argv[i];
     if (a === "--out") { out = need(i, "--out"); i++; }
     else if (a.startsWith("--out=")) out = a.slice(6);
+    else if (a === "--annotations-file") { annotationsFile = need(i, "--annotations-file"); i++; }
+    else if (a.startsWith("--annotations-file=")) annotationsFile = a.slice(19);
+    else if (a === "--comment-url") { commentUrl = need(i, "--comment-url"); i++; }
+    else if (a.startsWith("--comment-url=")) commentUrl = a.slice(14);
     else if (a === "--browser") { opts.browser = need(i, "--browser"); i++; }
     else if (a.startsWith("--browser=")) opts.browser = a.slice(10);
     else if (a === "--path") { opts.path = need(i, "--path"); i++; }
@@ -189,7 +253,7 @@ function parseArgs(argv: string[]): { reportPath: string; out: string; opts: Ren
     }
   }
   if (kinds.length) opts.kind = kinds;
-  return { reportPath, out, opts };
+  return { reportPath, out, annotationsFile, commentUrl, opts };
 }
 
 function main() {
@@ -199,11 +263,11 @@ function main() {
       "Usage: bun scripts/schema-drift-pr-comment.ts <report.json> " +
         "[--browser <name>] [--path <substr>] [--kind missing|mistyped|extra|parseError] " +
         "[--max <n>] [--missing-cap <n>] [--mistyped-cap <n>] [--extra-cap <n>] " +
-        "[--out <path>]",
+        "[--out <path>] [--annotations-file <path>] [--comment-url <url>]",
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const { reportPath, out, opts } = parseArgs(args);
+  const { reportPath, out, annotationsFile, commentUrl, opts } = parseArgs(args);
   if (!reportPath) {
     console.error("missing <report.json> positional argument");
     process.exit(2);
@@ -216,6 +280,11 @@ function main() {
     console.error(`pr-comment: ${out}`);
   } else {
     process.stdout.write(body);
+  }
+  if (annotationsFile) {
+    mkdirSync(dirname(resolve(annotationsFile)), { recursive: true });
+    writeFileSync(annotationsFile, renderAnnotations(r, { ...opts, commentUrl }));
+    console.error(`annotations: ${annotationsFile}`);
   }
 }
 
