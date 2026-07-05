@@ -109,7 +109,10 @@ REQUIRED_ARTIFACTS=()   # expected CI artifact filenames per browser
 VALIDATE_MANIFEST=0
 STRICT_MANIFEST=0
 VALIDATION_REPORT=""
+# Default-on in CI so any drift/viewer step is gated on strict validation.
+REQUIRE_VALID="${SCHEMA_DRIFT_REQUIRE_VALID:-0}"
 MATCHED_BASES=()    # populated by show() as it visits each base
+
 
 add_to() {
   # $1 = nameref array, $2 = comma-list
