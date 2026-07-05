@@ -16,7 +16,8 @@ REPORT = $(INDEX:.json=.report.json)
 .PHONY: help pretty-index-check pretty-index-check-clean \
         pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean \
         pretty-index-clean-dry-run \
-        pretty-index-artifacts pretty-index-hook-dry-run
+        pretty-index-artifacts pretty-index-hook-dry-run \
+        pretty-index-artifacts-download
 
 
 
@@ -106,3 +107,33 @@ pretty-index-hook-dry-run:
 	@PRETTY_INDEX_HOOK_DRY_RUN=1 PRETTY_INDEX_HOOK_FORCE=1 \
 	  PRETTY_INDEX_HOOK_MATRIX=stress .githooks/pre-commit
 	@$(MAKE) --no-print-directory pretty-index-diagnostics
+
+# Download BOTH matrices' pretty-index failure diagnostic artifacts from
+# a failed CI run, using the exact `gh run download` commands documented
+# in the README, and prepare them for local inspection under
+# ./_pretty-index-<matrix>/.
+#
+#   make pretty-index-artifacts-download RUN_ID=<run-id> [OS=ubuntu-latest]
+RUN_ID ?=
+OS     ?= ubuntu-latest
+pretty-index-artifacts-download:
+	@if [ -z "$(RUN_ID)" ]; then \
+	  echo "usage: make pretty-index-artifacts-download RUN_ID=<run-id> [OS=ubuntu-latest|macos-latest|windows-latest]" >&2; \
+	  exit 2; \
+	fi
+	@command -v gh >/dev/null || { echo "gh CLI is required (see https://cli.github.com)" >&2; exit 2; }
+	@rm -rf ./_pretty-index-atomic ./_pretty-index-stress
+	@echo "==> downloading MATRIX=atomic (schema-drift-diff-replay-pretty-index-failure-$(OS))"
+	@gh run download $(RUN_ID) \
+	  -n schema-drift-diff-replay-pretty-index-failure-$(OS) \
+	  -D ./_pretty-index-atomic
+	@echo "==> downloading MATRIX=stress (schema-drift-diff-stress-replay-pretty-index-failure-$(OS))"
+	@gh run download $(RUN_ID) \
+	  -n schema-drift-diff-stress-replay-pretty-index-failure-$(OS) \
+	  -D ./_pretty-index-stress
+	@echo ""
+	@echo "downloaded artifacts:"
+	@ls -1 ./_pretty-index-atomic ./_pretty-index-stress 2>/dev/null || true
+	@echo ""
+	@echo "inspect with:  jq . ./_pretty-index-atomic/pretty-index.report.json"
+

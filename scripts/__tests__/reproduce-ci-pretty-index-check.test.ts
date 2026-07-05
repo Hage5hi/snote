@@ -309,6 +309,58 @@ describe("reproduce-ci-pretty-index-check.sh — exit + diagnostics harness", ()
     }
     expect(fs.readFileSync(file, "utf8")).toBe(BAD);
   });
+
+  it("--help lists supported PRETTY_INDEX_HOOK_MATRIX values and every documented exit code", () => {
+    const HOOK = resolve(REPO, ".githooks", "pre-commit");
+    const r = spawnSync("bash", [HOOK, "--help"], {
+      cwd: REPO,
+      encoding: "utf8",
+    });
+    expect(r.status).toBe(0);
+    const out = r.stdout + r.stderr;
+    // Supported matrix values, exactly as documented.
+    expect(out).toMatch(/PRETTY_INDEX_HOOK_MATRIX=<value>\s+atomic \| stress/);
+    // Every documented exit code, in order, with its label.
+    expect(out).toContain("0  ok / dry-run / no relevant files staged");
+    expect(out).toContain(
+      "1  check failed (i18n allowlist drift OR pretty-index schema drift)",
+    );
+    expect(out).toContain(
+      "2  usage error (invalid PRETTY_INDEX_HOOK_MATRIX value)",
+    );
+    expect(out).toContain("3  pretty-index schema validation failed");
+    expect(out).toContain("4  pretty-index input file missing");
+    // Both artifact prefixes documented per matrix.
+    expect(out).toContain(
+      "atomic  ->  schema-drift-diff-replay-pretty-index-failure-<os>",
+    );
+    expect(out).toContain(
+      "stress  ->  schema-drift-diff-stress-replay-pretty-index-failure-<os>",
+    );
+  });
+
+  it("--verbose prints resolved diagnostic dir + candidate file list in dry-run mode", () => {
+    const HOOK = resolve(REPO, ".githooks", "pre-commit");
+    const r = spawnSync("bash", [HOOK, "--verbose"], {
+      cwd: REPO,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        PRETTY_INDEX_HOOK_DRY_RUN: "1",
+        PRETTY_INDEX_HOOK_MATRIX: "atomic",
+      },
+    });
+    expect(r.status).toBe(0);
+    const out = r.stdout + r.stderr;
+    expect(out).toContain("[verbose] resolved diagnostic directory:");
+    expect(out).toContain("[verbose] candidate pretty-index files");
+    // All three candidate siblings enumerated with exists/absent markers.
+    expect(out).toMatch(/\[(exists|absent)\][^\n]*pretty-index\.json/);
+    expect(out).toMatch(
+      /\[(exists|absent)\][^\n]*pretty-index\.pre-check\.json/,
+    );
+    expect(out).toMatch(/\[(exists|absent)\][^\n]*pretty-index\.report\.json/);
+  });
 });
 
 

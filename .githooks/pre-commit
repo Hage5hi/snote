@@ -20,17 +20,27 @@ set -euo pipefail
 
 # --help / -h — document supported env vars and exit codes without
 # running the hook body. Safe to run at any time.
-case "${1:-}" in
-  -h|--help)
-    cat <<'HELP'
+# Parse leading flags (currently: --help, --verbose). --verbose is
+# consumed here and re-exposed via VERBOSE=1 to the rest of the hook.
+VERBOSE="${PRETTY_INDEX_HOOK_VERBOSE:-0}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help)
+      cat <<'HELP'
 Lovable pre-commit hook — i18n allowlist + pretty-index schema-drift gate.
 
+Flags:
+  --help, -h                          show this help and exit 0
+  --verbose                           print resolved diagnostic dir + full
+                                      candidate file list before exit
+
 Environment overrides:
-  I18N_HOOK_FORCE=1                  run i18n check even if no i18n files staged
-  PRETTY_INDEX_HOOK_SKIP=1           skip the pretty-index gate
-  PRETTY_INDEX_HOOK_FORCE=1          run the pretty-index gate for any commit
-  PRETTY_INDEX_HOOK_MATRIX=<value>   atomic | stress   (default: atomic)
-  PRETTY_INDEX_HOOK_DRY_RUN=1        print resolved paths + exit 0, no writes
+  I18N_HOOK_FORCE=1                   run i18n check even if no i18n files staged
+  PRETTY_INDEX_HOOK_SKIP=1            skip the pretty-index gate
+  PRETTY_INDEX_HOOK_FORCE=1           run the pretty-index gate for any commit
+  PRETTY_INDEX_HOOK_MATRIX=<value>    atomic | stress   (default: atomic)
+  PRETTY_INDEX_HOOK_DRY_RUN=1         print resolved paths + exit 0, no writes
+  PRETTY_INDEX_HOOK_VERBOSE=1         same as --verbose
 
 Bypass entirely:
   git commit --no-verify
@@ -46,8 +56,12 @@ CI artifact prefixes (uploaded on failure, per matrix):
   atomic  ->  schema-drift-diff-replay-pretty-index-failure-<os>
   stress  ->  schema-drift-diff-stress-replay-pretty-index-failure-<os>
 HELP
-    exit 0 ;;
-esac
+      exit 0 ;;
+    --verbose) VERBOSE=1; shift ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
 
 # Files staged for this commit (added/copied/modified/renamed).
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR || true)
@@ -75,7 +89,7 @@ if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
   DR_PRE="${DR_INDEX%.json}.pre-check.json"
   DR_REPORT="${DR_INDEX%.json}.report.json"
   DR_DIR="$(dirname -- "$DR_INDEX")"
-  echo "▶ pre-commit [dry-run]: pretty-index gate"
+  echo "▶ pre-commit [dry-run]: pretty-index gate (MATRIX=$HOOK_MATRIX)"
   echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
   echo "  diagnostic directory              = $DR_DIR"
   echo "  would run: scripts/reproduce-ci-pretty-index-check.sh --clean --matrix $HOOK_MATRIX $DR_INDEX"
@@ -89,6 +103,13 @@ if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
     echo "  CI artifact prefix: schema-drift-diff-replay-pretty-index-failure-<os>"
   fi
   echo "  documented exit codes: 0=ok, 1=drift, 2=usage, 3=schema, 4=missing"
+  if [ "$VERBOSE" = "1" ]; then
+    echo "  [verbose] resolved diagnostic directory: $DR_DIR"
+    echo "  [verbose] candidate pretty-index files (validated or removed by --clean):"
+    for f in "$DR_INDEX" "$DR_PRE" "$DR_REPORT"; do
+      if [ -e "$f" ]; then echo "    [exists] $f"; else echo "    [absent] $f"; fi
+    done
+  fi
   echo "▶ pre-commit [dry-run]: exiting 0 (no files created or modified)"
   exit 0
 fi
@@ -176,6 +197,17 @@ if pretty_index_needs_check; then
   # PRETTY_INDEX_HOOK_DRY_RUN is handled at the top of this hook.
   echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
   echo "  diagnostic directory              = $(dirname -- "$INDEX")"
+  if [ "$VERBOSE" = "1" ]; then
+    V_DIR="$(dirname -- "$INDEX")"
+    V_PRE="${INDEX%.json}.pre-check.json"
+    V_REPORT="${INDEX%.json}.report.json"
+    echo "  [verbose] resolved diagnostic directory: $V_DIR"
+    echo "  [verbose] candidate pretty-index files (validated or removed by --clean):"
+    for f in "$INDEX" "$V_PRE" "$V_REPORT"; do
+      if [ -e "$f" ]; then echo "    [exists] $f"; else echo "    [absent] $f"; fi
+    done
+  fi
+
 
   if [ -f "$INDEX" ]; then
 
