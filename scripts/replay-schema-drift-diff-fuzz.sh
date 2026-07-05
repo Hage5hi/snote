@@ -78,9 +78,33 @@ if [[ "${1:-}" == "--from" ]]; then
   [ -d "$SRC" ]      || { echo "--from: not a directory: $SRC" >&2; exit 8; }
   [ -r "$MANIFEST" ] || { echo "--from: missing/unreadable manifest: $MANIFEST" >&2; exit 8; }
   [ -r "$SUMS" ]     || { echo "--from: missing/unreadable checksums: $SUMS" >&2; exit 8; }
+  if [[ "$VERBOSE" == "1" ]]; then
+    echo "verbose: --from folder=$SRC" >&2
+    echo "verbose: required files:" >&2
+    for f in manifest.txt env.sh checksums.sha256; do
+      if [ -e "$SRC/$f" ]; then
+        echo "verbose:   [OK]      $SRC/$f ($(wc -c <"$SRC/$f") bytes)" >&2
+      else
+        echo "verbose:   [MISSING] $SRC/$f" >&2
+      fi
+    done
+    echo "verbose: manifest entries -> required files mapping:" >&2
+    echo "verbose:   SCHEMA_DRIFT_DIFF_FUZZ_SEED            -> positional \$1 (SEED)" >&2
+    echo "verbose:   SCHEMA_DRIFT_DIFF_READER_DURATION_MS   -> positional \$2 (READER_MS)" >&2
+    echo "verbose:   SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN    -> positional \$3 (vitest -t)" >&2
+    echo "verbose:   SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS      -> env passthrough (vitest --testTimeout)" >&2
+  fi
   echo "--from: verifying checksums in $SUMS" >&2
-  ( cd "$SRC" && sha256sum -c checksums.sha256 ) >&2 \
-    || { echo "--from: FAIL checksum mismatch in $SRC" >&2; exit 8; }
+  SUMS_OUT="$(cd "$SRC" && sha256sum -c checksums.sha256 2>&1)"; SUMS_RC=$?
+  echo "$SUMS_OUT" >&2
+  if [[ $SUMS_RC -ne 0 ]]; then
+    echo "--from: FAIL checksum mismatch in $SRC" >&2
+    if [[ "$VERBOSE" == "1" ]]; then
+      echo "verbose: failing entries (from sha256sum -c):" >&2
+      printf '%s\n' "$SUMS_OUT" | grep -Ev ': OK$' | sed 's/^/verbose:   /' >&2
+    fi
+    exit 8
+  fi
   if [[ "$PRINT_MANIFEST" == "1" ]]; then
     print_manifest "$MANIFEST"
     exit 0
@@ -93,7 +117,9 @@ if [[ "${1:-}" == "--from" ]]; then
   [ -n "$SEED_V" ] || { echo "--from: manifest missing SCHEMA_DRIFT_DIFF_FUZZ_SEED" >&2; exit 8; }
   echo "--from: replaying seed=$SEED_V reader_ms=$READER_V pattern='$PATTERN_V' timeout_ms=$TIMEOUT_V" >&2
   FORWARD=()
-  [[ "$DRY_RUN" == "1" ]] && FORWARD+=("--dry-run")
+  [[ "$DRY_RUN" == "1" ]]      && FORWARD+=("--dry-run")
+  [[ "$VERBOSE" == "1" ]]      && FORWARD+=("--verbose")
+  [[ "$JSON_SUMMARY" == "1" ]] && FORWARD+=("--json-summary")
   SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS="${TIMEOUT_V:-30000}" \
     exec "$0" "$SEED_V" "${READER_V:-300}" "${PATTERN_V:-concurrent reader \+ fuzz \+ unsafe symlink}" "${FORWARD[@]}"
 fi
