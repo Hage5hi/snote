@@ -689,7 +689,35 @@ describe("schema-drift-diff: --print-schema", () => {
     expect(parsed.properties).toHaveProperty("matchedAnchors");
     expect(parsed.properties).toHaveProperty("totals");
   });
+
+  it("--print-schema stdout content matches the on-disk schema (byte-for-byte modulo trailing newline)", () => {
+    const { code, stdout } = bun(DIFF_SCRIPT, ["--print-schema"]);
+    expect(code).toBe(0);
+    const schemaPath = resolve(__dirname, "../../schemas/schema-drift-diff.schema.json");
+    const onDisk = _readFileSync(schemaPath, "utf8");
+    const normalize = (s: string) => (s.endsWith("\n") ? s : s + "\n");
+    expect(stdout).toBe(normalize(onDisk));
+    // sanity: printed schema round-trips as valid JSON and equals the parsed on-disk copy
+    expect(JSON.parse(stdout)).toEqual(JSON.parse(onDisk));
+  });
+
+  it("--print-schema output validates a real --json payload via Ajv", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const schemaRun = bun(DIFF_SCRIPT, ["--print-schema"]);
+    const payloadRun = bun(DIFF_SCRIPT, [p, p, "--json"]);
+    expect(schemaRun.code).toBe(0);
+    expect(payloadRun.code).toBe(0);
+    const AjvMod = require("ajv");
+    const Ajv = AjvMod.default ?? AjvMod;
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(JSON.parse(schemaRun.stdout));
+    const ok = validate(JSON.parse(payloadRun.stdout));
+    expect(validate.errors).toBeNull();
+    expect(ok).toBe(true);
+  });
 });
+
 
 describe("schema-drift-diff: --json-out atomic write failure modes", () => {
   it("auto-creates a missing nested destination directory (mkdir -p)", () => {
@@ -729,6 +757,32 @@ describe("schema-drift-diff: --json-out atomic write failure modes", () => {
       expect(stderr).toMatch(/EACCES|EPERM/);
       // no partial .tmp left behind
       expect(require("node:fs").readdirSync(roDir)).toEqual([]);
+    } finally {
+      require("node:fs").chmodSync(roDir, 0o700);
+    }
+  });
+
+
+  it("exit 7 when the temporary `<path>.<pid>.tmp` file cannot be created", () => {
+    // Parent dir exists but is read-only, so writing the sibling .tmp fails.
+    // This exercises the atomic-write tmp-file creation branch (distinct
+    // from the "parent path blocked by a regular file" test above).
+    if (typeof process.getuid === "function" && process.getuid() === 0) return;
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const roDir = join(dir, "ro-parent");
+    require("node:fs").mkdirSync(roDir);
+    require("node:fs").chmodSync(roDir, 0o500);
+    try {
+      const jsonOut = join(roDir, "diff.json");
+      const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+      expect(code).toBe(7);
+      expect(stderr).toContain("cannot write json-out");
+      expect(stderr).toContain(jsonOut);
+      expect(stderr).toMatch(/EACCES|EPERM/);
+      // destination is NOT created and no `.tmp` sibling is left behind
+      const listing = require("node:fs").readdirSync(roDir);
+      expect(listing).toEqual([]);
     } finally {
       require("node:fs").chmodSync(roDir, 0o700);
     }
