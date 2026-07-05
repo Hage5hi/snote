@@ -269,11 +269,34 @@ bun run schema-guard:view -- \
 # --require pins the CI-side expected artifact filenames per browser and
 # persists them into every emitted manifest as `requiredArtifacts` so the
 # downstream `e2e-live-region-verify` job knows exactly what to enforce.
+# Repeatable AND comma-separated — pick whichever reads better in your CI.
+#
+# Example A — chromium only, single required trace:
+bun run schema-guard:view -- \
+  --manifest-dir reports/_ci --manifest-prefix drift \
+  --browsers chromium \
+  --require live-region-trace.zip
+# → reports/_ci/drift-chromium.json:
+#     "requiredArtifacts": ["live-region-trace.zip"]
+#
+# Example B — firefox, trace + failure screenshot (CSV form):
+bun run schema-guard:view -- \
+  --manifest-dir reports/_ci --manifest-prefix drift \
+  --browsers firefox \
+  --require live-region-trace.zip,live-region-failure.png
+# → reports/_ci/drift-firefox.json:
+#     "requiredArtifacts": ["live-region-trace.zip","live-region-failure.png"]
+#
+# Example C — full matrix + combined manifest (repeatable form):
 bun run schema-guard:view -- \
   --manifest-dir reports/_ci --manifest-prefix drift \
   --browsers chromium,firefox,webkit \
-  --require live-region-trace.zip,live-region-failure.png \
+  --require live-region-trace.zip \
+  --require live-region-failure.png \
+  --require dom-snapshot.html \
   --combined-manifest
+# → reports/_ci/drift-{chromium,firefox,webkit,combined}.json each contain:
+#     "requiredArtifacts": ["live-region-trace.zip","live-region-failure.png","dom-snapshot.html"]
 
 # --validate-manifest re-reads every <prefix>-*.json in --manifest-dir
 # and asserts the required top-level keys (browser, browsers, combined,
