@@ -183,12 +183,14 @@ function seedReport(root: string, opts: { missingStressDir?: boolean } = {}) {
 }
 
 describe("pretty-index mismatch-report inspection targets", () => {
-  it("summary exits 3 when mismatches exist and prints per-matrix counts", () => {
+  it("summary exits non-zero when mismatches exist and prints per-matrix counts", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-sum-"));
     tmps.push(root);
     seedReport(root);
     const r = runTarget(root, "pretty-index-mismatch-summary");
-    expect(r.status).toBe(3);
+    // Recipe emits `exit 3`; make wraps recipe failures as exit 2.
+    expect(r.status).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/Error 3/);
     expect(r.stdout).toMatch(/atomic:\s+1\/\d+ mismatched/);
     expect(r.stdout).toMatch(/total:\s+1\//);
   });
