@@ -37,6 +37,15 @@ Flags:
                                  Default: schema-drift-manifest
   --combined-manifest            Also write a single combined manifest across all
                                  selected browsers (requires --manifest-dir).
+  --require <list>               Comma-separated (or repeatable) list of expected
+                                 CI artifact filenames (e.g., trace.zip,failure.png)
+                                 that downstream CI should require per matched
+                                 browser. Persisted into the manifest as
+                                 `requiredArtifacts`. Default: empty.
+  --validate-manifest            Instead of running diff/viewer, validate every
+                                 <prefix>-*.json in --manifest-dir for the required
+                                 top-level keys and exit non-zero on any missing
+                                 key. Requires --manifest-dir.
   -h, --help                     Show this help.
 
 Env:
