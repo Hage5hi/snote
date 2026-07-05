@@ -192,6 +192,45 @@ describe("reproduce-ci-pretty-index-check.sh — exit + diagnostics harness", ()
       expect(fs.readFileSync(pre, "utf8").length).toBeGreaterThan(0);
     },
   );
+
+  it("--clean preserves non-pretty-index files when both matrix artifact sets are present", () => {
+    const { file } = seed(BAD);
+    const dir = join(file, "..");
+    const fs = require("node:fs") as typeof import("node:fs");
+    // Simulate a diagnostics directory that has already run BOTH matrices,
+    // plus a mix of unrelated artifacts a developer might have kept around.
+    // Because atomic + stress share on-disk sibling names, the "sets" are
+    // represented by the shared siblings PLUS unrelated per-matrix files
+    // that must survive every --clean invocation.
+    const pre = file.replace(/\.json$/, ".pre-check.json");
+    const report = file.replace(/\.json$/, ".report.json");
+    const nonPretty: Record<string, string> = {
+      [join(dir, "unrelated.json")]: '{"keep":true}',
+      [join(dir, "other-index.json")]: '{"other":true}',
+      [join(dir, "other-index.pre-check.json")]: "other-pre",
+      [join(dir, "other-index.report.json")]: "other-report",
+      [join(dir, "atomic-run.log")]: "atomic log",
+      [join(dir, "stress-run.log")]: "stress log",
+      [join(dir, "notes.md")]: "# keep me",
+    };
+    for (const [p, body] of Object.entries(nonPretty)) writeFileSync(p, body);
+    writeFileSync(pre, "stale-pre");
+    writeFileSync(report, "stale-report");
+
+    for (const matrix of ["atomic", "stress"] as const) {
+      const r = spawnSync(
+        "bash",
+        [REPRO, "--clean", "--matrix", matrix, file],
+        { encoding: "utf8" },
+      );
+      expect(r.status).not.toBe(0); // BAD input still fails
+      // All non-pretty-index files untouched, regardless of matrix.
+      for (const [p, body] of Object.entries(nonPretty)) {
+        expect(fs.readFileSync(p, "utf8")).toBe(body);
+      }
+    }
+  });
 });
+
 
 
