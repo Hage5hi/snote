@@ -34,7 +34,9 @@ PI_MISMATCH_REPORT ?= _pretty-index-checksum-mismatch.json
         pretty-index-reproduce-downloaded \
         pretty-index-artifacts-download-verify-reproduce \
         pretty-index-artifacts-clean \
-        pretty-index-artifacts-verify-summary
+        pretty-index-artifacts-verify-summary \
+        pretty-index-help
+
 
 
 
