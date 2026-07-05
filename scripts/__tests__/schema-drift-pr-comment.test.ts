@@ -16,10 +16,11 @@ import {
   type Report,
 } from "../schema-drift-pr-comment";
 import { renderSummary } from "../schema-drift-summary";
-import { renderDiff } from "../schema-drift-diff";
+import { computeDiff, renderDiff } from "../schema-drift-diff";
 
 const PR_SCRIPT = resolve(__dirname, "../schema-drift-pr-comment.ts");
 const SUM_SCRIPT = resolve(__dirname, "../schema-drift-summary.ts");
+const DIFF_SCRIPT = resolve(__dirname, "../schema-drift-diff.ts");
 
 function tmp() {
   return mkdtempSync(join(tmpdir(), "schema-drift-report-"));
