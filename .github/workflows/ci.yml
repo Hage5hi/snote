@@ -444,7 +444,10 @@ jobs:
           shopt -s nullglob
           mkdir -p artifacts/schema-drift-diff-replay-verify/pretty
           index="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-          echo '[' > "$index"
+          # Write the current v1 envelope shape ({schema_version, entries}).
+          # Bump both this literal AND CURRENT_SCHEMA_VERSION in
+          # scripts/validate-pretty-index.py together.
+          echo '{"schema_version": 1, "entries": [' > "$index"
           first=1
           hard_fail=0
           count=0
