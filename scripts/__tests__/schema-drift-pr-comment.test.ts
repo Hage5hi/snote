@@ -16,7 +16,8 @@ import {
   type Report,
 } from "../schema-drift-pr-comment";
 import { renderSummary } from "../schema-drift-summary";
-import { computeDiff, renderDiff } from "../schema-drift-diff";
+import { computeDiff, renderDiff, compileMatcher, expandKindPatterns } from "../schema-drift-diff";
+import { readFileSync as _readFileSync } from "node:fs";
 
 const PR_SCRIPT = resolve(__dirname, "../schema-drift-pr-comment.ts");
 const SUM_SCRIPT = resolve(__dirname, "../schema-drift-summary.ts");
@@ -336,46 +337,77 @@ describe("schema-drift-diff: stable anchors across reordered reports", () => {
 });
 
 describe("schema-drift-diff CLI: exit codes + suggested fixes", () => {
-  it("exit 3 with a suggested fix when the report file is missing", () => {
+  it("exit 3 with a suggested fix when the report file is missing (text + --json)", () => {
     const missing = join(tmp(), "does-not-exist.json");
-    for (const mode of [[missing, missing], [missing, missing, "--json"]]) {
-      const { code, stderr } = bun(DIFF_SCRIPT, mode);
-      expect(code).toBe(3);
-      expect(stderr).toContain("cannot read");
-      expect(stderr).toContain("fix:");
-      expect(stderr).toContain("gh run download");
-    }
+    // text mode
+    const t = bun(DIFF_SCRIPT, [missing, missing]);
+    expect(t.code).toBe(3);
+    expect(t.stderr).toContain("cannot read");
+    expect(t.stderr).toContain("fix:");
+    expect(t.stderr).toContain("gh run download");
+    // --json mode: error is emitted as JSON to stderr
+    const j = bun(DIFF_SCRIPT, [missing, missing, "--json"]);
+    expect(j.code).toBe(3);
+    const parsed = JSON.parse(j.stderr);
+    expect(parsed).toMatchObject({ error: "report-unreadable", code: 3, label: "before" });
+    expect(parsed.fix).toMatch(/gh run download/);
   });
 
-  it("exit 4 when the file is not valid JSON (markdown + --json)", () => {
+  it("exit 4 when the file is not valid JSON (text + --json + --markdown)", () => {
     const dir = tmp();
     const p = join(dir, "bad.json");
     writeFileSync(p, "{not json");
-    for (const mode of [[p, p], [p, p, "--json"], [p, p, "--markdown"]]) {
+    for (const mode of [[p, p], [p, p, "--markdown"]]) {
       const { code, stderr } = bun(DIFF_SCRIPT, mode);
       expect(code).toBe(4);
       expect(stderr).toContain("not valid JSON");
       expect(stderr).toContain("schema-drift-view.sh --validation-report");
     }
+    const j = bun(DIFF_SCRIPT, [p, p, "--json"]);
+    expect(j.code).toBe(4);
+    const parsed = JSON.parse(j.stderr);
+    expect(parsed).toMatchObject({ error: "report-invalid-json", code: 4 });
+    expect(parsed.fix).toMatch(/schema-drift-view/);
   });
 
-  it("exit 5 when required fields are missing (markdown + --json) — includes received keys + checklist", () => {
+  it("exit 5 when required fields are missing — text mode includes received keys + checklist", () => {
     const dir = tmp();
     const p = join(dir, "weird.json");
     writeFileSync(p, JSON.stringify({ hello: "world", nope: 1 }));
-    for (const mode of [[p, p], [p, p, "--json"]]) {
-      const { code, stderr } = bun(DIFF_SCRIPT, mode);
-      expect(code).toBe(5);
-      expect(stderr).toContain("missing required fields");
-      expect(stderr).toContain("`strict`");
-      expect(stderr).toContain("`files`");
-      expect(stderr).toContain("received top-level keys: hello, nope");
-      expect(stderr).toContain("missing top-level keys: strict, totals, files");
-      expect(stderr).toContain("expected schema checklist:");
-      expect(stderr).toContain("[ ] strict");
-      expect(stderr).toContain("[ ] files");
-      expect(stderr).toContain("Expected shape");
-    }
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p]);
+    expect(code).toBe(5);
+    expect(stderr).toContain("missing required fields");
+    expect(stderr).toContain("`strict`");
+    expect(stderr).toContain("`files`");
+    expect(stderr).toContain("received top-level keys: hello, nope");
+    expect(stderr).toContain("missing top-level keys: strict, totals, files");
+    expect(stderr).toContain("expected schema checklist:");
+    expect(stderr).toContain("[ ] strict");
+    expect(stderr).toContain("[ ] files");
+    expect(stderr).toContain("Expected shape");
+  });
+
+  it("exit 5 in --json mode emits structured error with receivedTopLevelKeys + expectedChecklist", () => {
+    const dir = tmp();
+    const p = join(dir, "weird.json");
+    writeFileSync(p, JSON.stringify({ hello: "world", nope: 1 }));
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json"]);
+    expect(code).toBe(5);
+    const parsed = JSON.parse(stderr);
+    expect(parsed).toMatchObject({
+      error: "report-missing-fields",
+      code: 5,
+      label: "before",
+      receivedTopLevelKeys: ["hello", "nope"],
+      missingTopLevelKeys: ["strict", "totals", "files"],
+    });
+    expect(parsed.problems).toEqual(expect.arrayContaining([expect.stringContaining("`strict`")]));
+    expect(parsed.expectedChecklist).toEqual([
+      { key: "strict", present: false },
+      { key: "totals", present: false },
+      { key: "files", present: false },
+    ]);
+    expect(parsed.expectedShape).toMatch(/strict: boolean/);
   });
 });
 
@@ -449,5 +481,58 @@ describe("schema-drift-diff: --kind stays consistent across markdown + --json", 
     const js = bun(DIFF_SCRIPT, [p, p, "--kind", "mistyped", "--fail-slug", target, "--json"]);
     expect(js.code).toBe(0);
     expect(JSON.parse(js.stdout).matchedAnchors).toEqual([target]);
+  });
+});
+
+describe("schema-drift-diff: pattern matchers (compileMatcher, expandKindPatterns)", () => {
+  it("compileMatcher supports exact, glob, and /regex/ forms", () => {
+    expect(compileMatcher("fail-a")("fail-a")).toBe(true);
+    expect(compileMatcher("fail-a")("fail-b")).toBe(false);
+    expect(compileMatcher("fail-chromium-*")("fail-chromium-drift-x")).toBe(true);
+    expect(compileMatcher("fail-chromium-*")("fail-webkit-drift-x")).toBe(false);
+    expect(compileMatcher("fail-?ebkit-*")("fail-webkit-drift-x")).toBe(true);
+    expect(compileMatcher("/^fail-(chromium|webkit)-/")("fail-webkit-drift-x")).toBe(true);
+    expect(compileMatcher("/^fail-firefox/")("fail-webkit-drift-x")).toBe(false);
+  });
+
+  it("expandKindPatterns resolves `*` to all kinds and globs to subsets", () => {
+    expect(expandKindPatterns(["*"]).sort()).toEqual(["extra", "missing", "mistyped", "parseError"]);
+    expect(expandKindPatterns(["parse*"])).toEqual(["parseError"]);
+    expect(expandKindPatterns(["mis*"]).sort()).toEqual(["missing", "mistyped"]);
+    expect(expandKindPatterns(["nope"])).toEqual([]);
+  });
+
+  it("--fail-slug wildcard filters diff output in JSON and markdown", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const js = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "fail-chromium-*"]);
+    expect(js.code).toBe(0);
+    const parsed = JSON.parse(js.stdout);
+    for (const s of parsed.matchedAnchors) expect(s).toMatch(/^fail-chromium-/);
+    expect(parsed.matchedAnchors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("schema-drift-diff: --json-out + --validate-json", () => {
+  it("--json-out writes the payload to a file (implies --json) and validates against the schema", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut, "--validate-json"]);
+    expect(code).toBe(0);
+    expect(stderr).toContain("schema-drift diff (json):");
+    expect(stderr).toContain("validate-json: OK");
+    const parsed = JSON.parse(_readFileSync(jsonOut, "utf8"));
+    expect(parsed).toHaveProperty("totals.matched");
+    expect(parsed).toHaveProperty("matchedAnchors");
+    expect(Array.isArray(parsed.added)).toBe(true);
+  });
+
+  it("--validate-json without --json exits 2 with a helpful error", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--validate-json"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("--validate-json requires --json");
   });
 });

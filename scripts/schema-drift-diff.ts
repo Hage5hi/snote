@@ -26,6 +26,47 @@ import {
 
 export type DiffOpts = FilterOpts & { max?: number; failSlugs?: string[] };
 
+const ALL_KINDS: Kind[] = ["missing", "mistyped", "extra", "parseError"];
+
+/**
+ * Compile a filter pattern to a predicate. Supported forms:
+ *   - `/regex/flags` — anchored RegExp (use `.*` explicitly for partial)
+ *   - contains `*` or `?` — glob (e.g. `fail-chromium-*`)
+ *   - anything else — exact string match
+ */
+export function compileMatcher(pattern: string): (v: string) => boolean {
+  const rx = /^\/(.+)\/([gimsuy]*)$/.exec(pattern);
+  if (rx) {
+    const re = new RegExp(rx[1], rx[2]);
+    return (v) => re.test(v);
+  }
+  if (/[*?]/.test(pattern)) {
+    const src =
+      "^" +
+      pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") +
+      "$";
+    const re = new RegExp(src);
+    return (v) => re.test(v);
+  }
+  return (v) => v === pattern;
+}
+
+function matchesAny(value: string, patterns: string[] | null): boolean {
+  if (!patterns) return true;
+  for (const p of patterns) if (compileMatcher(p)(value)) return true;
+  return false;
+}
+
+/** Expand kind patterns (`*`, `parse*`, `/^p/`) against ALL_KINDS. */
+export function expandKindPatterns(patterns: string[]): Kind[] {
+  const out = new Set<Kind>();
+  for (const p of patterns) {
+    const m = compileMatcher(p);
+    for (const k of ALL_KINDS) if (m(k)) out.add(k);
+  }
+  return [...out];
+}
+
 function fingerprint(f: FileEntry): string {
   return JSON.stringify({
     p: f.parseError ?? null,
@@ -90,8 +131,8 @@ export function computeDiff(before: Report, after: Report, opts: DiffOpts = {}):
   }
   for (const [k, f] of b) if (!a.has(k)) removed.push(f);
   matched.sort();
-  const slugs = opts.failSlugs && opts.failSlugs.length ? new Set(opts.failSlugs) : null;
-  const keepA = (x: { anchor: string }) => !slugs || slugs.has(x.anchor);
+  const slugs = opts.failSlugs && opts.failSlugs.length ? opts.failSlugs : null;
+  const keepA = (x: { anchor: string }) => matchesAny(x.anchor, slugs);
   const aList = added.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })).filter(keepA);
   const rList = removed.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })).filter(keepA);
   const cList = changed.map(({ before: bf, after: af }) => ({
@@ -105,7 +146,7 @@ export function computeDiff(before: Report, after: Report, opts: DiffOpts = {}):
     parseError: (bf.parseError ?? null) !== (af.parseError ?? null)
       ? { before: bf.parseError ?? null, after: af.parseError ?? null } : null,
   })).filter(keepA);
-  const matchedFiltered = slugs ? matched.filter((s) => slugs.has(s)) : matched;
+  const matchedFiltered = slugs ? matched.filter((s) => matchesAny(s, slugs)) : matched;
   return {
     totals: {
       before: { checked: before.totals.checked, invalid: before.totals.invalid },
@@ -166,26 +207,37 @@ export function renderDiffMarkdown(before: Report, after: Report, opts: DiffOpts
 // Exit codes:
 //   0 = success   2 = bad CLI usage   3 = report file missing / unreadable
 //   4 = report file is not valid JSON   5 = report file is missing required fields
-function loadReport(path: string, label: string): Report {
+function loadReport(path: string, label: string, jsonErrors = false): Report {
+  const fail = (code: number, kind: string, message: string, extra: Record<string, unknown> = {}, fix = "") => {
+    if (jsonErrors) {
+      process.stderr.write(
+        JSON.stringify({ error: kind, code, label, path, message, fix, ...extra }, null, 2) + "\n",
+      );
+    } else {
+      console.error(`error: ${message}` + (fix ? `\n  fix: ${fix}` : ""));
+    }
+    process.exit(code);
+  };
   let raw: string;
   try {
     raw = readFileSync(path, "utf8");
   } catch (e: any) {
-    console.error(
-      `error: cannot read ${label} report at "${path}": ${e?.code ?? e?.message ?? e}\n` +
-      `  fix: pass the path to a saved validation-report.json (see docs/schema-drift-ci-artifacts.md),\n` +
-      `       or download it: gh run download <run-id> -n schema-drift-fixture-validation`,
+    fail(
+      3, "report-unreadable",
+      `cannot read ${label} report at "${path}": ${e?.code ?? e?.message ?? e}`,
+      { errno: e?.code ?? null },
+      `pass the path to a saved validation-report.json, or download it: gh run download <run-id> -n schema-drift-fixture-validation`,
     );
-    process.exit(3);
   }
   let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
+  try { parsed = JSON.parse(raw!); }
   catch (e: any) {
-    console.error(
-      `error: ${label} report at "${path}" is not valid JSON: ${e?.message ?? e}\n` +
-      `  fix: regenerate with \`schema-drift-view.sh --validation-report <path>\``,
+    fail(
+      4, "report-invalid-json",
+      `${label} report at "${path}" is not valid JSON: ${e?.message ?? e}`,
+      {},
+      `regenerate with \`schema-drift-view.sh --validation-report <path>\``,
     );
-    process.exit(4);
   }
   const r = parsed as Partial<Report>;
   const problems: string[] = [];
@@ -198,33 +250,58 @@ function loadReport(path: string, label: string): Report {
   }
   if (!Array.isArray(r?.files)) problems.push("`files` (array) is missing");
   if (problems.length) {
-    const receivedKeys =
-      r && typeof r === "object" ? Object.keys(r as object) : [];
+    const receivedKeys = r && typeof r === "object" ? Object.keys(r as object) : [];
     const expected = ["strict", "totals", "files"] as const;
     const missingTop = expected.filter((k) => !receivedKeys.includes(k));
-    const checklist = expected
-      .map((k) => `    ${receivedKeys.includes(k) ? "[x]" : "[ ]"} ${k}`)
-      .join("\n");
-    console.error(
-      `error: ${label} report at "${path}" is missing required fields:\n` +
-      problems.map((p) => `  - ${p}`).join("\n") + "\n" +
-      `  received top-level keys: ${receivedKeys.length ? receivedKeys.join(", ") : "(none)"}\n` +
-      (missingTop.length ? `  missing top-level keys: ${missingTop.join(", ")}\n` : "") +
-      `  expected schema checklist:\n${checklist}\n` +
-      `  fix: this file must be the JSON produced by \`schema-drift-view.sh --validation-report\`.\n` +
-      `       Expected shape: { strict: boolean, totals: { checked, ok, invalid }, files: [...] }`,
-    );
+    const checklist = expected.map((k) => ({ key: k, present: receivedKeys.includes(k) }));
+    if (jsonErrors) {
+      process.stderr.write(
+        JSON.stringify(
+          {
+            error: "report-missing-fields",
+            code: 5, label, path,
+            message: `${label} report at "${path}" is missing required fields`,
+            problems,
+            receivedTopLevelKeys: receivedKeys,
+            missingTopLevelKeys: missingTop,
+            expectedChecklist: checklist,
+            expectedShape: "{ strict: boolean, totals: { checked, ok, invalid }, files: [...] }",
+            fix: "this file must be the JSON produced by `schema-drift-view.sh --validation-report`",
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    } else {
+      const clText = expected
+        .map((k) => `    ${receivedKeys.includes(k) ? "[x]" : "[ ]"} ${k}`)
+        .join("\n");
+      console.error(
+        `error: ${label} report at "${path}" is missing required fields:\n` +
+          problems.map((p) => `  - ${p}`).join("\n") + "\n" +
+          `  received top-level keys: ${receivedKeys.length ? receivedKeys.join(", ") : "(none)"}\n` +
+          (missingTop.length ? `  missing top-level keys: ${missingTop.join(", ")}\n` : "") +
+          `  expected schema checklist:\n${clText}\n` +
+          `  fix: this file must be the JSON produced by \`schema-drift-view.sh --validation-report\`.\n` +
+          `       Expected shape: { strict: boolean, totals: { checked, ok, invalid }, files: [...] }`,
+      );
+    }
     process.exit(5);
   }
   return r as Report;
 }
 
-function parseArgs(argv: string[]): { before: string; after: string; out: string; markdown: boolean; json: boolean; dryRun: boolean; opts: DiffOpts } {
+function parseArgs(argv: string[]): {
+  before: string; after: string; out: string; jsonOut: string;
+  markdown: boolean; json: boolean; dryRun: boolean; validateJson: boolean;
+  opts: DiffOpts;
+} {
   const opts: DiffOpts = {};
   const positional: string[] = [];
-  const kinds: Kind[] = [];
+  const kindPatterns: string[] = [];
   const failSlugs: string[] = [];
-  let out = ""; let markdown = false; let json = false; let dryRun = false;
+  let out = ""; let jsonOut = "";
+  let markdown = false; let json = false; let dryRun = false; let validateJson = false;
   const need = (i: number, name: string) => {
     const v = argv[i + 1];
     if (v === undefined) { console.error(`error: missing value for ${name}`); process.exit(2); }
@@ -234,19 +311,30 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     const a = argv[i];
     if (a === "--browser") { opts.browser = need(i, "--browser"); i++; }
     else if (a === "--path") { opts.path = need(i, "--path"); i++; }
-    else if (a === "--kind") { kinds.push(need(i, "--kind") as Kind); i++; }
+    else if (a === "--kind") { kindPatterns.push(...need(i, "--kind").split(",")); i++; }
+    else if (a.startsWith("--kind=")) kindPatterns.push(...a.slice(7).split(","));
     else if (a === "--max") { opts.max = parseInt(need(i, "--max"), 10); i++; }
     else if (a === "--out") { out = need(i, "--out"); i++; }
     else if (a.startsWith("--out=")) out = a.slice(6);
+    else if (a === "--json-out") { jsonOut = need(i, "--json-out"); i++; }
+    else if (a.startsWith("--json-out=")) jsonOut = a.slice(11);
     else if (a === "--markdown") markdown = true;
     else if (a === "--json") json = true;
+    else if (a === "--validate-json") validateJson = true;
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--fail-slug") { failSlugs.push(...need(i, "--fail-slug").split(",")); i++; }
     else if (a.startsWith("--fail-slug=")) failSlugs.push(...a.slice(12).split(","));
     else if (a.startsWith("--")) { console.error(`error: unknown arg: ${a}`); process.exit(2); }
     else positional.push(a);
   }
-  if (kinds.length) opts.kind = kinds;
+  if (kindPatterns.length) {
+    const expanded = expandKindPatterns(kindPatterns.map((p) => p.trim()).filter(Boolean));
+    if (!expanded.length) {
+      console.error(`error: --kind pattern(s) matched no known kinds (${ALL_KINDS.join("|")}): ${kindPatterns.join(", ")}`);
+      process.exit(2);
+    }
+    opts.kind = expanded;
+  }
   if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.trim().replace(/^#/, "")).filter(Boolean);
   if (positional.length !== 2) {
     console.error("Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> [flags]");
@@ -256,7 +344,18 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     console.error("error: --json and --markdown are mutually exclusive");
     process.exit(2);
   }
-  return { before: positional[0], after: positional[1], out, markdown, json, dryRun, opts };
+  if (jsonOut) json = true;
+  return { before: positional[0], after: positional[1], out, jsonOut, markdown, json, dryRun, validateJson, opts };
+}
+
+function validateJsonPayload(payload: unknown, schemaPath: string): { ok: true } | { ok: false; errors: unknown } {
+  const AjvMod = require("ajv");
+  const Ajv = AjvMod.default ?? AjvMod;
+  const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+  const ajv = new Ajv({ allErrors: true });
+  const validate = ajv.compile(schema);
+  const ok = validate(payload) as boolean;
+  return ok ? { ok: true } : { ok: false, errors: validate.errors };
 }
 
 function main() {
@@ -264,24 +363,52 @@ function main() {
   if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
     console.error(
       "Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> " +
-        "[--browser <name>] [--path <substr>] [--kind ...] [--max <n>] " +
-        "[--out <path>] [--markdown] [--json] [--dry-run]",
+        "[--browser <name>] [--path <substr>] [--kind <pat>] [--fail-slug <pat>] " +
+        "[--max <n>] [--out <path>] [--json-out <path>] [--markdown] [--json] " +
+        "[--validate-json] [--dry-run]\n" +
+        "\n" +
+        "  --kind / --fail-slug accept exact values, `*`/`?` globs, or `/regex/`.\n" +
+        "  --json-out writes the --json payload to <path> (implies --json).\n" +
+        "  --validate-json checks the JSON output against schemas/schema-drift-diff.schema.json.",
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const { before, after, out, markdown, json, dryRun, opts } = parseArgs(args);
-  const b = loadReport(before, "before");
-  const a = loadReport(after, "after");
+  const { before, after, out, jsonOut, markdown, json, dryRun, validateJson, opts } = parseArgs(args);
+  const b = loadReport(before, "before", json);
+  const a = loadReport(after, "after", json);
   const wantMd = markdown || (out && out.endsWith(".md"));
+  const payload = json ? computeDiff(b, a, opts) : null;
   const body = json
-    ? JSON.stringify(computeDiff(b, a, opts), null, 2) + "\n"
+    ? JSON.stringify(payload, null, 2) + "\n"
     : wantMd ? renderDiffMarkdown(b, a, opts) : renderDiff(b, a, opts);
+
+  if (validateJson) {
+    if (!json) {
+      console.error("error: --validate-json requires --json (or --json-out)");
+      process.exit(2);
+    }
+    const schemaPath = resolve(__dirname, "../schemas/schema-drift-diff.schema.json");
+    const result = validateJsonPayload(payload, schemaPath);
+    if (!result.ok) {
+      console.error(
+        `error: --json output does not match ${schemaPath}:\n` +
+          JSON.stringify(result.errors, null, 2),
+      );
+      process.exit(6);
+    }
+    process.stderr.write(`validate-json: OK (${schemaPath})\n`);
+  }
+
   if (dryRun) {
-    process.stderr.write(`dry-run: would write ${out || "<stdout>"} (${body.length} bytes)\n`);
+    process.stderr.write(`dry-run: would write ${out || jsonOut || "<stdout>"} (${body.length} bytes)\n`);
     process.stdout.write(body);
     return;
   }
-  if (out) {
+  if (jsonOut) {
+    mkdirSync(dirname(resolve(jsonOut)), { recursive: true });
+    writeFileSync(jsonOut, body);
+    console.error(`schema-drift diff (json): ${jsonOut}`);
+  } else if (out) {
     mkdirSync(dirname(resolve(out)), { recursive: true });
     writeFileSync(out, body);
     console.error(`schema-drift diff: ${out}`);
