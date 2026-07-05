@@ -72,3 +72,41 @@ Additional guarantees that tests may rely on:
 4. Stale sibling `<dest>.<otherpid>.tmp` files whose pid is no longer alive
    are best-effort removed on the next successful write. Tmp files whose pid
    is still alive are left untouched so concurrent writers do not race.
+
+## Running the nightly parallel `--json-out` stress test locally
+
+The `schema-drift-diff-stress-nightly` CI job (see `.github/workflows/ci.yml`)
+loops the parallel-writer / concurrency suites to surface race conditions in
+the atomic rename and stale-`.tmp` cleanup paths. To reproduce it locally:
+
+```bash
+# One iteration — same filter CI uses.
+bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+  -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink" \
+  --reporter=verbose
+
+# N iterations back-to-back (default in CI = 5). Bump this if you are
+# hunting a flake that only reproduces every ~50 runs.
+ITERS="${SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS:-25}"
+for i in $(seq 1 "$ITERS"); do
+  echo "=== stress iteration $i / $ITERS ==="
+  bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+    -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink" \
+    --reporter=verbose || break
+done
+```
+
+Tuning knobs:
+
+- `SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS` — how many times the whole suite is
+  re-run in a row. CI defaults to `5` (overridable via the repo variable of
+  the same name). Locally, `25`–`100` is a good range when reproducing a
+  suspected race.
+- The parallel-writer count inside the `stress + read-only + stderr wording`
+  suite is fixed (6 writers) so the assertions stay deterministic. Increase
+  it in the test itself only when hunting a specific rename-race regression,
+  and revert before landing.
+- To capture leftover `.tmp` siblings after a failed run, look under the OS
+  temp dir (`$TMPDIR` on macOS/Linux, `%TEMP%` on Windows) for
+  `schema-drift-report-*/…*.<pid>.tmp` — the same files CI uploads via the
+  `schema-drift-diff-stress-debug-*` artifact on failure.
