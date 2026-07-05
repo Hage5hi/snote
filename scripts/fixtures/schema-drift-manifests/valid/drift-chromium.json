@@ -1,0 +1,18 @@
+{
+  "browser": "chromium",
+  "browsers": ["chromium"],
+  "combined": false,
+  "generatedAt": "2026-01-01T00:00:00Z",
+  "type": "all",
+  "viewer": "cat",
+  "resolvedViewerCommand": "cat < <base>.diff",
+  "matches": [],
+  "excludes": [],
+  "expected": [
+    "focus-trap-inspect-report.schema.json",
+    "focus-trap-inspect-diff.schema.json",
+    "focus-trap-inspect-schema.types.gen.ts"
+  ],
+  "matched": [],
+  "requiredArtifacts": ["live-region-trace.zip", "live-region-failure.png"]
+}

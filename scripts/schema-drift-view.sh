@@ -56,7 +56,13 @@ Flags:
   --validation-report <path>     Write a machine-readable JSON report of every
                                  checked file with { missing, mistyped, extra,
                                  parseError, ok } — useful for CI to consume.
+  --require-valid                Run --validate-manifest (or --strict-manifest)
+                                 FIRST; only proceed to diff/viewer output if
+                                 validation succeeds. Skips diff/viewer with a
+                                 non-zero exit on any validation failure.
+                                 Default in CI (SCHEMA_DRIFT_REQUIRE_VALID=1).
   -h, --help                     Show this help.
+
 
 Env:
   OUT                            Drift bundle directory. Default: _schema_drift
@@ -103,7 +109,10 @@ REQUIRED_ARTIFACTS=()   # expected CI artifact filenames per browser
 VALIDATE_MANIFEST=0
 STRICT_MANIFEST=0
 VALIDATION_REPORT=""
+# Default-on in CI so any drift/viewer step is gated on strict validation.
+REQUIRE_VALID="${SCHEMA_DRIFT_REQUIRE_VALID:-0}"
 MATCHED_BASES=()    # populated by show() as it visits each base
+
 
 add_to() {
   # $1 = nameref array, $2 = comma-list
@@ -139,6 +148,8 @@ while [ $# -gt 0 ]; do
     --strict-manifest)   STRICT_MANIFEST=1; VALIDATE_MANIFEST=1; shift ;;
     --validation-report)   VALIDATION_REPORT="${2:-}"; shift 2 ;;
     --validation-report=*) VALIDATION_REPORT="${1#*=}"; shift ;;
+    --require-valid)       REQUIRE_VALID=1; shift ;;
+
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
@@ -257,8 +268,22 @@ if [ "$VALIDATE_MANIFEST" = "1" ]; then
       process.exit(1);
     }
   '
-  exit $?
+  rc=$?
+  # --require-valid + validation passing ⇒ fall through to diff/viewer.
+  # Otherwise (default), preserve the original short-circuit behavior.
+  if [ "$REQUIRE_VALID" = "1" ] && [ "$rc" = "0" ]; then
+    vlog "validation passed — proceeding to diff/viewer (--require-valid)"
+  else
+    exit $rc
+  fi
 fi
+
+# --require-valid without --validate-manifest/--strict-manifest is a no-op
+# guard: warn and continue (matches CI's "always try to validate" default).
+if [ "$REQUIRE_VALID" = "1" ] && [ "$VALIDATE_MANIFEST" = "0" ]; then
+  echo "--require-valid set but neither --validate-manifest nor --strict-manifest given; skipping gate" >&2
+fi
+
 
 # --dry-run must work without a bundle on disk so it's usable as a
 # planning/preview step and in unit tests. All other modes require OUT.
