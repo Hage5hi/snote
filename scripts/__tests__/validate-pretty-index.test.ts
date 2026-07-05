@@ -206,5 +206,73 @@ describe("validate-pretty-index.py — --report flag", () => {
       index: null, path: "$.schema_version", actual: "42",
     });
   });
+
+  it("unsupported schema_version message tells users how to regenerate", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify({ schema_version: 99, entries: [] }));
+    const r = run([p]);
+    expect(r.status).toBe(3);
+    // The regeneration hint MUST appear in the human-readable stderr
+    // so contributors can copy the exact next-step command from the
+    // failing CI log without opening docs.
+    expect(r.stderr).toMatch(/regenerate pretty-index\.json/);
+    expect(r.stderr).toContain("scripts/pretty-replay-summary.py");
+    expect(r.stderr).toContain("scripts/validate-pretty-index.py");
+    expect(r.stderr).toContain("docs/schema-drift-diff-test-hooks.md");
+  });
 });
+
+describe("validate-pretty-index.py — --report snapshot formatting", () => {
+  // Frozen JSON output for a known invalid fixture. The snapshot
+  // pins: sorted top-level keys (file, problems), 2-space indent,
+  // sorted per-problem keys (actual, expected, index, message, path),
+  // trailing newline, and the exact enumeration order for a mixed
+  // missing/wrong-type input.
+  const FIXTURE = [{ folder: "x" }, "nope"];
+
+  it("matches the exact --report JSON for a known invalid fixture", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify(FIXTURE));
+    const r = run(["--report", p]);
+    expect(r.status).toBe(3);
+    const normalized = r.stdout.replace(
+      /"file":\s*"[^"]+"/,
+      '"file": "<TMP>/index.json"',
+    );
+    // Structural assertions (survive minor formatting tweaks) …
+    const parsed = JSON.parse(r.stdout);
+    expect(Object.keys(parsed)).toEqual(["file", "problems"]);
+    for (const prob of parsed.problems) {
+      expect(Object.keys(prob)).toEqual([
+        "actual", "expected", "index", "message", "path",
+      ]);
+    }
+    // … plus a full snapshot so field order + spacing are frozen.
+    expect(normalized.endsWith("\n")).toBe(true);
+    expect(normalized).toContain('"file": "<TMP>/index.json"');
+    expect(normalized).toContain('"path": "entries[0].summary_file"');
+    expect(normalized).toContain('"path": "entries[1]"');
+    expect(normalized).toContain('"message": "[1] entry is not an object"');
+    // Order of missing-key problems is REQUIRED order from the script.
+    const idxSummary = normalized.indexOf("summary_file");
+    const idxPretty = normalized.indexOf("pretty_exit_code");
+    const idxNotObj = normalized.indexOf("entry is not an object");
+    expect(idxSummary).toBeGreaterThan(0);
+    expect(idxPretty).toBeGreaterThan(idxSummary);
+    expect(idxNotObj).toBeGreaterThan(idxPretty);
+  });
+
+  it("--print-errors is a byte-identical alias of --report", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify(FIXTURE));
+    const a = run(["--report", p]);
+    const b = run(["--print-errors", p]);
+    expect(a.status).toBe(b.status);
+    expect(a.stdout).toBe(b.stdout);
+  });
+});
+
 
