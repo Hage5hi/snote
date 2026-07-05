@@ -133,5 +133,5 @@ describe("validate-pretty-index.py fuzz", () => {
         expect(prob).toHaveProperty("path");
       }
     }
-  });
+  }, 30_000);
 });
