@@ -760,5 +760,29 @@ describe("schema-drift-diff: --json-out atomic write failure modes", () => {
     } finally {
       require("node:fs").chmodSync(roDir, 0o700);
     }
+
+  it("exit 7 when the temporary `<path>.<pid>.tmp` file cannot be created", () => {
+    // Parent dir exists but is read-only, so writing the sibling .tmp fails.
+    // This exercises the atomic-write tmp-file creation branch (distinct
+    // from the "parent path blocked by a regular file" test above).
+    if (typeof process.getuid === "function" && process.getuid() === 0) return;
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const roDir = join(dir, "ro-parent");
+    require("node:fs").mkdirSync(roDir);
+    require("node:fs").chmodSync(roDir, 0o500);
+    try {
+      const jsonOut = join(roDir, "diff.json");
+      const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+      expect(code).toBe(7);
+      expect(stderr).toContain("cannot write json-out");
+      expect(stderr).toContain(jsonOut);
+      expect(stderr).toMatch(/EACCES|EPERM/);
+      // destination is NOT created and no `.tmp` sibling is left behind
+      const listing = require("node:fs").readdirSync(roDir);
+      expect(listing).toEqual([]);
+    } finally {
+      require("node:fs").chmodSync(roDir, 0o700);
+    }
   });
 });
