@@ -372,6 +372,92 @@ describe("scripts/schema-drift-view.sh", () => {
         expect(stdout).not.toMatch(/MATCH\s+focus-trap-inspect/);
         expect(stderr).not.toMatch(/INVALID/);
       });
+
+
+
+      it("fails on an invalid combined-manifest (missing keys) and labels it [combined]", () => {
+        const dir = mkdtempSync(join(tmpdir(), "sdv-validate-combined-"));
+        // A per-browser file is fine; the COMBINED one is broken. Verifies
+        // that combined manifests are validated distinctly + labeled, and
+        // that failure short-circuits BEFORE any diff/viewer step runs.
+        writeManifest(dir, "drift-chromium.json", FULL);
+        const { expected: _e, requiredArtifacts: _r, ...brokenCombined } = {
+          ...FULL, combined: true, browser: "combined",
+          browsers: ["chromium", "firefox"],
+        };
+        writeManifest(dir, "drift-combined.json", brokenCombined);
+        const { code, stderr, stdout } = run([
+          "--manifest-dir", dir,
+          "--manifest-prefix", "drift",
+          "--validate-manifest",
+        ]);
+        expect(code).toBe(1);
+        expect(stderr).toMatch(/INVALID .*drift-combined\.json .*\[combined\]/);
+        expect(stderr).toMatch(/missing:.*expected/);
+        expect(stderr).toMatch(/missing:.*requiredArtifacts/);
+        expect(stderr).toMatch(/1\/2 manifest\(s\) failed/);
+        // No diff/viewer output.
+        expect(stdout).not.toMatch(/MATCH\s+focus-trap-inspect/);
+      });
+
+      it("fails on malformed JSON with a clear parse error", () => {
+        const dir = mkdtempSync(join(tmpdir(), "sdv-validate-json-"));
+        writeFileSync(join(dir, "drift-chromium.json"), "{not json");
+        const { code, stderr } = run([
+          "--manifest-dir", dir,
+          "--manifest-prefix", "drift",
+          "--validate-manifest",
+        ]);
+        expect(code).toBe(1);
+        expect(stderr).toMatch(/INVALID .*drift-chromium\.json — malformed JSON/);
+      });
+    });
+
+    describe("--strict-manifest", () => {
+      const writeManifest = (dir: string, name: string, body: object) =>
+        writeFileSync(join(dir, name), JSON.stringify(body, null, 2));
+
+      const FULL = {
+        browser: "chromium",
+        browsers: ["chromium"],
+        combined: false,
+        generatedAt: "2026-07-05T06:30:52Z",
+        type: "all",
+        viewer: "cat",
+        resolvedViewerCommand: "pretty(cat) < <base>.diff",
+        matches: [],
+        excludes: [],
+        expected: [],
+        matched: [],
+        requiredArtifacts: [],
+      };
+
+      it("fails on extra unknown top-level keys (non-strict tolerates them)", () => {
+        const dir = mkdtempSync(join(tmpdir(), "sdv-strict-extra-"));
+        writeManifest(dir, "drift-chromium.json", { ...FULL, unknownField: 1, another: "x" });
+        // Non-strict passes.
+        const lax = run(["--manifest-dir", dir, "--manifest-prefix", "drift", "--validate-manifest"]);
+        expect(lax.code).toBe(0);
+        // Strict fails and lists the extra keys.
+        const strict = run(["--manifest-dir", dir, "--manifest-prefix", "drift", "--strict-manifest"]);
+        expect(strict.code).toBe(1);
+        expect(strict.stderr).toMatch(/extra:.*unknownField/);
+        expect(strict.stderr).toMatch(/extra:.*another/);
+        expect(strict.stderr).toMatch(/strict=true/);
+      });
+
+      it("fails on type mismatches (e.g., combined must be boolean, matches must be string[])", () => {
+        const dir = mkdtempSync(join(tmpdir(), "sdv-strict-types-"));
+        writeManifest(dir, "drift-chromium.json", {
+          ...FULL, combined: "false", matches: [1, 2, 3],
+        });
+        const { code, stderr } = run([
+          "--manifest-dir", dir, "--manifest-prefix", "drift", "--strict-manifest",
+        ]);
+        expect(code).toBe(1);
+        expect(stderr).toMatch(/mistyped:.*combined \(expected boolean, got string\)/);
+        expect(stderr).toMatch(/mistyped:.*matches \(expected string\[\], got array\)/);
+      });
     });
   });
 });

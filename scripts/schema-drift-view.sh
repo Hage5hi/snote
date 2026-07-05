@@ -46,6 +46,10 @@ Flags:
                                  <prefix>-*.json in --manifest-dir for the required
                                  top-level keys and exit non-zero on any missing
                                  key. Requires --manifest-dir.
+  --strict-manifest              Like --validate-manifest, but ALSO fails on any
+                                 extra unknown top-level keys or on any key whose
+                                 value has the wrong type (e.g., matches must be
+                                 string[], combined must be boolean).
   -h, --help                     Show this help.
 
 Env:
@@ -91,6 +95,7 @@ MANIFEST_PREFIX="schema-drift-manifest"
 COMBINED_MANIFEST=0
 REQUIRED_ARTIFACTS=()   # expected CI artifact filenames per browser
 VALIDATE_MANIFEST=0
+STRICT_MANIFEST=0
 MATCHED_BASES=()    # populated by show() as it visits each base
 
 add_to() {
@@ -124,6 +129,7 @@ while [ $# -gt 0 ]; do
     --require)    add_to REQUIRED_ARTIFACTS "${2:-}"; shift 2 ;;
     --require=*)  add_to REQUIRED_ARTIFACTS "${1#*=}"; shift ;;
     --validate-manifest) VALIDATE_MANIFEST=1; shift ;;
+    --strict-manifest)   STRICT_MANIFEST=1; VALIDATE_MANIFEST=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
@@ -133,10 +139,11 @@ done
 [ "$FILTER" = "type" ]   && FILTER="types"
 
 vlog() { [ "$VERBOSE" = "1" ] && echo "[verbose] $*" >&2 || true; }
-
 # --validate-manifest short-circuits the whole pipeline: verify every
-# <prefix>-*.json under --manifest-dir has the required top-level keys,
-# print a summary, and exit BEFORE any diff/viewer step runs.
+# <prefix>-*.json under --manifest-dir has the required top-level keys
+# (and correct value types under --strict-manifest), print a per-file
+# report of missing/extra/mistyped keys, and exit BEFORE any diff/viewer
+# step runs.
 if [ "$VALIDATE_MANIFEST" = "1" ]; then
   if [ -z "$MANIFEST_DIR" ]; then
     echo "--validate-manifest requires --manifest-dir <dir>" >&2; exit 2
@@ -144,29 +151,65 @@ if [ "$VALIDATE_MANIFEST" = "1" ]; then
   if [ ! -d "$MANIFEST_DIR" ]; then
     echo "--validate-manifest: no such dir: $MANIFEST_DIR" >&2; exit 1
   fi
-  REQUIRED_KEYS=(browser browsers combined generatedAt type viewer \
-    resolvedViewerCommand matches excludes expected matched requiredArtifacts)
-  bad=0; count=0
-  shopt -s nullglob
-  for f in "$MANIFEST_DIR/${MANIFEST_PREFIX}"-*.json; do
-    count=$((count+1))
-    missing=()
-    for k in "${REQUIRED_KEYS[@]}"; do
-      grep -q "\"$k\"[[:space:]]*:" "$f" || missing+=("$k")
-    done
-    if [ "${#missing[@]}" -gt 0 ]; then
-      echo "INVALID $f — missing keys: ${missing[*]}" >&2
-      bad=$((bad+1))
-    else
-      echo "OK      $f"
-    fi
-  done
-  shopt -u nullglob
-  if [ "$count" = "0" ]; then
-    echo "--validate-manifest: no manifests matched ${MANIFEST_PREFIX}-*.json in $MANIFEST_DIR" >&2
-    exit 1
-  fi
-  [ "$bad" -gt 0 ] && exit 1 || exit 0
+  MANIFEST_DIR="$MANIFEST_DIR" MANIFEST_PREFIX="$MANIFEST_PREFIX" \
+    STRICT="$STRICT_MANIFEST" node -e '
+    const fs=require("fs"),path=require("path");
+    const dir=process.env.MANIFEST_DIR, pref=process.env.MANIFEST_PREFIX;
+    const strict=process.env.STRICT==="1";
+    // name → expected JS type ("string"|"boolean"|"string[]")
+    const SCHEMA={
+      browser:"string", browsers:"string[]", combined:"boolean",
+      generatedAt:"string", type:"string", viewer:"string",
+      resolvedViewerCommand:"string", matches:"string[]", excludes:"string[]",
+      expected:"string[]", matched:"string[]", requiredArtifacts:"string[]",
+    };
+    const KNOWN=new Set(Object.keys(SCHEMA));
+    const typeOf=v=>Array.isArray(v)
+      ? (v.every(x=>typeof x==="string")?"string[]":"array")
+      : typeof v;
+    const files=fs.readdirSync(dir)
+      .filter(f=>f.startsWith(pref+"-")&&f.endsWith(".json"))
+      .sort();
+    if (files.length===0) {
+      console.error(`--validate-manifest: no manifests matched ${pref}-*.json in ${dir}`);
+      process.exit(1);
+    }
+    let bad=0;
+    for (const f of files) {
+      const p=path.join(dir,f);
+      let doc;
+      try { doc=JSON.parse(fs.readFileSync(p,"utf8")); }
+      catch (e) {
+        console.error(`INVALID ${p} — malformed JSON: ${e.message}`);
+        bad++; continue;
+      }
+      const missing=[], mistyped=[], extra=[];
+      for (const [k,t] of Object.entries(SCHEMA)) {
+        if (!(k in doc)) { missing.push(k); continue; }
+        const got=typeOf(doc[k]);
+        if (got!==t) mistyped.push(`${k} (expected ${t}, got ${got})`);
+      }
+      if (strict) for (const k of Object.keys(doc)) if (!KNOWN.has(k)) extra.push(k);
+      const problems=[];
+      if (missing.length)  problems.push(`missing: ${missing.join(", ")}`);
+      if (mistyped.length) problems.push(`mistyped: ${mistyped.join(", ")}`);
+      if (extra.length)    problems.push(`extra: ${extra.join(", ")}`);
+      // Combined manifests get an explicit label in the report so failures
+      // in the aggregate file are obvious vs per-browser regressions.
+      const label=doc.combined===true ? "[combined] " : `[browser=${doc.browser||"?"}] `;
+      if (problems.length) {
+        console.error(`INVALID ${p} ${label}— ${problems.join(" | ")}`);
+        bad++;
+      } else {
+        console.log(`OK      ${p} ${label}`);
+      }
+    }
+    if (bad>0) {
+      console.error(`--validate-manifest: ${bad}/${files.length} manifest(s) failed (strict=${strict})`);
+      process.exit(1);
+    }
+  '
+  exit $?
 fi
 
 # --dry-run must work without a bundle on disk so it's usable as a

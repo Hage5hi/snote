@@ -301,8 +301,18 @@ bun run schema-guard:view -- \
 # --validate-manifest re-reads every <prefix>-*.json in --manifest-dir
 # and asserts the required top-level keys (browser, browsers, combined,
 # generatedAt, type, viewer, resolvedViewerCommand, matches, excludes,
-# expected, matched, requiredArtifacts). No diff/viewer runs.
+# expected, matched, requiredArtifacts). No diff/viewer runs. Failures
+# are printed per-file with a `[combined]` or `[browser=<name>]` label
+# and a `missing: ...` / `mistyped: ...` list.
 bun run schema-guard:view -- --manifest-dir reports/_ci --manifest-prefix drift --validate-manifest
+
+# --strict-manifest is --validate-manifest + rejects any EXTRA unknown
+# top-level keys AND any value whose type doesn't match the schema
+# (e.g., `combined` must be boolean, `matches` must be string[]). Use
+# this in CI to catch drift in the emitter itself. Example failure:
+#   INVALID drift-chromium.json [browser=chromium] — extra: unknownField \
+#     | mistyped: combined (expected boolean, got string)
+bun run schema-guard:view -- --manifest-dir reports/_ci --manifest-prefix drift --strict-manifest
 ```
 
 ### CI expected artifact filenames (per browser)
