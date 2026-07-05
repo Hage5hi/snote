@@ -237,7 +237,7 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     else positional.push(a);
   }
   if (kinds.length) opts.kind = kinds;
-  if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.replace(/^#/, ""));
+  if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.trim().replace(/^#/, "")).filter(Boolean);
   if (positional.length !== 2) {
     console.error("Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> [flags]");
     process.exit(2);
