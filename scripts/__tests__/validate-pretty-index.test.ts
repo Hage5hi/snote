@@ -128,3 +128,83 @@ describe("validate-pretty-index.py", () => {
     expect(r.stderr).toContain("[2] entry is not an object");
   });
 });
+
+describe("validate-pretty-index.py — versioned envelope", () => {
+  it("accepts {schema_version:1, entries:[...]}", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify({ schema_version: 1, entries: [validEntry()] }));
+    expect(run([p]).status).toBe(0);
+  });
+
+  it("exit 3 on unsupported schema_version with clear message", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify({ schema_version: 99, entries: [] }));
+    const r = run([p]);
+    expect(r.status).toBe(3);
+    expect(r.stderr).toMatch(/unsupported schema_version=99/);
+  });
+
+  it("exit 3 when versioned envelope is missing schema_version or entries", () => {
+    const dir = workdir();
+    const missingVer = join(dir, "a.json");
+    writeFileSync(missingVer, JSON.stringify({ entries: [] }));
+    const r1 = run([missingVer]);
+    expect(r1.status).toBe(3);
+    expect(r1.stderr).toMatch(/missing schema_version/);
+
+    const missingEntries = join(dir, "b.json");
+    writeFileSync(missingEntries, JSON.stringify({ schema_version: 1 }));
+    const r2 = run([missingEntries]);
+    expect(r2.status).toBe(3);
+    expect(r2.stderr).toMatch(/entries must be an array/);
+  });
+});
+
+describe("validate-pretty-index.py — --report flag", () => {
+  it("prints a structured JSON report on success (problems: [])", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify([validEntry()]));
+    const r = run(["--report", p]);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.problems).toEqual([]);
+    expect(parsed.file).toBe(p);
+  });
+
+  it("emits path + expected + actual for each failure", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify([
+      validEntry({ exit_code: "0" }),
+      validEntry({ pretty_txt: 42 }),
+    ]));
+    const r = run(["--print-errors", p]);
+    expect(r.status).toBe(3);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.problems).toHaveLength(2);
+    expect(parsed.problems[0]).toMatchObject({
+      index: 0, path: "entries[0].exit_code",
+      expected: "int|null", actual: "str",
+    });
+    expect(parsed.problems[1]).toMatchObject({
+      index: 1, path: "entries[1].pretty_txt",
+      expected: "string", actual: "int",
+    });
+  });
+
+  it("emits envelope-level problem for unsupported schema_version", () => {
+    const dir = workdir();
+    const p = join(dir, "index.json");
+    writeFileSync(p, JSON.stringify({ schema_version: 42, entries: [] }));
+    const r = run(["--report", p]);
+    expect(r.status).toBe(3);
+    const parsed = JSON.parse(r.stdout);
+    expect(parsed.problems[0]).toMatchObject({
+      index: null, path: "$.schema_version", actual: "42",
+    });
+  });
+});
+
