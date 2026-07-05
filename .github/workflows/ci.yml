@@ -847,7 +847,11 @@ print(json.dumps({
           echo '[' > "$index"
           first=1
           hard_fail=0
-          for f in artifacts/schema-drift-diff-replay/*/replay-summary.json; do
+          count=0
+          for f in $(printf '%s\n' artifacts/schema-drift-diff-replay/*/replay-summary.json | LC_ALL=C sort); do
+            [[ -f "$f" ]] || continue
+            count=$((count + 1))
+
             base="$(basename "$(dirname "$f")")"
             reason="$(python3 -c "import json,sys
 try:
