@@ -106,7 +106,7 @@ if ($rc -ne 0) {
 ### ❌ pretty-index.json CI check failed (exit $rc)
 
 Failure diagnostics (would be uploaded as artifact
-`schema-drift-diff-replay-pretty-index-failure-windows`):
+`$artifactPrefix-windows`):
 
 - ``$Index``
 - ``$pre`` — raw generator output before ``--auto-migrate``
