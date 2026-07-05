@@ -247,6 +247,68 @@ describe("scripts/schema-drift-view.sh", () => {
       ]);
       expect(m.matched).toEqual(["focus-trap-inspect-report.schema.json"]);
     });
+
+    describe("manifest JSON schema (regression guard)", () => {
+      const REQUIRED_KEYS = [
+        "browser",
+        "browsers",
+        "combined",
+        "generatedAt",
+        "type",
+        "viewer",
+        "resolvedViewerCommand",
+        "matches",
+        "excludes",
+        "expected",
+        "matched",
+      ] as const;
+
+      const assertShape = (m: Record<string, unknown>) => {
+        for (const k of REQUIRED_KEYS) expect(m, `missing key: ${k}`).toHaveProperty(k);
+        expect(typeof m.browser).toBe("string");
+        expect(Array.isArray(m.browsers)).toBe(true);
+        expect(typeof m.combined).toBe("boolean");
+        expect(m.generatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+        expect(["all", "types", "schemas"]).toContain(m.type as string);
+        expect(["auto", "diff-y", "delta", "bat", "cat"]).toContain(m.viewer as string);
+        expect(typeof m.resolvedViewerCommand).toBe("string");
+        expect((m.resolvedViewerCommand as string).length).toBeGreaterThan(0);
+        for (const arrKey of ["matches", "excludes", "expected", "matched"] as const) {
+          expect(Array.isArray(m[arrKey])).toBe(true);
+          for (const v of m[arrKey] as unknown[]) expect(typeof v).toBe("string");
+        }
+      };
+
+      it("per-browser manifest has all required keys with correct types", () => {
+        const { dir } = withDir(["--browsers", "chromium,firefox"]);
+        for (const f of readdirSync(dir)) {
+          const m = JSON.parse(readFileSync(join(dir, f), "utf8"));
+          assertShape(m);
+          expect(m.combined).toBe(false);
+          expect(m.browsers).toHaveLength(1);
+        }
+      });
+
+      it("combined manifest has combined=true and lists every selected browser", () => {
+        const { dir } = withDir(["--browsers", "chromium,firefox,webkit", "--combined-manifest"]);
+        const combined = JSON.parse(
+          readFileSync(join(dir, "schema-drift-manifest-combined.json"), "utf8"),
+        );
+        assertShape(combined);
+        expect(combined.combined).toBe(true);
+        expect(combined.browser).toBe("combined");
+        expect(combined.browsers).toEqual(["chromium", "firefox", "webkit"]);
+      });
+
+      it("default (no --browsers) writes an <all> per-browser file with all keys", () => {
+        const { dir } = withDir([]);
+        const m = JSON.parse(readFileSync(join(dir, "schema-drift-manifest-all.json"), "utf8"));
+        assertShape(m);
+        expect(m.browser).toBe("<all>");
+        expect(m.combined).toBe(false);
+      });
+    });
   });
 });
+
 
