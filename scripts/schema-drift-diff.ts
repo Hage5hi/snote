@@ -290,56 +290,6 @@ function loadReport(path: string, label: string, jsonErrors = false): Report {
   }
   return r as Report;
 }
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (e: any) {
-    console.error(
-      `error: cannot read ${label} report at "${path}": ${e?.code ?? e?.message ?? e}\n` +
-      `  fix: pass the path to a saved validation-report.json (see docs/schema-drift-ci-artifacts.md),\n` +
-      `       or download it: gh run download <run-id> -n schema-drift-fixture-validation`,
-    );
-    process.exit(3);
-  }
-  let parsed: unknown;
-  try { parsed = JSON.parse(raw); }
-  catch (e: any) {
-    console.error(
-      `error: ${label} report at "${path}" is not valid JSON: ${e?.message ?? e}\n` +
-      `  fix: regenerate with \`schema-drift-view.sh --validation-report <path>\``,
-    );
-    process.exit(4);
-  }
-  const r = parsed as Partial<Report>;
-  const problems: string[] = [];
-  if (!r || typeof r !== "object") problems.push("root is not an object");
-  if (r && typeof (r as any).strict !== "boolean") problems.push("`strict` (boolean) is missing");
-  if (!r || typeof r.totals !== "object" || r.totals === null) problems.push("`totals` (object) is missing");
-  else {
-    for (const k of ["checked", "ok", "invalid"] as const)
-      if (typeof (r.totals as any)[k] !== "number") problems.push(`\`totals.${k}\` (number) is missing`);
-  }
-  if (!Array.isArray(r?.files)) problems.push("`files` (array) is missing");
-  if (problems.length) {
-    const receivedKeys =
-      r && typeof r === "object" ? Object.keys(r as object) : [];
-    const expected = ["strict", "totals", "files"] as const;
-    const missingTop = expected.filter((k) => !receivedKeys.includes(k));
-    const checklist = expected
-      .map((k) => `    ${receivedKeys.includes(k) ? "[x]" : "[ ]"} ${k}`)
-      .join("\n");
-    console.error(
-      `error: ${label} report at "${path}" is missing required fields:\n` +
-      problems.map((p) => `  - ${p}`).join("\n") + "\n" +
-      `  received top-level keys: ${receivedKeys.length ? receivedKeys.join(", ") : "(none)"}\n` +
-      (missingTop.length ? `  missing top-level keys: ${missingTop.join(", ")}\n` : "") +
-      `  expected schema checklist:\n${checklist}\n` +
-      `  fix: this file must be the JSON produced by \`schema-drift-view.sh --validation-report\`.\n` +
-      `       Expected shape: { strict: boolean, totals: { checked, ok, invalid }, files: [...] }`,
-    );
-    process.exit(5);
-  }
-  return r as Report;
-}
 
 function parseArgs(argv: string[]): { before: string; after: string; out: string; markdown: boolean; json: boolean; dryRun: boolean; opts: DiffOpts } {
   const opts: DiffOpts = {};
