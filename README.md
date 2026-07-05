@@ -207,6 +207,40 @@ coordinated 4-step update:
    bun run test:e2e e2e/focus-trap-html-report-a11y.spec.ts
    ```
 
+### Previewing drift locally with `schema-guard`
+
+Instead of waiting for the CI `schema-guard` workflow to reject a PR,
+you can preview the exact same regeneration + diff bundle locally. The
+local script uses the **same commands, artifact directory, and file
+list as CI** (`bun run schema:types` / `schema:types:check`, output
+under `_schema_drift/`), so the diffs you see match what CI would
+upload as the `schema-drift` artifact byte-for-byte.
+
+```sh
+bun run schema-guard              # dry-run: regen + print diffs, exits 0
+bun run schema-guard -- --strict  # parity with CI: exits 1 on drift
+bun run schema-guard:view         # side-by-side viewer for the diffs
+bun run schema-guard:view types   # just the .types.gen.ts diff
+bun run schema-guard:view schemas # just the two schema JSON diffs
+```
+
+Drift diffs are always written to **`_schema_drift/`** in the repo root:
+
+```
+_schema_drift/
+├── committed/                                 # snapshot of files pre-regen
+├── regenerated/                               # what `schema:types` produced
+├── focus-trap-inspect-report.schema.json.diff # unified diff (per file)
+├── focus-trap-inspect-diff.schema.json.diff
+├── focus-trap-inspect-schema.types.gen.ts.diff
+├── check.log                                  # raw `schema:types:check` output
+└── cli-schema-versions.txt                    # grep of SCHEMA_VERSION consts
+```
+
+The script restores your working tree before exiting, so a dry-run
+never leaves regenerated files staged. Fix drift with `bun run
+schema:types` and commit the regenerated files.
+
 See [`docs/focus-trap-debug.md`](docs/focus-trap-debug.md) for the full
 schema key reference and CLI flags.
 
