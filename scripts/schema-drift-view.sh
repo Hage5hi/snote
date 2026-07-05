@@ -29,6 +29,14 @@ Flags:
                                  that would run — no file reads, no bundle required.
   --verbose                      Trace matched files, the resolved viewer command per
                                  file, and echo executed subprocess output to stderr.
+  --manifest-dir <dir>           Write JSON manifests (one per browser) into <dir>.
+                                 Enables manifest emission. Default: disabled.
+  --manifest-prefix <str>        Filename prefix for manifests.
+                                 Per-browser: <prefix>-<browser>.json.
+                                 Combined:    <prefix>-combined.json.
+                                 Default: schema-drift-manifest
+  --combined-manifest            Also write a single combined manifest across all
+                                 selected browsers (requires --manifest-dir).
   -h, --help                     Show this help.
 
 Env:
