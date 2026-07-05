@@ -110,3 +110,54 @@ Tuning knobs:
   temp dir (`$TMPDIR` on macOS/Linux, `%TEMP%` on Windows) for
   `schema-drift-report-*/…*.<pid>.tmp` — the same files CI uploads via the
   `schema-drift-diff-stress-debug-*` artifact on failure.
+
+## Running the concurrent-reader, fuzz, and unsafe-symlink tests locally
+
+All three tests live in `scripts/__tests__/schema-drift-pr-comment.test.ts`
+under the describe block `--json-out concurrent reader + fuzz + unsafe symlink`.
+
+```bash
+# Whole suite (concurrent reader + fuzz + unsafe symlink + snapshot).
+bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+  -t "concurrent reader \+ fuzz \+ unsafe symlink" \
+  --reporter=verbose
+
+# Just the concurrent-reader test. Extend the window when hunting a race —
+# the default 300ms is enough on a warm laptop but often too short on a busy
+# CI runner or under `nice`.
+SCHEMA_DRIFT_DIFF_READER_DURATION_MS=2000 \
+  bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+    -t "concurrent reader observes only fully-written" \
+    --reporter=verbose
+
+# Fuzz test with a specific replay seed. The test always prints the seed it
+# ran with as `fuzz seed: <n> (SCHEMA_DRIFT_DIFF_FUZZ_SEED=<n> to replay)`;
+# copy that value here to replay the exact same 12 cases.
+SCHEMA_DRIFT_DIFF_FUZZ_SEED=12648430 \
+  bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+    -t "fuzz: varied valid reports" \
+    --reporter=verbose
+
+# Unsafe-symlink test (skipped on Windows because POSIX symlinks are
+# required). No env knobs — the assertions are deterministic.
+bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+  -t "symlink pointing to a directory" \
+  --reporter=verbose
+
+# Snapshot test that pins the exact atomicWrite stderr contract across
+# every failure mode. Update snapshots with `-u` when the wording changes
+# on purpose; every other test in this suite asserts a subset of this shape.
+bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+  -t "atomicWrite stderr matches a normalized snapshot" \
+  --reporter=verbose
+```
+
+Env-var summary (all optional, all safe to leave unset locally):
+
+| Variable | Test it affects | Default | Purpose |
+| --- | --- | --- | --- |
+| `SCHEMA_DRIFT_DIFF_FUZZ_SEED` | fuzz | `0xC0FFEE` (`12648430`) | Replay a specific fuzz run. |
+| `SCHEMA_DRIFT_DIFF_READER_DURATION_MS` | concurrent reader | `300` | Widen the reader window when hunting a rename race. |
+| `SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS` | stress nightly loop | `5` (CI) | Loop count for the nightly stress harness. |
+| `SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL` | atomicWrite | unset | Force the mid-write failure branch (see above). |
+| `SCHEMA_DRIFT_DIFF_FORCE_INVALID` | `--validate-json` | unset | Force the Ajv-mismatch branch (see above). |
