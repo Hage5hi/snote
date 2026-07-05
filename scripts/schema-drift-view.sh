@@ -56,7 +56,13 @@ Flags:
   --validation-report <path>     Write a machine-readable JSON report of every
                                  checked file with { missing, mistyped, extra,
                                  parseError, ok } — useful for CI to consume.
+  --require-valid                Run --validate-manifest (or --strict-manifest)
+                                 FIRST; only proceed to diff/viewer output if
+                                 validation succeeds. Skips diff/viewer with a
+                                 non-zero exit on any validation failure.
+                                 Default in CI (SCHEMA_DRIFT_REQUIRE_VALID=1).
   -h, --help                     Show this help.
+
 
 Env:
   OUT                            Drift bundle directory. Default: _schema_drift
