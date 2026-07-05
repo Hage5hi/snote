@@ -248,6 +248,7 @@ function parseArgs(argv: string[]): {
     else if (a === "--missing-cap") { opts.missingCap = parseInt10(need(i, "--missing-cap"), "--missing-cap"); i++; }
     else if (a === "--mistyped-cap") { opts.mistypedCap = parseInt10(need(i, "--mistyped-cap"), "--mistyped-cap"); i++; }
     else if (a === "--extra-cap") { opts.extraCap = parseInt10(need(i, "--extra-cap"), "--extra-cap"); i++; }
+    else if (a === "--dry-run") dryRun = true;
     else if (!reportPath) reportPath = a;
     else {
       console.error(`unknown arg: ${a}`);
@@ -255,7 +256,7 @@ function parseArgs(argv: string[]): {
     }
   }
   if (kinds.length) opts.kind = kinds;
-  return { reportPath, out, annotationsFile, commentUrl, opts };
+  return { reportPath, out, annotationsFile, commentUrl, dryRun, opts };
 }
 
 function main() {
