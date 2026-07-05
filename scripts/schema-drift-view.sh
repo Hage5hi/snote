@@ -125,6 +125,7 @@ while [ $# -gt 0 ]; do
     --require)    add_to REQUIRED_ARTIFACTS "${2:-}"; shift 2 ;;
     --require=*)  add_to REQUIRED_ARTIFACTS "${1#*=}"; shift ;;
     --validate-manifest) VALIDATE_MANIFEST=1; shift ;;
+    --strict-manifest)   STRICT_MANIFEST=1; VALIDATE_MANIFEST=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
