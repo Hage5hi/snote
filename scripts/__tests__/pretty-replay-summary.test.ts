@@ -547,4 +547,59 @@ describe("pretty-replay-summary.py --markdown", () => {
   });
 });
 
+describe("pretty-replay-summary.py --markdown fallback (no / empty manifest_mapping)", () => {
+  function runMarkdown(fixture: unknown) {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "s.json");
+    writeFileSync(p, JSON.stringify(fixture));
+    return spawnSync(
+      "python3",
+      [PRETTY, "--markdown", "--fixed-widths", "--no-color", p],
+      { encoding: "utf8" },
+    );
+  }
+
+  it("no manifest_mapping key: emits fields only, no table, no pipes", () => {
+    const r = runMarkdown({ mode: "dry-run", fail_reason: "", folder: "/tmp/x" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toContain("== replay-summary ==");
+    expect(r.stdout).toContain("mode              : dry-run");
+    expect(r.stdout).not.toContain("-- manifest_mapping --");
+    expect(r.stdout).not.toMatch(/^\|/m);
+  });
+
+  it("empty manifest_mapping array: same fallback (no table, no header)", () => {
+    const r = runMarkdown({
+      mode: "dry-run",
+      fail_reason: "",
+      folder: "/tmp/x",
+      manifest_mapping: [],
+    });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).not.toContain("-- manifest_mapping --");
+    expect(r.stdout).not.toMatch(/^\|/m);
+  });
+
+  it("no-mapping and empty-mapping produce byte-identical --markdown output", () => {
+    const a = runMarkdown({ mode: "dry-run", fail_reason: "", folder: "/tmp/x" });
+    const b = runMarkdown({ mode: "dry-run", fail_reason: "", folder: "/tmp/x", manifest_mapping: [] });
+    expect(a.status).toBe(0);
+    expect(b.status).toBe(0);
+    expect(b.stdout).toBe(a.stdout);
+  });
+
+  it("no-mapping --markdown snapshot is stable", () => {
+    const r = runMarkdown({ mode: "dry-run", fail_reason: "", folder: "/tmp/x" });
+    expect(r.stdout).toMatchInlineSnapshot(`
+      "== replay-summary ==
+      mode              : dry-run
+      fail_reason       : 
+      folder            : /tmp/x
+      "
+    `);
+  });
+});
+
+
 
