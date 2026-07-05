@@ -171,16 +171,14 @@ pretty_index_needs_check() {
 
 if pretty_index_needs_check; then
   echo "▶ pre-commit: pretty-index schema-drift check"
-  # Only run when the default CI input file actually exists; otherwise
-  # there is nothing to validate (contributors without generator output
-  # should not be blocked).
   INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
   # HOOK_MATRIX was validated up-front (fail-fast) — safe to use as-is.
   # PRETTY_INDEX_HOOK_DRY_RUN is handled at the top of this hook.
-
-
+  echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
+  echo "  diagnostic directory              = $(dirname -- "$INDEX")"
 
   if [ -f "$INDEX" ]; then
+
     if ! scripts/reproduce-ci-pretty-index-check.sh --clean --matrix "$HOOK_MATRIX" "$INDEX"; then
       echo ""
       echo "❌ pre-commit: pretty-index CI check FAILED."
