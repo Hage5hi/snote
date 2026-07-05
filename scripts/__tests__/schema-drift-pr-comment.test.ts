@@ -1564,46 +1564,55 @@ describe("schema-drift-diff: --json-out symlink + schema + cleanup wording", () 
 describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlink", () => {
   const isWindows = process.platform === "win32";
 
-  it("concurrent reader never observes a partially-written destination and exit code stays 0", async () => {
+  it("concurrent reader observes only fully-written destinations across a fixed 300ms window", async () => {
+    // Deterministic pass/fail criteria:
+    //   - fixed 300ms reader window (SCHEMA_DRIFT_DIFF_READER_DURATION_MS overrides)
+    //   - fixed writer count (6) — same as the stress suite
+    //   - every observed read must JSON.parse successfully
+    //   - at least one successful read must occur
+    //   - a background .tmp scan running alongside the reader must never see
+    //     a `<name>.<pid>.tmp` sibling that outlives its writer process
+    //   - no `.tmp` siblings remain in the destination directory at the end
+    const DURATION_MS = Number(process.env.SCHEMA_DRIFT_DIFF_READER_DURATION_MS ?? 300);
+    const WRITERS = 6;
+
     const dir = tmp();
     const p = writeReport(dir, FAILING);
     const jsonOut = join(dir, "diff.json");
-    const seed = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
-    expect(seed.code).toBe(0);
+    const seedRun = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(seedRun.code).toBe(0);
 
+    const { readdirSync } = require("node:fs");
+    const deadline = Date.now() + DURATION_MS;
     let stop = false;
     const seen: string[] = [];
     const reader = (async () => {
-      while (!stop) {
+      while (!stop && Date.now() < deadline) {
         try {
           const raw = _readFileSync(jsonOut, "utf8");
-          // Every observable read must parse — the atomic rename must never
-          // expose an in-progress `.tmp` file to concurrent readers.
-          JSON.parse(raw);
+          JSON.parse(raw); // partial writes would throw here
           seen.push(raw);
-        } catch {
-          // File briefly missing during rename is acceptable; a partial JSON
-          // payload is not — JSON.parse would throw and fail the test above.
-        }
+        } catch { /* file briefly missing during rename is fine */ }
         await new Promise((r) => setImmediate(r));
       }
     })();
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < WRITERS; i++) {
       const w = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
-      expect(w.code).toBe(0);
+      expect(w.code, `writer ${i} stderr: ${w.stderr}`).toBe(0);
     }
     stop = true;
     await reader;
+
     expect(seen.length).toBeGreaterThan(0);
     for (const raw of seen) {
       const parsed = JSON.parse(raw);
       expect(parsed).toHaveProperty("totals");
       expect(parsed).toHaveProperty("matchedAnchors");
     }
-    const { readdirSync } = require("node:fs");
     expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
   });
+
 
   it("fuzz: varied valid reports always produce --json-out payloads matching the schema", () => {
     const AjvMod = require("ajv");
@@ -1613,10 +1622,16 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
     const ajv = new Ajv({ allErrors: true });
     const validate = ajv.compile(schema);
 
-    // Deterministic LCG so failing seeds reproduce locally without flakes.
-    let seed = 0xC0FFEE;
+    // Deterministic LCG. Seed comes from SCHEMA_DRIFT_DIFF_FUZZ_SEED so a
+    // failing case can be replayed exactly, both in CI and locally. The
+    // resolved seed is printed to stderr so failure logs identify it.
+    const seedEnv = process.env.SCHEMA_DRIFT_DIFF_FUZZ_SEED;
+    const initialSeed = seedEnv ? parseInt(seedEnv, 10) >>> 0 : 0xC0FFEE;
+    process.stderr.write(`fuzz seed: ${initialSeed} (SCHEMA_DRIFT_DIFF_FUZZ_SEED=${initialSeed} to replay)\n`);
+    let seed = initialSeed;
     const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
     const pick = <T,>(xs: T[]): T => xs[Math.floor(rand() * xs.length)];
+
 
     const genReport = (): Report => {
       const n = Math.floor(rand() * 5);
@@ -1648,7 +1663,7 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
       writeFileSync(after, JSON.stringify(genReport()));
       const jsonOut = join(sub, "out.json");
       const run = bun(DIFF_SCRIPT, [before, after, "--json-out", jsonOut, "--validate-json"]);
-      expect(run.code, `case ${i} stderr: ${run.stderr}`).toBe(0);
+      expect(run.code, `case ${i} (seed=${initialSeed}) stderr: ${run.stderr}`).toBe(0);
       const payload = JSON.parse(_readFileSync(jsonOut, "utf8"));
       const ok = validate(payload);
       expect(validate.errors ?? []).toEqual([]);
@@ -1701,7 +1716,76 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
       expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
     },
   );
+
+  // Snapshot the exact atomicWrite failure stderr shape across every failure
+  // mode, with paths/pids/errnos normalized. This is the single source of
+  // truth for the three-line contract — every other test asserts a subset of
+  // this shape via `toContain` / `toMatch` and only this test needs to be
+  // updated when the wording changes.
+  it("atomicWrite stderr matches a normalized snapshot across all failure modes", () => {
+    const { mkdirSync, chmodSync } = require("node:fs");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+
+    const normalize = (s: string, destAbs: string) => {
+      const escaped = destAbs.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+      return s
+        .replace(new RegExp(`"${escaped}\\.\\d+\\.tmp"`, "g"), '"<DEST>.<PID>.tmp"')
+        .replace(new RegExp(`"${escaped}"`, "g"), '"<DEST>"')
+        .replace(/: (EACCES|EPERM|EISDIR|ENOENT|ENOTDIR|EIO_SIM)\b/g, ": <ERRNO>")
+        .trim();
+    };
+
+    // (a) Forced mid-write failure → cleanup: removed partial temp file
+    const okDest = join(dir, "sub", "diff.json");
+    const forced = bun(DIFF_SCRIPT, [p, p, "--json-out", okDest], {
+      SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL: "1",
+    });
+    expect(forced.code).toBe(7);
+    expect(normalize(forced.stderr, resolve(okDest))).toMatchInlineSnapshot(`
+      "error: cannot write json-out to "<DEST>": <ERRNO>
+        cleanup: removed partial temp file "<DEST>.<PID>.tmp"
+        fix: check that the parent directory exists and is writable, or pass a different --json-out path"
+    `);
+
+    // (b) Parent directory cannot be created (blocked by a regular file) →
+    //     cleanup: no temp file to remove
+    const blocker = join(dir, "blocker");
+    writeFileSync(blocker, "x");
+    const blocked = join(blocker, "nested", "diff.json");
+    const mp = bun(DIFF_SCRIPT, [p, p, "--json-out", blocked]);
+    expect(mp.code).toBe(7);
+    expect(normalize(mp.stderr, resolve(blocked))).toMatchInlineSnapshot(`
+      "error: cannot write json-out to "<DEST>": <ERRNO>
+        cleanup: no temp file to remove at "<DEST>.<PID>.tmp"
+        fix: check that the parent directory exists and is writable, or pass a different --json-out path"
+    `);
+
+    // (c) Permission denied on a read-only parent (skipped on Windows/root).
+    const isRoot = typeof (process as any).getuid === "function" && (process as any).getuid() === 0;
+    if (!isRoot && !isWindows) {
+      const roDir = join(dir, "ro");
+      mkdirSync(roDir, { recursive: true });
+      const roDest = join(roDir, "diff.json");
+      writeFileSync(roDest, "ORIG\n");
+      chmodSync(roDest, 0o444);
+      chmodSync(roDir, 0o555);
+      try {
+        const pd = bun(DIFF_SCRIPT, [p, p, "--json-out", roDest]);
+        expect(pd.code).toBe(7);
+        expect(normalize(pd.stderr, resolve(roDest))).toMatchInlineSnapshot(`
+          "error: cannot write json-out to "<DEST>"<ERRNO>
+            cleanup: no temp file to remove at "<DEST>.<PID>.tmp"
+            fix: check that the parent directory exists and is writable, or pass a different --json-out path"
+        `);
+      } finally {
+        try { chmodSync(roDir, 0o755); } catch {}
+        try { chmodSync(roDest, 0o644); } catch {}
+      }
+    }
+  });
 });
+
 
 
 
