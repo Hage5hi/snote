@@ -468,6 +468,42 @@ re-computes anchors via the same `anchorFor()` helper, so a row that
 appears in both reports keeps the same `#fail-<slug>` link regardless of
 input order.
 
+#### `schema-drift-diff.ts` output modes
+
+Text (default), Markdown (`--markdown` or an `--out *.md` path), or JSON
+(`--json`). `--dry-run` prints the body without writing `--out`.
+`--fail-slug <slug>` (repeatable) limits both markdown and JSON output to
+specific anchors (e.g. `--fail-slug fail-chromium-drift-chromium`); a
+leading `#` is stripped, so `--fail-slug '#fail-…'` also works.
+
+Exit codes: `0` success, `2` bad CLI usage, `3` report file missing /
+unreadable, `4` file is not valid JSON, `5` file is missing required
+fields (each error includes a suggested `fix:` line).
+
+`--json` schema (top-level `matchedAnchors` + counts for programmatic use):
+
+```json
+{
+  "totals": {
+    "before": { "checked": 4, "invalid": 3 },
+    "after":  { "checked": 4, "invalid": 2 },
+    "added": 1, "removed": 2, "changed": 0, "matched": 1
+  },
+  "added":   [{ "path": "/a/drift-webkit.json",   "browser": "webkit",   "combined": false, "anchor": "fail-webkit-drift-webkit" }],
+  "removed": [{ "path": "/a/drift-chromium.json", "browser": "chromium", "combined": false, "anchor": "fail-chromium-drift-chromium" }],
+  "changed": [{
+    "path": "/a/drift-combined.json", "browser": "combined", "combined": true,
+    "anchor": "fail-combined-drift-combined",
+    "missing":  { "added": ["browser"], "removed": [] },
+    "extra":    { "added": [], "removed": ["stray"] },
+    "mistyped": { "added": [], "removed": [] },
+    "parseError": null
+  }],
+  "matchedAnchors": ["fail-combined-drift-combined"]
+}
+```
+
+
 
 
 
