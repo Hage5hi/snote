@@ -43,7 +43,7 @@ jobs:
       # merge) instead of hiding inside the aggregate `bun run test` line.
       - name: schema-drift-view.sh unit tests
         if: always()
-        run: bunx vitest run scripts/__tests__/schema-drift-view.test.ts --reporter=verbose
+        run: bunx vitest run scripts/__tests__/schema-drift-view.test.ts scripts/__tests__/schema-drift-pr-comment.test.ts --reporter=verbose
       # Fixture-based end-to-end check for --validate-manifest --strict-manifest:
       # generates a known-good per-browser + combined manifest via the script
       # itself, then re-validates them in strict mode and asserts the JSON
