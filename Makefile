@@ -345,53 +345,52 @@ pretty-index-artifacts-verify-summary:
 # semantics per target and documented exit codes.
 .PHONY: pretty-index-help
 pretty-index-help:
-	@cat <<'PIHELP'
-pretty-index-* make targets — quick reference
+	@echo "pretty-index-* make targets — quick reference"
+	@echo ""
+	@echo "Local reproduce (uses your working-tree pretty-index.json):"
+	@echo "  pretty-index-check                         Run CI check flow (bash)"
+	@echo "  pretty-index-check-clean                   Same, discard prior diagnostics"
+	@echo "  pretty-index-check-pwsh                    Same, via PowerShell"
+	@echo "  pretty-index-diagnostics                   Print diagnostic paths / artifact names"
+	@echo "  pretty-index-clean                         Remove sibling .pre-check.json / .report.json"
+	@echo "  pretty-index-clean-dry-run                 Preview what -clean would delete"
+	@echo "  pretty-index-artifacts                     Print expected artifact filenames per matrix"
+	@echo "  pretty-index-hook-dry-run                  Run pre-commit hook in dry-run for both matrices"
+	@echo ""
+	@echo "Download + verify + reproduce (uses ./_pretty-index-<matrix>/):"
+	@echo "  pretty-index-artifacts-download            Download atomic + stress from a CI run"
+	@echo "                                             (needs RUN_ID=<id>, OS=ubuntu-latest by default)"
+	@echo "  pretty-index-artifacts-verify              sha256sum -c both dirs; writes JSON mismatch"
+	@echo "                                             report to \$$(PI_MISMATCH_REPORT) on failure"
+	@echo "  pretty-index-artifacts-verify-summary      Verify + pretty per-matrix PASS/FAIL summary"
+	@echo "                                             with per-file expected/actual hashes"
+	@echo "  pretty-index-hook-validate-downloaded      Verify, then run the hook in validation mode"
+	@echo "  pretty-index-reproduce-downloaded          One-command verify + validate"
+	@echo "  pretty-index-artifacts-download-verify-reproduce"
+	@echo "                                             Cold start: download + verify + validate"
+	@echo "  pretty-index-artifacts-clean               rm -rf ./_pretty-index-atomic ./_pretty-index-stress"
+	@echo ""
+	@echo "Scope / overrides:"
+	@echo "  PI_SCOPE=atomic|stress|both   (default: both)   restrict download-flow targets"
+	@echo "  MATRIX=atomic|stress          (default: atomic) single-run local-repro matrix"
+	@echo "  INDEX=<path>                                    override pretty-index.json path"
+	@echo "  RUN_ID=<id> OS=<runner>                         for -artifacts-download*"
+	@echo "  PI_MISMATCH_REPORT=<path>                       where -verify writes its JSON on fail"
+	@echo ""
+	@echo "VERBOSE=1 effects (per target):"
+	@echo "  pretty-index-reproduce-downloaded          Prints resolved INDEX, diagnostics dir,"
+	@echo "                                             PI_SCOPE, mismatch-report path; forwards"
+	@echo "                                             PRETTY_INDEX_HOOK_VERBOSE=1 to the hook so"
+	@echo "                                             each step lists [exists]/[absent] files."
+	@echo "  pretty-index-artifacts-download-verify-reproduce"
+	@echo "                                             Forwards VERBOSE=1 to -reproduce-downloaded."
+	@echo "  (other targets ignore VERBOSE.)"
+	@echo ""
+	@echo "Exit codes (make normalizes any recipe failure to 2 at the outer layer):"
+	@echo "  0  success (verify passed / hook passed / dry-run)"
+	@echo "  1  a downstream check failed (checksum mismatch OR hook validation failed)"
+	@echo "  2  usage error, missing directory, missing checksums file, or missing RUN_ID"
+	@echo "  Underlying pre-commit hook: 0=ok  1=drift  2=usage  3=schema  4=missing input"
+	@echo "  Run '.githooks/pre-commit --help' for the hook's full exit-code table."
 
-Local reproduce (uses your working-tree pretty-index.json):
-  pretty-index-check                         Run CI check flow (bash)
-  pretty-index-check-clean                   Same, discard prior diagnostics
-  pretty-index-check-pwsh                    Same, via PowerShell
-  pretty-index-diagnostics                   Print diagnostic paths / artifact names
-  pretty-index-clean                         Remove sibling .pre-check.json / .report.json
-  pretty-index-clean-dry-run                 Preview what -clean would delete
-  pretty-index-artifacts                     Print expected artifact filenames per matrix
-  pretty-index-hook-dry-run                  Run pre-commit hook in dry-run for both matrices
-
-Download + verify + reproduce (uses ./_pretty-index-<matrix>/):
-  pretty-index-artifacts-download            Download atomic + stress from a CI run
-                                             (needs RUN_ID=<id>, OS=ubuntu-latest by default)
-  pretty-index-artifacts-verify              sha256sum -c both dirs; writes JSON mismatch
-                                             report to $(PI_MISMATCH_REPORT) on failure
-  pretty-index-artifacts-verify-summary      Verify + pretty per-matrix PASS/FAIL summary
-                                             with per-file expected/actual hashes
-  pretty-index-hook-validate-downloaded      Verify, then run the hook in validation mode
-  pretty-index-reproduce-downloaded          One-command verify + validate
-  pretty-index-artifacts-download-verify-reproduce
-                                             Cold start: download + verify + validate
-  pretty-index-artifacts-clean               rm -rf ./_pretty-index-atomic ./_pretty-index-stress
-
-Scope / overrides:
-  PI_SCOPE=atomic|stress|both   (default: both)   restrict download-flow targets
-  MATRIX=atomic|stress          (default: atomic) single-run local-repro matrix
-  INDEX=<path>                                    override pretty-index.json path
-  RUN_ID=<id> OS=<runner>                         for -artifacts-download*
-  PI_MISMATCH_REPORT=<path>                       where -verify writes its JSON on fail
-
-VERBOSE=1 effects (per target):
-  pretty-index-reproduce-downloaded          Prints resolved INDEX, diagnostics dir,
-                                             PI_SCOPE, mismatch-report path; forwards
-                                             PRETTY_INDEX_HOOK_VERBOSE=1 to the hook so
-                                             each step lists [exists]/[absent] files.
-  pretty-index-artifacts-download-verify-reproduce
-                                             Forwards VERBOSE=1 to -reproduce-downloaded.
-  (other targets ignore VERBOSE.)
-
-Exit codes (make normalizes any recipe failure to 2 at the outer layer):
-  0  success (verify passed / hook passed / dry-run)
-  1  a downstream check failed (checksum mismatch OR hook validation failed)
-  2  usage error, missing directory, missing checksums file, or missing RUN_ID
-  Underlying pre-commit hook: 0=ok  1=drift  2=usage  3=schema  4=missing input
-  Run `.githooks/pre-commit --help` for the hook's full exit-code table.
-PIHELP
 
