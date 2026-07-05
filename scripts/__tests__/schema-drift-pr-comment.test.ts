@@ -689,7 +689,35 @@ describe("schema-drift-diff: --print-schema", () => {
     expect(parsed.properties).toHaveProperty("matchedAnchors");
     expect(parsed.properties).toHaveProperty("totals");
   });
+
+  it("--print-schema stdout content matches the on-disk schema (byte-for-byte modulo trailing newline)", () => {
+    const { code, stdout } = bun(DIFF_SCRIPT, ["--print-schema"]);
+    expect(code).toBe(0);
+    const schemaPath = resolve(__dirname, "../../schemas/schema-drift-diff.schema.json");
+    const onDisk = _readFileSync(schemaPath, "utf8");
+    const normalize = (s: string) => (s.endsWith("\n") ? s : s + "\n");
+    expect(stdout).toBe(normalize(onDisk));
+    // sanity: printed schema round-trips as valid JSON and equals the parsed on-disk copy
+    expect(JSON.parse(stdout)).toEqual(JSON.parse(onDisk));
+  });
+
+  it("--print-schema output validates a real --json payload via Ajv", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const schemaRun = bun(DIFF_SCRIPT, ["--print-schema"]);
+    const payloadRun = bun(DIFF_SCRIPT, [p, p, "--json"]);
+    expect(schemaRun.code).toBe(0);
+    expect(payloadRun.code).toBe(0);
+    const AjvMod = require("ajv");
+    const Ajv = AjvMod.default ?? AjvMod;
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(JSON.parse(schemaRun.stdout));
+    const ok = validate(JSON.parse(payloadRun.stdout));
+    expect(validate.errors).toBeNull();
+    expect(ok).toBe(true);
+  });
 });
+
 
 describe("schema-drift-diff: --json-out atomic write failure modes", () => {
   it("auto-creates a missing nested destination directory (mkdir -p)", () => {
