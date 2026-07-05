@@ -948,6 +948,108 @@ failing recipe as its own exit status `2` and prints `make: *** [target]
 Error N`, so scripts that need the granular code should parse `Error N`
 from stderr (or invoke the recipe directly via `bash -c`).
 
+### Merging per-matrix summary JSONs across CI jobs
+
+When each matrix job (atomic, stress, per-OS) uploads its own
+`pretty-index-mismatch-summary-<matrix>-<os>.json`, a downstream job can
+consolidate them into one file:
+
+```sh
+make pretty-index-mismatch-summary-json-merge \
+  PI_SUMMARY_INPUTS="downloaded/*/pi-mismatch-summary-*.json" \
+  PI_SUMMARY_MERGED_PATH=pi-mismatch-summary.merged.json
+```
+
+Output schema: `pretty-index-mismatch-summary-merged/v1`. Per-matrix
+`total/mismatched/missing` counters are summed element-wise; each input
+is preserved under `sources[]` alongside its original `scope`.
+
+### Copy-pastable GitHub Actions workflow
+
+Runs verify → summary → CSV, uploads both the raw mismatch report and
+the machine-readable summary as artifacts, and surfaces the granular
+recipe exit code (parsed from `make: *** Error N`) as the job's exit
+status. Drop this into `.github/workflows/pretty-index-check.yml`:
+
+```yaml
+name: pretty-index checksum check
+on: [push, pull_request]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [atomic, stress]
+    steps:
+      - uses: actions/checkout@v4
+      - name: install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+      - name: download pretty-index artifacts
+        run: make pretty-index-artifacts-download RUN_ID=${{ github.run_id }}
+      - name: verify checksums
+        id: verify
+        continue-on-error: true
+        run: |
+          set +e
+          make pretty-index-artifacts-verify \
+            PI_SCOPE=${{ matrix.scope }} \
+            PI_REPORT_PATH=/tmp/pi-mismatch-${{ matrix.scope }}.json \
+              2> /tmp/verify.stderr
+          rc=$?
+          cat /tmp/verify.stderr >&2
+          # GNU make normalizes to 2; recover the intended recipe code.
+          real=$(grep -oE 'Error [0-9]+' /tmp/verify.stderr | tail -n1 | awk '{print $2}')
+          echo "exit_code=${real:-$rc}" >> "$GITHUB_OUTPUT"
+          exit $rc
+      - name: build mismatch summary JSON
+        if: steps.verify.outcome == 'failure'
+        run: |
+          make pretty-index-mismatch-summary-json \
+            PI_REPORT_PATH=/tmp/pi-mismatch-${{ matrix.scope }}.json \
+            PI_SUMMARY_JSON_PATH=/tmp/pi-summary-${{ matrix.scope }}.json
+          make pretty-index-mismatch-csv \
+            PI_REPORT_PATH=/tmp/pi-mismatch-${{ matrix.scope }}.json \
+            PI_CSV_PATH=/tmp/pi-mismatch-${{ matrix.scope }}.csv
+      - name: upload mismatch report + summary + csv
+        if: steps.verify.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-${{ matrix.scope }}
+          path: |
+            /tmp/pi-mismatch-${{ matrix.scope }}.json
+            /tmp/pi-summary-${{ matrix.scope }}.json
+            /tmp/pi-mismatch-${{ matrix.scope }}.csv
+          if-no-files-found: error
+          retention-days: 14
+      - name: fail with granular recipe exit code
+        if: steps.verify.outcome == 'failure'
+        run: exit ${{ steps.verify.outputs.exit_code }}
+
+  merge-summaries:
+    needs: verify
+    if: always() && needs.verify.result == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y jq
+      - uses: actions/download-artifact@v4
+        with: { path: _downloaded, pattern: pretty-index-mismatch-* }
+      - name: merge per-scope summaries
+        run: |
+          make pretty-index-mismatch-summary-json-merge \
+            PI_SUMMARY_INPUTS="$(ls _downloaded/*/pi-summary-*.json | xargs)" \
+            PI_SUMMARY_MERGED_PATH=/tmp/pi-summary.merged.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-summary-merged
+          path: /tmp/pi-summary.merged.json
+          if-no-files-found: error
+          retention-days: 14
+```
+
+
 
 
 
