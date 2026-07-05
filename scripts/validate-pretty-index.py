@@ -120,16 +120,28 @@ def _normalize(data: object) -> tuple[list | None, list[dict]]:
                 "message": "schema_version must be an int",
             }]
         if v not in SUPPORTED_SCHEMA_VERSIONS:
+            supported = sorted(SUPPORTED_SCHEMA_VERSIONS)
+            hint = (
+                "regenerate pretty-index.json with "
+                "scripts/pretty-replay-summary.py (or re-run the CI "
+                "\"append pretty replay-summary to step summary\" step) "
+                "to upgrade to schema_version="
+                f"{CURRENT_SCHEMA_VERSION}; "
+                "if the file is newer than this validator, update "
+                "scripts/validate-pretty-index.py "
+                "(see docs/schema-drift-diff-test-hooks.md)"
+            )
             return None, [{
                 "index": None, "path": "$.schema_version",
-                "expected": f"one of {sorted(SUPPORTED_SCHEMA_VERSIONS)}",
+                "expected": f"one of {supported}",
                 "actual": str(v),
                 "message": (
                     f"unsupported schema_version={v} "
-                    f"(this validator supports {sorted(SUPPORTED_SCHEMA_VERSIONS)}; "
-                    f"current={CURRENT_SCHEMA_VERSION})"
+                    f"(this validator supports {supported}; "
+                    f"current={CURRENT_SCHEMA_VERSION}) — {hint}"
                 ),
             }]
+
         entries = data.get("entries")
         if not isinstance(entries, list):
             return None, [{
