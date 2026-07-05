@@ -29,7 +29,6 @@ if [[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   sed -n '2,27p' "$0"
   exit 2
 fi
-
 # ---- flag pre-parse: pull known flags from anywhere on the command line;
 # leave the rest as positional args.
 DRY_RUN=0
@@ -37,6 +36,7 @@ PRINT_MANIFEST=0
 VERBOSE=0
 JSON_SUMMARY=0
 PATTERN_OVERRIDE=""
+OUTPUT_DIR_OVERRIDE=""
 POSARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,10 +46,13 @@ while [[ $# -gt 0 ]]; do
     --json-summary)        JSON_SUMMARY=1; shift ;;
     --test-name-pattern)   PATTERN_OVERRIDE="${2:?--test-name-pattern requires a value}"; shift 2 ;;
     --test-name-pattern=*) PATTERN_OVERRIDE="${1#*=}"; shift ;;
+    --output-dir)          OUTPUT_DIR_OVERRIDE="${2:?--output-dir requires a value}"; shift 2 ;;
+    --output-dir=*)        OUTPUT_DIR_OVERRIDE="${1#*=}"; shift ;;
     *)                     POSARGS+=("$1"); shift ;;
   esac
 done
 set -- "${POSARGS[@]}"
+
 
 vlog() { [[ "$VERBOSE" == "1" ]] && echo "verbose: $*" >&2 || true; }
 
@@ -122,9 +125,11 @@ if [[ "${1:-}" == "--from" ]]; then
   [[ "$DRY_RUN" == "1" ]]      && FORWARD+=("--dry-run")
   [[ "$VERBOSE" == "1" ]]      && FORWARD+=("--verbose")
   [[ "$JSON_SUMMARY" == "1" ]] && FORWARD+=("--json-summary")
+  [[ -n "$OUTPUT_DIR_OVERRIDE" ]] && FORWARD+=("--output-dir" "$OUTPUT_DIR_OVERRIDE")
   SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS="${TIMEOUT_V:-30000}" \
     exec "$0" "$SEED_V" "${READER_V:-300}" "${PATTERN_V:-concurrent reader \+ fuzz \+ unsafe symlink}" "${FORWARD[@]}"
 fi
+
 
 SEED="${1:?SEED is required (or use --from <folder>)}"
 READER_MS="${2:-${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}}"
@@ -132,7 +137,8 @@ PATTERN="${PATTERN_OVERRIDE:-${3:-${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurr
 TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-30000}"
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="artifacts/schema-drift-diff-replay/${TS}-seed-${SEED}"
+OUT="${OUTPUT_DIR_OVERRIDE:-artifacts/schema-drift-diff-replay/${TS}-seed-${SEED}}"
+
 mkdir -p "$OUT"
 
 cat > "$OUT/manifest.txt" <<EOF
@@ -195,8 +201,9 @@ verify() {
 verify "manifest"  "$OUT/manifest.txt"
 verify "env.sh"    "$OUT/env.sh"
 verify "checksums" "$OUT/checksums.sha256"
-[ -w "$OUT/vitest.stdout.log" ] || { echo "pre-replay: FAIL stdout log not writable" >&2; exit 8; }
-[ -w "$OUT/vitest.stderr.log" ] || { echo "pre-replay: FAIL stderr log not writable" >&2; exit 8; }
+[ -w "$OUT/vitest.stdout.log" ] || { FAIL_REASON="stdout log not writable: $OUT/vitest.stdout.log"; echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8; }
+[ -w "$OUT/vitest.stderr.log" ] || { FAIL_REASON="stderr log not writable: $OUT/vitest.stderr.log"; echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8; }
+
 grep -q "^SCHEMA_DRIFT_DIFF_FUZZ_SEED:" "$OUT/manifest.txt" || {
   FAIL_REASON="manifest missing SCHEMA_DRIFT_DIFF_FUZZ_SEED line"
   echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8;
@@ -226,11 +233,31 @@ fi
 
 [[ "$PRINT_MANIFEST" == "1" ]] && { print_manifest "$OUT/manifest.txt"; exit 0; }
 
-# Assemble the exact command we would (or will) run — shared by dry-run + real run.
-CMD=(bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts
+# Command render: build the exact command shared by dry-run + real run.
+# Empty pattern OR a missing test file is treated as a render error so
+# the dry-run JSON summary can distinguish it from missing-file /
+# checksum failures via fail_reason. Test file is resolved against the
+# script's own repo root so the check works regardless of cwd.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TEST_FILE_REL="scripts/__tests__/schema-drift-pr-comment.test.ts"
+TEST_FILE_ABS="$REPO_ROOT/$TEST_FILE_REL"
+if [ -z "$PATTERN" ]; then
+  FAIL_REASON="command render error: empty test-name pattern"
+  echo "pre-replay: FAIL $FAIL_REASON" >&2
+  exit 8
+fi
+if [ ! -r "$TEST_FILE_ABS" ]; then
+  FAIL_REASON="command render error: vitest test file not readable: $TEST_FILE_ABS"
+  echo "pre-replay: FAIL $FAIL_REASON" >&2
+  exit 8
+fi
+CMD=(bunx vitest run "$TEST_FILE_REL"
      -t "$PATTERN"
      --testTimeout="$TIMEOUT_MS"
      --reporter=verbose)
+
+
 printf 'command: SCHEMA_DRIFT_DIFF_FUZZ_SEED=%q SCHEMA_DRIFT_DIFF_READER_DURATION_MS=%q' "$SEED" "$READER_MS" >&2
 printf ' %q' "${CMD[@]}" >&2
 printf '\n' >&2

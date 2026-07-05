@@ -381,3 +381,170 @@ upload that log + `replay-command.sh` (the labeled copy-paste command)
 to that artifact is appended to `$GITHUB_STEP_SUMMARY` so you can grab
 it in one click without pulling the full debug bundle.
 
+
+### `manifest_mapping` JSON schema
+
+`manifest_mapping` is populated only when `--verbose` is combined with
+`--json-summary`. Each element is:
+
+```json
+{
+  "manifest_entry": "SCHEMA_DRIFT_DIFF_FUZZ_SEED | SCHEMA_DRIFT_DIFF_READER_DURATION_MS | SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN | SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS | (env passthrough) | (integrity)",
+  "required_file":  "<absolute or repo-relative path to the file the entry maps to>",
+  "role":           "<one-line human-readable description>"
+}
+```
+
+Formal shape (draft):
+
+```json
+{
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["manifest_entry", "required_file", "role"],
+    "properties": {
+      "manifest_entry": { "type": "string" },
+      "required_file":  { "type": "string" },
+      "role":           { "type": "string" }
+    },
+    "additionalProperties": false
+  }
+}
+```
+
+The array is stable across runs for the same `--test-name-pattern`: the
+entries and their `required_file` targets are fixed, only the `folder`
+prefix changes with the timestamped output dir.
+
+### Second `manifest_mapping` example (varying `--test-name-pattern`)
+
+Different `--test-name-pattern` values change which vitest tests would
+run, but the required-file list stays the same — the pattern is
+recorded on the `SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN` line of
+`manifest.txt` and that file remains the sole source of the pattern.
+
+Run 1: default pattern
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh 42 300 \
+  "concurrent reader \+ fuzz \+ unsafe symlink" \
+  --dry-run --verbose --json-summary --output-dir /tmp/rep-default
+```
+
+Relevant fields:
+
+```json
+{
+  "pattern": "concurrent reader \\+ fuzz \\+ unsafe symlink",
+  "manifest_mapping": [
+    { "manifest_entry": "SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN",
+      "required_file":  "/tmp/rep-default/manifest.txt",
+      "role":           "source of vitest -t filter" }
+  ]
+}
+```
+
+Run 2: narrowed pattern via `--test-name-pattern`
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh 42 300 \
+  "concurrent reader \+ fuzz \+ unsafe symlink" \
+  --test-name-pattern "concurrent reader observes only fully-written" \
+  --dry-run --verbose --json-summary --output-dir /tmp/rep-narrow
+```
+
+Relevant fields:
+
+```json
+{
+  "pattern": "concurrent reader observes only fully-written",
+  "manifest_mapping": [
+    { "manifest_entry": "SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN",
+      "required_file":  "/tmp/rep-narrow/manifest.txt",
+      "role":           "source of vitest -t filter" }
+  ]
+}
+```
+
+The `required_file` list is identical (both point at `manifest.txt` +
+`env.sh` + `checksums.sha256` under the chosen `--output-dir`); only
+the recorded `pattern` value inside `manifest.txt` differs.
+
+### `--output-dir <dir>` — deterministic output folder
+
+By default the helper writes to
+`artifacts/schema-drift-diff-replay/<UTC-ts>-seed-<seed>/`. Pass
+`--output-dir <dir>` to force a fixed path — useful in CI where each
+job wants a deterministic folder per matrix leg (e.g. per-OS):
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh 42 100 "pat" \
+  --dry-run --verbose --json-summary \
+  --output-dir "artifacts/schema-drift-diff-replay-verify/${RUNNER_OS}"
+```
+
+The flag is forwarded across the `--from <folder>` re-exec, so
+`--from … --output-dir …` writes the verify log + summary next to the
+downloaded artifact instead of into a new timestamped folder.
+
+### Pretty-printing a `replay-summary.json`
+
+`scripts/pretty-replay-summary.py` renders a downloaded summary in a
+fixed, readable order and prints the `manifest_mapping` as an aligned
+table when present:
+
+```bash
+scripts/pretty-replay-summary.py \
+  artifacts/schema-drift-diff-replay-verify/*/replay-summary.json
+# or from stdin
+cat replay-summary.json | scripts/pretty-replay-summary.py -
+```
+
+Exit code mirrors the summarised replay's own `exit_code` when set
+(`null` in dry-run → exit `0`), and `2` on parse/argument errors.
+
+### `fail_reason` classes in `replay-summary.json`
+
+For dry-run failures the helper always populates `fail_reason` with one
+of these classes so downstream tooling can distinguish them:
+
+| Class | Example `fail_reason` |
+| --- | --- |
+| Missing file | `manifest missing: /…/manifest.txt`, `env.sh unreadable: /…/env.sh`, `checksums empty: /…/checksums.sha256`, `stdout log not writable: /…/vitest.stdout.log` |
+| Checksum mismatch | `checksum mismatch in /…/checksums.sha256` |
+| Command render error | `command render error: empty test-name pattern`, `command render error: vitest test file not readable: <path>` |
+
+The corresponding `missing_files` array is populated only for the
+missing-file class.
+
+### CI artifact retention & where to find them
+
+Both the `schema-drift-diff-atomic-crossos` and
+`schema-drift-diff-stress-nightly` jobs upload the replay-verify bundle
+(`dry-run-verify.log`, `replay-command.sh`, every
+`replay-summary.json`) on **both success and failure** with an explicit
+`retention-days: 14`. That's short enough to keep the artifact list
+scannable and long enough to cover a two-week bisect window.
+
+To find them in the GitHub Actions UI:
+
+1. Open the repo's **Actions** tab and click into the run (green or red).
+2. Scroll to the top of the run page — the **Artifacts** section lists
+   `schema-drift-diff-replay-verify-<os>` and, for nightly runs,
+   `schema-drift-diff-stress-replay-verify-<os>`.
+3. Click the artifact name to download the zip, or copy the direct
+   download link from the run's **Summary** tab (the per-job step
+   summary now embeds a link to the artifact under
+   "schema-drift-diff replay verify artifacts (\<os\>)").
+
+From the CLI:
+
+```bash
+gh run view <run-id>                               # lists artifact names
+gh run download <run-id> -n schema-drift-diff-replay-verify-ubuntu-latest
+```
+
+After 14 days the artifacts are garbage-collected by GitHub; the
+underlying job logs remain available for the workflow's normal
+retention window.
