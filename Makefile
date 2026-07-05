@@ -214,8 +214,10 @@ pretty-index-artifacts-verify:
 	          if [ "$$exp" = "$$act" ] && [ -n "$$exp" ]; then status="OK"; else status="MISMATCH"; fi; \
 	          echo "  $$fname  expected=$${exp:-<none>}  actual=$${act:-<missing>}  [$$status]"; \
 	          [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
-	          printf '{"dir":"%s","file":"%s","expected":"%s","actual":"%s","status":"%s"}' \
-	            "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
+	          adir="$$(basename -- "$$dir")"; \
+	          printf '{"dir":"%s","artifact_dir":"%s","file":"%s","path":"%s/%s","expected":"%s","actual":"%s","status":"%s"}' \
+	            "$$dir" "$$adir" "$$fname" "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
+
 	          if [ "$$status" = "MISMATCH" ] && [ "$$fail_fast" = "1" ]; then \
 	            echo "── PI_FAIL_FAST=1: stopping after first mismatch ──"; stop=1; break; \
 	          fi; \
