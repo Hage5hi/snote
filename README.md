@@ -361,8 +361,8 @@ annotations** for the exact projection.
 Committed fixture manifests live under
 [`scripts/fixtures/schema-drift-manifests/`](scripts/fixtures/schema-drift-manifests/README.md)
 — one subdirectory per failure mode (`valid`, `missing-nested`,
-`wrong-types`, `extra-keys`). Reproduce any CI validation failure with a
-single command, no bundle required:
+`wrong-types`, `extra-keys`, `combined-mismatch`). Reproduce any CI
+validation failure with a single command, no bundle required:
 
 ```sh
 bash scripts/schema-drift-view.sh --strict-manifest \
@@ -370,6 +370,31 @@ bash scripts/schema-drift-view.sh --strict-manifest \
   --manifest-prefix drift \
   --validation-report /tmp/report.json
 ```
+
+The `combined-mismatch/` fixture exercises cross-file schema issues —
+its `drift-combined.json` is missing the top-level `browser` key while
+its per-browser sibling (`drift-webkit.json`) lists a browser that is
+not present in the combined `browsers` array. Useful for reproducing
+combined-vs-per-browser drift locally.
+
+#### CI annotation caps (env vars)
+
+The CI step that turns `--validation-report` JSON into
+`::error::` / `::warning::` annotations and the PR-comment body reads
+the following env vars (all integers, all defaulted):
+
+| Variable                          | Default | Controls                                                     |
+|-----------------------------------|---------|--------------------------------------------------------------|
+| `SCHEMA_DRIFT_ANNOTATION_MAX`     | `10`    | Max failing manifests annotated / rendered in the PR comment |
+| `SCHEMA_DRIFT_MISSING_CAP`        | `20`    | Max `missing:` keys listed per manifest                      |
+| `SCHEMA_DRIFT_MISTYPED_CAP`       | `20`    | Max `mistyped:` entries listed per manifest                  |
+| `SCHEMA_DRIFT_EXTRA_CAP`          | `20`    | Max `extra:` keys listed per manifest                        |
+
+Overflow is summarized as `…+N more` in-line and — when whole manifests
+are elided — a trailing `::warning::` pointing at the uploaded
+`schema-drift-fixture-validation` artifact (which now always includes
+`validation-report.json` and the generated `pr-comment.md`).
+
 
 
 ### CI expected artifact filenames (per browser)

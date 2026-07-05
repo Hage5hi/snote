@@ -12,6 +12,7 @@ validator at it directly:
 | `missing-nested/` | Missing top-level required keys (`requiredArtifacts`, …)| `1`           |
 | `wrong-types/`    | `combined` is a string, `matches` is `number[]`         | `1`           |
 | `extra-keys/`     | Adds `unknownField` / `anotherExtra` (strict-only fail) | `1` (strict)  |
+| `combined-mismatch/` | Combined manifest is missing `browser`, per-browser file (`webkit`) is not listed in the combined `browsers` array | `1` |
 
 ## Reproduce locally
 
