@@ -64,35 +64,35 @@ EOF
 OUT="${OUT:-_schema_drift}"
 FILTER="all"
 FILE_MATCHES=()     # each entry is one substring
+FILE_EXCLUDES=()    # each entry is one substring to skip
 BROWSERS=()         # each entry is one playwright project name
 VIEWER="auto"
 DRY_RUN=0
+VERBOSE=0
 
-add_matches() {
-  # Split "$1" on commas so `--file a,b` expands to two entries.
+add_to() {
+  # $1 = nameref array, $2 = comma-list
+  local -n _arr=$1
   local IFS=,
   # shellcheck disable=SC2206
-  local parts=($1)
-  for p in "${parts[@]}"; do [ -n "$p" ] && FILE_MATCHES+=("$p"); done
-}
-add_browsers() {
-  local IFS=,
-  # shellcheck disable=SC2206
-  local parts=($1)
-  for p in "${parts[@]}"; do [ -n "$p" ] && BROWSERS+=("$p"); done
+  local parts=($2)
+  for p in "${parts[@]}"; do [ -n "$p" ] && _arr+=("$p"); done
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --file)       add_matches "${2:-}"; shift 2 ;;
-    --file=*)     add_matches "${1#*=}"; shift ;;
-    --browsers)   add_browsers "${2:-}"; shift 2 ;;
-    --browsers=*) add_browsers "${1#*=}"; shift ;;
+    --file)       add_to FILE_MATCHES  "${2:-}"; shift 2 ;;
+    --file=*)     add_to FILE_MATCHES  "${1#*=}"; shift ;;
+    --exclude)    add_to FILE_EXCLUDES "${2:-}"; shift 2 ;;
+    --exclude=*)  add_to FILE_EXCLUDES "${1#*=}"; shift ;;
+    --browsers)   add_to BROWSERS      "${2:-}"; shift 2 ;;
+    --browsers=*) add_to BROWSERS      "${1#*=}"; shift ;;
     --type)       FILTER="${2:-all}"; shift 2 ;;
     --type=*)     FILTER="${1#*=}"; shift ;;
     --viewer)     VIEWER="${2:-auto}"; shift 2 ;;
     --viewer=*)   VIEWER="${1#*=}"; shift ;;
     --dry-run)    DRY_RUN=1; shift ;;
+    --verbose|-v) VERBOSE=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
@@ -100,6 +100,8 @@ while [ $# -gt 0 ]; do
 done
 [ "$FILTER" = "schema" ] && FILTER="schemas"
 [ "$FILTER" = "type" ]   && FILTER="types"
+
+vlog() { [ "$VERBOSE" = "1" ] && echo "[verbose] $*" >&2 || true; }
 
 # --dry-run must work without a bundle on disk so it's usable as a
 # planning/preview step and in unit tests. All other modes require OUT.
