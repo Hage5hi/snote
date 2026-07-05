@@ -211,11 +211,51 @@ pretty-index-hook-validate-downloaded:
 #   2. run the pre-commit hook in validation mode against BOTH directories
 # Fails fast (exit 1) on the first checksum mismatch — the hook step is
 # skipped entirely if verify fails, so you never validate corrupted bytes.
+#
+# Set VERBOSE=1 to print the resolved PRETTY_INDEX_HOOK_MATRIX, the
+# diagnostics directory, and full per-step command output for each stage.
 pretty-index-reproduce-downloaded:
+	@if [ "$(VERBOSE)" = "1" ]; then \
+	  echo "── pretty-index-reproduce-downloaded [verbose] ──"; \
+	  echo "  INDEX (diagnostics path) : $(INDEX)"; \
+	  echo "  diagnostics directory    : $(dir $(INDEX))"; \
+	  echo "  matrices                 : atomic stress"; \
+	  echo "  per-matrix downloaded dir: ./_pretty-index-atomic  ./_pretty-index-stress"; \
+	  echo ""; \
+	fi
 	@echo "==> [1/2] verifying downloaded pretty-index checksums"
 	@$(MAKE) --no-print-directory pretty-index-artifacts-verify
 	@echo ""
 	@echo "==> [2/2] running pre-commit hook (validation mode) against atomic + stress"
-	@$(MAKE) --no-print-directory pretty-index-hook-validate-downloaded
+	@if [ "$(VERBOSE)" = "1" ]; then \
+	  PRETTY_INDEX_HOOK_VERBOSE=1 \
+	    $(MAKE) --no-print-directory pretty-index-hook-validate-downloaded; \
+	else \
+	  $(MAKE) --no-print-directory pretty-index-hook-validate-downloaded; \
+	fi
+
+# One-command "cold-start" reproduction: download BOTH matrices'
+# artifacts from a failed CI run, verify their sha256 checksums, then
+# run the validation hook against both directories. Requires RUN_ID.
+#
+#   make pretty-index-artifacts-download-verify-reproduce RUN_ID=<id> [OS=ubuntu-latest] [VERBOSE=1]
+pretty-index-artifacts-download-verify-reproduce:
+	@if [ -z "$(RUN_ID)" ]; then \
+	  echo "usage: make pretty-index-artifacts-download-verify-reproduce RUN_ID=<run-id> [OS=ubuntu-latest] [VERBOSE=1]" >&2; \
+	  exit 2; \
+	fi
+	@echo "==> [1/3] downloading atomic + stress artifacts (RUN_ID=$(RUN_ID), OS=$(OS))"
+	@$(MAKE) --no-print-directory pretty-index-artifacts-download RUN_ID=$(RUN_ID) OS=$(OS)
+	@echo ""
+	@echo "==> [2/3] + [3/3] verify + reproduce"
+	@$(MAKE) --no-print-directory pretty-index-reproduce-downloaded VERBOSE=$(VERBOSE)
+
+# Remove the downloaded per-matrix pretty-index diagnostic directories
+# to keep local repro environments tidy. Only touches ./_pretty-index-*
+# — never the real diagnostics under $(dir $(INDEX)).
+pretty-index-artifacts-clean:
+	@rm -rf -- ./_pretty-index-atomic ./_pretty-index-stress
+	@echo "removed: ./_pretty-index-atomic ./_pretty-index-stress"
+
 
 
