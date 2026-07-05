@@ -1356,4 +1356,76 @@ describe("schema-drift-diff: --json-out stress + read-only + stderr wording", ()
     expect(doc).toContain("cleanup: removed partial temp file");
     expect(doc).toContain("byte-for-byte unchanged");
   });
+
+  it("documents the exact atomicWrite failure contract (three-line stderr shape)", () => {
+    const doc = _readFileSync(
+      resolve(__dirname, "../../docs/schema-drift-diff-test-hooks.md"),
+      "utf8",
+    );
+    // The contract section and each of the three lines must be present verbatim
+    // so tests elsewhere can rely on the exact wording.
+    expect(doc).toContain("## `atomicWrite` failure contract");
+    expect(doc).toContain('error: cannot write <label> to "<dest>"');
+    expect(doc).toContain('cleanup: <cleanup-line>');
+    expect(doc).toContain("fix: check that the parent directory exists and is writable");
+    expect(doc).toContain('removed partial temp file "<dest>.<pid>.tmp"');
+    expect(doc).toContain('no temp file to remove at "<dest>.<pid>.tmp"');
+    expect(doc).toContain("Exit code is always `7`");
+  });
+
+  it("end-to-end: --json-out writes a file whose contents parse as valid JSON matching --json", () => {
+    const dir = tmp();
+    const before = writeReport(dir, FAILING);
+    const after = writeReport(join(dir), FAILING);
+    const jsonOut = join(dir, "e2e-diff.json");
+
+    const run = bun(DIFF_SCRIPT, [before, after, "--json-out", jsonOut]);
+    expect(run.code).toBe(0);
+    expect(run.stderr).toContain(`schema-drift diff (json): ${jsonOut}`);
+
+    const onDisk = _readFileSync(jsonOut, "utf8");
+    // Parses as JSON …
+    const parsed = JSON.parse(onDisk);
+    // … and matches the canonical --json payload on stdout for the same inputs.
+    const canonical = bun(DIFF_SCRIPT, [before, after, "--json"]);
+    expect(canonical.code).toBe(0);
+    expect(onDisk).toBe(canonical.stdout);
+    // Sanity: shape matches DiffResult.
+    expect(parsed).toHaveProperty("totals");
+    expect(parsed).toHaveProperty("added");
+    expect(parsed).toHaveProperty("removed");
+    expect(parsed).toHaveProperty("changed");
+    expect(parsed).toHaveProperty("matchedAnchors");
+  });
+
+  it("--json-out works with destination paths containing spaces and special characters", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    // Spaces, unicode, ampersand, parentheses, single quote, dollar sign.
+    const spicyDir = join(dir, "weird dir & name (v1) — café");
+    const { mkdirSync } = require("node:fs");
+    mkdirSync(spicyDir, { recursive: true });
+    const jsonOut = join(spicyDir, "diff $out 'x' & y.json");
+
+    // Pre-existing content proves atomic replace, not append.
+    writeFileSync(jsonOut, "STALE_CONTENT_SHOULD_BE_REPLACED\n");
+    // Pre-existing stale <name>.<pid>.tmp from an "old" dead pid — should be
+    // cleaned up by the successful write's readdirSync pass.
+    const staleTmp = `${jsonOut}.2147483.tmp`;
+    writeFileSync(staleTmp, "stale-tmp");
+
+    const run = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(run.code).toBe(0);
+
+    const onDisk = _readFileSync(jsonOut, "utf8");
+    expect(() => JSON.parse(onDisk)).not.toThrow();
+    expect(onDisk).not.toContain("STALE_CONTENT_SHOULD_BE_REPLACED");
+
+    // Stale .tmp was removed; no fresh .tmp siblings remain.
+    const { readdirSync, existsSync } = require("node:fs");
+    expect(existsSync(staleTmp)).toBe(false);
+    const leftover = readdirSync(spicyDir).filter((n: string) => n.endsWith(".tmp"));
+    expect(leftover).toEqual([]);
+  });
 });
+
