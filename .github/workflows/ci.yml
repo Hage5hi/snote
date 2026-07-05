@@ -225,10 +225,26 @@ jobs:
         #   - long destination path
         #   - spaces and special characters
         #   - symlink + schema + cleanup wording
+        #   - concurrent reader + fuzz + unsafe symlink
         run: |
+          mkdir -p artifacts/schema-drift-diff
           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
-            -t "print-schema|atomic write failure modes|long destination path|spaces and special characters|symlink \+ schema \+ cleanup wording" \
-            --reporter=verbose
+            -t "print-schema|atomic write failure modes|long destination path|spaces and special characters|symlink \+ schema \+ cleanup wording|concurrent reader \+ fuzz \+ unsafe symlink" \
+            --reporter=verbose 2>&1 | tee artifacts/schema-drift-diff/vitest.log
+      # On failure, upload the vitest log plus any leftover `*.tmp` siblings
+      # from the OS temp dir so the atomicWrite cleanup path can be inspected
+      # offline. `if-no-files-found: ignore` avoids noisy warnings when the
+      # tests succeeded and cleaned up after themselves.
+      - name: upload --json-out debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-diff-json-out-debug-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            artifacts/schema-drift-diff/vitest.log
+            /tmp/**/*.tmp
+            ${{ runner.temp }}/**/*.tmp
 
   # Nightly parallel-writer stress job for --json-out. Race conditions in
   # the atomic rename / stale-tmp cleanup path only surface occasionally,
@@ -242,6 +258,11 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # `SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS` mirrors the local knob documented
+    # in docs/schema-drift-diff-test-hooks.md so contributors can reproduce
+    # nightly conditions without hard-coding the loop count.
+    env:
+      SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS: ${{ vars.SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS || '5' }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -251,13 +272,25 @@ jobs:
       - name: parallel --json-out stress + concurrency
         shell: bash
         run: |
-          for i in 1 2 3 4 5; do
+          mkdir -p artifacts/schema-drift-diff-stress
+          for i in $(seq 1 "${SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS}"); do
             echo "::group::stress iteration $i"
             bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
-              -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording" \
-              --reporter=verbose
+              -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink" \
+              --reporter=verbose 2>&1 | tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.log"
             echo "::endgroup::"
           done
+      - name: upload stress debug artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-diff-stress-debug-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            artifacts/schema-drift-diff-stress/*.log
+            /tmp/**/*.tmp
+            ${{ runner.temp }}/**/*.tmp
+
 
 
 
