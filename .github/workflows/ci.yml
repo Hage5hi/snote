@@ -937,6 +937,12 @@ print(json.dumps({
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+          # Generator self-check: fail with a regeneration hint in
+          # $GITHUB_STEP_SUMMARY when the generator's schema_version
+          # drifts from the validator's CURRENT_SCHEMA_VERSION.
+          if ! python3 scripts/check-pretty-index-schema-version.py "$index"; then
+            exit 1
+          fi
           {
             echo ''
             echo "### ✅ pretty-index.json validated (${count} entr$( [[ $count -eq 1 ]] && echo y || echo ies ) on \`${{ matrix.os }}\`)"
