@@ -161,3 +161,37 @@ Env-var summary (all optional, all safe to leave unset locally):
 | `SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS` | stress nightly loop | `5` (CI) | Loop count for the nightly stress harness. |
 | `SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL` | atomicWrite | unset | Force the mid-write failure branch (see above). |
 | `SCHEMA_DRIFT_DIFF_FORCE_INVALID` | `--validate-json` | unset | Force the Ajv-mismatch branch (see above). |
+
+## Replay helper: `scripts/replay-schema-drift-diff-fuzz.sh`
+
+When a `--json-out` fuzz/concurrent-reader run fails in CI, the job log
+contains a `schema-drift-diff replay block` group with the exact env vars
+used. Feed them to the replay helper to rerun locally with output archived
+to a timestamped folder:
+
+```bash
+# From the block: SCHEMA_DRIFT_DIFF_FUZZ_SEED=12648430 …
+scripts/replay-schema-drift-diff-fuzz.sh 12648430
+scripts/replay-schema-drift-diff-fuzz.sh 12648430 2000
+scripts/replay-schema-drift-diff-fuzz.sh 12648430 2000 "fuzz: varied valid"
+```
+
+Outputs land under `artifacts/schema-drift-diff-replay/<UTC-timestamp>-seed-<seed>/`
+(`manifest.txt`, `vitest.stdout.log`, `vitest.stderr.log`) so multiple
+replays do not overwrite each other.
+
+## Additional CI-exposed env knobs
+
+Both the atomic-crossos job and the nightly stress job read these
+**optional** repo-level variables. Setting them in
+`Settings → Secrets and variables → Actions → Variables` overrides the
+defaults for every subsequent CI run and mirrors the local env vars a
+contributor would set to reproduce a flake.
+
+| Repo variable | Local env var | Default | Purpose |
+| --- | --- | --- | --- |
+| `SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN` | same | job-specific | Overrides the vitest `-t` filter. Use to bisect down to a single failing test. |
+| `SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS` | same | `30000` (crossos) / `60000` (stress) | Overrides `vitest --test-timeout`. Bump when reproducing a slow race. |
+| `SCHEMA_DRIFT_DIFF_FUZZ_SEED` | same | LCG default (`12648430`) | Pins the fuzz seed. Appears in the CI replay block on failure. |
+| `SCHEMA_DRIFT_DIFF_READER_DURATION_MS` | same | `300` | Widens the concurrent-reader window. |
+| `SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS` | same | `5` | Number of full-suite loops in the nightly stress job. |

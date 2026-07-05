@@ -219,12 +219,16 @@ jobs:
         # Use bash on every OS (including Windows) so the `\` line
         # continuations below are honored consistently.
         shell: bash
-        # `SCHEMA_DRIFT_DIFF_FUZZ_SEED` (repo variable, optional) forces the
-        # fuzz test to a known seed so a red run can be replayed byte-for-byte.
-        # When unset, the test prints the seed it picked to stderr.
+        # All knobs are optional repo-level variables. They mirror the local
+        # env vars documented in docs/schema-drift-diff-test-hooks.md so a
+        # contributor can copy the block from a failed CI run and reproduce
+        # locally byte-for-byte.
         env:
           SCHEMA_DRIFT_DIFF_FUZZ_SEED: ${{ vars.SCHEMA_DRIFT_DIFF_FUZZ_SEED }}
-        # Filter picks up:
+          SCHEMA_DRIFT_DIFF_READER_DURATION_MS: ${{ vars.SCHEMA_DRIFT_DIFF_READER_DURATION_MS }}
+          SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN: ${{ vars.SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN }}
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS: ${{ vars.SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS }}
+        # Default test filter picks up:
         #   - print-schema
         #   - atomic write failure modes
         #   - long destination path
@@ -233,15 +237,37 @@ jobs:
         #   - concurrent reader + fuzz + unsafe symlink
         run: |
           mkdir -p artifacts/schema-drift-diff
+          DEFAULT_PATTERN='print-schema|atomic write failure modes|long destination path|spaces and special characters|symlink \+ schema \+ cleanup wording|concurrent reader \+ fuzz \+ unsafe symlink'
+          PATTERN="${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-$DEFAULT_PATTERN}"
+          TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-30000}"
           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
-            -t "print-schema|atomic write failure modes|long destination path|spaces and special characters|symlink \+ schema \+ cleanup wording|concurrent reader \+ fuzz \+ unsafe symlink" \
+            -t "$PATTERN" \
+            --testTimeout="$TIMEOUT_MS" \
             --reporter=verbose \
             > >(tee artifacts/schema-drift-diff/vitest.stdout.log) \
             2> >(tee artifacts/schema-drift-diff/vitest.stderr.log >&2)
-      # On failure OR timeout/cancel, snapshot the OS temp dir so the exact
-      # failing --json-out destinations and any leftover `.tmp` siblings are
-      # inspectable offline. Includes both stdout and stderr logs so the fuzz
-      # seed printed by the test is preserved for replay.
+      # Single, clearly labeled reproduction block: emitted on failure or
+      # cancellation so the seed + reader duration + filter + timeout show
+      # up in one place in the job log, not scattered across steps.
+      - name: print replay block on failure
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          SEED="$(grep -oE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff/vitest.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
+          SEED="${SEED:-${SCHEMA_DRIFT_DIFF_FUZZ_SEED:-<unset>}}"
+          echo "::group::schema-drift-diff replay block (copy verbatim)"
+          cat <<EOF
+          # ---- schema-drift-diff --json-out replay block ----
+          SCHEMA_DRIFT_DIFF_FUZZ_SEED=${SEED}
+          SCHEMA_DRIFT_DIFF_READER_DURATION_MS=${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}
+          SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN=${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS=${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-30000}
+
+          # Local reproduction:
+          scripts/replay-schema-drift-diff-fuzz.sh ${SEED} ${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300} "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}"
+          # ---------------------------------------------------
+          EOF
+          echo "::endgroup::"
       - name: capture failing --json-out destinations
         if: failure() || cancelled()
         shell: bash
@@ -270,6 +296,7 @@ jobs:
             artifacts/schema-drift-diff/dest-listing.txt
             artifacts/schema-drift-diff/dest-snapshot/**
 
+
   # Nightly parallel-writer stress job for --json-out. Race conditions in
   # the atomic rename / stale-tmp cleanup path only surface occasionally,
   # so we run the stress + concurrency suites on a schedule to catch them
@@ -288,6 +315,9 @@ jobs:
       SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS: ${{ vars.SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS || '5' }}
       SCHEMA_DRIFT_DIFF_FUZZ_SEED: ${{ vars.SCHEMA_DRIFT_DIFF_FUZZ_SEED }}
       SCHEMA_DRIFT_DIFF_READER_DURATION_MS: ${{ vars.SCHEMA_DRIFT_DIFF_READER_DURATION_MS }}
+      SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN: ${{ vars.SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN }}
+      SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS: ${{ vars.SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS }}
+
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -298,15 +328,40 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts/schema-drift-diff-stress
+          DEFAULT_PATTERN='concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink'
+          PATTERN="${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-$DEFAULT_PATTERN}"
+          TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-60000}"
           for i in $(seq 1 "${SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS}"); do
             echo "::group::stress iteration $i"
             bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
-              -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink" \
+              -t "$PATTERN" \
+              --testTimeout="$TIMEOUT_MS" \
               --reporter=verbose \
               > >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stdout.log") \
               2> >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stderr.log" >&2)
             echo "::endgroup::"
           done
+      - name: print replay block on failure
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          SEED="$(grep -hoE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff-stress/*.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
+          SEED="${SEED:-${SCHEMA_DRIFT_DIFF_FUZZ_SEED:-<unset>}}"
+          echo "::group::schema-drift-diff replay block (copy verbatim)"
+          cat <<EOF
+          # ---- schema-drift-diff --json-out stress replay block ----
+          SCHEMA_DRIFT_DIFF_FUZZ_SEED=${SEED}
+          SCHEMA_DRIFT_DIFF_READER_DURATION_MS=${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}
+          SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS=${SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS}
+          SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN=${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS=${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-60000}
+
+          # Local reproduction:
+          scripts/replay-schema-drift-diff-fuzz.sh ${SEED} ${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300} "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}"
+          # ----------------------------------------------------------
+          EOF
+          echo "::endgroup::"
+
       - name: capture failing --json-out destinations
         if: failure() || cancelled()
         shell: bash
