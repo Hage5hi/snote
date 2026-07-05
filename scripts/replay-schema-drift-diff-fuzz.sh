@@ -137,7 +137,8 @@ PATTERN="${PATTERN_OVERRIDE:-${3:-${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurr
 TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-30000}"
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-OUT="artifacts/schema-drift-diff-replay/${TS}-seed-${SEED}"
+OUT="${OUTPUT_DIR_OVERRIDE:-artifacts/schema-drift-diff-replay/${TS}-seed-${SEED}}"
+
 mkdir -p "$OUT"
 
 cat > "$OUT/manifest.txt" <<EOF
