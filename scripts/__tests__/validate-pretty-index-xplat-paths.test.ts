@@ -66,15 +66,9 @@ describe("validate-pretty-index.py cross-platform path normalization", () => {
 
   it("report.file echoes the input path verbatim (no OS-specific rewrite)", () => {
     const d = workdir();
-    // Deliberately construct a nested path so we can assert the exact
-    // string round-trips. pathlib on POSIX will keep forward slashes;
-    // on Windows it keeps backslashes — either way it must equal the
-    // input we passed. This snapshot pins the "no normalization" rule.
-    const f = join(d, "sub", "pretty-index.json");
-    writeFileSync(f.replace(/[^/\\]+$/, ""), "", { flag: "a" }); // no-op
-    // Actually create the subdir + file.
     const { mkdirSync } = require("node:fs");
     mkdirSync(join(d, "sub"), { recursive: true });
+    const f = join(d, "sub", "pretty-index.json");
     writeFileSync(f, "[]");
     const r = run("--require-version", "1", "--report", f);
     expect(r.status).toBe(0);
