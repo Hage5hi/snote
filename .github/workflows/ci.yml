@@ -881,10 +881,23 @@ print(json.dumps({
         if: always() && steps.upload-pretty-stress.outputs.artifact-url != ''
         shell: bash
         run: |
+          shopt -s nullglob
+          URL="${{ steps.upload-pretty-stress.outputs.artifact-url }}"
+          NAME="schema-drift-diff-stress-replay-pretty-${{ matrix.os }}"
           {
             echo ''
-            echo "- [schema-drift-diff-stress-replay-pretty-${{ matrix.os }}](${{ steps.upload-pretty-stress.outputs.artifact-url }}) — pretty-printed \`replay-summary.json\` (\`*.pretty.txt\`, \`*.pretty.md\`) + machine-readable triage index (\`pretty-index.json\`), retention 14 days"
+            echo "- [$NAME]($URL) — pretty-printed \`replay-summary.json\` (\`*.pretty.txt\`, \`*.pretty.md\`) + machine-readable triage index (\`pretty-index.json\`), retention 14 days"
+            echo ''
+            echo '  Per-summary files (inside the artifact above):'
+            for f in artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt; do
+              base="${f##*/}"; base="${base%.pretty.txt}"
+              echo "  - \`${base}\` → [\`${base}.pretty.txt\`]($URL), [\`${base}.pretty.md\`]($URL)"
+            done
+            if [[ -f artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json ]]; then
+              echo "  - [pretty-index.json]($URL) — aggregate triage (fail_reason / exit_code / pretty filenames per summary)"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+
 
 
       - name: verify step summary contains pretty replay-summary
