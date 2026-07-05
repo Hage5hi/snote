@@ -42,3 +42,8 @@ bun.lockb
 /playwright-report/
 /test-results/
 /playwright/.cache/
+
+# Downloaded CI pretty-index diagnostic artifacts (see:
+# `make pretty-index-artifacts-download` / `-clean`)
+/_pretty-index-atomic/
+/_pretty-index-stress/

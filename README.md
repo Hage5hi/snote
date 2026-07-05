@@ -733,10 +733,23 @@ invokes the hook for both matrices in sequence:
 # one-command reproduction (recommended)
 make pretty-index-reproduce-downloaded
 
+# cold-start: download BOTH artifacts, verify checksums, run the hook
+make pretty-index-artifacts-download-verify-reproduce RUN_ID=<run-id> [OS=ubuntu-latest]
+
+# verbose mode — prints resolved PRETTY_INDEX_HOOK_MATRIX, the on-disk
+# diagnostics directory ($(INDEX)), the per-matrix downloaded dirs, and
+# forwards PRETTY_INDEX_HOOK_VERBOSE=1 to the hook so each step prints
+# its [exists]/[absent] candidate file list before exiting.
+make pretty-index-reproduce-downloaded VERBOSE=1
+
 # or step-by-step:
-make pretty-index-artifacts-verify              # sha256sum -c both dirs
+make pretty-index-artifacts-verify              # sha256sum -c both dirs (pass/fail summary + per-file hashes)
 make pretty-index-hook-validate-downloaded      # runs the hook for atomic, then stress
+
+# tidy up when you're done
+make pretty-index-artifacts-clean               # removes ./_pretty-index-atomic and ./_pretty-index-stress
 ```
+
 
 **Interpreting failures:**
 
