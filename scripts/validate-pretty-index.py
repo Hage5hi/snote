@@ -216,6 +216,29 @@ def main(argv: list[str]) -> int:
     if require_version is not None and entries is not None and not envelope_problems:
         actual = 0 if isinstance(data, list) else data.get("schema_version")
         if actual != require_version:
+            if auto_migrate:
+                import subprocess
+                migrator = Path(__file__).resolve().parent / "migrate-pretty-index.py"
+                sys.stderr.write(
+                    f"validate-pretty-index: auto-migrating {p} "
+                    f"(schema_version={actual} -> {require_version})...\n"
+                )
+                rc = subprocess.call(
+                    ["python3", str(migrator), str(p), "--in-place"],
+                    stderr=sys.stderr,
+                )
+                if rc != 0:
+                    sys.stderr.write(
+                        f"validate-pretty-index: --auto-migrate failed (exit {rc})\n"
+                    )
+                    return 3
+                # Re-invoke validation on the migrated file, without
+                # --auto-migrate to prevent unbounded recursion.
+                new_argv = [argv[0]]
+                if report:
+                    new_argv.append("--report")
+                new_argv += ["--require-version", str(require_version), str(p)]
+                return main(new_argv)
             problems.append({
                 "index": None,
                 "path": "$.schema_version",
@@ -225,6 +248,7 @@ def main(argv: list[str]) -> int:
                     f"schema_version={actual} does not match required "
                     f"version={require_version}; regenerate with "
                     "`scripts/migrate-pretty-index.py <path> --in-place` "
+                    "(or re-run this validator with --auto-migrate) "
                     "(see docs/schema-drift-diff-test-hooks.md)"
                 ),
             })
