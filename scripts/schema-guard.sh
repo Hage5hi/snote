@@ -1,12 +1,20 @@
 #!/usr/bin/env bash
 # Local schema-guard dry-run: mirrors the CI workflow's dry_run mode.
-# Regenerates the JSON Schemas + TypeScript types, captures per-file
-# unified diffs under _schema_drift/, prints them, and ALWAYS exits 0
-# so you can preview drift before CI blocks the merge.
+#
+# PARITY WITH .github/workflows/schema-guard.yml (schema_types_check step):
+#   - regenerate command:   `bun run schema:types`
+#   - check command:        `bun run schema:types:check`
+#   - artifact directory:   _schema_drift/ (committed/, regenerated/, *.diff)
+#   - captured extras:      check.log, cli-schema-versions.txt
+#   - tracked files:        schemas/focus-trap-inspect-{report,diff}.schema.json
+#                           scripts/_helpers/focus-trap-inspect-schema.types.gen.ts
+# Keep these in sync with the CI workflow so local diffs are byte-identical
+# to what CI uploads as the `schema-drift` artifact.
 #
 # Usage:
 #   bun run schema-guard          # regenerate, print diffs, never fails
 #   bun run schema-guard -- --strict   # exit 1 on drift (parity with CI)
+#   bun run schema-guard:view     # side-by-side viewer for the diffs
 set -euo pipefail
 
 STRICT=0
