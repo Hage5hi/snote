@@ -501,6 +501,20 @@ schema-drift-diff before.json after.json --json \
   --fail-slug 'fail-chromium-*,fail-webkit-*' --kind 'parse*,extra'
 ```
 
+The JSON Schema for the `--json` payload is published in-tree at
+[`schemas/schema-drift-diff.schema.json`](schemas/schema-drift-diff.schema.json)
+and can be printed to stdout for downstream tools without hard-coding a
+path:
+
+```bash
+bun scripts/schema-drift-diff.ts --print-schema > diff.schema.json
+```
+
+Release notes for the diff CLI live in
+[`CHANGELOG.md`](CHANGELOG.md) (see the `Unreleased` section for the
+current `--json-out` atomic write, `--validate-json` payload shape, and
+exit-code additions).
+
 Metacharacters in glob patterns are escaped, so `--fail-slug 'fail.json'`
 matches the literal `fail.json` (not `failXjson`); use `/regex/` when you
 actually want regex semantics.

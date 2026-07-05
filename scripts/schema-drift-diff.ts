@@ -360,16 +360,46 @@ function validateJsonPayload(payload: unknown, schemaPath: string): { ok: true }
 
 function main() {
   const args = process.argv.slice(2);
+  if (args.includes("--print-schema")) {
+    const schemaPath = resolve(__dirname, "../schemas/schema-drift-diff.schema.json");
+    process.stdout.write(readFileSync(schemaPath, "utf8"));
+    if (!readFileSync(schemaPath, "utf8").endsWith("\n")) process.stdout.write("\n");
+    return;
+  }
   if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
+    const schemaRel = "schemas/schema-drift-diff.schema.json";
     console.error(
       "Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> " +
         "[--browser <name>] [--path <substr>] [--kind <pat>] [--fail-slug <pat>] " +
         "[--max <n>] [--out <path>] [--json-out <path>] [--markdown] [--json] " +
-        "[--validate-json] [--dry-run]\n" +
+        "[--validate-json] [--dry-run] [--print-schema]\n" +
         "\n" +
-        "  --kind / --fail-slug accept exact values, `*`/`?` globs, or `/regex/`.\n" +
-        "  --json-out writes the --json payload to <path> (implies --json).\n" +
-        "  --validate-json checks the JSON output against schemas/schema-drift-diff.schema.json.",
+        "  --kind / --fail-slug accept exact values, `*`/`?` globs, or `/regex/flags`.\n" +
+        "  --json-out writes the --json payload atomically (implies --json).\n" +
+        "  --validate-json checks the JSON output against " + schemaRel + ".\n" +
+        "  --print-schema prints that JSON Schema to stdout and exits.\n" +
+        "\n" +
+        "Examples:\n" +
+        "  # Text diff of two reports\n" +
+        "  bun scripts/schema-drift-diff.ts before.json after.json\n" +
+        "\n" +
+        "  # JSON to stdout, validated against " + schemaRel + "\n" +
+        "  bun scripts/schema-drift-diff.ts before.json after.json --json --validate-json\n" +
+        "\n" +
+        "  # Atomic JSON write to a file (implies --json)\n" +
+        "  bun scripts/schema-drift-diff.ts before.json after.json --json-out /tmp/diff.json\n" +
+        "\n" +
+        "  # Wildcard filter: every chromium failure in one flag\n" +
+        "  bun scripts/schema-drift-diff.ts before.json after.json --json --fail-slug 'fail-chromium-*'\n" +
+        "\n" +
+        "  # /regex/flags with case-insensitive match on the anchor\n" +
+        "  bun scripts/schema-drift-diff.ts before.json after.json --fail-slug '/^fail-(chromium|webkit)-/i'\n" +
+        "\n" +
+        "  # --kind glob expands `mis*` to both `missing` and `mistyped`\n" +
+        "  bun scripts/schema-drift-diff.ts before.json after.json --kind 'mis*'\n" +
+        "\n" +
+        "  # Print the JSON Schema for programmatic use\n" +
+        "  bun scripts/schema-drift-diff.ts --print-schema > diff.schema.json",
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
