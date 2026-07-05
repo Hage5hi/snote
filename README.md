@@ -711,33 +711,49 @@ Each file's role:
 To reproduce the exact same check locally before pushing:
 
 ```sh
-# 1. Makefile target (defaults to the CI matrix path)
+# 1. Makefile target (defaults to the CI matrix path + atomic matrix)
 make pretty-index-check
 make pretty-index-check INDEX=path/to/pretty-index.json
-make pretty-index-check-clean            # discard prior diagnostics first
-make pretty-index-diagnostics            # print artifact paths only
-make pretty-index-clean                  # rm .pre-check.json / .report.json
+make pretty-index-check MATRIX=stress          # nightly-stress artifact naming
+make pretty-index-check-clean                  # discard prior diagnostics first
+make pretty-index-check-pwsh MATRIX=stress     # route through PowerShell (Windows)
+make pretty-index-diagnostics                  # print artifact paths only
+make pretty-index-clean                        # rm .pre-check.json / .report.json
 
 # 2. Bash reproduce script (macOS / Linux / WSL)
 scripts/reproduce-ci-pretty-index-check.sh
 scripts/reproduce-ci-pretty-index-check.sh --clean path/to/pretty-index.json
+scripts/reproduce-ci-pretty-index-check.sh --matrix atomic    # (default)
 scripts/reproduce-ci-pretty-index-check.sh --matrix stress    # nightly-stress naming
 
 # 3. PowerShell reproduce script (Windows)
 pwsh scripts/reproduce-ci-pretty-index-check.ps1
 pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Clean path\to\pretty-index.json
+pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Matrix atomic   # (default)
 pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Matrix stress
 ```
 
-Pass `--matrix atomic` (default) or `--matrix stress` (PowerShell:
-`-Matrix atomic|stress`) to mirror the artifact name the corresponding
-CI job would upload (`schema-drift-diff-replay-...` vs
-`schema-drift-diff-stress-replay-...`).
+`MATRIX` / `--matrix` / `-Matrix` (default `atomic`) controls which CI job
+the diagnostic step-summary block claims the failure artifact belongs to.
+Same input file + same exit code — only the artifact prefix changes:
 
-All three write the same sibling `.pre-check.json` / `.report.json`
-files and print a step-summary-style failure block on non-zero exit.
-See `docs/schema-drift-diff-test-hooks.md` for the full exit-code
-contract.
+```text
+# --matrix atomic  (default; atomic-crossos matrix)
+#   artifact: schema-drift-diff-replay-pretty-index-failure-<os>
+#     - artifacts/.../pretty-index.json
+#     - artifacts/.../pretty-index.pre-check.json
+#     - artifacts/.../pretty-index.report.json
+
+# --matrix stress  (nightly-stress matrix)
+#   artifact: schema-drift-diff-stress-replay-pretty-index-failure-<os>
+#     - ...same three files...
+```
+
+All three entry points write the same sibling `.pre-check.json` /
+`.report.json` files and print a step-summary-style failure block on
+non-zero exit. See `docs/schema-drift-diff-test-hooks.md` for the full
+exit-code contract.
+
 
 ### Pre-commit hook — skipping the pretty-index check
 
