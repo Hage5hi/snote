@@ -443,11 +443,12 @@ jobs:
         run: |
           shopt -s nullglob
           mkdir -p artifacts/schema-drift-diff-replay-verify/pretty
+          index="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
+          echo '[' > "$index"
+          first=1
           hard_fail=0
           for f in artifacts/schema-drift-diff-replay/*/replay-summary.json; do
             base="$(basename "$(dirname "$f")")"
-            # Parse fail_reason for triage BEFORE pretty-printing, using a
-            # minimal python one-liner so bad JSON still degrades gracefully.
             reason="$(python3 -c "import json,sys
 try:
   d=json.load(open(sys.argv[1]))
@@ -456,10 +457,17 @@ except Exception:
   r='unparseable'
 print(r)" "$f" 2>/dev/null | tr -c '[:alnum:]._-' '_' | cut -c1-40)"
             reason="${reason:-ok}"
+            exit_code="$(python3 -c "import json,sys
+try:
+  d=json.load(open(sys.argv[1]))
+  print(d.get('exit_code') if d.get('exit_code') is not None else 'null')
+except Exception:
+  print('null')" "$f" 2>/dev/null)"
             out="artifacts/schema-drift-diff-replay-verify/pretty/${base}.${reason}.pretty.txt"
-            # --fixed-widths + --no-color = deterministic bytes across runners.
+            md="artifacts/schema-drift-diff-replay-verify/pretty/${base}.${reason}.pretty.md"
             python3 scripts/pretty-replay-summary.py --fixed-widths --no-color "$f" > "$out" 2>&1
             rc=$?
+            python3 scripts/pretty-replay-summary.py --fixed-widths --no-color --markdown "$f" > "$md" 2>&1 || true
             case "$rc" in
               0) status="ok" ;;
               3) status="schema-error"; hard_fail=1 ;;
@@ -468,18 +476,37 @@ print(r)" "$f" 2>/dev/null | tr -c '[:alnum:]._-' '_' | cut -c1-40)"
               6) status="parse-error";  hard_fail=1 ;;
               *) status="exit=$rc";     hard_fail=1 ;;
             esac
+            # Append to machine-readable triage index.
+            [[ $first -eq 0 ]] && echo ',' >> "$index"
+            first=0
+            python3 -c "import json,sys
+print(json.dumps({
+  'folder': sys.argv[1],
+  'summary_file': sys.argv[2],
+  'pretty_txt': sys.argv[3],
+  'pretty_md': sys.argv[4],
+  'fail_reason': sys.argv[5],
+  'exit_code': None if sys.argv[6] == 'null' else int(sys.argv[6]),
+  'pretty_status': sys.argv[7],
+  'pretty_exit_code': int(sys.argv[8]),
+}, indent=2))" "$base" "$f" "$out" "$md" "$reason" "$exit_code" "$status" "$rc" >> "$index"
             {
               echo ''
               echo "<details><summary>pretty replay-summary: <code>${f}</code> — fail_reason=<code>${reason}</code> (${status})</summary>"
               echo ''
-              echo '```'
-              cat "$out" || echo "(pretty-print failed for $f)"
-              echo '```'
+              if [[ "$rc" -eq 0 ]]; then
+                # Render the Markdown table inline (not wrapped in ```)
+                # so GitHub renders it as a real table.
+                cat "$md"
+              else
+                echo '```'
+                cat "$out" || echo "(pretty-print failed for $f)"
+                echo '```'
+              fi
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
-          # Fail the job explicitly on schema/file errors instead of relying
-          # solely on later grep-based assertions.
+          echo ']' >> "$index"
           if [[ "$hard_fail" -ne 0 ]]; then
             echo "pretty-replay-summary.py returned a schema/file error (see step summary)" >&2
             exit 1
@@ -493,15 +520,19 @@ print(r)" "$f" 2>/dev/null | tr -c '[:alnum:]._-' '_' | cut -c1-40)"
           name: schema-drift-diff-replay-pretty-${{ matrix.os }}
           if-no-files-found: ignore
           retention-days: 14
-          path: artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt
+          path: |
+            artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt
+            artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.md
+            artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
       - name: append pretty artifact link to step summary
         if: always() && steps.upload-pretty.outputs.artifact-url != ''
         shell: bash
         run: |
           {
             echo ''
-            echo "- [schema-drift-diff-replay-pretty-${{ matrix.os }}](${{ steps.upload-pretty.outputs.artifact-url }}) — pretty-printed \`replay-summary.json\` (deterministic \`--fixed-widths --no-color\`), retention 14 days"
+            echo "- [schema-drift-diff-replay-pretty-${{ matrix.os }}](${{ steps.upload-pretty.outputs.artifact-url }}) — pretty-printed \`replay-summary.json\` (\`*.pretty.txt\`, \`*.pretty.md\`) + machine-readable triage index (\`pretty-index.json\`), retention 14 days"
           } >> "$GITHUB_STEP_SUMMARY"
+
 
       # Integration check: parse $GITHUB_STEP_SUMMARY after the pretty
       # blocks were appended and assert it actually contains the
