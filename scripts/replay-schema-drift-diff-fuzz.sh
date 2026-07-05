@@ -131,9 +131,10 @@ SCHEMA_DRIFT_DIFF_READER_DURATION_MS="$READER_MS" \
 CODE=$?
 set -e
 
-echo "exit_code: $CODE" | tee -a "$OUT/manifest.txt"
-# Post-run checksums for the (now-populated) log files, appended so the
-# pre-replay `--from` check against the frozen `checksums.sha256` still
-# matches the empty-log baseline.
-( cd "$OUT" && sha256sum vitest.stdout.log vitest.stderr.log > checksums.postrun.sha256 )
+# Write exit code to a separate file so `manifest.txt` stays byte-stable
+# and its pre-computed checksum in `checksums.sha256` keeps validating.
+echo "$CODE" > "$OUT/exit_code.txt"
+echo "exit_code: $CODE (see $OUT/exit_code.txt)" >&2
+( cd "$OUT" && sha256sum vitest.stdout.log vitest.stderr.log exit_code.txt > checksums.postrun.sha256 )
 exit "$CODE"
+
