@@ -540,8 +540,10 @@ test.describe("focus-trap --html-report a11y", () => {
           type: "live-region-timing",
           description: line,
         });
-        // Per-browser row in the GitHub job summary so on-call can spot
-        // budget approaches at a glance without opening the annotation.
+        // Per-browser row in the GitHub job summary. On failure the row's
+        // "artifacts" cell links to the run's Artifacts page where the
+        // per-browser trace.zip / screenshot / dom-snapshot were uploaded
+        // by Playwright's attach() calls above (test-results/**).
         if (process.env.GITHUB_STEP_SUMMARY) {
           try {
             const header = `<!-- live-region-summary-header -->`;
@@ -550,11 +552,18 @@ test.describe("focus-trap --html-report a11y", () => {
             if (!existing.includes(header)) {
               appendFileSync(path,
                 `\n${header}\n## ⏱ live-region wait budget per browser\n` +
-                `| browser | announcements | observed / budget (ms) | usage | total (ms) |\n` +
-                `|---|---:|---:|---:|---:|\n`);
+                `| browser | announcements | observed / budget (ms) | usage | total (ms) | artifacts |\n` +
+                `|---|---:|---:|---:|---:|---|\n`);
             }
+            const failedNow = testInfo.errors.length > 0;
+            const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+              ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}#artifacts`
+              : "";
+            const artifactCell = failedNow && runUrl
+              ? `[trace+screenshot](${runUrl} "live-region-trace.zip · live-region-failure.png · dom-snapshot.html · live-region-log.json for ${browserName}")`
+              : (runUrl ? `[run](${runUrl})` : "—");
             appendFileSync(path,
-              `| ${browserName} | ${log.length} | ${waitDurationMs} / ${waitMs} | ${usagePct}% | ${Date.now() - t0} |\n`);
+              `| ${browserName} | ${log.length} | ${waitDurationMs} / ${waitMs} | ${usagePct}% | ${Date.now() - t0} | ${artifactCell} |\n`);
           } catch {/* best-effort */}
         }
       } finally {
