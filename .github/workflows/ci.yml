@@ -576,18 +576,41 @@ print(json.dumps({
           # Mirror `make pretty-index-check MATRIX=atomic` so the job log
           # names the exact artifact prefix that will be uploaded below.
           make -s pretty-index-diagnostics MATRIX=atomic || true
+      - name: assert pretty-index failure diagnostics exist (MATRIX=atomic)
+        if: failure()
+        shell: bash
+        run: |
+          DIR="artifacts/schema-drift-diff-replay-verify/pretty"
+          missing=()
+          for f in pretty-index.json pretty-index.pre-check.json pretty-index.report.json; do
+            [[ -f "$DIR/$f" ]] || missing+=("$DIR/$f")
+          done
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error title=pretty-index diagnostics missing (MATRIX=atomic)::expected artifact files not on disk: ${missing[*]}"
+            echo "expected artifact name: schema-drift-diff-replay-pretty-index-failure-${{ matrix.os }}"
+            exit 1
+          fi
+          echo "::notice title=pretty-index diagnostics present (MATRIX=atomic)::all 3 expected files found in $DIR"
       - name: upload pretty-index failure diagnostics (MATRIX=atomic)
         id: upload-pretty-failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: schema-drift-diff-replay-pretty-index-failure-${{ matrix.os }}
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 14
           path: |
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.pre-check.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.report.json
+      - name: assert pretty-index failure artifact was uploaded (MATRIX=atomic)
+        if: failure()
+        shell: bash
+        run: |
+          if [[ -z "${{ steps.upload-pretty-failure.outputs.artifact-url }}" ]]; then
+            echo "::error title=pretty-index upload missing (MATRIX=atomic)::expected artifact schema-drift-diff-replay-pretty-index-failure-${{ matrix.os }} was not uploaded"
+            exit 1
+          fi
       - name: append pretty-index failure artifact links to step summary (MATRIX=atomic)
         if: failure() && steps.upload-pretty-failure.outputs.artifact-url != ''
         shell: bash
