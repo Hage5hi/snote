@@ -496,7 +496,30 @@ function atomicWrite(dest: string, body: string, label: string) {
   try {
     mkdirSync(dirname(abs), { recursive: true });
     writeFileSync(tmp, body);
+    // Test hook: simulate a mid-write failure between the tmp write and the
+    // atomic rename. The catch below must unlink `tmp` so no partial file
+    // is left behind and the pre-existing `dest` (if any) stays untouched.
+    if (process.env.SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL === "1") {
+      throw Object.assign(new Error("simulated tmp-file write failure"), { code: "EIO_SIM" });
+    }
     renameSync(tmp, abs);
+    // Best-effort cleanup of stale sibling `<name>.<pid>.tmp` files left by
+    // crashed prior runs. Skips tmp files whose pid is still alive so
+    // concurrent writers don't race each other.
+    try {
+      const baseDir = dirname(abs);
+      const base = basename(abs);
+      const rx = new RegExp("^" + base.replace(/[.+^${}()|[\]\\]/g, "\\$&") + "\\.(\\d+)\\.tmp$");
+      for (const name of readdirSync(baseDir)) {
+        const m = rx.exec(name);
+        if (!m) continue;
+        const otherPid = parseInt(m[1], 10);
+        if (otherPid === process.pid) continue;
+        try { process.kill(otherPid, 0); continue; /* alive: skip */ }
+        catch (e: any) { if (e?.code && e.code !== "ESRCH") continue; }
+        try { unlinkSync(`${baseDir}/${name}`); } catch {}
+      }
+    } catch {}
   } catch (e: any) {
     try { unlinkSync(tmp); } catch {}
     console.error(
