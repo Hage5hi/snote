@@ -268,8 +268,22 @@ if [ "$VALIDATE_MANIFEST" = "1" ]; then
       process.exit(1);
     }
   '
-  exit $?
+  rc=$?
+  # --require-valid + validation passing ⇒ fall through to diff/viewer.
+  # Otherwise (default), preserve the original short-circuit behavior.
+  if [ "$REQUIRE_VALID" = "1" ] && [ "$rc" = "0" ]; then
+    vlog "validation passed — proceeding to diff/viewer (--require-valid)"
+  else
+    exit $rc
+  fi
 fi
+
+# --require-valid without --validate-manifest/--strict-manifest is a no-op
+# guard: warn and continue (matches CI's "always try to validate" default).
+if [ "$REQUIRE_VALID" = "1" ] && [ "$VALIDATE_MANIFEST" = "0" ]; then
+  echo "--require-valid set but neither --validate-manifest nor --strict-manifest given; skipping gate" >&2
+fi
+
 
 # --dry-run must work without a bundle on disk so it's usable as a
 # planning/preview step and in unit tests. All other modes require OUT.
