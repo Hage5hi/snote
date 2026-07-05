@@ -12,7 +12,7 @@
  *                                    [--browser <name>] [--path <substr>]
  *                                    [--kind ...] [--max <n>]
  */
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync, unlinkSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import {
