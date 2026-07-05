@@ -13,10 +13,13 @@ Positional (optional):
   all | types | schemas          Shorthand for --type
 
 Flags:
-  --type   schemas|types|all     Restrict to schema JSON diffs, types.gen.ts diff, or both.
-  --file   <substr>              Show only files whose name contains <substr>.
+  --type    schemas|types|all    Restrict to schema JSON diffs, types.gen.ts diff, or both.
+  --file    <substr>             Show only files whose name contains <substr>.
                                  Repeatable. Also accepts comma-separated values.
-  --viewer auto|diff-y|delta|bat|cat
+  --browsers <list>              Comma-separated Playwright projects (chromium,firefox,webkit)
+                                 to scope manifest + diff/viewer output to. Repeatable.
+                                 Default: all browsers.
+  --viewer  auto|diff-y|delta|bat|cat
                                  Force a viewer. `auto` (default) picks diff -y when the
                                  terminal is ≥180 cols, else delta, then bat, then cat.
   --dry-run                      Print which files would match and the diff/view command
