@@ -510,9 +510,9 @@ jobs:
             mkdir -p "$base"
             cp -a "$d"/. "$base"/ 2>/dev/null || true
           done
-      - name: prepare replay folder on failure (dry-run materialize)
+      - name: prepare replay folder (dry-run materialize)
         id: prepare-replay
-        if: failure() || cancelled()
+        if: always()
         shell: bash
         run: |
           SEED="$(grep -hoE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff-stress/*.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
@@ -526,7 +526,7 @@ jobs:
           FOLDER="$(ls -dt artifacts/schema-drift-diff-replay/*/ 2>/dev/null | head -n1)"
           echo "folder=${FOLDER%/}" >> "$GITHUB_OUTPUT"
       - name: dry-run verify replay folder integrity
-        if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
+        if: always() && steps.prepare-replay.outputs.folder != ''
         shell: bash
         run: |
           mkdir -p artifacts/schema-drift-diff-replay-verify
@@ -538,7 +538,8 @@ jobs:
           RC=${PIPESTATUS[0]}
           set -e
           echo "$RC" > artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
-          exit "$RC"
+          if [ "${{ job.status }}" = "success" ]; then exit 0; else exit "$RC"; fi
+
       - name: materialize replay folder on failure (real replay)
         if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
         shell: bash
