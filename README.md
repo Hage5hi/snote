@@ -892,6 +892,63 @@ Parse with `jq`:
 jq '[.results[] | select(.status=="MISMATCH")]' _pretty-index-checksum-mismatch.json
 ```
 
+### Inspecting the mismatch report
+
+Four targets read the JSON report at `$(PI_REPORT_PATH)` (default
+`_pretty-index-checksum-mismatch.json`). All require `jq`.
+
+```sh
+# Per-matrix counts printed to stdout; exits 3 if any mismatches exist.
+make pretty-index-mismatch-summary
+
+# Same numbers, but written as a small JSON file for CI parsing.
+# Always exits 0 on successful write.
+make pretty-index-mismatch-summary-json
+make pretty-index-mismatch-summary-json PI_SUMMARY_JSON_PATH=/tmp/pi-summary.json
+
+# Export the mismatch report to CSV
+# (columns: matrix,artifact_dir,path,expected_hash,actual_hash).
+make pretty-index-mismatch-csv
+make pretty-index-mismatch-csv PI_CSV_PATH=/tmp/pi-mismatch.csv
+
+# Per-file table; PI_PATH_GLOB filters rows whose .path matches the pattern.
+make pretty-index-mismatch-show
+make pretty-index-mismatch-show PI_PATH_GLOB='.*report\.json$'
+
+# Diff current report against a baseline; exits 4 if NEW/CHANGED entries appear.
+make pretty-index-mismatch-diff PI_BASELINE=baseline.json
+```
+
+`pretty-index-mismatch-summary-json` shape (`schema:"pretty-index-mismatch-summary/v1"`):
+
+```json
+{
+  "schema": "pretty-index-mismatch-summary/v1",
+  "scope": "both",
+  "matrices": {
+    "atomic": { "total": 3, "mismatched": 1, "missing": 0 },
+    "stress": { "total": 0, "mismatched": 0, "missing": 1 }
+  },
+  "totals": { "total": 4, "mismatched": 1, "missing": 1 }
+}
+```
+
+**Exit codes for mismatch-inspection targets:**
+
+| Target | 0 | Non-zero |
+| --- | --- | --- |
+| `pretty-index-mismatch-summary` | no mismatches AND no missing artifacts | `3` mismatches/missing present, `2` report file absent or `jq` missing |
+| `pretty-index-mismatch-summary-json` | wrote summary JSON | `2` report file absent or `jq` missing |
+| `pretty-index-mismatch-csv` | wrote CSV file | `2` report file absent or `jq` missing |
+| `pretty-index-mismatch-show` (± `PI_PATH_GLOB`) | printed table (may be empty after glob filter) | `2` report file absent or `jq` missing |
+| `pretty-index-mismatch-diff` | current report matches baseline | `4` NEW/CHANGED entries found, `2` either report absent or `jq` missing |
+
+Recipes emit `exit 3` / `exit 4` intentionally; GNU make wraps any
+failing recipe as its own exit status `2` and prints `make: *** [target]
+Error N`, so scripts that need the granular code should parse `Error N`
+from stderr (or invoke the recipe directly via `bash -c`).
+
+
 
 
 
