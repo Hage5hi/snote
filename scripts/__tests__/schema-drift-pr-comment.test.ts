@@ -1040,3 +1040,117 @@ describe("schema-drift-diff: --help examples stable under flag reordering/aliase
     expect(_readFileSync(outSpace, "utf8")).toBe(_readFileSync(outEq, "utf8"));
   });
 });
+
+describe("schema-drift-diff: --json-out atomic replace of existing destination", () => {
+  it("atomically overwrites an existing file, preserves exit code 0, and leaves no .tmp behind", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    // Pre-existing file with stale content.
+    writeFileSync(jsonOut, "STALE\n");
+    const first = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(first.code).toBe(0);
+    const firstBytes = _readFileSync(jsonOut, "utf8");
+    expect(firstBytes).not.toBe("STALE\n");
+    expect(firstBytes).toContain("matchedAnchors");
+    // Second run must also succeed and produce byte-identical output.
+    const second = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(second.code).toBe(0);
+    expect(_readFileSync(jsonOut, "utf8")).toBe(firstBytes);
+    // No sibling *.tmp leftover.
+    const { readdirSync } = require("node:fs");
+    expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+  });
+});
+
+describe("schema-drift-diff: --json-out simulated write failure cleanup", () => {
+  it("cleans up the temp file and exits 7 when rename fails (destination is a directory)", () => {
+    const { mkdirSync, readdirSync } = require("node:fs");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    // Destination path is a pre-existing directory → renameSync(tmp, dest) fails
+    // with EISDIR/ENOTEMPTY, simulating a mid-write failure. The catch block
+    // must unlink the sibling .tmp file so nothing is left behind.
+    const jsonOut = join(dir, "diff.json");
+    mkdirSync(jsonOut);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(code).toBe(7);
+    expect(stderr).toContain("cannot write json-out");
+    expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+  });
+});
+
+describe("schema-drift-diff: exit-code enumeration + messages", () => {
+  it("exit 0 on a successful text diff", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code } = bun(DIFF_SCRIPT, [p, p]);
+    expect(code).toBe(0);
+  });
+
+  it("exit 2 on unknown flag with a clear message", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--bogus"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("unknown arg");
+  });
+
+  it("exit 2 when --validate-json is used without --json", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--validate-json"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("--validate-json requires --json");
+  });
+
+  it("exit 3 when the before report file does not exist", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [join(dir, "missing.json"), p]);
+    expect(code).toBe(3);
+    expect(stderr).toContain("cannot read before report");
+  });
+
+  it("exit 4 when a report is not valid JSON", () => {
+    const dir = tmp();
+    const bad = join(dir, "bad.json");
+    writeFileSync(bad, "{not-json");
+    const good = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [bad, good]);
+    expect(code).toBe(4);
+    expect(stderr).toContain("is not valid JSON");
+  });
+
+  it("exit 5 when the report is missing required top-level fields", () => {
+    const dir = tmp();
+    const bad = join(dir, "shape.json");
+    writeFileSync(bad, JSON.stringify({ hello: "world" }));
+    const good = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [bad, good]);
+    expect(code).toBe(5);
+    expect(stderr).toContain("missing required fields");
+  });
+
+  it("exit 6 when --validate-json rejects the payload", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(
+      DIFF_SCRIPT,
+      [p, p, "--json", "--validate-json"],
+      { SCHEMA_DRIFT_DIFF_FORCE_INVALID: "1" },
+    );
+    expect(code).toBe(6);
+    expect(stderr).toContain("json-schema-mismatch");
+  });
+
+  it("exit 7 when --json-out cannot write the destination", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const blocker = join(dir, "not-a-dir");
+    writeFileSync(blocker, "x");
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", join(blocker, "child", "diff.json")]);
+    expect(code).toBe(7);
+    expect(stderr).toContain("cannot write json-out");
+  });
+});
