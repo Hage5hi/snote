@@ -540,6 +540,23 @@ test.describe("focus-trap --html-report a11y", () => {
           type: "live-region-timing",
           description: line,
         });
+        // Per-browser row in the GitHub job summary so on-call can spot
+        // budget approaches at a glance without opening the annotation.
+        if (process.env.GITHUB_STEP_SUMMARY) {
+          try {
+            const header = `<!-- live-region-summary-header -->`;
+            const path = process.env.GITHUB_STEP_SUMMARY;
+            const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
+            if (!existing.includes(header)) {
+              appendFileSync(path,
+                `\n${header}\n## ⏱ live-region wait budget per browser\n` +
+                `| browser | announcements | observed / budget (ms) | usage | total (ms) |\n` +
+                `|---|---:|---:|---:|---:|\n`);
+            }
+            appendFileSync(path,
+              `| ${browserName} | ${log.length} | ${waitDurationMs} / ${waitMs} | ${usagePct}% | ${Date.now() - t0} |\n`);
+          } catch {/* best-effort */}
+        }
       } finally {
         const failed = testInfo.errors.length > 0 || testInfo.status === "failed";
         await collectDiagnostics({
