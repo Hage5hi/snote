@@ -536,3 +536,134 @@ describe("schema-drift-diff: --json-out + --validate-json", () => {
     expect(stderr).toContain("--validate-json requires --json");
   });
 });
+
+describe("schema-drift-diff: pattern escaping + multi-pattern expansion", () => {
+  const dot: Report = {
+    strict: true,
+    totals: { checked: 2, ok: 0, invalid: 2 },
+    files: [
+      { path: "/a/drift-chromium.json", ok: false, browser: "chromium", missing: ["x"] },
+      { path: "/a/drift-webkit.json", ok: false, browser: "webkit", extra: ["y"] },
+    ],
+  };
+
+  it("compileMatcher escapes regex metacharacters in glob patterns", () => {
+    // a literal `.` should NOT match `x` — proves `.` was escaped
+    expect(compileMatcher("fail.json")("failXjson")).toBe(false);
+    expect(compileMatcher("fail.json")("fail.json")).toBe(true);
+    // `+` and `(` must be literal in glob mode
+    expect(compileMatcher("a+b")("a+b")).toBe(true);
+    expect(compileMatcher("a+b")("aab")).toBe(false);
+    expect(compileMatcher("(x)")("(x)")).toBe(true);
+  });
+
+  it("/regex/flags parses flags: case-insensitive match works", () => {
+    expect(compileMatcher("/^FAIL-/i")("fail-webkit-x")).toBe(true);
+    expect(compileMatcher("/^FAIL-/")("fail-webkit-x")).toBe(false);
+  });
+
+  it("--fail-slug accepts multiple patterns (repeat + comma + glob) in one run", () => {
+    const dir = tmp();
+    const p = writeReport(dir, dot);
+    const { code, stdout } = bun(DIFF_SCRIPT, [
+      p, p, "--json",
+      "--fail-slug", "fail-chromium-*,fail-webkit-*",
+    ]);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.matchedAnchors.length).toBe(2);
+    for (const s of parsed.matchedAnchors) expect(s).toMatch(/^fail-(chromium|webkit)-/);
+  });
+
+  it("--kind accepts glob (mis*) and expands to both `missing` and `mistyped`", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stdout } = bun(DIFF_SCRIPT, [p, p, "--json", "--kind", "mis*"]);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    // FAILING has 2 files with missing and 1 with mistyped → 3 matched
+    expect(parsed.matchedAnchors.length).toBe(3);
+  });
+
+  it("--kind pattern that matches nothing exits 2 with a helpful error", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--kind", "nope*"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("matched no known kinds");
+  });
+});
+
+describe("schema-drift-diff: --json-out integration + atomicity", () => {
+  it("--json-out payload byte-equals --json stdout for the same inputs", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    const stdoutRun = bun(DIFF_SCRIPT, [p, p, "--json"]);
+    const fileRun = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(stdoutRun.code).toBe(0);
+    expect(fileRun.code).toBe(0);
+    const fileBytes = _readFileSync(jsonOut, "utf8");
+    expect(fileBytes).toBe(stdoutRun.stdout);
+    const parsed = JSON.parse(fileBytes);
+    expect(parsed.matchedAnchors).toEqual(JSON.parse(stdoutRun.stdout).matchedAnchors);
+    expect(parsed.totals).toEqual(JSON.parse(stdoutRun.stdout).totals);
+  });
+
+  it("--json-out uses an atomic write (no leftover *.tmp file on success)", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "atomic.json");
+    const { code } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(code).toBe(0);
+    const listing = require("node:fs").readdirSync(dir);
+    expect(listing).toContain("atomic.json");
+    expect(listing.filter((n: string) => n.endsWith(".tmp") || n.includes("atomic.json."))).toEqual([]);
+  });
+
+  it("--json-out to an unwritable destination exits 7 with a clear message", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    // Directory that does not exist AND cannot be created (parent is a file)
+    const notADir = join(dir, "not-a-dir");
+    writeFileSync(notADir, "blocker");
+    const jsonOut = join(notADir, "child", "diff.json");
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(code).toBe(7);
+    expect(stderr).toContain("cannot write");
+    expect(stderr).toContain(jsonOut);
+  });
+});
+
+describe("schema-drift-diff: --validate-json Ajv error details", () => {
+  it("prints Ajv errors with instancePath + schemaPath in a JSON payload on failure", () => {
+    // Force a schema mismatch by pointing at a wrong schema via a stub.
+    // Simpler: monkey-patch by writing an invalid JSON to --json-out via a
+    // hand-crafted validator run — but the tool always emits valid output.
+    // Instead, invoke the tool with a report whose diff yields empty arrays
+    // and use `--fail-slug '*'`, then post-process is fine (payload is valid).
+    // → validate a KNOWN-BAD payload against the schema directly through the CLI
+    //   by using --json + --validate-json is expected to always pass; skip if valid.
+    // We assert the failure path via a tiny helper that reuses compileMatcher's file.
+    // (See the impl: --validate-json failure exits 6 with JSON error payload.)
+    // NOTE: this test exercises the success path; failure path is exercised in
+    // the "impl" branch that hand-crafts a bad payload via env override.
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(
+      DIFF_SCRIPT, [p, p, "--json", "--validate-json"],
+      { SCHEMA_DRIFT_DIFF_FORCE_INVALID: "1" },
+    );
+    expect(code).toBe(6);
+    const parsed = JSON.parse(stderr);
+    expect(parsed).toMatchObject({ error: "json-schema-mismatch", code: 6 });
+    expect(Array.isArray(parsed.ajvErrors)).toBe(true);
+    expect(parsed.ajvErrors.length).toBeGreaterThan(0);
+    const first = parsed.ajvErrors[0];
+    expect(first).toHaveProperty("instancePath");
+    expect(first).toHaveProperty("schemaPath");
+    expect(parsed.expectedChecklist).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: expect.any(String) })]),
+    );
+  });
+});

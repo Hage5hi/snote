@@ -483,16 +483,72 @@ list, so all of these are equivalent:
 --fail-slug='#fail-a,#fail-b'
 ```
 
+`--fail-slug` and `--kind` also accept glob (`*`, `?`) and `/regex/flags`
+patterns so a single flag can select a whole family of failures:
+
+```bash
+# all chromium failures, in one flag
+schema-drift-diff before.json after.json --json --fail-slug 'fail-chromium-*'
+
+# regex with flags — case-insensitive match on the anchor
+schema-drift-diff before.json after.json --fail-slug '/^fail-(chromium|webkit)-/i'
+
+# --kind expands `mis*` to both `missing` and `mistyped`
+schema-drift-diff before.json after.json --kind 'mis*'
+
+# combine: two globs, one CSV
+schema-drift-diff before.json after.json --json \
+  --fail-slug 'fail-chromium-*,fail-webkit-*' --kind 'parse*,extra'
+```
+
+Metacharacters in glob patterns are escaped, so `--fail-slug 'fail.json'`
+matches the literal `fail.json` (not `failXjson`); use `/regex/` when you
+actually want regex semantics.
+
+##### Writing / validating JSON output
+
+`--json` prints to stdout; `--json-out <path>` writes the same bytes to
+`<path>` (implies `--json`) and does so **atomically** — the tool writes
+to a sibling `<path>.<pid>.tmp` and then `rename()`s it into place, so
+readers never see a partial file. If the destination is not writable the
+tool exits `7` with `cannot write json-out to "<path>": <errno>` and a
+suggested `fix:` line.
+
+`--validate-json` runs the resulting payload through Ajv against
+[`schemas/schema-drift-diff.schema.json`](schemas/schema-drift-diff.schema.json)
+before writing. On success it prints `validate-json: OK (<schema-path>)`
+to stderr; on failure it exits `6` with a JSON error payload on stderr:
+
+```json
+{
+  "error": "json-schema-mismatch",
+  "code": 6,
+  "schemaPath": "…/schemas/schema-drift-diff.schema.json",
+  "message": "--json output does not match schema",
+  "ajvErrors": [
+    { "instancePath": "/totals", "schemaPath": "#/properties/totals/type",
+      "keyword": "type", "message": "should be object", "params": { "type": "object" } }
+  ],
+  "expectedChecklist": [
+    { "key": "totals",         "present": true  },
+    { "key": "added",          "present": false },
+    { "key": "removed",        "present": false },
+    { "key": "changed",        "present": false },
+    { "key": "matchedAnchors", "present": false }
+  ],
+  "fix": "regenerate the diff without --validate-json and inspect the JSON output"
+}
+```
+
 Exit codes: `0` success, `2` bad CLI usage, `3` report file missing /
 unreadable, `4` file is not valid JSON, `5` file is missing required
-fields. Errors for exit codes `3–5` include a suggested `fix:` line;
-exit `5` additionally prints the exact received top-level keys and an
-`[x] / [ ]` expected-schema checklist so it's obvious which field is
-absent.
-
-The `--json` output shape is described by
-[`schemas/schema-drift-diff.schema.json`](schemas/schema-drift-diff.schema.json)
-(JSON Schema draft-07). A realistic payload:
+fields, `6` `--validate-json` schema mismatch, `7` `--json-out` / `--out`
+destination not writable. Errors for exit codes `3–5` include a
+suggested `fix:` line and, in text mode, an `[x] / [ ]` expected-schema
+checklist; in `--json` mode the same context is emitted as a structured
+JSON payload on stderr (fields: `error`, `code`, `path`, `problems`,
+`receivedTopLevelKeys`, `missingTopLevelKeys`, `expectedChecklist`,
+`expectedShape`, `fix`).
 
 ```json
 {
