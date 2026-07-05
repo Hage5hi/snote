@@ -155,3 +155,127 @@ describe("make pretty-index-artifacts-verify — checksum regression", () => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Tests for the mismatch-report inspection targets:
+//   pretty-index-mismatch-summary
+//   pretty-index-mismatch-summary-json
+//   pretty-index-mismatch-csv
+//   pretty-index-mismatch-show (PI_PATH_GLOB)
+//   pretty-index-mismatch-diff (PI_BASELINE)
+// Contract: exit-code semantics documented in README "Exit codes for
+// mismatch-inspection targets" table (3/4/2 for summary/diff/report-absent).
+// ─────────────────────────────────────────────────────────────────────────
+import { readFileSync, existsSync } from "node:fs";
+
+function runTarget(cwd: string, target: string, env: Record<string, string> = {}) {
+  return spawnSync("make", ["-f", MAKEFILE, target], {
+    cwd,
+    encoding: "utf8",
+    env: { ...process.env, ...env },
+  });
+}
+
+/** Seed a mismatch report by running verify against a corrupted fixture. */
+function seedReport(root: string, opts: { missingStressDir?: boolean } = {}) {
+  seedDir(root, "atomic", { corruptReport: true });
+  if (!opts.missingStressDir) seedDir(root, "stress");
+  runVerify(root); // writes _pretty-index-checksum-mismatch.json
+}
+
+describe("pretty-index mismatch-report inspection targets", () => {
+  it("summary exits 3 when mismatches exist and prints per-matrix counts", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-sum-"));
+    tmps.push(root);
+    seedReport(root);
+    const r = runTarget(root, "pretty-index-mismatch-summary");
+    expect(r.status).toBe(3);
+    expect(r.stdout).toMatch(/atomic:\s+1\/\d+ mismatched/);
+    expect(r.stdout).toMatch(/total:\s+1\//);
+  });
+
+  it("summary-json writes a v1 JSON with per-matrix + totals counts", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-sumj-"));
+    tmps.push(root);
+    seedReport(root, { missingStressDir: true });
+    const out = join(root, "summary.json");
+    const r = runTarget(root, "pretty-index-mismatch-summary-json", {
+      PI_SUMMARY_JSON_PATH: out,
+    });
+    expect(r.status).toBe(0);
+    expect(existsSync(out)).toBe(true);
+    const j = JSON.parse(readFileSync(out, "utf8"));
+    expect(j.schema).toBe("pretty-index-mismatch-summary/v1");
+    expect(j.matrices.atomic.mismatched).toBe(1);
+    expect(j.matrices.stress.missing).toBe(1);
+    expect(j.totals.mismatched).toBe(1);
+    expect(j.totals.missing).toBe(1);
+  });
+
+  it("csv export writes a header + one row per result", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-csv-"));
+    tmps.push(root);
+    seedReport(root);
+    const out = join(root, "mismatch.csv");
+    const r = runTarget(root, "pretty-index-mismatch-csv", {
+      PI_CSV_PATH: out,
+    });
+    expect(r.status).toBe(0);
+    const csv = readFileSync(out, "utf8");
+    const lines = csv.trim().split("\n");
+    expect(lines[0]).toBe("matrix,artifact_dir,path,expected_hash,actual_hash");
+    // At least one row referencing the corrupted report file.
+    expect(csv).toMatch(/pretty-index\.report\.json/);
+    expect(lines.length).toBeGreaterThan(1);
+  });
+
+  it("show with PI_PATH_GLOB filters rows by .path", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-glob-"));
+    tmps.push(root);
+    seedReport(root);
+    // Match only report.json entries.
+    const matched = runTarget(root, "pretty-index-mismatch-show", {
+      PI_PATH_GLOB: "report\\.json$",
+    });
+    expect(matched.status).toBe(0);
+    expect(matched.stdout).toMatch(/pretty-index\.report\.json/);
+    expect(matched.stdout).not.toMatch(/pretty-index\.pre-check\.json/);
+
+    // A glob that matches nothing should still succeed but show no rows.
+    const empty = runTarget(root, "pretty-index-mismatch-show", {
+      PI_PATH_GLOB: "no-such-file-xyz",
+    });
+    expect(empty.status).toBe(0);
+    expect(empty.stdout).not.toMatch(/pretty-index\.report\.json/);
+  });
+
+  it("diff exits 4 when current has NEW entries vs baseline, 0 when equal", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-diff-"));
+    tmps.push(root);
+    seedReport(root);
+    const reportPath = join(root, "_pretty-index-checksum-mismatch.json");
+    const baseline = join(root, "baseline.json");
+    // Baseline = empty results → current has NEW entries.
+    require("node:fs").writeFileSync(
+      baseline,
+      JSON.stringify({
+        schema: "pretty-index-checksum-mismatch/v1",
+        scope: "both",
+        results: [],
+      }),
+    );
+    const rDiff = runTarget(root, "pretty-index-mismatch-diff", {
+      PI_BASELINE: baseline,
+    });
+    expect(rDiff.status).toBe(4);
+    expect(rDiff.stdout).toMatch(/\[NEW\]/);
+
+    // Equal → exit 0.
+    const rSame = runTarget(root, "pretty-index-mismatch-diff", {
+      PI_BASELINE: reportPath,
+    });
+    expect(rSame.status).toBe(0);
+    expect(rSame.stdout).toMatch(/diff entries: 0/);
+  });
+});
+
+
