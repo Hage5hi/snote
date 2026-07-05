@@ -576,7 +576,7 @@ print(json.dumps({
           # Mirror `make pretty-index-check MATRIX=atomic` so the job log
           # names the exact artifact prefix that will be uploaded below.
           make -s pretty-index-diagnostics MATRIX=atomic || true
-      - name: upload pretty-index failure diagnostics
+      - name: upload pretty-index failure diagnostics (MATRIX=atomic)
         id: upload-pretty-failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -588,15 +588,16 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.pre-check.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.report.json
-      - name: append pretty-index failure artifact links to step summary
+      - name: append pretty-index failure artifact links to step summary (MATRIX=atomic)
         if: failure() && steps.upload-pretty-failure.outputs.artifact-url != ''
         shell: bash
         run: |
           URL="${{ steps.upload-pretty-failure.outputs.artifact-url }}"
           NAME="schema-drift-diff-replay-pretty-index-failure-${{ matrix.os }}"
+          echo "::notice title=pretty-index failure (atomic)::uploaded $NAME -> $URL"
           {
             echo ''
-            echo "#### 📎 pretty-index.json failure diagnostics"
+            echo "#### 📎 pretty-index.json failure diagnostics (MATRIX=atomic)"
             echo ''
             echo "- Artifact: [$NAME]($URL) (retention 14 days)"
             echo "  - \`pretty-index.json\` — post-migration index seen by the validator"
@@ -604,6 +605,7 @@ print(json.dumps({
             echo "  - \`pretty-index.report.json\` — validator --report machine-readable errors"
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
+
       - name: append pretty artifact link to step summary
         if: always() && steps.upload-pretty.outputs.artifact-url != ''
         shell: bash
@@ -1003,7 +1005,7 @@ print(json.dumps({
           # Mirror `make pretty-index-check MATRIX=stress` so the job log
           # names the exact stress-artifact prefix uploaded below.
           make -s pretty-index-diagnostics MATRIX=stress || true
-      - name: upload pretty-index failure diagnostics (stress)
+      - name: upload pretty-index failure diagnostics (MATRIX=stress)
         id: upload-pretty-failure-stress
         if: failure()
         uses: actions/upload-artifact@v4
@@ -1015,15 +1017,17 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.pre-check.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.report.json
-      - name: append pretty-index failure artifact links to step summary (stress)
+      - name: append pretty-index failure artifact links to step summary (MATRIX=stress)
         if: failure() && steps.upload-pretty-failure-stress.outputs.artifact-url != ''
         shell: bash
         run: |
           URL="${{ steps.upload-pretty-failure-stress.outputs.artifact-url }}"
           NAME="schema-drift-diff-stress-replay-pretty-index-failure-${{ matrix.os }}"
+          echo "::notice title=pretty-index failure (stress)::uploaded $NAME -> $URL"
           {
             echo ''
-            echo "#### 📎 pretty-index.json failure diagnostics (stress)"
+            echo "#### 📎 pretty-index.json failure diagnostics (MATRIX=stress)"
+
             echo ''
             echo "- Artifact: [$NAME]($URL) (retention 14 days)"
             echo "  - \`pretty-index.json\` — post-migration index seen by the validator"

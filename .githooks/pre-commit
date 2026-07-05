@@ -115,6 +115,23 @@ if pretty_index_needs_check; then
   # should not be blocked).
   INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
   # HOOK_MATRIX was validated up-front (fail-fast) — safe to use as-is.
+  PRE="${INDEX%.json}.pre-check.json"
+  REPORT="${INDEX%.json}.report.json"
+
+  if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
+    echo "  [dry-run] would run: scripts/reproduce-ci-pretty-index-check.sh --clean --matrix $HOOK_MATRIX $INDEX"
+    echo "  [dry-run] expected diagnostic paths:"
+    echo "    input     : $INDEX"
+    echo "    pre-check : $PRE"
+    echo "    report    : $REPORT"
+    if [ "$HOOK_MATRIX" = "stress" ]; then
+      echo "  [dry-run] CI artifact prefix: schema-drift-diff-stress-replay-pretty-index-failure-<os>"
+    else
+      echo "  [dry-run] CI artifact prefix: schema-drift-diff-replay-pretty-index-failure-<os>"
+    fi
+    echo "  [dry-run] documented exit codes: 0=ok, 1=drift, 2=usage, 3=schema, 4=missing"
+    exit 0
+  fi
 
   if [ -f "$INDEX" ]; then
     if ! scripts/reproduce-ci-pretty-index-check.sh --clean --matrix "$HOOK_MATRIX" "$INDEX"; then
@@ -129,4 +146,5 @@ if pretty_index_needs_check; then
     echo "  (skipped — no $INDEX present)"
   fi
 fi
+
 

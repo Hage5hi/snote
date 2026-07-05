@@ -44,16 +44,21 @@ pretty-index-check-pwsh:
 
 pretty-index-diagnostics:
 	@echo ""
-	@echo "pretty-index diagnostics artifacts (matrix: $(MATRIX)):"
-	@echo "  input       : $(INDEX)"
-	@echo "  pre-check   : $(PRE)     (raw generator output, uploaded on CI failure)"
-	@echo "  report JSON : $(REPORT)  (validator --report, uploaded on CI failure)"
+	@echo "pretty-index diagnostics artifacts (current MATRIX=$(MATRIX)):"
+	@echo "  input directory : $(dir $(INDEX))"
+	@echo "  input           : $(INDEX)"
+	@echo "  pre-check       : $(PRE)     (raw generator output, uploaded on CI failure)"
+	@echo "  report JSON     : $(REPORT)  (validator --report, uploaded on CI failure)"
 	@echo ""
+	@echo "CI artifact names by matrix (same on-disk files, distinct upload names):"
+	@echo "  atomic  -> schema-drift-diff-replay-pretty-index-failure-<os>"
+	@echo "  stress  -> schema-drift-diff-stress-replay-pretty-index-failure-<os>"
 	@if [ "$(MATRIX)" = "stress" ]; then \
-	  echo "CI uploads these as: schema-drift-diff-stress-replay-pretty-index-failure-<os>"; \
+	  echo ""; echo "==> current run uploads as the STRESS prefix"; \
 	else \
-	  echo "CI uploads these as: schema-drift-diff-replay-pretty-index-failure-<os>"; \
+	  echo ""; echo "==> current run uploads as the ATOMIC prefix"; \
 	fi
+
 
 pretty-index-clean:
 	@rm -f -- "$(PRE)" "$(REPORT)"
