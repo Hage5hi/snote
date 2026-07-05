@@ -26,6 +26,9 @@
     "schema:types:check": "bun run scripts/generate-focus-trap-schema-types.ts && git diff --exit-code -- scripts/_helpers/focus-trap-inspect-schema.types.gen.ts",
     "schema-guard": "./scripts/schema-guard.sh",
     "schema-guard:view": "./scripts/schema-drift-view.sh",
+    "test:schema-drift-diff": "bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts -t \"${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \\+ fuzz \\+ unsafe symlink}\" --testTimeout=${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-30000} --reporter=verbose",
+    "replay:schema-drift-diff": "./scripts/replay-schema-drift-diff-fuzz.sh \"${SCHEMA_DRIFT_DIFF_FUZZ_SEED:?set SCHEMA_DRIFT_DIFF_FUZZ_SEED (copy from CI replay block)}\" \"${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}\" \"${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \\+ fuzz \\+ unsafe symlink}\"",
+
     "theme:isolation": "bun run scripts/check-home-theme-isolation.ts",
     "i18n:check": "bun run scripts/i18n-coverage.ts",
     "i18n:audit": "bun run scripts/i18n-audit.ts",

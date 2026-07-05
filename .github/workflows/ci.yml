@@ -284,6 +284,22 @@ jobs:
             mkdir -p "$base"
             cp -a "$d"/. "$base"/ 2>/dev/null || true
           done
+      # Kick off the replay helper on failure so the timestamped folder
+      # (manifest + logs) is materialized inside the workspace and can be
+      # downloaded as an artifact. Uses `|| true` because the replay itself
+      # is expected to also fail — we only care about the folder it writes.
+      - name: materialize replay folder on failure
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          SEED="$(grep -oE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff/vitest.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
+          SEED="${SEED:-${SCHEMA_DRIFT_DIFF_FUZZ_SEED:-0}}"
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-30000}" \
+            scripts/replay-schema-drift-diff-fuzz.sh \
+              "$SEED" \
+              "${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}" \
+              "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}" \
+            || true
       - name: upload --json-out debug artifacts
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
@@ -295,6 +311,8 @@ jobs:
             artifacts/schema-drift-diff/vitest.stderr.log
             artifacts/schema-drift-diff/dest-listing.txt
             artifacts/schema-drift-diff/dest-snapshot/**
+            artifacts/schema-drift-diff-replay/**
+
 
 
   # Nightly parallel-writer stress job for --json-out. Race conditions in
@@ -376,6 +394,18 @@ jobs:
             mkdir -p "$base"
             cp -a "$d"/. "$base"/ 2>/dev/null || true
           done
+      - name: materialize replay folder on failure
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          SEED="$(grep -hoE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff-stress/*.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
+          SEED="${SEED:-${SCHEMA_DRIFT_DIFF_FUZZ_SEED:-0}}"
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-60000}" \
+            scripts/replay-schema-drift-diff-fuzz.sh \
+              "$SEED" \
+              "${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}" \
+              "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}" \
+            || true
       - name: upload stress debug artifacts
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
@@ -386,6 +416,8 @@ jobs:
             artifacts/schema-drift-diff-stress/*.log
             artifacts/schema-drift-diff-stress/dest-listing.txt
             artifacts/schema-drift-diff-stress/dest-snapshot/**
+            artifacts/schema-drift-diff-replay/**
+
 
 
 
