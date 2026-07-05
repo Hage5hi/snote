@@ -21,6 +21,18 @@ set -euo pipefail
 # Files staged for this commit (added/copied/modified/renamed).
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR || true)
 
+# Fail-fast: validate PRETTY_INDEX_HOOK_MATRIX before ANY early-return
+# so a typo (e.g. `PRETTY_INDEX_HOOK_MATRIX=bogus git commit ...`) aborts
+# the commit even when the staged set wouldn't otherwise trigger the
+# pretty-index gate. Documented exit code: 2 (usage error).
+HOOK_MATRIX="${PRETTY_INDEX_HOOK_MATRIX:-atomic}"
+case "$HOOK_MATRIX" in
+  atomic|stress) ;;
+  *)
+    echo "❌ pre-commit: PRETTY_INDEX_HOOK_MATRIX must be atomic|stress (got: $HOOK_MATRIX)" >&2
+    exit 2 ;;
+esac
+
 needs_check() {
   if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
   if [ -z "$STAGED" ]; then return 1; fi
