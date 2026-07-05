@@ -146,7 +146,7 @@ export function computeDiff(before: Report, after: Report, opts: DiffOpts = {}):
     parseError: (bf.parseError ?? null) !== (af.parseError ?? null)
       ? { before: bf.parseError ?? null, after: af.parseError ?? null } : null,
   })).filter(keepA);
-  const matchedFiltered = slugs ? matched.filter((s) => slugs.has(s)) : matched;
+  const matchedFiltered = slugs ? matched.filter((s) => matchesAny(s, slugs)) : matched;
   return {
     totals: {
       before: { checked: before.totals.checked, invalid: before.totals.invalid },
