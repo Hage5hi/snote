@@ -2,10 +2,13 @@
 //
 // Contract (documented in README "Interpreting failures" table):
 //   • exit 0 → both dirs' sha256 checksums verify
-//   • exit 1 → at least one file's bytes don't match its recorded sha256
-//              (per-file `expected=<hash> actual=<hash> [MISMATCH]` printed)
-//   • exit 2 → a required file/dir is missing (dir absent, or
-//              pretty-index.checksums.sha256 absent)
+//   • non-zero (make wraps recipe failures as exit 2) with distinguishing
+//     stdout signatures:
+//       - "MISMATCH"                       → corrupted / mutated bytes
+//       - "<file>: FAILED open or read"    → a listed file is missing
+//       - "_pretty-index-<matrix> missing" → dir absent (needs download)
+//       - "pretty-index.checksums.sha256 missing" → artifact uploaded
+//                                                   without checksums
 //
 // We run make in an isolated tempdir with hand-crafted _pretty-index-*
 // fixtures, so we never touch the real repo working tree.
