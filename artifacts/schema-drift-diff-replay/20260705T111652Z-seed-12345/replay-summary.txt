@@ -1,0 +1,7 @@
+mode:                dry-run
+checksum_verified:   ok
+would_run:           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts -t nonexistent test pattern zzz --testTimeout=30000 --reporter=verbose
+seed:                12345
+reader_ms:           300
+pattern:             nonexistent test pattern zzz
+timeout_ms:          30000
