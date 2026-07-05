@@ -236,6 +236,20 @@ bun run schema-guard:view -- --file report,types.gen
 # --browsers scopes the manifest + viewer output to a subset of Playwright
 # projects (matches the CI matrix names). Comma-separated or repeatable.
 bun run schema-guard:view -- --browsers chromium,firefox
+bun run schema-guard:view -- --browsers chromium --browsers webkit
+
+# --exclude drops noisy bases (applied after --file). Repeatable + CSV.
+bun run schema-guard:view -- --exclude diff
+bun run schema-guard:view -- --file schema --exclude report,diff
+
+# --verbose traces matched files, resolved viewer commands, and echoes
+# subprocess output to stderr — useful when debugging CI runs.
+bun run schema-guard:view -- --verbose --dry-run
+
+# Real-world combos
+bun run schema-guard:view -- --type schemas --viewer diff-y --browsers chromium
+bun run schema-guard:view -- --file report --file types.gen --viewer delta
+bun run schema-guard:view -- --browsers chromium,firefox --exclude diff --viewer cat
 ```
 
 The CI **schema-guard** workflow additionally emits a per-browser

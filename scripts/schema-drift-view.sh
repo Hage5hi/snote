@@ -16,6 +16,9 @@ Flags:
   --type    schemas|types|all    Restrict to schema JSON diffs, types.gen.ts diff, or both.
   --file    <substr>             Show only files whose name contains <substr>.
                                  Repeatable. Also accepts comma-separated values.
+  --exclude <substr>             Skip files whose name contains <substr>. Applied AFTER
+                                 --file. Repeatable + comma-separated. Useful for hiding
+                                 noisy bases without changing --type.
   --browsers <list>              Comma-separated Playwright projects (chromium,firefox,webkit)
                                  to scope manifest + diff/viewer output to. Repeatable.
                                  Default: all browsers.
@@ -24,6 +27,8 @@ Flags:
                                  terminal is ≥180 cols, else delta, then bat, then cat.
   --dry-run                      Print which files would match and the diff/view command
                                  that would run — no file reads, no bundle required.
+  --verbose                      Trace matched files, the resolved viewer command per
+                                 file, and echo executed subprocess output to stderr.
   -h, --help                     Show this help.
 
 Env:
@@ -59,35 +64,35 @@ EOF
 OUT="${OUT:-_schema_drift}"
 FILTER="all"
 FILE_MATCHES=()     # each entry is one substring
+FILE_EXCLUDES=()    # each entry is one substring to skip
 BROWSERS=()         # each entry is one playwright project name
 VIEWER="auto"
 DRY_RUN=0
+VERBOSE=0
 
-add_matches() {
-  # Split "$1" on commas so `--file a,b` expands to two entries.
+add_to() {
+  # $1 = nameref array, $2 = comma-list
+  local -n _arr=$1
   local IFS=,
   # shellcheck disable=SC2206
-  local parts=($1)
-  for p in "${parts[@]}"; do [ -n "$p" ] && FILE_MATCHES+=("$p"); done
-}
-add_browsers() {
-  local IFS=,
-  # shellcheck disable=SC2206
-  local parts=($1)
-  for p in "${parts[@]}"; do [ -n "$p" ] && BROWSERS+=("$p"); done
+  local parts=($2)
+  for p in "${parts[@]}"; do [ -n "$p" ] && _arr+=("$p"); done
 }
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --file)       add_matches "${2:-}"; shift 2 ;;
-    --file=*)     add_matches "${1#*=}"; shift ;;
-    --browsers)   add_browsers "${2:-}"; shift 2 ;;
-    --browsers=*) add_browsers "${1#*=}"; shift ;;
+    --file)       add_to FILE_MATCHES  "${2:-}"; shift 2 ;;
+    --file=*)     add_to FILE_MATCHES  "${1#*=}"; shift ;;
+    --exclude)    add_to FILE_EXCLUDES "${2:-}"; shift 2 ;;
+    --exclude=*)  add_to FILE_EXCLUDES "${1#*=}"; shift ;;
+    --browsers)   add_to BROWSERS      "${2:-}"; shift 2 ;;
+    --browsers=*) add_to BROWSERS      "${1#*=}"; shift ;;
     --type)       FILTER="${2:-all}"; shift 2 ;;
     --type=*)     FILTER="${1#*=}"; shift ;;
     --viewer)     VIEWER="${2:-auto}"; shift 2 ;;
     --viewer=*)   VIEWER="${1#*=}"; shift ;;
     --dry-run)    DRY_RUN=1; shift ;;
+    --verbose|-v) VERBOSE=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
@@ -95,6 +100,8 @@ while [ $# -gt 0 ]; do
 done
 [ "$FILTER" = "schema" ] && FILTER="schemas"
 [ "$FILTER" = "type" ]   && FILTER="types"
+
+vlog() { [ "$VERBOSE" = "1" ] && echo "[verbose] $*" >&2 || true; }
 
 # --dry-run must work without a bundle on disk so it's usable as a
 # planning/preview step and in unit tests. All other modes require OUT.
@@ -129,9 +136,13 @@ pretty() {
 }
 
 matches_filter() {
+  local base="$1" m
+  # --exclude wins over --file (skip if any exclude matches).
+  for m in "${FILE_EXCLUDES[@]}"; do
+    [[ "$base" == *"$m"* ]] && return 1
+  done
   # No --file filters ⇒ everything passes.
   [ "${#FILE_MATCHES[@]}" -eq 0 ] && return 0
-  local base="$1" m
   for m in "${FILE_MATCHES[@]}"; do
     [[ "$base" == *"$m"* ]] && return 0
   done
@@ -140,18 +151,24 @@ matches_filter() {
 
 show() {
   local base="$1"
-  matches_filter "$base" || { [ "$DRY_RUN" = "1" ] && echo "SKIP  $base  (no --file match)"; return 0; }
+  if ! matches_filter "$base"; then
+    vlog "skip $base (--file/--exclude filter)"
+    [ "$DRY_RUN" = "1" ] && echo "SKIP  $base  (filtered by --file/--exclude)"
+    return 0
+  fi
   local committed="$OUT/committed/$base"
   local regen="$OUT/regenerated/$base"
   local diff_file="$OUT/${base}.diff"
 
+  local cmd
+  if [ "$RESOLVED_VIEWER" = "diff-y" ]; then
+    cmd="diff -y --width=$COLS $committed $regen"
+  else
+    cmd="pretty($RESOLVED_VIEWER) < $diff_file"
+  fi
+  vlog "match $base → $cmd"
+
   if [ "$DRY_RUN" = "1" ]; then
-    local cmd
-    if [ "$RESOLVED_VIEWER" = "diff-y" ]; then
-      cmd="diff -y --width=$COLS $committed $regen"
-    else
-      cmd="pretty($RESOLVED_VIEWER) < $diff_file"
-    fi
     echo "MATCH $base  →  $cmd"
     return 0
   fi
@@ -167,9 +184,17 @@ show() {
   fi
 
   if [ "$RESOLVED_VIEWER" = "diff-y" ] && [ -s "$committed" ] && [ -s "$regen" ]; then
-    diff -y --width="$COLS" "$committed" "$regen" || true
+    if [ "$VERBOSE" = "1" ]; then
+      diff -y --width="$COLS" "$committed" "$regen" | tee /dev/stderr || true
+    else
+      diff -y --width="$COLS" "$committed" "$regen" || true
+    fi
   else
-    pretty < "$diff_file"
+    if [ "$VERBOSE" = "1" ]; then
+      pretty < "$diff_file" | tee /dev/stderr
+    else
+      pretty < "$diff_file"
+    fi
   fi
 }
 
@@ -190,5 +215,6 @@ if [ "$DRY_RUN" != "1" ] && [ -s "$OUT/cli-schema-versions.txt" ]; then
 fi
 echo ""
 files_str="${FILE_MATCHES[*]:-<none>}"
+excludes_str="${FILE_EXCLUDES[*]:-<none>}"
 browsers_str="${BROWSERS[*]:-<all>}"
-echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], browsers=[${browsers_str}])"
+echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], exclude=[${excludes_str}], browsers=[${browsers_str}], verbose=${VERBOSE})"

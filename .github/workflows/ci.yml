@@ -806,23 +806,47 @@ jobs:
           echo "| status | expected filename | actual path (test-results/) |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
           expected=(live-region-log.json live-region-innertext.txt dom-snapshot.html live-region-trace.zip live-region-failure.png)
+          # Machine-readable manifest — consumed by downstream CI steps
+          # (see `manifest-path` step output below). Schema:
+          # { browser, generatedAt, files: [{ name, present, path|null }] }
+          mkdir -p reports/_ci
+          manifest="reports/_ci/live-region-manifest-${BROWSER}.json"
+          printf '{\n  "browser": "%s",\n  "generatedAt": "%s",\n  "files": [\n' \
+            "${BROWSER}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$manifest"
+          n=${#expected[@]}; i=0
           for f in "${expected[@]}"; do
+            i=$((i+1))
             hit=$(find test-results -type f -name "$f" 2>/dev/null | grep -i "${BROWSER}" | head -n1 || true)
             if [ -n "$hit" ]; then
               status="✅ present"
               rel="${hit#test-results/}"
+              present="true"; path_json="\"$rel\""
             else
               status="⚠️ missing"
               rel="—"
+              present="false"; path_json="null"
               # Surface each missing expected artifact as a GitHub Actions
               # `::warning::` so it lands in the run's annotations pane in
-              # addition to the summary table below. One annotation per
-              # (browser, expected filename) — matches the summary row.
+              # addition to the summary table below.
               echo "::warning title=live-region ${BROWSER} missing artifact::${f} (expected under test-results/*${BROWSER}*/${f})"
             fi
             echo "| $status | \`$f\` | \`$rel\` |" >> "$GITHUB_STEP_SUMMARY"
             echo "[manifest ${BROWSER}] $status  $f  $rel"
+            sep=","; [ "$i" = "$n" ] && sep=""
+            printf '    {"name": "%s", "present": %s, "path": %s}%s\n' \
+              "$f" "$present" "$path_json" "$sep" >> "$manifest"
           done
+          echo "  ]" >> "$manifest"; echo "}" >> "$manifest"
+          echo "manifest-path=$manifest" >> "$GITHUB_OUTPUT"
+        id: live_region_manifest
+      - name: Upload live-region manifest JSON (${{ matrix.browser }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-region-manifest-${{ matrix.browser }}
+          path: reports/_ci/live-region-manifest-${{ matrix.browser }}.json
+          if-no-files-found: warn
+          retention-days: 14
       # Markdown failure summary (pixel-diff thresholds + direct links to
       # the HTML report artifact and per-failure debug bundles) so reviewers
       # can triage a red Playwright run without downloading anything first.
