@@ -1429,3 +1429,132 @@ describe("schema-drift-diff: --json-out stress + read-only + stderr wording", ()
   });
 });
 
+// Additional coverage:
+//   - symlink destination (atomic replace + tmp cleanup on failure)
+//   - --json-out payload conforms to schema-drift-diff.schema.json (full validation)
+//   - cleanup: wording present/absent per failure mode (perm-denied, invalid flags,
+//     missing parent dir)
+//
+// The spaces/special-chars test above is picked up by the cross-OS CI matrix
+// via its "-t" filter (see .github/workflows/ci.yml → schema-drift-diff-atomic-crossos),
+// which now runs on ubuntu-latest, macos-latest, and windows-latest.
+describe("schema-drift-diff: --json-out symlink + schema + cleanup wording", () => {
+  const isWindows = process.platform === "win32";
+
+  it.skipIf(isWindows)(
+    "--json-out atomically replaces a symlink destination and cleans up tmp on forced failure",
+    () => {
+      const { symlinkSync, readdirSync, lstatSync, existsSync, unlinkSync } = require("node:fs");
+      const dir = tmp();
+      const p = writeReport(dir, FAILING);
+      const target = join(dir, "real-target.json");
+      writeFileSync(target, "PREEXISTING_TARGET\n");
+      const link = join(dir, "link-to-target.json");
+      symlinkSync(target, link);
+
+      // Success path: writing via the symlink produces a valid payload at the
+      // destination path (renameSync replaces the symlink entry with a regular
+      // file — this documents current behavior and is atomic).
+      const ok = bun(DIFF_SCRIPT, [p, p, "--json-out", link]);
+      expect(ok.code).toBe(0);
+      const written = _readFileSync(link, "utf8");
+      expect(() => JSON.parse(written)).not.toThrow();
+      expect(written).not.toContain("PREEXISTING_TARGET");
+      expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+
+      // Failure path: recreate the symlink, force a mid-write failure, and
+      // verify the temp file is removed and the symlink target survives.
+      try { unlinkSync(link); } catch {}
+      writeFileSync(target, "PREEXISTING_TARGET\n");
+      symlinkSync(target, link);
+      const fail = bun(DIFF_SCRIPT, [p, p, "--json-out", link], {
+        SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL: "1",
+      });
+      expect(fail.code).toBe(7);
+      expect(fail.stderr).toContain("cannot write json-out");
+      expect(fail.stderr).toMatch(/cleanup: (removed partial temp file|no temp file to remove)/);
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(_readFileSync(target, "utf8")).toBe("PREEXISTING_TARGET\n");
+      expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+      expect(existsSync(link)).toBe(true);
+    },
+  );
+
+  it("--json-out payload validates against schemas/schema-drift-diff.schema.json (full schema, not just parse)", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    const run = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut, "--validate-json"]);
+    expect(run.code).toBe(0);
+    expect(run.stderr).toContain("validate-json: OK");
+
+    // Independently re-validate the on-disk payload with Ajv to prove the
+    // exit code isn't the only signal we rely on.
+    const AjvMod = require("ajv");
+    const Ajv = AjvMod.default ?? AjvMod;
+    const schemaPath = resolve(__dirname, "../../schemas/schema-drift-diff.schema.json");
+    const schema = JSON.parse(_readFileSync(schemaPath, "utf8"));
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(schema);
+    const payload = JSON.parse(_readFileSync(jsonOut, "utf8"));
+    const ok = validate(payload);
+    expect(validate.errors ?? []).toEqual([]);
+    expect(ok).toBe(true);
+
+    for (const k of ["totals", "added", "removed", "changed", "matchedAnchors"]) {
+      expect(payload).toHaveProperty(k);
+    }
+    for (const k of ["before", "after", "added", "removed", "changed", "matched"]) {
+      expect(payload.totals).toHaveProperty(k);
+    }
+  });
+
+  it("stderr includes the cleanup: line for permission-denied and missing-parent failures, and omits it for invalid-flag failures", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+
+    // (a) Missing / unreachable parent directory → exit 7 with the exact
+    //     three-line contract (error / cleanup / fix).
+    const blocker = join(dir, "blocker-file");
+    writeFileSync(blocker, "x");
+    const missingParent = join(blocker, "nope", "diff.json");
+    const mp = bun(DIFF_SCRIPT, [p, p, "--json-out", missingParent]);
+    expect(mp.code).toBe(7);
+    expect(mp.stderr).toContain(`cannot write json-out to "${missingParent}"`);
+    expect(mp.stderr).toMatch(/cleanup: no temp file to remove at ".*\.tmp"/);
+    expect(mp.stderr).toContain("fix: check that the parent directory exists and is writable");
+
+    // (b) Permission-denied → exit 7 with the cleanup: line. Skip as root.
+    const isRoot = typeof (process as any).getuid === "function" && (process as any).getuid() === 0;
+    if (!isRoot && !isWindows) {
+      const roDir = join(dir, "ro");
+      const { mkdirSync, chmodSync } = require("node:fs");
+      mkdirSync(roDir, { recursive: true });
+      const jsonOut = join(roDir, "diff.json");
+      writeFileSync(jsonOut, "ORIGINAL\n");
+      chmodSync(jsonOut, 0o444);
+      chmodSync(roDir, 0o555);
+      try {
+        const pd = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+        expect(pd.code).toBe(7);
+        expect(pd.stderr).toContain("cannot write json-out");
+        expect(pd.stderr).toMatch(/cleanup: (removed partial temp file|no temp file to remove) ".*\.tmp"/);
+        expect(pd.stderr).toContain("fix: check that the parent directory exists and is writable");
+        expect(_readFileSync(jsonOut, "utf8")).toBe("ORIGINAL\n");
+      } finally {
+        try { chmodSync(roDir, 0o755); } catch {}
+        try { chmodSync(jsonOut, 0o644); } catch {}
+      }
+    }
+
+    // (c) Invalid CLI flag → parseArgs exits 2 BEFORE atomicWrite runs, so
+    //     no cleanup: line should appear. Documents the contract that the
+    //     cleanup: wording is exclusive to atomicWrite failures.
+    const bad = bun(DIFF_SCRIPT, [p, p, "--not-a-real-flag"]);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain("unknown arg: --not-a-real-flag");
+    expect(bad.stderr).not.toContain("cleanup:");
+  });
+});
+
+

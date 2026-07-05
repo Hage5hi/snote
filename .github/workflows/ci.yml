@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly stress run for schema-drift-diff --json-out concurrency
+    # (see schema-drift-diff-stress-nightly job below).
+    - cron: '17 5 * * *'
   workflow_dispatch:
     inputs:
       sticky_cleanup_strategy:
@@ -215,10 +219,46 @@ jobs:
         # Use bash on every OS (including Windows) so the `\` line
         # continuations below are honored consistently.
         shell: bash
+        # Filter picks up:
+        #   - print-schema
+        #   - atomic write failure modes
+        #   - long destination path
+        #   - spaces and special characters
+        #   - symlink + schema + cleanup wording
         run: |
           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
-            -t "print-schema|atomic write failure modes" \
+            -t "print-schema|atomic write failure modes|long destination path|spaces and special characters|symlink \+ schema \+ cleanup wording" \
             --reporter=verbose
+
+  # Nightly parallel-writer stress job for --json-out. Race conditions in
+  # the atomic rename / stale-tmp cleanup path only surface occasionally,
+  # so we run the stress + concurrency suites on a schedule to catch them
+  # over time without slowing every PR.
+  schema-drift-diff-stress-nightly:
+    name: schema-drift-diff --json-out stress (nightly)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: parallel --json-out stress + concurrency
+        shell: bash
+        run: |
+          for i in 1 2 3 4 5; do
+            echo "::group::stress iteration $i"
+            bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
+              -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording" \
+              --reporter=verbose
+            echo "::endgroup::"
+          done
+
 
 
 
