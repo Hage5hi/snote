@@ -131,8 +131,8 @@ export function computeDiff(before: Report, after: Report, opts: DiffOpts = {}):
   }
   for (const [k, f] of b) if (!a.has(k)) removed.push(f);
   matched.sort();
-  const slugs = opts.failSlugs && opts.failSlugs.length ? new Set(opts.failSlugs) : null;
-  const keepA = (x: { anchor: string }) => !slugs || slugs.has(x.anchor);
+  const slugs = opts.failSlugs && opts.failSlugs.length ? opts.failSlugs : null;
+  const keepA = (x: { anchor: string }) => matchesAny(x.anchor, slugs);
   const aList = added.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })).filter(keepA);
   const rList = removed.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })).filter(keepA);
   const cList = changed.map(({ before: bf, after: af }) => ({
