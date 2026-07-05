@@ -444,7 +444,10 @@ jobs:
           shopt -s nullglob
           mkdir -p artifacts/schema-drift-diff-replay-verify/pretty
           index="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-          echo '[' > "$index"
+          # Write the current v1 envelope shape ({schema_version, entries}).
+          # Bump both this literal AND CURRENT_SCHEMA_VERSION in
+          # scripts/validate-pretty-index.py together.
+          echo '{"schema_version": 1, "entries": [' > "$index"
           first=1
           hard_fail=0
           count=0
@@ -514,14 +517,14 @@ print(json.dumps({
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
-          echo ']' >> "$index"
-          # Validate pretty-index.json against the documented schema.
-          # Failure here fails the job with a clear message instead of
-          # only surfacing later through the uploaded artifact.
-          # Capture the validator's stderr so the exact failure path +
-          # message ends up in both the ::error:: annotation and the
-          # rendered step summary — no need to dig through raw logs.
-          if ! val_err=$(python3 scripts/validate-pretty-index.py "$index" 2>&1 1>/dev/null); then
+          echo ']}' >> "$index"
+          # Validate pretty-index.json against the documented schema AND
+          # enforce that the generator emits schema_version=1 (the
+          # validator's CURRENT_SCHEMA_VERSION). This catches drift
+          # between the generator above and the validator on the same
+          # commit — the failure includes a regeneration hint pointing
+          # at scripts/migrate-pretty-index.py.
+          if ! val_err=$(python3 scripts/validate-pretty-index.py --require-version 1 "$index" 2>&1 1>/dev/null); then
             # First line goes into the ::error:: annotation (single-line);
             # full breakdown is preserved in the step summary below.
             first_line=$(printf '%s\n' "$val_err" | head -n1)
@@ -844,7 +847,8 @@ print(json.dumps({
           shopt -s nullglob
           mkdir -p artifacts/schema-drift-diff-replay-verify/pretty
           index="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-          echo '[' > "$index"
+          # v1 envelope — mirror of the regular-matrix generator above.
+          echo '{"schema_version": 1, "entries": [' > "$index"
           first=1
           hard_fail=0
           count=0
@@ -907,8 +911,10 @@ print(json.dumps({
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
-          echo ']' >> "$index"
-          if ! val_err=$(python3 scripts/validate-pretty-index.py "$index" 2>&1 1>/dev/null); then
+          echo ']}' >> "$index"
+          # Enforce schema_version=1 (matches the generator literal above)
+          # so drift between generator and validator fails loudly here.
+          if ! val_err=$(python3 scripts/validate-pretty-index.py --require-version 1 "$index" 2>&1 1>/dev/null); then
             first_line=$(printf '%s\n' "$val_err" | head -n1)
             echo "::error file=${index}::pretty-index.json failed schema validation at ${index}: ${first_line}" >&2
             {

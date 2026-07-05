@@ -679,23 +679,95 @@ shape changes incompatibly.
 
 Both flags are aliases. When set, the validator additionally prints a
 machine-readable JSON report to **stdout** with the exact failing paths
-and expected types — human-readable stderr output is unchanged:
+and expected types — human-readable stderr output is unchanged.
+
+**Schema (stable — enforced by `sort_keys=True`)**
+
+Top level:
+
+| Key         | Type    | Notes                                                              |
+| ----------- | ------- | ------------------------------------------------------------------ |
+| `file`      | string  | Path passed on the CLI (verbatim).                                 |
+| `problems`  | array   | Empty when the file is valid; otherwise one object per problem.    |
+
+Each `problems[]` entry (keys always present, always in **alphabetical
+order** — `actual`, `expected`, `message`, `path`):
+
+| Key         | Type                | Notes                                                     |
+| ----------- | ------------------- | --------------------------------------------------------- |
+| `actual`    | string              | Observed type/value (`"str"`, `"missing"`, `"null"`, …).  |
+| `expected`  | string              | Expected type (`"int|null"`, `"present"`, `"string"`, …). |
+| `index`     | int \| null         | Entry index, or `null` for envelope-level problems.       |
+| `message`   | string              | Human-readable one-liner (matches stderr line).           |
+| `path`     | string              | JSON path, e.g. `entries[0].exit_code` or `$.schema_version`. |
+
+**Per-entry problem (contributor fixture)**
 
 ```json
 {
   "file": "pretty-index.json",
   "problems": [
-    { "index": 0, "path": "entries[0].exit_code",
-      "expected": "int|null", "actual": "str",
-      "message": "[0] exit_code must be int or null" }
+    { "actual": "str",     "expected": "int|null",
+      "index": 0, "message": "[0] exit_code must be int or null",
+      "path": "entries[0].exit_code" }
   ]
 }
 ```
 
-Envelope-level failures (missing `schema_version`, wrong type, or
-unsupported version) use `"index": null` and `"path": "$.schema_version"`
-/ `"$.entries"` so editor integrations can distinguish them from
-per-entry problems.
+**Envelope-level problem (unsupported version)**
+
+`index` is `null` so editor integrations can distinguish envelope errors
+from per-entry ones:
+
+```json
+{
+  "file": "pretty-index.json",
+  "problems": [
+    { "actual": "99", "expected": "one of [0, 1]",
+      "index": null,
+      "message": "unsupported schema_version=99 (this validator supports [0, 1]; current=1) — regenerate pretty-index.json with scripts/pretty-replay-summary.py …",
+      "path": "$.schema_version" }
+  ]
+}
+```
+
+Reproduce locally against those fixtures:
+
+```bash
+printf '[{"exit_code":"nope","folder":"x","summary_file":"y","pretty_txt":"a","pretty_md":"b","fail_reason":"","pretty_status":"ok","pretty_exit_code":0}]' \
+  > /tmp/bad.json
+python3 scripts/validate-pretty-index.py --report /tmp/bad.json
+
+printf '{"schema_version":99,"entries":[]}' > /tmp/badver.json
+python3 scripts/validate-pretty-index.py --report /tmp/badver.json
+```
+
+###### `--require-version N` (generator/validator drift guard)
+
+CI runs `scripts/validate-pretty-index.py --require-version 1 <path>`
+right after generating `pretty-index.json`, so any drift between the
+generator (which writes the envelope literal) and the validator (which
+enforces `CURRENT_SCHEMA_VERSION`) fails the job with a regeneration
+hint pointing at `scripts/migrate-pretty-index.py`.
+
+###### Migrating older `pretty-index.json` files
+
+Use `scripts/migrate-pretty-index.py` to upgrade a legacy `v0` bare
+array (or any supported older envelope) to the current
+`CURRENT_SCHEMA_VERSION` shape. The script prints a compact before/after
+summary to stderr:
+
+```bash
+$ python3 scripts/migrate-pretty-index.py path/to/pretty-index.json --in-place
+== pretty-index migration ==
+from: v0 (legacy array)        entries: 3
+to:   v1 (envelope)             entries: 3
+file: path/to/pretty-index.json (in-place)
+```
+
+Flags: `--in-place`, `--output PATH`, and `--dry-run` (prints the
+summary without writing).
+
 
 
 ##### Per-summary artifact links in the step summary

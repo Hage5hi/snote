@@ -160,9 +160,22 @@ def main(argv: list[str]) -> int:
         if flag in args:
             report = True
             args.remove(flag)
+    require_version: int | None = None
+    if "--require-version" in args:
+        idx = args.index("--require-version")
+        try:
+            require_version = int(args[idx + 1])
+        except (IndexError, ValueError):
+            sys.stderr.write(
+                "usage: validate-pretty-index.py [--report] "
+                "[--require-version N] <pretty-index.json>\n"
+            )
+            return 2
+        del args[idx : idx + 2]
     if len(args) != 1:
         sys.stderr.write(
-            "usage: validate-pretty-index.py [--report] <pretty-index.json>\n"
+            "usage: validate-pretty-index.py [--report] "
+            "[--require-version N] <pretty-index.json>\n"
         )
         return 2
     p = Path(args[0])
@@ -187,6 +200,25 @@ def main(argv: list[str]) -> int:
     if entries is not None:
         for i, entry in enumerate(entries):
             problems.extend(validate_entry(i, entry))
+
+    # --require-version N: fail with a clear regeneration hint when the
+    # file's schema_version does not match what the caller (typically CI)
+    # expects. Legacy bare arrays are treated as v0.
+    if require_version is not None and entries is not None and not envelope_problems:
+        actual = 0 if isinstance(data, list) else data.get("schema_version")
+        if actual != require_version:
+            problems.append({
+                "index": None,
+                "path": "$.schema_version",
+                "expected": str(require_version),
+                "actual": str(actual),
+                "message": (
+                    f"schema_version={actual} does not match required "
+                    f"version={require_version}; regenerate with "
+                    "`scripts/migrate-pretty-index.py <path> --in-place` "
+                    "(see docs/schema-drift-diff-test-hooks.md)"
+                ),
+            })
 
     if problems:
         sys.stderr.write(
