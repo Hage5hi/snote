@@ -939,3 +939,76 @@ gh run download <run-id> -n schema-drift-diff-replay-verify-ubuntu-latest
 After 14 days the artifacts are garbage-collected by GitHub; the
 underlying job logs remain available for the workflow's normal
 retention window.
+
+## `scripts/validate-pretty-index.py` and `scripts/migrate-pretty-index.py` reference
+
+### Exit codes (shared)
+
+| Code | Meaning                                                                 |
+|------|-------------------------------------------------------------------------|
+| 0    | Success (validated / migrated).                                         |
+| 2    | Usage error (bad flags, missing positional, mutually exclusive flags).  |
+| 3    | *(validator only)* schema validation failed — see stderr breakdown.     |
+| 4    | Input file not found.                                                   |
+| 6    | File exists but is not JSON / unrecognized top-level shape.             |
+| 7    | *(reserved, `schema-drift-diff.ts`)* atomic write failure.              |
+
+`scripts/check-pretty-index-schema-version.py` additionally uses **exit 1**
+for a `schema_version` drift between the generator's output and the
+validator's `CURRENT_SCHEMA_VERSION`.
+
+### `validate-pretty-index.py --auto-migrate`
+
+- Requires `--require-version N`. Without it: exit 2, message
+  `--auto-migrate requires --require-version N`.
+- On a version mismatch it shells out to `scripts/migrate-pretty-index.py
+  <path> --in-place`, forwards the migrator's `== pretty-index migration ==`
+  summary to stderr, then re-invokes itself once (without `--auto-migrate`)
+  to prevent recursion.
+- **Auto-migration is not a fixer for per-entry schema errors.** If the
+  migrator succeeds but the re-validation still finds per-entry problems
+  (missing keys, wrong types) the process exits `3` — the CI job still
+  fails, with the before/after summary preserved on stderr.
+- If the migrator itself fails (exit ≠ 0) the validator exits `3` and
+  prints `--auto-migrate failed (exit <rc>)`.
+
+### Common failure modes and example step summaries
+
+**Generator/validator schema drift** (`check-pretty-index-schema-version.py`
+exit 1) — appended to `$GITHUB_STEP_SUMMARY`:
+
+```
+### ❌ pretty-index.json schema drift
+
+- File: `path/to/pretty-index.json`
+- Generator emitted: `schema_version=0`
+- Validator expects: `schema_version=1`
+
+**Fix:** regenerate the index using
+`python3 scripts/migrate-pretty-index.py path/to/pretty-index.json --in-place`,
+or bump `CURRENT_SCHEMA_VERSION` in `scripts/validate-pretty-index.py` if
+the generator is ahead.
+```
+
+**Per-entry validation failure** (validator exit 3) — stderr example:
+
+```
+validate-pretty-index: schema validation failed for pretty-index.json (2 problem(s)):
+  - [0] missing key: summary_file
+  - [0] exit_code must be int or null
+```
+
+**Unsupported `schema_version`** (validator exit 3, envelope problem):
+
+```
+validate-pretty-index: schema validation failed for pretty-index.json (1 problem(s)):
+  - unsupported schema_version=2 (this validator supports [0, 1]; current=1) —
+    regenerate pretty-index.json with scripts/pretty-replay-summary.py …
+```
+
+### One-command local check
+
+Run `scripts/check-pretty-index-local.sh [path]` before pushing to
+sequentially execute the self-check and the strict validator against a
+`pretty-index.json`. It surfaces the underlying script's exit code
+verbatim.
