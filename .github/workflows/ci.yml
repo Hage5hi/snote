@@ -214,7 +214,7 @@ jobs:
       - name: --print-schema + atomic --json-out tests
         run: |
           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
-            -t "print-schema" -t "atomic write failure modes" \
+            -t "print-schema|atomic write failure modes" \
             --reporter=verbose
 
 
