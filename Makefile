@@ -77,3 +77,13 @@ pretty-index-artifacts:
 	@echo ""
 	@echo "  current MATRIX=$(MATRIX)  (override with: make pretty-index-artifacts MATRIX=stress)"
 
+
+pretty-index-hook-dry-run:
+	@echo "==> pre-commit hook dry-run (MATRIX=atomic)"
+	@PRETTY_INDEX_HOOK_DRY_RUN=1 PRETTY_INDEX_HOOK_FORCE=1 \
+	  PRETTY_INDEX_HOOK_MATRIX=atomic .githooks/pre-commit
+	@echo ""
+	@echo "==> pre-commit hook dry-run (MATRIX=stress)"
+	@PRETTY_INDEX_HOOK_DRY_RUN=1 PRETTY_INDEX_HOOK_FORCE=1 \
+	  PRETTY_INDEX_HOOK_MATRIX=stress .githooks/pre-commit
+	@$(MAKE) --no-print-directory pretty-index-diagnostics
