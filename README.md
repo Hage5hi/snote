@@ -722,6 +722,37 @@ gh run download <run-id> \
 Or from the GitHub UI: open the failed run → scroll to the **Artifacts**
 panel → click the artifact whose name matches the table above.
 
+### Reproducing the failure locally against the downloaded artifacts
+
+Once both `./_pretty-index-atomic/` and `./_pretty-index-stress/` are
+populated, run the pre-commit hook in **validation mode** against them.
+The single-command reproduction verifies sha256 checksums first, then
+invokes the hook for both matrices in sequence:
+
+```sh
+# one-command reproduction (recommended)
+make pretty-index-reproduce-downloaded
+
+# or step-by-step:
+make pretty-index-artifacts-verify              # sha256sum -c both dirs
+make pretty-index-hook-validate-downloaded      # runs the hook for atomic, then stress
+```
+
+**Interpreting failures:**
+
+| Exit code | Meaning | Fix |
+| --- | --- | --- |
+| `1` (from `pretty-index-artifacts-verify`) | sha256 mismatch — the per-file diff is printed as `<file> expected=<hash> actual=<hash> [MISMATCH]` | Re-download the artifact (`make pretty-index-artifacts-download RUN_ID=...`); the bytes were corrupted in transit or edited locally |
+| `2` (from `pretty-index-artifacts-verify`) | `./_pretty-index-<matrix>/` or its `pretty-index.checksums.sha256` is missing | Run `make pretty-index-artifacts-download RUN_ID=<id>` first |
+| `1` (from the hook) | pretty-index schema drift reproduced — see the printed `.report.json` path for the exact validator error | Fix the drift (regenerate + commit `pretty-index.json`) |
+| `2` (from the hook) | `PRETTY_INDEX_HOOK_MATRIX` was invalid | Only `atomic` or `stress` are accepted |
+| `3` / `4` (from the hook) | schema validation failed / input file missing | See `.githooks/pre-commit --help` for the full exit-code table |
+
+If verify fails, the hook step is **skipped entirely** — you will never
+be asked to validate corrupted bytes.
+
+
+
 
 **Where the diagnostic files are written on disk** (both matrices write
 to the same directory — only the uploaded artifact *name* differs):
