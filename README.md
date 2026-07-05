@@ -265,7 +265,39 @@ bun run schema-guard:view -- \
 #   reports/_ci/drift-firefox.json
 #   reports/_ci/drift-webkit.json
 #   reports/_ci/drift-combined.json   (browsers: [chromium,firefox,webkit])
+
+# --require pins the CI-side expected artifact filenames per browser and
+# persists them into every emitted manifest as `requiredArtifacts` so the
+# downstream `e2e-live-region-verify` job knows exactly what to enforce.
+bun run schema-guard:view -- \
+  --manifest-dir reports/_ci --manifest-prefix drift \
+  --browsers chromium,firefox,webkit \
+  --require live-region-trace.zip,live-region-failure.png \
+  --combined-manifest
+
+# --validate-manifest re-reads every <prefix>-*.json in --manifest-dir
+# and asserts the required top-level keys (browser, browsers, combined,
+# generatedAt, type, viewer, resolvedViewerCommand, matches, excludes,
+# expected, matched, requiredArtifacts). No diff/viewer runs.
+bun run schema-guard:view -- --manifest-dir reports/_ci --manifest-prefix drift --validate-manifest
 ```
+
+### CI expected artifact filenames (per browser)
+
+The `e2e-live-region-verify` job enforces the following filenames under
+`test-results/*<browser>*/` for each Playwright project (`chromium`,
+`firefox`, `webkit`) — only enforced when that browser's `e2e` leg failed:
+
+| Kind        | Expected filename            |
+|-------------|------------------------------|
+| Trace       | `live-region-trace.zip`      |
+| Screenshot  | `live-region-failure.png`    |
+| DOM dump    | `dom-snapshot.html`          |
+| Live region | `live-region-log.json`, `live-region-innertext.txt` |
+
+Missing required artifacts are echoed as `::warning::` (passing legs) or
+`::error::` (failing legs) annotations that include the browser, the
+expected filename, and the manifest entry that triggered the miss.
 
 The CI **schema-guard** workflow additionally emits a per-browser
 artifact manifest (expected filename → actual `test-results/` path,
