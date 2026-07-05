@@ -283,6 +283,9 @@ describe("renderAnnotations + anchors", () => {
     expect(written).toMatch(/^::error file=/m);
     expect(written).toContain("kind=");
 });
+});
+
+
 
 describe("schema-drift-diff: stable anchors across reordered reports", () => {
   const reordered: Report = {
