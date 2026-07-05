@@ -388,12 +388,33 @@ function main() {
       process.exit(2);
     }
     const schemaPath = resolve(__dirname, "../schemas/schema-drift-diff.schema.json");
-    const result = validateJsonPayload(payload, schemaPath);
+    // Test hook: force an invalid payload to exercise the failure branch.
+    const toCheck = process.env.SCHEMA_DRIFT_DIFF_FORCE_INVALID ? { totals: "nope" } : payload;
+    const result = validateJsonPayload(toCheck, schemaPath);
     if (!result.ok) {
-      console.error(
-        `error: --json output does not match ${schemaPath}:\n` +
-          JSON.stringify(result.errors, null, 2),
-      );
+      const ajvErrors = (result.errors as Array<Record<string, unknown>> | null) ?? [];
+      const expectedChecklist = [
+        "totals", "added", "removed", "changed", "matchedAnchors",
+      ].map((key) => ({
+        key,
+        present: !!toCheck && typeof toCheck === "object" && key in (toCheck as object),
+      }));
+      const errPayload = {
+        error: "json-schema-mismatch",
+        code: 6,
+        schemaPath,
+        message: "--json output does not match schema",
+        ajvErrors: ajvErrors.map((e) => ({
+          instancePath: e.instancePath ?? e.dataPath ?? "",
+          schemaPath: e.schemaPath ?? "",
+          keyword: e.keyword ?? "",
+          message: e.message ?? "",
+          params: e.params ?? {},
+        })),
+        expectedChecklist,
+        fix: "regenerate the diff without --validate-json and inspect the JSON output; the schema is schemas/schema-drift-diff.schema.json",
+      };
+      process.stderr.write(JSON.stringify(errPayload, null, 2) + "\n");
       process.exit(6);
     }
     process.stderr.write(`validate-json: OK (${schemaPath})\n`);
@@ -405,15 +426,36 @@ function main() {
     return;
   }
   if (jsonOut) {
-    mkdirSync(dirname(resolve(jsonOut)), { recursive: true });
-    writeFileSync(jsonOut, body);
+    atomicWrite(jsonOut, body, "json-out");
     console.error(`schema-drift diff (json): ${jsonOut}`);
   } else if (out) {
-    mkdirSync(dirname(resolve(out)), { recursive: true });
-    writeFileSync(out, body);
+    atomicWrite(out, body, "out");
     console.error(`schema-drift diff: ${out}`);
   } else {
     process.stdout.write(body);
+  }
+}
+
+/**
+ * Write `body` to `dest` atomically: mkdir -p, write to a sibling `.tmp`
+ * file, then rename over the destination. Exits 7 with a clear message
+ * when the parent directory cannot be created or the file cannot be
+ * written (e.g. destination is not writable).
+ */
+function atomicWrite(dest: string, body: string, label: string) {
+  const abs = resolve(dest);
+  const tmp = `${abs}.${process.pid}.tmp`;
+  try {
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(tmp, body);
+    renameSync(tmp, abs);
+  } catch (e: any) {
+    try { unlinkSync(tmp); } catch {}
+    console.error(
+      `error: cannot write ${label} to "${dest}": ${e?.code ?? e?.message ?? e}\n` +
+      `  fix: check that the parent directory exists and is writable, or pass a different --${label} path`,
+    );
+    process.exit(7);
   }
 }
 
