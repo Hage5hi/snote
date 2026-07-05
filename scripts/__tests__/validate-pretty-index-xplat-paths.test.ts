@@ -39,7 +39,7 @@ describe("validate-pretty-index.py cross-platform path normalization", () => {
     const report = JSON.parse(r.stdout);
     for (const p of report.problems) {
       expect(p.path).not.toContain("\\");
-      expect(p.path).toMatch(/^(\$\.|entries\[\d+\](\.[a-z_]+)?)$/);
+      expect(p.path).toMatch(/^(\$\.[a-z_]+|entries\[\d+\](\.[a-z_]+)?)$/);
     }
     // Envelope-shape errors serialize as "$.<field>".
     const paths = report.problems.map((p: any) => p.path);
