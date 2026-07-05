@@ -282,5 +282,52 @@ describe("renderAnnotations + anchors", () => {
     const written = require("node:fs").readFileSync(outAnn, "utf8");
     expect(written).toMatch(/^::error file=/m);
     expect(written).toContain("kind=");
+});
+
+describe("schema-drift-diff: stable anchors across reordered reports", () => {
+  const reordered: Report = {
+    ...FAILING,
+    files: [...FAILING.files].reverse(),
+  };
+
+  it("recomputes identical anchors for the same (path, browser) pair regardless of input order", () => {
+    for (const f of FAILING.files.filter((x) => !x.ok)) {
+      const same = reordered.files.find(
+        (x) => x.path === f.path && (x.browser ?? "") === (f.browser ?? ""),
+      )!;
+      expect(anchorFor(same)).toBe(anchorFor(f));
+    }
+  });
+
+  it("diff of a report against a reordered copy of itself reports no added/removed/changed", () => {
+    const out = renderDiff(FAILING, reordered);
+    expect(out).toContain("+0 added");
+    expect(out).toContain("-0 removed");
+    expect(out).toContain("~0 changed");
+    expect(out).not.toContain("\nadded:");
+    expect(out).not.toContain("\nremoved:");
+    expect(out).not.toContain("\nchanged:");
+  });
+
+  it("added/removed rows carry stable #fail-<slug> anchors", () => {
+    const after: Report = {
+      strict: true,
+      totals: { checked: 2, ok: 0, invalid: 2 },
+      files: [
+        { path: "/a/drift-chromium.json", ok: false, browser: "chromium", missing: ["x"] },
+        { path: "/n/drift-new.json", ok: false, browser: "webkit", missing: ["m"] },
+      ],
+    };
+    const before: Report = {
+      strict: true,
+      totals: { checked: 1, ok: 0, invalid: 1 },
+      files: [
+        { path: "/a/drift-chromium.json", ok: false, browser: "chromium", missing: ["x"] },
+      ],
+    };
+    const out = renderDiff(before, after);
+    const expected = anchorFor(after.files[1]);
+    expect(out).toContain(`#${expected}`);
+    expect(out).toContain("+1 added");
   });
 });
