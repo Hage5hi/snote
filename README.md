@@ -687,9 +687,39 @@ Attachments land under `test-results/<test-id>/` locally and in the
 The spec also writes per-browser rows to `$GITHUB_STEP_SUMMARY` in CI
 with a link to the run's Artifacts page for the trace/screenshot.
 
+## pretty-index.json CI failure diagnostics
 
+When the pretty-index.json check fails in CI (either matrix), each job
+appends a "❌ pretty-index.json schema validation failed" block to
+`$GITHUB_STEP_SUMMARY` followed by a "📎 pretty-index.json failure
+diagnostics" block that links directly to an uploaded artifact:
+
+| Matrix | Artifact name | Contents |
+| --- | --- | --- |
+| `atomic-crossos` | `schema-drift-diff-replay-pretty-index-failure-<os>` | `pretty-index.json`, `pretty-index.pre-check.json`, `pretty-index.report.json` |
+| `nightly stress` | `schema-drift-diff-stress-replay-pretty-index-failure-<os>` | same three files |
+
+Each file's role:
+
+- `pretty-index.json` — post-`--auto-migrate` index the validator saw
+- `pretty-index.pre-check.json` — raw generator output **before** any
+  auto-migration (compare against `pretty-index.json` to spot migration
+  changes)
+- `pretty-index.report.json` — validator `--report` machine-readable
+  errors (`problems[]` with `path`, `expected`, `actual`, `message`)
+
+To reproduce the exact same check locally before pushing:
+
+```sh
+scripts/reproduce-ci-pretty-index-check.sh [path/to/pretty-index.json]
+```
+
+It writes the same three sibling files and prints a step-summary-style
+failure block on non-zero exit. See
+`docs/schema-drift-diff-test-hooks.md` for the full exit-code contract.
 
 ## License
 
 Private.
+
 
