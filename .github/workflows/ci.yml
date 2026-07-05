@@ -972,6 +972,17 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt
             artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.md
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+      - name: upload pretty-index failure diagnostics (stress)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-diff-stress-replay-pretty-index-failure-${{ matrix.os }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+            artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.pre-check.json
+            artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.report.json
       - name: append pretty artifact link to step summary
         if: always() && steps.upload-pretty-stress.outputs.artifact-url != ''
         shell: bash
