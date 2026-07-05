@@ -521,9 +521,11 @@ function atomicWrite(dest: string, body: string, label: string) {
       }
     } catch {}
   } catch (e: any) {
-    try { unlinkSync(tmp); } catch {}
+    let tmpRemoved = false;
+    try { unlinkSync(tmp); tmpRemoved = true; } catch {}
     console.error(
       `error: cannot write ${label} to "${dest}": ${e?.code ?? e?.message ?? e}\n` +
+      `  cleanup: ${tmpRemoved ? `removed partial temp file "${tmp}"` : `no temp file to remove at "${tmp}"`}\n` +
       `  fix: check that the parent directory exists and is writable, or pass a different --${label} path`,
     );
     process.exit(7);
