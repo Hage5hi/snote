@@ -125,9 +125,11 @@ if [[ "${1:-}" == "--from" ]]; then
   [[ "$DRY_RUN" == "1" ]]      && FORWARD+=("--dry-run")
   [[ "$VERBOSE" == "1" ]]      && FORWARD+=("--verbose")
   [[ "$JSON_SUMMARY" == "1" ]] && FORWARD+=("--json-summary")
+  [[ -n "$OUTPUT_DIR_OVERRIDE" ]] && FORWARD+=("--output-dir" "$OUTPUT_DIR_OVERRIDE")
   SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS="${TIMEOUT_V:-30000}" \
     exec "$0" "$SEED_V" "${READER_V:-300}" "${PATTERN_V:-concurrent reader \+ fuzz \+ unsafe symlink}" "${FORWARD[@]}"
 fi
+
 
 SEED="${1:?SEED is required (or use --from <folder>)}"
 READER_MS="${2:-${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}}"
