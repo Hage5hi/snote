@@ -359,16 +359,21 @@ describe("schema-drift-diff CLI: exit codes + suggested fixes", () => {
     }
   });
 
-  it("exit 5 when required fields are missing (markdown + --json)", () => {
+  it("exit 5 when required fields are missing (markdown + --json) — includes received keys + checklist", () => {
     const dir = tmp();
     const p = join(dir, "weird.json");
-    writeFileSync(p, JSON.stringify({ hello: "world" }));
+    writeFileSync(p, JSON.stringify({ hello: "world", nope: 1 }));
     for (const mode of [[p, p], [p, p, "--json"]]) {
       const { code, stderr } = bun(DIFF_SCRIPT, mode);
       expect(code).toBe(5);
       expect(stderr).toContain("missing required fields");
       expect(stderr).toContain("`strict`");
       expect(stderr).toContain("`files`");
+      expect(stderr).toContain("received top-level keys: hello, nope");
+      expect(stderr).toContain("missing top-level keys: strict, totals, files");
+      expect(stderr).toContain("expected schema checklist:");
+      expect(stderr).toContain("[ ] strict");
+      expect(stderr).toContain("[ ] files");
       expect(stderr).toContain("Expected shape");
     }
   });
