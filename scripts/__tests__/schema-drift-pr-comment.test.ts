@@ -667,3 +667,70 @@ describe("schema-drift-diff: --validate-json Ajv error details", () => {
     );
   });
 });
+
+describe("schema-drift-diff: --help includes concrete examples", () => {
+  it("--help mentions --json, --json-out, --validate-json, and wildcard/regex patterns", () => {
+    const { code, stderr } = bun(DIFF_SCRIPT, ["--help"]);
+    expect(code).toBe(0);
+    expect(stderr).toContain("Examples:");
+    expect(stderr).toContain("--json-out");
+    expect(stderr).toContain("--validate-json");
+    expect(stderr).toContain("--fail-slug 'fail-chromium-*'");
+    expect(stderr).toContain("/regex/");
+  });
+});
+
+describe("schema-drift-diff: --print-schema", () => {
+  it("prints the JSON Schema for the --json output to stdout and exits 0", () => {
+    const { code, stdout } = bun(DIFF_SCRIPT, ["--print-schema"]);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.$id).toMatch(/schema-drift-diff\.schema\.json$/);
+    expect(parsed.properties).toHaveProperty("matchedAnchors");
+    expect(parsed.properties).toHaveProperty("totals");
+  });
+});
+
+describe("schema-drift-diff: --json-out atomic write failure modes", () => {
+  it("auto-creates a missing nested destination directory (mkdir -p)", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const nested = join(dir, "a", "b", "c", "diff.json");
+    const { code } = bun(DIFF_SCRIPT, [p, p, "--json-out", nested]);
+    expect(code).toBe(0);
+    expect(_readFileSync(nested, "utf8")).toContain("matchedAnchors");
+  });
+
+  it("exit 7 when the parent path is blocked by a regular file", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const blocker = join(dir, "blocker");
+    writeFileSync(blocker, "x");
+    const jsonOut = join(blocker, "child", "diff.json");
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(code).toBe(7);
+    expect(stderr).toContain("cannot write json-out");
+    expect(stderr).toContain("fix:");
+  });
+
+  it("exit 7 with permission-denied when the parent dir is not writable", () => {
+    // skip on root — chmod 0o500 is bypassed for uid 0
+    if (typeof process.getuid === "function" && process.getuid() === 0) return;
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const roDir = join(dir, "readonly");
+    require("node:fs").mkdirSync(roDir);
+    require("node:fs").chmodSync(roDir, 0o500);
+    try {
+      const jsonOut = join(roDir, "diff.json");
+      const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+      expect(code).toBe(7);
+      expect(stderr).toContain("cannot write json-out");
+      expect(stderr).toMatch(/EACCES|EPERM/);
+      // no partial .tmp left behind
+      expect(require("node:fs").readdirSync(roDir)).toEqual([]);
+    } finally {
+      require("node:fs").chmodSync(roDir, 0o700);
+    }
+  });
+});
