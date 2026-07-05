@@ -699,6 +699,30 @@ diagnostics" block that links directly to an uploaded artifact:
 | `atomic-crossos` | `schema-drift-diff-replay-pretty-index-failure-<os>` | `pretty-index.json`, `pretty-index.pre-check.json`, `pretty-index.report.json` |
 | `nightly stress` | `schema-drift-diff-stress-replay-pretty-index-failure-<os>` | same three files |
 
+`<os>` is one of `ubuntu-latest`, `macos-latest`, or `windows-latest`
+(one artifact per matrix leg).
+
+**Downloading a failure artifact** (`gh` CLI — replace `<run-id>` with the
+failed CI run's ID from the Actions tab):
+
+```sh
+# atomic-crossos matrix (Linux leg shown; swap the -<os> suffix as needed)
+gh run download <run-id> \
+  -n schema-drift-diff-replay-pretty-index-failure-ubuntu-latest \
+  -D ./_pretty-index-atomic
+ls ./_pretty-index-atomic
+#   pretty-index.json  pretty-index.pre-check.json  pretty-index.report.json
+
+# nightly-stress matrix
+gh run download <run-id> \
+  -n schema-drift-diff-stress-replay-pretty-index-failure-ubuntu-latest \
+  -D ./_pretty-index-stress
+```
+
+Or from the GitHub UI: open the failed run → scroll to the **Artifacts**
+panel → click the artifact whose name matches the table above.
+
+
 **Where the diagnostic files are written on disk** (both matrices write
 to the same directory — only the uploaded artifact *name* differs):
 
