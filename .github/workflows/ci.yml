@@ -442,17 +442,45 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
+          mkdir -p artifacts/schema-drift-diff-replay-verify/pretty
           for f in artifacts/schema-drift-diff-replay/*/replay-summary.json; do
+            base="$(basename "$(dirname "$f")")"
+            out="artifacts/schema-drift-diff-replay-verify/pretty/${base}.pretty.txt"
+            # --fixed-widths + --no-color = deterministic bytes across runners.
+            if python3 scripts/pretty-replay-summary.py --fixed-widths --no-color "$f" > "$out" 2>&1; then
+              status="ok"
+            else
+              status="failed"
+              echo "(pretty-print failed for $f, exit=$?)" >> "$out"
+            fi
             {
               echo ''
-              echo "<details><summary>pretty replay-summary: <code>${f}</code></summary>"
+              echo "<details><summary>pretty replay-summary: <code>${f}</code> (${status})</summary>"
               echo ''
               echo '```'
-              python3 scripts/pretty-replay-summary.py "$f" || echo "(pretty-print failed for $f)"
+              cat "$out" || echo "(pretty-print failed for $f)"
               echo '```'
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
+      - name: upload pretty replay-summary artifact
+        id: upload-pretty
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-diff-replay-pretty-${{ matrix.os }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt
+      - name: append pretty artifact link to step summary
+        if: always() && steps.upload-pretty.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          {
+            echo ''
+            echo "- [schema-drift-diff-replay-pretty-${{ matrix.os }}](${{ steps.upload-pretty.outputs.artifact-url }}) — pretty-printed \`replay-summary.json\` (deterministic \`--fixed-widths --no-color\`), retention 14 days"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Integration check: parse $GITHUB_STEP_SUMMARY after the pretty
       # blocks were appended and assert it actually contains the
       # pretty-printed replay-summary content. This catches regressions
