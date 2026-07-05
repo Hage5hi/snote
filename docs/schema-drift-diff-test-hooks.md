@@ -585,6 +585,64 @@ Retention: 14 days. A direct link to the artifact is appended to the
 GitHub Actions step summary so debuggers can download only the pretty
 output without pulling the full verify bundle.
 
+Additional files uploaded alongside the plain `*.pretty.txt`:
+
+- `*.pretty.md` — same content rendered with `--markdown` so the
+  `manifest_mapping` table is a real GitHub-flavored Markdown table.
+  On successful runs the step summary inlines this file directly
+  (not wrapped in a code fence) so GitHub renders it as a table.
+- `pretty-index.json` — machine-readable triage index (one entry per
+  summary) containing `folder`, `summary_file`, `pretty_txt`,
+  `pretty_md`, `fail_reason`, `exit_code`, `pretty_status`, and
+  `pretty_exit_code`. Example entry:
+
+  ```json
+  [
+    {
+      "folder": "20260705T134402Z-seed-42",
+      "summary_file": "artifacts/schema-drift-diff-replay/20260705T134402Z-seed-42/replay-summary.json",
+      "pretty_txt": "artifacts/schema-drift-diff-replay-verify/pretty/20260705T134402Z-seed-42.ok.pretty.txt",
+      "pretty_md":  "artifacts/schema-drift-diff-replay-verify/pretty/20260705T134402Z-seed-42.ok.pretty.md",
+      "fail_reason": "ok",
+      "exit_code": null,
+      "pretty_status": "ok",
+      "pretty_exit_code": 0
+    }
+  ]
+  ```
+
+##### `--markdown` output — no `manifest_mapping`
+
+When the summary omits `manifest_mapping` (or has an empty array),
+`--markdown` prints only the field list; the `-- manifest_mapping --`
+header and pipe table are both suppressed:
+
+```
+== replay-summary ==
+mode              : dry-run
+fail_reason       : 
+folder            : /tmp/x
+```
+
+##### `--markdown` output — with `manifest_mapping`
+
+With `--fixed-widths --markdown`, the mapping renders as a
+GitHub-flavored table with a `---` divider row:
+
+```
+== replay-summary ==
+mode              : dry-run
+fail_reason       : 
+folder            : /tmp/y
+
+-- manifest_mapping --
+| manifest_entry                           | required_file                                    | role |
+| ---------------------------------------- | ------------------------------------------------ | ---- |
+| SCHEMA_DRIFT_DIFF_FUZZ_SEED              | /tmp/y/manifest.txt                              | source of seed |
+| (integrity)                              | /tmp/y/checksums.sha256                          | sha256 of manifest.txt + env.sh |
+```
+
+
 
 
 The validation contract (also asserted by
