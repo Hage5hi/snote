@@ -711,12 +711,49 @@ Each file's role:
 To reproduce the exact same check locally before pushing:
 
 ```sh
-scripts/reproduce-ci-pretty-index-check.sh [path/to/pretty-index.json]
+# 1. Makefile target (defaults to the CI matrix path)
+make pretty-index-check
+make pretty-index-check INDEX=path/to/pretty-index.json
+make pretty-index-check-clean            # discard prior diagnostics first
+make pretty-index-diagnostics            # print artifact paths only
+make pretty-index-clean                  # rm .pre-check.json / .report.json
+
+# 2. Bash reproduce script (macOS / Linux / WSL)
+scripts/reproduce-ci-pretty-index-check.sh
+scripts/reproduce-ci-pretty-index-check.sh --clean path/to/pretty-index.json
+scripts/reproduce-ci-pretty-index-check.sh --matrix stress    # nightly-stress naming
+
+# 3. PowerShell reproduce script (Windows)
+pwsh scripts/reproduce-ci-pretty-index-check.ps1
+pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Clean path\to\pretty-index.json
+pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Matrix stress
 ```
 
-It writes the same three sibling files and prints a step-summary-style
-failure block on non-zero exit. See
-`docs/schema-drift-diff-test-hooks.md` for the full exit-code contract.
+Pass `--matrix atomic` (default) or `--matrix stress` (PowerShell:
+`-Matrix atomic|stress`) to mirror the artifact name the corresponding
+CI job would upload (`schema-drift-diff-replay-...` vs
+`schema-drift-diff-stress-replay-...`).
+
+All three write the same sibling `.pre-check.json` / `.report.json`
+files and print a step-summary-style failure block on non-zero exit.
+See `docs/schema-drift-diff-test-hooks.md` for the full exit-code
+contract.
+
+### Pre-commit hook — skipping the pretty-index check
+
+The pre-commit hook only runs the pretty-index CI check when a staged
+file can actually affect the schema contract (the generator, validator,
+migrator, self-check, local runner, or a committed `pretty-index.json`).
+Docs-only or unrelated changes (e.g. `README.md`, `docs/**`, `src/**`)
+skip it automatically.
+
+Overrides:
+
+```sh
+PRETTY_INDEX_HOOK_SKIP=1 git commit ...   # force-skip even when relevant files staged
+PRETTY_INDEX_HOOK_FORCE=1 git commit ...  # force-run even for docs-only commits
+git commit --no-verify                    # skip every pre-commit hook (emergency)
+```
 
 ## License
 

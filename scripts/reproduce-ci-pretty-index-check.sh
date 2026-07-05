@@ -30,11 +30,20 @@ set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CLEAN=0
+MATRIX="atomic"
 INDEX=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --clean) CLEAN=1; shift ;;
     --keep)  CLEAN=0; shift ;;
+    --matrix)
+      shift
+      if [ $# -eq 0 ]; then
+        echo "reproduce-ci-pretty-index-check: --matrix requires atomic|stress" >&2
+        exit 2
+      fi
+      MATRIX="$1"; shift ;;
+    --matrix=*) MATRIX="${1#--matrix=}"; shift ;;
     -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
     --*) echo "reproduce-ci-pretty-index-check: unknown flag: $1" >&2; exit 2 ;;
     *)
@@ -45,6 +54,12 @@ while [ $# -gt 0 ]; do
       INDEX="$1"; shift ;;
   esac
 done
+
+case "$MATRIX" in
+  atomic) ARTIFACT_PREFIX="schema-drift-diff-replay-pretty-index-failure" ;;
+  stress) ARTIFACT_PREFIX="schema-drift-diff-stress-replay-pretty-index-failure" ;;
+  *) echo "reproduce-ci-pretty-index-check: --matrix must be atomic|stress (got: $MATRIX)" >&2; exit 2 ;;
+esac
 INDEX="${INDEX:-artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json}"
 
 if [ ! -f "$INDEX" ]; then
@@ -79,7 +94,7 @@ if [ "$rc" -ne 0 ]; then
 # In CI this would upload the following artifact and append a link block
 # to \$GITHUB_STEP_SUMMARY:
 #
-#   artifact: schema-drift-diff-replay-pretty-index-failure-<os>
+#   artifact: ${ARTIFACT_PREFIX}-<os>   (matrix: $MATRIX)
 #     - $INDEX
 #     - $PRE   (raw generator output BEFORE --auto-migrate)
 #     - $REPORT (validator --report machine-readable errors)
