@@ -19,6 +19,8 @@ Flags:
   --viewer auto|diff-y|delta|bat|cat
                                  Force a viewer. `auto` (default) picks diff -y when the
                                  terminal is ≥180 cols, else delta, then bat, then cat.
+  --dry-run                      Print which files would match and the diff/view command
+                                 that would run — no file reads, no bundle required.
   -h, --help                     Show this help.
 
 Env:
