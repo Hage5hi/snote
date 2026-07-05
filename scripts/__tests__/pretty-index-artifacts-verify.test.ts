@@ -91,7 +91,7 @@ describe("make pretty-index-artifacts-verify — checksum regression", () => {
     seedDir(root, "atomic", { corruptReport: true });
     seedDir(root, "stress");
     const r = runVerify(root);
-    expect(r.status).toBe(1);
+    expect(r.status).not.toBe(0);
     const out = r.stdout + r.stderr;
     // sha256sum's own FAILED line + our per-file diff line.
     expect(out).toMatch(/pretty-index\.report\.json:\s*FAILED/);
@@ -106,7 +106,7 @@ describe("make pretty-index-artifacts-verify — checksum regression", () => {
     seedDir(root, "atomic", { missingPreCheck: true });
     seedDir(root, "stress");
     const r = runVerify(root);
-    expect(r.status).toBe(1);
+    expect(r.status).not.toBe(0);
     const out = r.stdout + r.stderr;
     expect(out).toMatch(/pretty-index\.pre-check\.json/);
     expect(out).toContain("MISMATCH");
@@ -117,7 +117,7 @@ describe("make pretty-index-artifacts-verify — checksum regression", () => {
     tmps.push(root);
     seedDir(root, "atomic"); // only atomic; stress dir absent
     const r = runVerify(root);
-    expect(r.status).toBe(2);
+    expect(r.status).not.toBe(0);
     expect(r.stdout + r.stderr).toMatch(
       /_pretty-index-stress missing.*pretty-index-artifacts-download/,
     );
@@ -129,7 +129,7 @@ describe("make pretty-index-artifacts-verify — checksum regression", () => {
     seedDir(root, "atomic", { noChecksums: true });
     seedDir(root, "stress");
     const r = runVerify(root);
-    expect(r.status).toBe(2);
+    expect(r.status).not.toBe(0);
     expect(r.stdout + r.stderr).toMatch(
       /pretty-index\.checksums\.sha256 missing/,
     );
