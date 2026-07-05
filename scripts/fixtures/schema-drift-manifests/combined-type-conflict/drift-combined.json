@@ -1,0 +1,14 @@
+{
+  "browser": "chromium",
+  "browsers": ["chromium", "firefox"],
+  "combined": true,
+  "generatedAt": "2026-01-01T00:00:00Z",
+  "type": "all",
+  "viewer": "cat",
+  "resolvedViewerCommand": "cat < <base>.diff",
+  "matches": [],
+  "excludes": [],
+  "expected": ["focus-trap-inspect-report.schema.json"],
+  "matched": [],
+  "requiredArtifacts": ["trace.zip"]
+}
