@@ -126,10 +126,21 @@ matches_filter() {
 
 show() {
   local base="$1"
-  matches_filter "$base" || return 0
+  matches_filter "$base" || { [ "$DRY_RUN" = "1" ] && echo "SKIP  $base  (no --file match)"; return 0; }
   local committed="$OUT/committed/$base"
   local regen="$OUT/regenerated/$base"
   local diff_file="$OUT/${base}.diff"
+
+  if [ "$DRY_RUN" = "1" ]; then
+    local cmd
+    if [ "$RESOLVED_VIEWER" = "diff-y" ]; then
+      cmd="diff -y --width=$COLS $committed $regen"
+    else
+      cmd="pretty($RESOLVED_VIEWER) < $diff_file"
+    fi
+    echo "MATCH $base  →  $cmd"
+    return 0
+  fi
 
   echo ""
   echo "══════════════════════════════════════════════════════════════"
