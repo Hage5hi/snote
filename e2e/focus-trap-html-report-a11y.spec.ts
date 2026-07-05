@@ -540,54 +540,62 @@ test.describe("focus-trap --html-report a11y", () => {
           type: "live-region-timing",
           description: line,
         });
-        // Per-browser row in the GitHub job summary. On failure the row's
-        // "artifacts" cell links to the run's Artifacts page where the
-        // per-browser trace.zip / screenshot / dom-snapshot were uploaded
-        // by Playwright's attach() calls above (test-results/**).
-        if (process.env.GITHUB_STEP_SUMMARY) {
-          try {
-            const header = `<!-- live-region-summary-header -->`;
-            const path = process.env.GITHUB_STEP_SUMMARY;
-            const existing = existsSync(path) ? readFileSync(path, "utf8") : "";
-            if (!existing.includes(header)) {
-              appendFileSync(path,
-                `\n${header}\n## ⏱ live-region wait budget per browser\n` +
-                `| browser | announcements | observed / budget (ms) | usage | total (ms) | artifacts |\n` +
-                `|---|---:|---:|---:|---:|---|\n`);
-            }
-            const failedNow = testInfo.errors.length > 0;
-            const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
-              ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
-              : "";
-            // GitHub's Artifacts UI groups files by artifact name; deep-links
-            // aren't supported, so each per-file link points at the run's
-            // #artifacts anchor with the exact filename as the link text.
-            const filesOnFail = ["live-region-trace.zip", "live-region-failure.png", "dom-snapshot.html", "live-region-log.json"];
-            const artifactCell = failedNow && runUrl
-              ? filesOnFail.map((f) => `[${f}](${runUrl}#artifacts "playwright-report → test-results/*${browserName}*/${f}")`).join("<br>")
-              : (runUrl ? `[run](${runUrl}#artifacts)` : "—");
-            appendFileSync(path,
-              `| ${browserName} | ${log.length} | ${waitDurationMs} / ${waitMs} | ${usagePct}% | ${Date.now() - t0} | ${artifactCell} |\n`);
-          } catch {/* best-effort */}
-        }
-
-        // On failure, echo the exact local repro command into the CI log
-        // (also as a `::error::` annotation) so on-call can copy/paste and
-        // rerun the failing spec with the same attachment env vars.
-        const failedNow2 = testInfo.errors.length > 0;
-        if (failedNow2) {
-          const spec = "e2e/focus-trap-html-report-a11y.spec.ts";
-          const cmd = `E2E_ATTACH_TRACE=1 E2E_ATTACH_SCREENSHOT=1 bunx playwright test ${spec} --project=${browserName} -g "rapid filter \\+ disclosure toggles" --reporter=list`;
-          console.log(`[live-region ${browserName}] LOCAL REPRO:\n  ${cmd}`);
-          if (process.env.CI) console.log(`::error title=live-region ${browserName} repro::${cmd}`);
-          testInfo.annotations.push({ type: "live-region-repro", description: cmd });
-        }
+        // (summary row is written in `finally` — after collectDiagnostics
+        // has attached files — so the row can flag MISSING artifacts.)
       } finally {
         const failed = testInfo.errors.length > 0 || testInfo.status === "failed";
         await collectDiagnostics({
           failed, waitMs, waitDurationMs,
           label: failed ? "rapid-toggle-failure" : "rapid-toggle-pass",
         });
+
+        // Per-browser row in the GitHub job summary. Each expected artifact
+        // is checked against `testInfo.attachments`; anything missing is
+        // rendered as `⚠️ MISSING: <filename>` instead of a link so the row
+        // never claims a file exists when it doesn't.
+        if (process.env.GITHUB_STEP_SUMMARY) {
+          try {
+            const header = `<!-- live-region-summary-header -->`;
+            const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+            const existing = existsSync(summaryPath) ? readFileSync(summaryPath, "utf8") : "";
+            if (!existing.includes(header)) {
+              appendFileSync(summaryPath,
+                `\n${header}\n## ⏱ live-region wait budget per browser\n` +
+                `| browser | announcements | observed / budget (ms) | usage | total (ms) | artifacts |\n` +
+                `|---|---:|---:|---:|---:|---|\n`);
+            }
+            const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
+              ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
+              : "";
+            const attachedNames = new Set(testInfo.attachments.map((a) => a.name));
+            const expectedAlways = ["live-region-log.json", "live-region-innertext.txt", "dom-snapshot.html"];
+            const expectedOnFail = ["live-region-trace.zip", "live-region-failure.png"];
+            const expected = failed ? [...expectedAlways, ...expectedOnFail] : expectedAlways;
+            const cells = expected.map((f) =>
+              attachedNames.has(f)
+                ? (runUrl
+                    ? `[${f}](${runUrl}#artifacts "playwright-report → test-results/*${browserName}*/${f}")`
+                    : `✅ ${f}`)
+                : `⚠️ MISSING: ${f}`,
+            );
+            const usagePctRow = Math.round((waitDurationMs / waitMs) * 100);
+            const rowLog = await page.evaluate(
+              () => (window as unknown as { __ftLiveLog?: string[] }).__ftLiveLog ?? [],
+            ).catch(() => [] as string[]);
+            appendFileSync(summaryPath,
+              `| ${browserName} | ${rowLog.length} | ${waitDurationMs} / ${waitMs} | ${usagePctRow}% | ${Date.now() - t0} | ${cells.join("<br>")} |\n`);
+          } catch {/* best-effort */}
+        }
+
+        // On failure, echo the exact local repro command into the CI log
+        // (also as a `::error::` annotation) so on-call can copy/paste it.
+        if (failed) {
+          const spec = "e2e/focus-trap-html-report-a11y.spec.ts";
+          const cmd = `E2E_ATTACH_TRACE=1 E2E_ATTACH_SCREENSHOT=1 bunx playwright test ${spec} --project=${browserName} -g "rapid filter \\+ disclosure toggles" --reporter=list`;
+          console.log(`[live-region ${browserName}] LOCAL REPRO:\n  ${cmd}`);
+          if (process.env.CI) console.log(`::error title=live-region ${browserName} repro::${cmd}`);
+          testInfo.annotations.push({ type: "live-region-repro", description: cmd });
+        }
       }
     });
   });

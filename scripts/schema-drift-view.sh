@@ -19,6 +19,8 @@ Flags:
   --viewer auto|diff-y|delta|bat|cat
                                  Force a viewer. `auto` (default) picks diff -y when the
                                  terminal is ≥180 cols, else delta, then bat, then cat.
+  --dry-run                      Print which files would match and the diff/view command
+                                 that would run — no file reads, no bundle required.
   -h, --help                     Show this help.
 
 Env:
@@ -55,6 +57,7 @@ OUT="${OUT:-_schema_drift}"
 FILTER="all"
 FILE_MATCHES=()     # each entry is one substring
 VIEWER="auto"
+DRY_RUN=0
 
 add_matches() {
   # Split "$1" on commas so `--file a,b` expands to two entries.
@@ -72,6 +75,7 @@ while [ $# -gt 0 ]; do
     --type=*)   FILTER="${1#*=}"; shift ;;
     --viewer)   VIEWER="${2:-auto}"; shift 2 ;;
     --viewer=*) VIEWER="${1#*=}"; shift ;;
+    --dry-run)  DRY_RUN=1; shift ;;
     -h|--help)  usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
@@ -80,7 +84,9 @@ done
 [ "$FILTER" = "schema" ] && FILTER="schemas"
 [ "$FILTER" = "type" ]   && FILTER="types"
 
-if [ ! -d "$OUT" ]; then
+# --dry-run must work without a bundle on disk so it's usable as a
+# planning/preview step and in unit tests. All other modes require OUT.
+if [ ! -d "$OUT" ] && [ "$DRY_RUN" != "1" ]; then
   echo "no drift bundle at $OUT — run: bun run schema-guard" >&2
   exit 1
 fi
@@ -122,10 +128,21 @@ matches_filter() {
 
 show() {
   local base="$1"
-  matches_filter "$base" || return 0
+  matches_filter "$base" || { [ "$DRY_RUN" = "1" ] && echo "SKIP  $base  (no --file match)"; return 0; }
   local committed="$OUT/committed/$base"
   local regen="$OUT/regenerated/$base"
   local diff_file="$OUT/${base}.diff"
+
+  if [ "$DRY_RUN" = "1" ]; then
+    local cmd
+    if [ "$RESOLVED_VIEWER" = "diff-y" ]; then
+      cmd="diff -y --width=$COLS $committed $regen"
+    else
+      cmd="pretty($RESOLVED_VIEWER) < $diff_file"
+    fi
+    echo "MATCH $base  →  $cmd"
+    return 0
+  fi
 
   echo ""
   echo "══════════════════════════════════════════════════════════════"
@@ -154,7 +171,7 @@ case "$FILTER" in
   *) echo "unknown --type: $FILTER" >&2; usage >&2; exit 2 ;;
 esac
 
-if [ -s "$OUT/cli-schema-versions.txt" ]; then
+if [ "$DRY_RUN" != "1" ] && [ -s "$OUT/cli-schema-versions.txt" ]; then
   echo ""
   echo "── CLI SCHEMA_VERSION consts ──────────────────────────────────"
   cat "$OUT/cli-schema-versions.txt"
