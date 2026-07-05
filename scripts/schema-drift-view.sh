@@ -16,6 +16,9 @@ Flags:
   --type    schemas|types|all    Restrict to schema JSON diffs, types.gen.ts diff, or both.
   --file    <substr>             Show only files whose name contains <substr>.
                                  Repeatable. Also accepts comma-separated values.
+  --exclude <substr>             Skip files whose name contains <substr>. Applied AFTER
+                                 --file. Repeatable + comma-separated. Useful for hiding
+                                 noisy bases without changing --type.
   --browsers <list>              Comma-separated Playwright projects (chromium,firefox,webkit)
                                  to scope manifest + diff/viewer output to. Repeatable.
                                  Default: all browsers.
@@ -24,6 +27,8 @@ Flags:
                                  terminal is ≥180 cols, else delta, then bat, then cat.
   --dry-run                      Print which files would match and the diff/view command
                                  that would run — no file reads, no bundle required.
+  --verbose                      Trace matched files, the resolved viewer command per
+                                 file, and echo executed subprocess output to stderr.
   -h, --help                     Show this help.
 
 Env:
