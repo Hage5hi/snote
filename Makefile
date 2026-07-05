@@ -465,6 +465,27 @@ pretty-index-mismatch-summary:
 	 echo "  total: $$total_mm/$$total_all mismatched  ($$total_err missing-artifact err)"; \
 	 if [ "$$total_mm" -gt 0 ] || [ "$$total_err" -gt 0 ]; then exit 3; fi
 
+# Machine-readable variant of pretty-index-mismatch-summary — writes a
+# small JSON file with per-matrix counts and totals for easy CI parsing.
+# Output shape:
+#   {"schema":"pretty-index-mismatch-summary/v1",
+#    "scope":"both",
+#    "matrices":{"atomic":{"total":N,"mismatched":N,"missing":N},
+#                "stress":{"total":N,"mismatched":N,"missing":N}},
+#    "totals":{"total":N,"mismatched":N,"missing":N}}
+# Exit 0 always (writing succeeded); the JSON's totals.mismatched field
+# is what CI should assert on.
+#   PI_REPORT_PATH=<in>  PI_SUMMARY_JSON_PATH=<out>  (default: <report>.summary.json)
+PI_SUMMARY_JSON_PATH ?= $(PI_REPORT_PATH).summary.json
+pretty-index-mismatch-summary-json:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
+	  echo "no mismatch report at $(PI_REPORT_PATH)" >&2; exit 2; \
+	fi
+	@mkdir -p -- "$$(dirname -- "$(PI_SUMMARY_JSON_PATH)")" 2>/dev/null || true
+	@jq '{schema:"pretty-index-mismatch-summary/v1", scope:(.scope // "both"), matrices: (reduce ["atomic","stress"][] as $$m ({}; . + {($$m): {total: ([.. | .results? // [] | .[] | select((.matrix // "") == $$m or ((.artifact_dir // "") | test($$m)))] | length), mismatched: ([.. | .results? // [] | .[] | select(((.matrix // "") == $$m or ((.artifact_dir // "") | test($$m))) and .status=="MISMATCH")] | length), missing: ([.. | .results? // [] | .[] | select(((.matrix // "") == $$m or ((.artifact_dir // "") | test($$m))) and (.status=="dir_missing" or .status=="checksums_missing"))] | length)}})), totals: {total: (.results | length), mismatched: ([.results[] | select(.status=="MISMATCH")] | length), missing: ([.results[] | select(.status=="dir_missing" or .status=="checksums_missing")] | length)}}' -- "$(PI_REPORT_PATH)" > "$(PI_SUMMARY_JSON_PATH)"
+	@echo "wrote summary -> $(PI_SUMMARY_JSON_PATH)"
+
 # Export the mismatch JSON report into a CSV file with columns:
 # matrix, artifact_dir, path, expected_hash, actual_hash
 #   PI_REPORT_PATH=<in>  PI_CSV_PATH=<out>  (default: <report>.csv)
