@@ -20,7 +20,10 @@ REPORT = $(INDEX:.json=.report.json)
         pretty-index-artifacts-download \
         pretty-index-artifacts-verify \
         pretty-index-hook-validate-downloaded \
-        pretty-index-reproduce-downloaded
+        pretty-index-reproduce-downloaded \
+        pretty-index-artifacts-download-verify-reproduce \
+        pretty-index-artifacts-clean
+
 
 
 
