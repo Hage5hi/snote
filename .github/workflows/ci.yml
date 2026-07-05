@@ -399,10 +399,12 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
       # Separate, easy-to-find artifact holding ONLY the dry-run verification
-      # log + labeled copy-paste replay command so debuggers can `gh run
-      # download` this one artifact without pulling the full debug bundle.
+      # log + labeled copy-paste replay command + replay-summary.json so
+      # debuggers can `gh run download` this one artifact without pulling
+      # the full debug bundle. Uploaded on success and failure alike.
       - name: upload dry-run verify + replay-command artifacts
-        if: failure() || cancelled()
+        id: upload-verify
+        if: always() && steps.prepare-replay.outputs.folder != ''
         uses: actions/upload-artifact@v4
         with:
           name: schema-drift-diff-replay-verify-${{ matrix.os }}
@@ -412,6 +414,18 @@ jobs:
             artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
             artifacts/schema-drift-diff-replay-verify/replay-command.sh
             artifacts/schema-drift-diff-replay/**/replay-summary.json
+      - name: append verify artifact link to step summary
+        if: always() && steps.upload-verify.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          {
+            echo ''
+            echo '#### schema-drift-diff replay verify artifacts (${{ matrix.os }})'
+            echo ''
+            echo "- [schema-drift-diff-replay-verify-${{ matrix.os }}](${{ steps.upload-verify.outputs.artifact-url }}) — contains \`dry-run-verify.log\`, \`replay-command.sh\`, and every \`replay-summary.json\`"
+            echo "  - CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-replay-verify-${{ matrix.os }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
