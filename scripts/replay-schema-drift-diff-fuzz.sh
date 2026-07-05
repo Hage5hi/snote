@@ -243,6 +243,19 @@ write_json_summary() {
   [[ "$JSON_SUMMARY" == "1" ]] || return 0
   local dest="$OUT/replay-summary.json"
   if command -v jq >/dev/null 2>&1; then
+    local mapping_json='[]'
+    if [[ "$VERBOSE" == "1" ]]; then
+      mapping_json=$(jq -n \
+        --arg folder "$OUT" \
+        '[
+           {manifest_entry:"SCHEMA_DRIFT_DIFF_FUZZ_SEED",          required_file:($folder+"/manifest.txt"), role:"source of seed"},
+           {manifest_entry:"SCHEMA_DRIFT_DIFF_READER_DURATION_MS", required_file:($folder+"/manifest.txt"), role:"source of reader window ms"},
+           {manifest_entry:"SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN",  required_file:($folder+"/manifest.txt"), role:"source of vitest -t filter"},
+           {manifest_entry:"SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS",    required_file:($folder+"/manifest.txt"), role:"source of vitest --testTimeout"},
+           {manifest_entry:"(env passthrough)",                    required_file:($folder+"/env.sh"),      role:"env vars sourced before replay"},
+           {manifest_entry:"(integrity)",                          required_file:($folder+"/checksums.sha256"), role:"sha256 of manifest.txt + env.sh"}
+         ]')
+    fi
     jq -n \
       --arg   mode      "$mode" \
       --argjson exit_code "${code:-null}" \
@@ -255,11 +268,14 @@ write_json_summary() {
       --argjson missing_files "$(printf '%s\n' "${MISSING_FILES[@]:-}" | jq -R . | jq -s 'map(select(length>0))')" \
       --arg   fail_reason "$FAIL_REASON" \
       --arg   folder    "$OUT" \
+      --argjson manifest_mapping "$mapping_json" \
       '{mode:$mode, exit_code:$exit_code, duration_seconds:$duration_seconds,
         checksum_verified:$checksum, seed:$seed, reader_ms:$reader_ms,
         pattern:$pattern, timeout_ms:$timeout_ms,
-        missing_files:$missing_files, fail_reason:$fail_reason, folder:$folder}' \
+        missing_files:$missing_files, fail_reason:$fail_reason, folder:$folder,
+        manifest_mapping:$manifest_mapping}' \
       > "$dest"
+
   else
     esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
     local missing_json="[]"
