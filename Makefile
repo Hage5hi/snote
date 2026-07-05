@@ -420,6 +420,7 @@ pretty-index-help:
         pretty-index-mismatch-validate pretty-index-mismatch-summary \
         pretty-index-mismatch-summary-json \
         pretty-index-mismatch-summary-json-merge \
+        pretty-index-mismatch-summary-validate \
         pretty-index-mismatch-csv pretty-index-mismatch-diff
 
 # Print a human-friendly per-file table (file, expected, actual, status)
@@ -505,18 +506,51 @@ pretty-index-mismatch-summary-json-merge:
 	@if [ -z "$(PI_SUMMARY_INPUTS)" ]; then \
 	  echo "usage: make pretty-index-mismatch-summary-json-merge PI_SUMMARY_INPUTS='f1.json f2.json' [PI_SUMMARY_MERGED_PATH=out.json]" >&2; exit 2; \
 	fi
-	@files=""; names_json="["; sep=""; \
+	@files=""; missing_json="["; names_json="["; sep_n=""; sep_m=""; \
 	for f in $(PI_SUMMARY_INPUTS); do \
-	  [ -f "$$f" ] || { echo "missing input: $$f" >&2; exit 2; }; \
-	  files="$$files $$f"; \
 	  esc=$$(printf '%s' "$$f" | sed 's/\\/\\\\/g; s/"/\\"/g'); \
-	  names_json="$$names_json$$sep\"$$esc\""; sep=","; \
+	  names_json="$$names_json$$sep_n\"$$esc\""; sep_n=","; \
+	  if [ -f "$$f" ]; then \
+	    files="$$files $$f"; \
+	  else \
+	    echo "warn: missing input (treated as zero counts): $$f" >&2; \
+	    missing_json="$$missing_json$$sep_m\"$$esc\""; sep_m=","; \
+	  fi; \
 	done; \
-	names_json="$$names_json]"; \
+	names_json="$$names_json]"; missing_json="$$missing_json]"; \
 	mkdir -p -- "$$(dirname -- "$(PI_SUMMARY_MERGED_PATH)")" 2>/dev/null || true; \
-	jq -s --argjson names "$$names_json" 'def zero: {total:0,mismatched:0,missing:0}; def add(a;b): {total:((a.total//0)+(b.total//0)), mismatched:((a.mismatched//0)+(b.mismatched//0)), missing:((a.missing//0)+(b.missing//0))}; . as $$in | {schema:"pretty-index-mismatch-summary-merged/v1", merged_from:$$names, sources:[range(0; $$in|length) as $$i | {path:$$names[$$i], scope:($$in[$$i].scope // "unknown"), totals:($$in[$$i].totals // zero)}], matrices:{atomic: (reduce .[] as $$s (zero; add(.; ($$s.matrices.atomic // zero)))), stress: (reduce .[] as $$s (zero; add(.; ($$s.matrices.stress // zero))))}, totals: (reduce .[] as $$s (zero; add(.; ($$s.totals // zero))))}' -- $$files > "$(PI_SUMMARY_MERGED_PATH)"
+	if [ -z "$$files" ]; then \
+	  jq -n --argjson names "$$names_json" --argjson missing "$$missing_json" \
+	    'def zero: {total:0,mismatched:0,missing:0}; {schema:"pretty-index-mismatch-summary-merged/v1", merged_from:$$names, sources:[$$missing[] | {path:., scope:"unknown", missing:true, totals:zero}], matrices:{atomic:zero, stress:zero}, totals:zero}' \
+	    > "$(PI_SUMMARY_MERGED_PATH)"; \
+	else \
+	  jq -s --argjson names "$$names_json" --argjson missing "$$missing_json" \
+	    'def zero: {total:0,mismatched:0,missing:0}; def add(a;b): {total:((a.total//0)+(b.total//0)), mismatched:((a.mismatched//0)+(b.mismatched//0)), missing:((a.missing//0)+(b.missing//0))}; . as $$in | ($$in | length) as $$n | {schema:"pretty-index-mismatch-summary-merged/v1", merged_from:$$names, sources: ([range(0; $$n) as $$i | {path:($$names[$$i]), scope:($$in[$$i].scope // "unknown"), missing:false, totals:($$in[$$i].totals // zero)}] + [$$missing[] | {path:., scope:"unknown", missing:true, totals:zero}]), matrices:{atomic: (reduce .[] as $$s (zero; add(.; ($$s.matrices.atomic // zero)))), stress: (reduce .[] as $$s (zero; add(.; ($$s.matrices.stress // zero))))}, totals: (reduce .[] as $$s (zero; add(.; ($$s.totals // zero))))}' \
+	    -- $$files > "$(PI_SUMMARY_MERGED_PATH)"; \
+	fi
 	@echo "merged $(words $(PI_SUMMARY_INPUTS)) input(s) -> $(PI_SUMMARY_MERGED_PATH)"
 	@jq -r '"  matrices.atomic.mismatched=\(.matrices.atomic.mismatched)  matrices.stress.mismatched=\(.matrices.stress.mismatched)  totals.mismatched=\(.totals.mismatched)/\(.totals.total)"' -- "$(PI_SUMMARY_MERGED_PATH)"
+
+# Validate a pretty-index-mismatch-summary-json (or merged) file against
+# schemas/pretty-index-mismatch-summary-json.schema.json. Uses ajv when
+# available; otherwise falls back to a jq-based structural check on the
+# required fields (schema, matrices.{atomic,stress}.{total,mismatched,missing},
+# totals.{total,mismatched,missing}). Exit 2 on missing file / tooling,
+# exit 5 on validation failure, exit 0 on success.
+#   PI_SUMMARY_JSON_PATH=<file>  (defaults to $(PI_REPORT_PATH).summary.json)
+pretty-index-mismatch-summary-validate:
+	@f="$(PI_SUMMARY_JSON_PATH)"; \
+	 if [ ! -f "$$f" ]; then echo "no summary at $$f" >&2; exit 2; fi; \
+	 schema=schemas/pretty-index-mismatch-summary-json.schema.json; \
+	 if [ ! -f "$$schema" ]; then echo "missing schema: $$schema" >&2; exit 2; fi; \
+	 if command -v npx >/dev/null 2>&1 && npx --no-install ajv --help >/dev/null 2>&1; then \
+	   npx --no-install ajv validate -s "$$schema" -d "$$f" --strict=false || exit 5; \
+	 else \
+	   command -v jq >/dev/null || { echo "jq required (ajv not found)" >&2; exit 2; }; \
+	   err=$$(jq -r 'def need(p; msg): if (p) then empty else "missing: " + msg end; def isint(x): (x|type)=="number" and (x|floor)==x; def okcnt(c): (c|type)=="object" and isint(c.total) and isint(c.mismatched) and isint(c.missing); [ need(.schema=="pretty-index-mismatch-summary/v1" or .schema=="pretty-index-mismatch-summary-merged/v1"; ".schema"), need(.matrices|type=="object"; ".matrices"), need(okcnt(.matrices.atomic); ".matrices.atomic{total,mismatched,missing}"), need(okcnt(.matrices.stress); ".matrices.stress{total,mismatched,missing}"), need(okcnt(.totals); ".totals{total,mismatched,missing}") ] | join("; ")' -- "$$f"); \
+	   if [ -n "$$err" ]; then echo "invalid summary ($$f): $$err" >&2; exit 5; fi; \
+	 fi; \
+	 echo "OK $$f"
 
 # Export the mismatch JSON report into a CSV file with columns:
 # matrix, artifact_dir, path, expected_hash, actual_hash
