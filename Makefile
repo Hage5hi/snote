@@ -261,3 +261,40 @@ pretty-index-artifacts-clean:
 
 
 
+
+# Verify sha256 checksums for the downloaded atomic AND stress artifacts
+# WITHOUT invoking the validation hook. Prints every file's expected +
+# actual hash (not just mismatches) and a per-matrix + overall pass/fail
+# summary at the end. Exits 0 iff both matrices verify.
+pretty-index-artifacts-verify-summary:
+	@overall=0; \
+	atomic_status=""; stress_status=""; \
+	for matrix in atomic stress; do \
+	  dir="./_pretty-index-$$matrix"; \
+	  echo ""; echo "── MATRIX=$$matrix ── ($$dir)"; \
+	  if [ ! -d "$$dir" ]; then \
+	    echo "  [FAIL] directory missing — run: make pretty-index-artifacts-download RUN_ID=<id>"; \
+	    eval "$${matrix}_status=FAIL"; overall=1; continue; \
+	  fi; \
+	  cks="$$dir/pretty-index.checksums.sha256"; \
+	  if [ ! -f "$$cks" ]; then \
+	    echo "  [FAIL] pretty-index.checksums.sha256 missing"; \
+	    eval "$${matrix}_status=FAIL"; overall=1; continue; \
+	  fi; \
+	  mstatus="PASS"; \
+	  while read -r exp fname; do \
+	    [ -z "$$exp" ] && continue; \
+	    act=$$( ( cd "$$dir" && sha256sum "$$fname" 2>/dev/null ) | awk '{print $$1}'); \
+	    if [ -z "$$act" ]; then act="<missing>"; fi; \
+	    if [ "$$exp" = "$$act" ]; then s="OK"; else s="MISMATCH"; mstatus="FAIL"; overall=1; fi; \
+	    echo "  $$fname  expected=$$exp  actual=$$act  [$$s]"; \
+	  done < "$$cks"; \
+	  eval "$${matrix}_status=$$mstatus"; \
+	  echo "  → $$matrix: $$mstatus"; \
+	done; \
+	echo ""; \
+	echo "── summary ──"; \
+	echo "  atomic : $$atomic_status"; \
+	echo "  stress : $$stress_status"; \
+	if [ $$overall -eq 0 ]; then echo "  overall: PASS"; else echo "  overall: FAIL"; fi; \
+	exit $$overall
