@@ -250,6 +250,21 @@ bun run schema-guard:view -- --verbose --dry-run
 bun run schema-guard:view -- --type schemas --viewer diff-y --browsers chromium
 bun run schema-guard:view -- --file report --file types.gen --viewer delta
 bun run schema-guard:view -- --browsers chromium,firefox --exclude diff --viewer cat
+
+# --manifest-dir writes machine-readable JSON (one file per browser)
+# that downstream CI steps can consume. Combine with --manifest-prefix
+# to control the filename and --combined-manifest to also emit a single
+# aggregate file across every selected browser.
+bun run schema-guard:view -- \
+  --manifest-dir reports/_ci \
+  --manifest-prefix drift \
+  --browsers chromium,firefox,webkit \
+  --exclude diff \
+  --combined-manifest
+# → reports/_ci/drift-chromium.json
+#   reports/_ci/drift-firefox.json
+#   reports/_ci/drift-webkit.json
+#   reports/_ci/drift-combined.json   (browsers: [chromium,firefox,webkit])
 ```
 
 The CI **schema-guard** workflow additionally emits a per-browser
