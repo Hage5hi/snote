@@ -244,6 +244,62 @@ schema:types` and commit the regenerated files.
 See [`docs/focus-trap-debug.md`](docs/focus-trap-debug.md) for the full
 schema key reference and CLI flags.
 
+## Reproducing the rapid-toggle live-region Playwright test locally
+
+The rapid-toggle spec in
+[`e2e/focus-trap-html-report-a11y.spec.ts`](e2e/focus-trap-html-report-a11y.spec.ts)
+stresses the quarantine disclosure's `aria-live` region and asserts
+"exactly one announcement per toggle" across Chromium / Firefox / WebKit.
+To reproduce a CI failure locally:
+
+```sh
+# All three browsers, matches CI config
+bun run test:e2e e2e/focus-trap-html-report-a11y.spec.ts
+
+# Single browser, single spec, verbose
+bunx playwright test e2e/focus-trap-html-report-a11y.spec.ts \
+  --project=webkit -g "rapid-toggle" --reporter=list
+```
+
+### Attachment env vars
+
+The spec attaches diagnostic files in a `finally` block. Two env vars
+tune what gets captured (values: `1`/`true` = always attach, `0`/`false`
+= never attach, unset/`auto` = attach only on failure):
+
+| Env var | Controls | Default |
+|---|---|---|
+| `E2E_ATTACH_SCREENSHOT` | Full-page PNG of the failed state | `auto` |
+| `E2E_ATTACH_TRACE` | Playwright `trace.zip` (screenshots + snapshots + sources) | `auto` |
+
+```sh
+# Force-attach everything, even on pass (local debugging)
+E2E_ATTACH_SCREENSHOT=1 E2E_ATTACH_TRACE=1 \
+  bunx playwright test e2e/focus-trap-html-report-a11y.spec.ts -g rapid-toggle
+
+# Suppress heavy artifacts for a fast smoke run
+E2E_ATTACH_SCREENSHOT=0 E2E_ATTACH_TRACE=0 \
+  bunx playwright test e2e/focus-trap-html-report-a11y.spec.ts -g rapid-toggle
+```
+
+### Expected attachment filenames
+
+Attachments land under `test-results/<test-id>/` locally and in the
+`playwright-report` CI artifact:
+
+| Filename | When | Contents |
+|---|---|---|
+| `live-region-log.json` | always | Ordered announcement log, `finalText`, `waitBudgetMs`, `observedWaitMs`, `browserName`, `attempt` |
+| `live-region-innertext.txt` | always | Final `innerText` of the live region |
+| `dom-snapshot.html` | always | Full `page.content()` at teardown |
+| `live-region-failure.png` | on failure (or `E2E_ATTACH_SCREENSHOT=1`) | Full-page screenshot |
+| `live-region-trace.zip` | on failure (or `E2E_ATTACH_TRACE=1`) | Playwright trace — open with `bunx playwright show-trace <path>` |
+
+The spec also writes per-browser rows to `$GITHUB_STEP_SUMMARY` in CI
+with a link to the run's Artifacts page for the trace/screenshot.
+
+
+
 ## License
 
 Private.
