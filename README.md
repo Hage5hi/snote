@@ -740,16 +740,23 @@ make pretty-index-hook-validate-downloaded      # runs the hook for atomic, then
 
 **Interpreting failures:**
 
-| Exit code | Meaning | Fix |
+`make` normalizes any failing recipe to exit code `2` — distinguish the
+cases by the printed stdout signature, not by the numeric exit alone:
+
+| stdout signature | Meaning | Fix |
 | --- | --- | --- |
-| `1` (from `pretty-index-artifacts-verify`) | sha256 mismatch — the per-file diff is printed as `<file> expected=<hash> actual=<hash> [MISMATCH]` | Re-download the artifact (`make pretty-index-artifacts-download RUN_ID=...`); the bytes were corrupted in transit or edited locally |
-| `2` (from `pretty-index-artifacts-verify`) | `./_pretty-index-<matrix>/` or its `pretty-index.checksums.sha256` is missing | Run `make pretty-index-artifacts-download RUN_ID=<id>` first |
-| `1` (from the hook) | pretty-index schema drift reproduced — see the printed `.report.json` path for the exact validator error | Fix the drift (regenerate + commit `pretty-index.json`) |
-| `2` (from the hook) | `PRETTY_INDEX_HOOK_MATRIX` was invalid | Only `atomic` or `stress` are accepted |
-| `3` / `4` (from the hook) | schema validation failed / input file missing | See `.githooks/pre-commit --help` for the full exit-code table |
+| `<file> expected=<hash> actual=<hash> [MISMATCH]` (also `<file>: FAILED` from `sha256sum`) | Corrupted / mutated bytes | Re-download the artifact (`make pretty-index-artifacts-download RUN_ID=...`) |
+| `<file>: FAILED open or read` | A listed file is missing from the downloaded dir | Re-download; the upload was incomplete |
+| `❌ ./_pretty-index-<matrix> missing` | The whole download directory is absent | Run `make pretty-index-artifacts-download RUN_ID=<id>` first |
+| `❌ ./_pretty-index-<matrix>/pretty-index.checksums.sha256 missing` | Artifact was uploaded before CI computed checksums | Re-run the CI job on a commit that includes the checksum step |
+| `❌ pre-commit: pretty-index CI check FAILED.` (from the hook) | Schema drift reproduced — see the printed `.report.json` for details | Fix the drift (regenerate + commit `pretty-index.json`) |
+| `PRETTY_INDEX_HOOK_MATRIX must be atomic\|stress` | Invalid matrix env var | Only `atomic` or `stress` are accepted |
 
 If verify fails, the hook step is **skipped entirely** — you will never
-be asked to validate corrupted bytes.
+be asked to validate corrupted bytes. Run
+`.githooks/pre-commit --help` for the full documented hook exit-code
+table (0/1/2/3/4).
+
 
 
 
