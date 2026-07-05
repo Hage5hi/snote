@@ -44,6 +44,40 @@ jobs:
       - name: schema-drift-view.sh unit tests
         if: always()
         run: bunx vitest run scripts/__tests__/schema-drift-view.test.ts --reporter=verbose
+      # Fixture-based end-to-end check for --validate-manifest --strict-manifest:
+      # generates a known-good per-browser + combined manifest via the script
+      # itself, then re-validates them in strict mode and asserts the JSON
+      # validation report shows zero failures. Any regression in the emitter
+      # OR the validator surfaces here as its own red check.
+      - name: schema-drift-view.sh --strict-manifest (fixture)
+        if: always()
+        run: |
+          set -eu
+          fx=reports/_ci/schema-drift-fixture
+          mkdir -p "$fx"
+          bash scripts/schema-drift-view.sh --dry-run \
+            --manifest-dir "$fx" --manifest-prefix drift \
+            --browsers chromium,firefox,webkit \
+            --require live-region-trace.zip,live-region-failure.png \
+            --combined-manifest
+          bash scripts/schema-drift-view.sh \
+            --manifest-dir "$fx" --manifest-prefix drift \
+            --strict-manifest \
+            --validation-report "$fx/validation-report.json"
+          # Belt-and-braces: assert the report reflects zero invalid files.
+          node -e '
+            const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+            if (r.totals.invalid!==0) { console.error("expected 0 invalid, got "+r.totals.invalid); process.exit(1); }
+            if (!r.strict) { console.error("expected strict=true"); process.exit(1); }
+            console.log("fixture strict validation OK — checked="+r.totals.checked);
+          ' "$fx/validation-report.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: schema-drift-fixture-validation
+          path: reports/_ci/schema-drift-fixture/
+          if-no-files-found: ignore
+          retention-days: 14
       # Dedicated sticky-upsert integration + perf suite. Runs on every
       # PR (and on push to main) so regressions in marker scanning
       # bounds, pagination handling, malformed-metadata skipping, or

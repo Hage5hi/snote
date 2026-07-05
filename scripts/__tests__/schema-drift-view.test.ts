@@ -456,7 +456,50 @@ describe("scripts/schema-drift-view.sh", () => {
         ]);
         expect(code).toBe(1);
         expect(stderr).toMatch(/mistyped:.*combined \(expected boolean, got string\)/);
-        expect(stderr).toMatch(/mistyped:.*matches \(expected string\[\], got array\)/);
+        expect(stderr).toMatch(/mistyped:.*matches \(expected string\[\], got number\[\]\)/);
+      });
+
+      it("catches nested item type mismatches in matches/excludes on BOTH per-browser and combined", () => {
+        const dir = mkdtempSync(join(tmpdir(), "sdv-strict-nested-"));
+        // Per-browser: excludes contains numbers (not string[]).
+        writeManifest(dir, "drift-chromium.json", { ...FULL, excludes: [1, 2] });
+        // Combined: matches contains a nested array (not string[]).
+        writeManifest(dir, "drift-combined.json", {
+          ...FULL, combined: true, browser: "combined",
+          browsers: ["chromium", "firefox"],
+          matches: [["nested"], "ok"],
+        });
+        const { code, stderr } = run([
+          "--manifest-dir", dir, "--manifest-prefix", "drift", "--strict-manifest",
+        ]);
+        expect(code).toBe(1);
+        expect(stderr).toMatch(/INVALID .*drift-chromium\.json \[browser=chromium\].*mistyped:.*excludes \(expected string\[\], got number\[\]\)/);
+        expect(stderr).toMatch(/INVALID .*drift-combined\.json \[combined\].*mistyped:.*matches \(expected string\[\], got array\)/);
+        expect(stderr).toMatch(/2\/2 manifest\(s\) failed/);
+      });
+
+      it("--validation-report writes a machine-readable JSON report with missing/mistyped/extra per file", () => {
+        const dir = mkdtempSync(join(tmpdir(), "sdv-report-"));
+        const reportPath = join(dir, "report.json");
+        const { matched: _m, ...noMatched } = FULL;
+        writeManifest(dir, "drift-chromium.json", { ...noMatched, extraJunk: 1, matches: [42] });
+        const { code } = run([
+          "--manifest-dir", dir, "--manifest-prefix", "drift",
+          "--strict-manifest", "--validation-report", reportPath,
+        ]);
+        expect(code).toBe(1);
+        const report = JSON.parse(readFileSync(reportPath, "utf8"));
+        expect(report.strict).toBe(true);
+        expect(report.totals).toEqual({ checked: 1, ok: 0, invalid: 1 });
+        const [entry] = report.files;
+        expect(entry.ok).toBe(false);
+        expect(entry.browser).toBe("chromium");
+        expect(entry.missing).toContain("matched");
+        expect(entry.extra).toContain("extraJunk");
+        expect(entry.mistyped).toEqual([
+          { key: "matches", expected: "string[]", got: "number[]" },
+        ]);
+        expect(entry.parseError).toBeNull();
       });
     });
   });
