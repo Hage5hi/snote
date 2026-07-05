@@ -652,6 +652,52 @@ CI's `pretty-index.json` is the concatenation of these per-summary
 reports (one array entry per `replay-summary.json`), so its schema is
 tested end-to-end in `scripts/__tests__/pretty-replay-summary.test.ts`.
 
+###### `schema_version` (enforced by the validator)
+
+`pretty-index.json` accepts two top-level shapes:
+
+| Shape | Description |
+| --- | --- |
+| Legacy (`v0`) | A bare JSON array of entries. Still accepted for backward compat. |
+| Versioned (`v>=1`) | An object `{ "schema_version": <int>, "entries": [...] }`. |
+
+`scripts/validate-pretty-index.py` enforces that when the versioned
+envelope is used, `schema_version` MUST be one of the values in the
+script's `SUPPORTED_SCHEMA_VERSIONS` set (currently `{0, 1}`, with
+`CURRENT_SCHEMA_VERSION = 1`). An unknown version yields a single clear
+error like:
+
+```
+unsupported schema_version=99 (this validator supports [0, 1]; current=1)
+```
+
+Bump `CURRENT_SCHEMA_VERSION` (and keep the previous value in
+`SUPPORTED_SCHEMA_VERSIONS` for one release) whenever the per-entry
+shape changes incompatibly.
+
+###### `--report` / `--print-errors` (local triage)
+
+Both flags are aliases. When set, the validator additionally prints a
+machine-readable JSON report to **stdout** with the exact failing paths
+and expected types — human-readable stderr output is unchanged:
+
+```json
+{
+  "file": "pretty-index.json",
+  "problems": [
+    { "index": 0, "path": "entries[0].exit_code",
+      "expected": "int|null", "actual": "str",
+      "message": "[0] exit_code must be int or null" }
+  ]
+}
+```
+
+Envelope-level failures (missing `schema_version`, wrong type, or
+unsupported version) use `"index": null` and `"path": "$.schema_version"`
+/ `"$.entries"` so editor integrations can distinguish them from
+per-entry problems.
+
+
 ##### Per-summary artifact links in the step summary
 
 The `append pretty artifact link to step summary` step, in addition to
