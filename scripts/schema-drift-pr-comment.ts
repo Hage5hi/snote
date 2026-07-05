@@ -203,6 +203,7 @@ function parseArgs(argv: string[]): {
   out: string;
   annotationsFile: string;
   commentUrl: string;
+  dryRun: boolean;
   opts: RenderOpts;
 } {
   const opts: RenderOpts = {};
@@ -210,6 +211,7 @@ function parseArgs(argv: string[]): {
   let out = "";
   let annotationsFile = "";
   let commentUrl = "";
+  let dryRun = false;
   const kinds: Kind[] = [];
   const need = (i: number, name: string) => {
     const v = argv[i + 1];
