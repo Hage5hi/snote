@@ -783,6 +783,34 @@ jobs:
             test-results/
           retention-days: 7
           if-no-files-found: ignore
+      # Per-browser manifest: enumerates every live-region-* file the
+      # spec expects vs. what actually landed on disk under test-results/
+      # for THIS matrix browser. Printed to the job log AND the summary
+      # so `summary row's linked filename == real uploaded artifact`
+      # can be verified at a glance.
+      - name: Live-region artifact manifest (${{ matrix.browser }})
+        if: always()
+        env:
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          set -u
+          echo "## 🗂 live-region artifact manifest — ${BROWSER}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| status | expected filename | actual path (test-results/) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          expected=(live-region-log.json live-region-innertext.txt dom-snapshot.html live-region-trace.zip live-region-failure.png)
+          for f in "${expected[@]}"; do
+            hit=$(find test-results -type f -name "$f" 2>/dev/null | grep -i "${BROWSER}" | head -n1 || true)
+            if [ -n "$hit" ]; then
+              status="✅ present"
+              rel="${hit#test-results/}"
+            else
+              status="⚠️ missing"
+              rel="—"
+            fi
+            echo "| $status | \`$f\` | \`$rel\` |" >> "$GITHUB_STEP_SUMMARY"
+            echo "[manifest ${BROWSER}] $status  $f  $rel"
+          done
       # Markdown failure summary (pixel-diff thresholds + direct links to
       # the HTML report artifact and per-failure debug bundles) so reviewers
       # can triage a red Playwright run without downloading anything first.
