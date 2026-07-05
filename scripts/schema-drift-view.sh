@@ -89,6 +89,8 @@ VERBOSE=0
 MANIFEST_DIR=""
 MANIFEST_PREFIX="schema-drift-manifest"
 COMBINED_MANIFEST=0
+REQUIRED_ARTIFACTS=()   # expected CI artifact filenames per browser
+VALIDATE_MANIFEST=0
 MATCHED_BASES=()    # populated by show() as it visits each base
 
 add_to() {
