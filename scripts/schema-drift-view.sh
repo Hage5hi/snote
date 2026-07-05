@@ -139,17 +139,6 @@ done
 [ "$FILTER" = "type" ]   && FILTER="types"
 
 vlog() { [ "$VERBOSE" = "1" ] && echo "[verbose] $*" >&2 || true; }
-
-# --validate-manifest short-circuits the whole pipeline: verify every
-# <prefix>-*.json under --manifest-dir has the required top-level keys,
-# print a summary, and exit BEFORE any diff/viewer step runs.
-if [ "$VALIDATE_MANIFEST" = "1" ]; then
-  if [ -z "$MANIFEST_DIR" ]; then
-    echo "--validate-manifest requires --manifest-dir <dir>" >&2; exit 2
-  fi
-  if [ ! -d "$MANIFEST_DIR" ]; then
-    echo "--validate-manifest: no such dir: $MANIFEST_DIR" >&2; exit 1
-  fi
 # --validate-manifest short-circuits the whole pipeline: verify every
 # <prefix>-*.json under --manifest-dir has the required top-level keys
 # (and correct value types under --strict-manifest), print a per-file
