@@ -171,7 +171,7 @@ case "$FILTER" in
   *) echo "unknown --type: $FILTER" >&2; usage >&2; exit 2 ;;
 esac
 
-if [ -s "$OUT/cli-schema-versions.txt" ]; then
+if [ "$DRY_RUN" != "1" ] && [ -s "$OUT/cli-schema-versions.txt" ]; then
   echo ""
   echo "── CLI SCHEMA_VERSION consts ──────────────────────────────────"
   cat "$OUT/cli-schema-versions.txt"
