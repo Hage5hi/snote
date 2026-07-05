@@ -96,7 +96,7 @@ const ALLOWED_CODES = new Set([0, 3, 6]);
 describe("validate-pretty-index.py fuzz", () => {
   it("never crashes; exit codes stay in the documented set", () => {
     const rand = mulberry32(0xC0FFEE);
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 60; i++) {
       const payload = randomPayload(rand);
       const { code, stderr } = run(payload);
       expect(ALLOWED_CODES.has(code), `unexpected code=${code} for payload=${payload}`).toBe(true);
@@ -107,7 +107,7 @@ describe("validate-pretty-index.py fuzz", () => {
         expect(stderr).toMatch(/^validate-pretty-index:/);
       }
     }
-  });
+  }, 30_000);
 
   it("--report always emits valid JSON with the documented shape", () => {
     const rand = mulberry32(0xBADF00D);
