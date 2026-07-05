@@ -10,6 +10,10 @@ Options:
                         widths (entry=40, file=48) instead of auto-sizing.
                         Guarantees byte-identical output across environments
                         with different manifest values.
+  --markdown            Render the manifest_mapping table as a
+                        GitHub-friendly Markdown table (`| col | ... |`).
+                        Combine with --fixed-widths for deterministic
+                        cell padding.
   --no-color            No-op today (script emits no ANSI colors); accepted
                         for forward-compatibility so CI can pin deterministic
                         rendering. NO_COLOR env var is also honored.
