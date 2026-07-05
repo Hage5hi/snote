@@ -939,14 +939,31 @@ make pretty-index-mismatch-diff PI_BASELINE=baseline.json
 | --- | --- | --- |
 | `pretty-index-mismatch-summary` | no mismatches AND no missing artifacts | `3` mismatches/missing present, `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-summary-json` | wrote summary JSON | `2` report file absent or `jq` missing |
+| `pretty-index-mismatch-summary-validate` | summary matches schema | `5` schema/shape violation, `2` file or tooling missing |
 | `pretty-index-mismatch-csv` | wrote CSV file | `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-show` (± `PI_PATH_GLOB`) | printed table (may be empty after glob filter) | `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-diff` | current report matches baseline | `4` NEW/CHANGED entries found, `2` either report absent or `jq` missing |
 
-Recipes emit `exit 3` / `exit 4` intentionally; GNU make wraps any
+Recipes emit `exit 3` / `exit 4` / `exit 5` intentionally; GNU make wraps any
 failing recipe as its own exit status `2` and prints `make: *** [target]
 Error N`, so scripts that need the granular code should parse `Error N`
 from stderr (or invoke the recipe directly via `bash -c`).
+
+### Schema for `summary.json`
+
+Both `pretty-index-mismatch-summary-json` and `pretty-index-mismatch-summary-json-merge`
+outputs conform to [`schemas/pretty-index-mismatch-summary-json.schema.json`](schemas/pretty-index-mismatch-summary-json.schema.json).
+Wire it into your editor with a `$schema` comment or a JSON-Schema
+mapping so autocomplete + inline validation "just work". Validate in CI
+or locally with:
+
+```sh
+make pretty-index-mismatch-summary-validate \
+  PI_SUMMARY_JSON_PATH=pi-mismatch-summary.merged.json
+```
+
+The target uses `ajv` when available and falls back to a `jq`-based
+structural check on `schema`, `matrices.{atomic,stress}`, and `totals`.
 
 ### Merging per-matrix summary JSONs across CI jobs
 
@@ -962,7 +979,12 @@ make pretty-index-mismatch-summary-json-merge \
 
 Output schema: `pretty-index-mismatch-summary-merged/v1`. Per-matrix
 `total/mismatched/missing` counters are summed element-wise; each input
-is preserved under `sources[]` alongside its original `scope`.
+is preserved under `sources[]` alongside its original `scope`. Missing
+inputs (e.g. a matrix that had zero mismatches and therefore uploaded
+no summary artifact) are tolerated: they emit a `warn:` line on stderr,
+appear in `sources[]` with `"missing": true` and zeroed totals, and the
+merged JSON is still produced and still passes
+`pretty-index-mismatch-summary-validate`.
 
 ### Copy-pastable GitHub Actions workflow
 
