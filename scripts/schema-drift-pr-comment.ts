@@ -203,6 +203,7 @@ function parseArgs(argv: string[]): {
   out: string;
   annotationsFile: string;
   commentUrl: string;
+  dryRun: boolean;
   opts: RenderOpts;
 } {
   const opts: RenderOpts = {};
@@ -210,6 +211,7 @@ function parseArgs(argv: string[]): {
   let out = "";
   let annotationsFile = "";
   let commentUrl = "";
+  let dryRun = false;
   const kinds: Kind[] = [];
   const need = (i: number, name: string) => {
     const v = argv[i + 1];
@@ -246,6 +248,7 @@ function parseArgs(argv: string[]): {
     else if (a === "--missing-cap") { opts.missingCap = parseInt10(need(i, "--missing-cap"), "--missing-cap"); i++; }
     else if (a === "--mistyped-cap") { opts.mistypedCap = parseInt10(need(i, "--mistyped-cap"), "--mistyped-cap"); i++; }
     else if (a === "--extra-cap") { opts.extraCap = parseInt10(need(i, "--extra-cap"), "--extra-cap"); i++; }
+    else if (a === "--dry-run") dryRun = true;
     else if (!reportPath) reportPath = a;
     else {
       console.error(`unknown arg: ${a}`);
@@ -253,7 +256,7 @@ function parseArgs(argv: string[]): {
     }
   }
   if (kinds.length) opts.kind = kinds;
-  return { reportPath, out, annotationsFile, commentUrl, opts };
+  return { reportPath, out, annotationsFile, commentUrl, dryRun, opts };
 }
 
 function main() {
@@ -263,17 +266,29 @@ function main() {
       "Usage: bun scripts/schema-drift-pr-comment.ts <report.json> " +
         "[--browser <name>] [--path <substr>] [--kind missing|mistyped|extra|parseError] " +
         "[--max <n>] [--missing-cap <n>] [--mistyped-cap <n>] [--extra-cap <n>] " +
-        "[--out <path>] [--annotations-file <path>] [--comment-url <url>]",
+        "[--out <path>] [--annotations-file <path>] [--comment-url <url>] [--dry-run]",
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const { reportPath, out, annotationsFile, commentUrl, opts } = parseArgs(args);
+  const { reportPath, out, annotationsFile, commentUrl, dryRun, opts } = parseArgs(args);
   if (!reportPath) {
     console.error("missing <report.json> positional argument");
     process.exit(2);
   }
   const r: Report = JSON.parse(readFileSync(reportPath, "utf8"));
   const body = renderPrComment(r, opts);
+  const annotations = renderAnnotations(r, { ...opts, commentUrl });
+  if (dryRun) {
+    const sel = selectFailures(r, opts);
+    process.stderr.write(
+      `dry-run: ${sel.length} selected failure(s); would write` +
+        `${out ? ` pr-comment=${out}` : " pr-comment=<stdout>"}` +
+        `${annotationsFile ? ` annotations=${annotationsFile}` : ""}\n`,
+    );
+    process.stdout.write(body);
+    if (annotations) process.stdout.write("\n--- annotations ---\n" + annotations);
+    return;
+  }
   if (out) {
     mkdirSync(dirname(resolve(out)), { recursive: true });
     writeFileSync(out, body);
@@ -283,7 +298,7 @@ function main() {
   }
   if (annotationsFile) {
     mkdirSync(dirname(resolve(annotationsFile)), { recursive: true });
-    writeFileSync(annotationsFile, renderAnnotations(r, { ...opts, commentUrl }));
+    writeFileSync(annotationsFile, annotations);
     console.error(`annotations: ${annotationsFile}`);
   }
 }

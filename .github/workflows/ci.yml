@@ -153,6 +153,22 @@ jobs:
             reports/_ci/schema-drift-fixture/annotations.txt
           if-no-files-found: ignore
           retention-days: 14
+      # Standalone artifacts so reviewers can download pr-comment.md and
+      # annotations.txt directly without pulling the whole fixture folder.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: schema-drift-pr-comment
+          path: reports/_ci/schema-drift-fixture/pr-comment.md
+          if-no-files-found: ignore
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: schema-drift-annotations
+          path: reports/_ci/schema-drift-fixture/annotations.txt
+          if-no-files-found: ignore
+          retention-days: 14
       # Post the generated Markdown body as a PR comment on pull_request
       # events. No-op on push/dispatch or when validation passed cleanly
       # (the comment file always exists but is a short ✅ line in that
