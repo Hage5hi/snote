@@ -1622,10 +1622,16 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
     const ajv = new Ajv({ allErrors: true });
     const validate = ajv.compile(schema);
 
-    // Deterministic LCG so failing seeds reproduce locally without flakes.
-    let seed = 0xC0FFEE;
+    // Deterministic LCG. Seed comes from SCHEMA_DRIFT_DIFF_FUZZ_SEED so a
+    // failing case can be replayed exactly, both in CI and locally. The
+    // resolved seed is printed to stderr so failure logs identify it.
+    const seedEnv = process.env.SCHEMA_DRIFT_DIFF_FUZZ_SEED;
+    const initialSeed = seedEnv ? parseInt(seedEnv, 10) >>> 0 : 0xC0FFEE;
+    process.stderr.write(`fuzz seed: ${initialSeed} (SCHEMA_DRIFT_DIFF_FUZZ_SEED=${initialSeed} to replay)\n`);
+    let seed = initialSeed;
     const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
     const pick = <T,>(xs: T[]): T => xs[Math.floor(rand() * xs.length)];
+
 
     const genReport = (): Report => {
       const n = Math.floor(rand() * 5);
