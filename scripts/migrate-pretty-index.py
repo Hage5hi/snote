@@ -27,17 +27,21 @@ Exit codes (share meaning with validate-pretty-index.py):
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import sys
 from pathlib import Path
 
-# Import version constants from the sibling validator so the two scripts
-# stay in lockstep automatically when CURRENT_SCHEMA_VERSION is bumped.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from validate_pretty_index import (  # type: ignore  # noqa: E402
-    CURRENT_SCHEMA_VERSION,
-    SUPPORTED_SCHEMA_VERSIONS,
-)
+# Load version constants from the sibling validator (its filename has a
+# hyphen so a normal ``import`` doesn't work) — this keeps the two
+# scripts in lockstep automatically when CURRENT_SCHEMA_VERSION is bumped.
+_VALIDATOR = Path(__file__).resolve().parent / "validate-pretty-index.py"
+_spec = importlib.util.spec_from_file_location("_validate_pretty_index", _VALIDATOR)
+assert _spec and _spec.loader
+_mod = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
+CURRENT_SCHEMA_VERSION = _mod.CURRENT_SCHEMA_VERSION
+SUPPORTED_SCHEMA_VERSIONS = _mod.SUPPORTED_SCHEMA_VERSIONS
 
 
 def _detect(data: object) -> tuple[int, list] | None:
