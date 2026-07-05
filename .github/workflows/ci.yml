@@ -755,18 +755,31 @@ print(r)" "$f" 2>/dev/null | tr -c '[:alnum:]._-' '_' | cut -c1-40)"
         run: |
           shopt -s nullglob
           mkdir -p artifacts/schema-drift-diff-replay-verify/pretty
+          hard_fail=0
           for f in artifacts/schema-drift-diff-replay/*/replay-summary.json; do
             base="$(basename "$(dirname "$f")")"
-            out="artifacts/schema-drift-diff-replay-verify/pretty/${base}.pretty.txt"
-            if python3 scripts/pretty-replay-summary.py --fixed-widths --no-color "$f" > "$out" 2>&1; then
-              status="ok"
-            else
-              status="failed"
-              echo "(pretty-print failed for $f, exit=$?)" >> "$out"
-            fi
+            reason="$(python3 -c "import json,sys
+try:
+  d=json.load(open(sys.argv[1]))
+  r=d.get('fail_reason') or 'ok'
+except Exception:
+  r='unparseable'
+print(r)" "$f" 2>/dev/null | tr -c '[:alnum:]._-' '_' | cut -c1-40)"
+            reason="${reason:-ok}"
+            out="artifacts/schema-drift-diff-replay-verify/pretty/${base}.${reason}.pretty.txt"
+            python3 scripts/pretty-replay-summary.py --fixed-widths --no-color "$f" > "$out" 2>&1
+            rc=$?
+            case "$rc" in
+              0) status="ok" ;;
+              3) status="schema-error"; hard_fail=1 ;;
+              4) status="missing-file"; hard_fail=1 ;;
+              5) status="unreadable";   hard_fail=1 ;;
+              6) status="parse-error";  hard_fail=1 ;;
+              *) status="exit=$rc";     hard_fail=1 ;;
+            esac
             {
               echo ''
-              echo "<details><summary>pretty replay-summary: <code>${f}</code> (${status})</summary>"
+              echo "<details><summary>pretty replay-summary: <code>${f}</code> — fail_reason=<code>${reason}</code> (${status})</summary>"
               echo ''
               echo '```'
               cat "$out" || echo "(pretty-print failed for $f)"
@@ -774,6 +787,11 @@ print(r)" "$f" 2>/dev/null | tr -c '[:alnum:]._-' '_' | cut -c1-40)"
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
+          if [[ "$hard_fail" -ne 0 ]]; then
+            echo "pretty-replay-summary.py returned a schema/file error (see step summary)" >&2
+            exit 1
+          fi
+
       - name: upload pretty replay-summary artifact
         id: upload-pretty-stress
         if: always()
