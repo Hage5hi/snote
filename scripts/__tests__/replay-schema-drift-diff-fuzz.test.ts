@@ -78,12 +78,16 @@ describe("replay-schema-drift-diff-fuzz.sh --dry-run", () => {
 });
 
 describe("replay-schema-drift-diff-fuzz.sh --test-name-pattern", () => {
-  it("override takes precedence over the manifest pattern", () => {
+  it("override takes precedence over the manifest pattern", async () => {
     const work = newWorkdir();
     // Create source folder with pattern "orig".
     const first = runHelper(["999", "100", "orig", "--dry-run"], work);
     expect(first.status, first.stderr).toBe(0);
     const src = newestReplayFolder(work);
+
+    // Sleep >1s so the re-exec's timestamped folder gets a different name
+    // (the helper's timestamp granularity is one second).
+    await new Promise((r) => setTimeout(r, 1100));
 
     // Replay from that folder but override the pattern.
     const overridden = runHelper(
@@ -100,6 +104,7 @@ describe("replay-schema-drift-diff-fuzz.sh --test-name-pattern", () => {
     expect(summary).toContain("pattern:             OVERRIDDEN_PATTERN");
     expect(summary).toMatch(/would_run:.* -t OVERRIDDEN_PATTERN /);
   });
+
 
   it("positional --test-name-pattern beats the 3rd positional pattern arg", () => {
     const work = newWorkdir();
