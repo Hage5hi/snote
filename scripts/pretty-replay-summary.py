@@ -158,11 +158,14 @@ def main(argv: list[str]) -> int:
         sys.stderr.write(__doc__ or "")
         return EXIT_USAGE
     fixed_widths = False
+    markdown = False
     # --no-color is accepted (no-op) for deterministic CI rendering.
     positional: list[str] = []
     for a in args:
         if a == "--fixed-widths":
             fixed_widths = True
+        elif a == "--markdown":
+            markdown = True
         elif a == "--no-color":
             pass
         elif a.startswith("--"):
@@ -210,9 +213,10 @@ def main(argv: list[str]) -> int:
             + "".join(f"  - {p}\n" for p in problems)
         )
         return EXIT_SCHEMA
-    sys.stdout.write(render(summary, fixed_widths=fixed_widths))
+    sys.stdout.write(render(summary, fixed_widths=fixed_widths, markdown=markdown))
     code = summary.get("exit_code")
     return int(code) if isinstance(code, int) else EXIT_OK
+
 
 
 if __name__ == "__main__":
