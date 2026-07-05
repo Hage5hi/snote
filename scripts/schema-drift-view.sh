@@ -134,6 +134,41 @@ done
 
 vlog() { [ "$VERBOSE" = "1" ] && echo "[verbose] $*" >&2 || true; }
 
+# --validate-manifest short-circuits the whole pipeline: verify every
+# <prefix>-*.json under --manifest-dir has the required top-level keys,
+# print a summary, and exit BEFORE any diff/viewer step runs.
+if [ "$VALIDATE_MANIFEST" = "1" ]; then
+  if [ -z "$MANIFEST_DIR" ]; then
+    echo "--validate-manifest requires --manifest-dir <dir>" >&2; exit 2
+  fi
+  if [ ! -d "$MANIFEST_DIR" ]; then
+    echo "--validate-manifest: no such dir: $MANIFEST_DIR" >&2; exit 1
+  fi
+  REQUIRED_KEYS=(browser browsers combined generatedAt type viewer \
+    resolvedViewerCommand matches excludes expected matched requiredArtifacts)
+  bad=0; count=0
+  shopt -s nullglob
+  for f in "$MANIFEST_DIR/${MANIFEST_PREFIX}"-*.json; do
+    count=$((count+1))
+    missing=()
+    for k in "${REQUIRED_KEYS[@]}"; do
+      grep -q "\"$k\"[[:space:]]*:" "$f" || missing+=("$k")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+      echo "INVALID $f — missing keys: ${missing[*]}" >&2
+      bad=$((bad+1))
+    else
+      echo "OK      $f"
+    fi
+  done
+  shopt -u nullglob
+  if [ "$count" = "0" ]; then
+    echo "--validate-manifest: no manifests matched ${MANIFEST_PREFIX}-*.json in $MANIFEST_DIR" >&2
+    exit 1
+  fi
+  [ "$bad" -gt 0 ] && exit 1 || exit 0
+fi
+
 # --dry-run must work without a bundle on disk so it's usable as a
 # planning/preview step and in unit tests. All other modes require OUT.
 if [ ! -d "$OUT" ] && [ "$DRY_RUN" != "1" ]; then
