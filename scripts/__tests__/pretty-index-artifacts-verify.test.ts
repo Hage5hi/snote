@@ -134,4 +134,24 @@ describe("make pretty-index-artifacts-verify — checksum regression", () => {
       /pretty-index\.checksums\.sha256 missing/,
     );
   });
+
+  it("prints per-file expected AND actual sha256 hashes (distinct) on corruption", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-verify-hashes-"));
+    tmps.push(root);
+    seedDir(root, "atomic", { corruptReport: true });
+    seedDir(root, "stress");
+    const r = runVerify(root);
+    expect(r.status).not.toBe(0);
+    const out = r.stdout + r.stderr;
+    const m = out.match(
+      /pretty-index\.report\.json\s+expected=([0-9a-f]{64})\s+actual=([0-9a-f]{64})\s+\[MISMATCH\]/,
+    );
+    expect(m, `mismatch line not found in:\n${out}`).not.toBeNull();
+    // expected and actual must be real, different hashes — proves the log
+    // surfaces both sides of the diff, not just a generic "FAILED" line.
+    expect(m![1]).not.toBe(m![2]);
+    // actual hash must match sha256("CORRUPTED-BYTES") from the fixture.
+    expect(m![2]).toBe(sha256("CORRUPTED-BYTES"));
+  });
 });
+
