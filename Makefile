@@ -15,7 +15,8 @@ REPORT = $(INDEX:.json=.report.json)
 
 .PHONY: help pretty-index-check pretty-index-check-clean \
         pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean \
-        pretty-index-artifacts
+        pretty-index-artifacts pretty-index-hook-dry-run
+
 
 
 help:
@@ -76,3 +77,13 @@ pretty-index-artifacts:
 	@echo ""
 	@echo "  current MATRIX=$(MATRIX)  (override with: make pretty-index-artifacts MATRIX=stress)"
 
+
+pretty-index-hook-dry-run:
+	@echo "==> pre-commit hook dry-run (MATRIX=atomic)"
+	@PRETTY_INDEX_HOOK_DRY_RUN=1 PRETTY_INDEX_HOOK_FORCE=1 \
+	  PRETTY_INDEX_HOOK_MATRIX=atomic .githooks/pre-commit
+	@echo ""
+	@echo "==> pre-commit hook dry-run (MATRIX=stress)"
+	@PRETTY_INDEX_HOOK_DRY_RUN=1 PRETTY_INDEX_HOOK_FORCE=1 \
+	  PRETTY_INDEX_HOOK_MATRIX=stress .githooks/pre-commit
+	@$(MAKE) --no-print-directory pretty-index-diagnostics
