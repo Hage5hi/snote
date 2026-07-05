@@ -507,6 +507,13 @@ print(json.dumps({
             } >> "$GITHUB_STEP_SUMMARY"
           done
           echo ']' >> "$index"
+          # Validate pretty-index.json against the documented schema.
+          # Failure here fails the job with a clear message instead of
+          # only surfacing later through the uploaded artifact.
+          if ! python3 scripts/validate-pretty-index.py "$index"; then
+            echo "::error::pretty-index.json failed schema validation — see log above. Job failed to protect downstream triage tooling." >&2
+            exit 1
+          fi
           if [[ "$hard_fail" -ne 0 ]]; then
             echo "pretty-replay-summary.py returned a schema/file error (see step summary)" >&2
             exit 1
@@ -860,6 +867,10 @@ print(json.dumps({
             } >> "$GITHUB_STEP_SUMMARY"
           done
           echo ']' >> "$index"
+          if ! python3 scripts/validate-pretty-index.py "$index"; then
+            echo "::error::pretty-index.json failed schema validation — see log above. Job failed to protect downstream triage tooling." >&2
+            exit 1
+          fi
           if [[ "$hard_fail" -ne 0 ]]; then
             echo "pretty-replay-summary.py returned a schema/file error (see step summary)" >&2
             exit 1

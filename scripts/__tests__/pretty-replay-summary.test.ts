@@ -754,6 +754,134 @@ describe("pretty-index.json schema (CI aggregate)", () => {
   });
 });
 
+describe("pretty-replay-summary.py --markdown is locale/env-independent", () => {
+  // Ensure the deterministic --markdown --fixed-widths --no-color output
+  // is byte-identical regardless of the caller's locale (LC_ALL, LANG)
+  // or terminal-related env vars (COLUMNS, TERM, FORCE_COLOR, CLICOLOR,
+  // NO_COLOR). Any drift here would break CI snapshots on machines with
+  // different defaults.
+  const FIXTURE = {
+    mode: "dry-run",
+    fail_reason: "",
+    folder: "/tmp/y",
+    manifest_mapping: [
+      { manifest_entry: "A", required_file: "/f", role: "r1" },
+      { manifest_entry: "LONG_KEY", required_file: "/x/y.txt", role: "r2" },
+    ],
+  };
+
+  function runWithEnv(env: NodeJS.ProcessEnv) {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "s.json");
+    writeFileSync(p, JSON.stringify(FIXTURE));
+    return spawnSync(
+      "python3",
+      [PRETTY, p, "--markdown", "--fixed-widths", "--no-color"],
+      { encoding: "utf8", env: { ...process.env, ...env } },
+    );
+  }
+
+  it("produces byte-identical output across locale + terminal env combos", () => {
+    const envs: NodeJS.ProcessEnv[] = [
+      { LC_ALL: "C",           LANG: "C",           TERM: "dumb",   COLUMNS: "80"  },
+      { LC_ALL: "C.UTF-8",     LANG: "C.UTF-8",     TERM: "xterm",  COLUMNS: "40"  },
+      { LC_ALL: "en_US.UTF-8", LANG: "en_US.UTF-8", TERM: "xterm-256color", COLUMNS: "400" },
+      { LC_ALL: "de_DE.UTF-8", LANG: "de_DE.UTF-8", FORCE_COLOR: "3", CLICOLOR: "1" },
+      { LC_ALL: "ja_JP.UTF-8", LANG: "ja_JP.UTF-8", NO_COLOR: "1",   TERM: "dumb"    },
+    ];
+    const outputs = envs.map(runWithEnv);
+    for (const [i, r] of outputs.entries()) {
+      expect(r.status, `env#${i} stderr=${r.stderr}`).toBe(0);
+    }
+    const first = outputs[0].stdout;
+    for (let i = 1; i < outputs.length; i++) {
+      expect(outputs[i].stdout, `env#${i} diverged`).toBe(first);
+    }
+  });
+
+  it("--markdown snapshot is byte-stable under C locale", () => {
+    const r = runWithEnv({ LC_ALL: "C", LANG: "C", TERM: "dumb", NO_COLOR: "1" });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toMatchInlineSnapshot(`
+      "== replay-summary ==
+      mode              : dry-run
+      fail_reason       : 
+      folder            : /tmp/y
+
+      -- manifest_mapping --
+      | manifest_entry                           | required_file                                    | role |
+      | ---------------------------------------- | ------------------------------------------------ | ---- |
+      | A                                        | /f                                               | r1   |
+      | LONG_KEY                                 | /x/y.txt                                         | r2   |
+      "
+    `);
+  });
+});
+
+describe("pretty-replay-summary.py --output-json always emits pretty_txt + pretty_md keys", () => {
+  // Contract: --output-json report ALWAYS contains pretty_txt and
+  // pretty_md keys. Value is either a string (when the corresponding
+  // --pretty-{txt,md} flag was supplied) or JSON null (when omitted or
+  // intentionally disabled). Never `undefined`, never missing.
+  function run(extra: string[]) {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const src = join(dir, "s.json");
+    const rep = join(dir, "report.json");
+    writeFileSync(src, JSON.stringify({ mode: "dry-run", fail_reason: "" }));
+    const r = spawnSync("python3", [
+      PRETTY, src, "--fixed-widths", "--no-color", "--output-json", rep, ...extra,
+    ], { encoding: "utf8" });
+    expect(r.status, r.stderr).toBe(0);
+    // Read as raw text and parse — this catches any accidental
+    // stringification of `undefined` (which is not valid JSON).
+    const raw = readFileSync(rep, "utf8");
+    return JSON.parse(raw) as Record<string, unknown>;
+  }
+
+  function assertShape(obj: Record<string, unknown>, txt: string | null, md: string | null) {
+    expect(Object.prototype.hasOwnProperty.call(obj, "pretty_txt")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(obj, "pretty_md")).toBe(true);
+    expect(obj.pretty_txt === null || typeof obj.pretty_txt === "string").toBe(true);
+    expect(obj.pretty_md === null || typeof obj.pretty_md === "string").toBe(true);
+    expect(obj.pretty_txt).toBe(txt);
+    expect(obj.pretty_md).toBe(md);
+  }
+
+  it("both pretty outputs disabled → both null (keys still present)", () => {
+    assertShape(run([]), null, null);
+  });
+
+  it("only pretty_txt provided → pretty_md is null (still present)", () => {
+    assertShape(run(["--pretty-txt", "/tmp/a.pretty.txt"]), "/tmp/a.pretty.txt", null);
+  });
+
+  it("only pretty_md provided → pretty_txt is null (still present)", () => {
+    assertShape(run(["--pretty-md", "/tmp/a.pretty.md"]), null, "/tmp/a.pretty.md");
+  });
+
+  it("both provided → both strings", () => {
+    assertShape(
+      run(["--pretty-txt", "/tmp/a.pretty.txt", "--pretty-md", "/tmp/a.pretty.md"]),
+      "/tmp/a.pretty.txt",
+      "/tmp/a.pretty.md",
+    );
+  });
+
+  it("types stay consistent across invocations (string XOR null, never undefined)", () => {
+    for (const combo of [[], ["--pretty-txt", "/x.txt"], ["--pretty-md", "/x.md"]]) {
+      const o = run(combo);
+      // JSON.stringify must round-trip both keys.
+      const round = JSON.stringify(o);
+      expect(round).toMatch(/"pretty_txt":/);
+      expect(round).toMatch(/"pretty_md":/);
+      expect(round).not.toMatch(/undefined/);
+    }
+  });
+});
+
+
 
 
 
