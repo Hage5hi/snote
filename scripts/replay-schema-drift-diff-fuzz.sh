@@ -201,8 +201,9 @@ verify() {
 verify "manifest"  "$OUT/manifest.txt"
 verify "env.sh"    "$OUT/env.sh"
 verify "checksums" "$OUT/checksums.sha256"
-[ -w "$OUT/vitest.stdout.log" ] || { echo "pre-replay: FAIL stdout log not writable" >&2; exit 8; }
-[ -w "$OUT/vitest.stderr.log" ] || { echo "pre-replay: FAIL stderr log not writable" >&2; exit 8; }
+[ -w "$OUT/vitest.stdout.log" ] || { FAIL_REASON="stdout log not writable: $OUT/vitest.stdout.log"; echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8; }
+[ -w "$OUT/vitest.stderr.log" ] || { FAIL_REASON="stderr log not writable: $OUT/vitest.stderr.log"; echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8; }
+
 grep -q "^SCHEMA_DRIFT_DIFF_FUZZ_SEED:" "$OUT/manifest.txt" || {
   FAIL_REASON="manifest missing SCHEMA_DRIFT_DIFF_FUZZ_SEED line"
   echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8;
