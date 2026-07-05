@@ -76,8 +76,8 @@ describe("validate-pretty-index.py --auto-migrate summary snapshots", () => {
     expect(extractSummary(r.stderr, f)).toMatchInlineSnapshot(`
       "validate-pretty-index: auto-migrating <INDEX> (schema_version=0 -> 1)...
       == pretty-index migration ==
-      from: v0 (legacy array)     entries: 1
-      to:   v1 (envelope)         entries: 1
+      from: v0 (legacy array)        entries: 1
+      to:   v1 (envelope)            entries: 1
       file: <INDEX> (in-place)"
     `);
   });
