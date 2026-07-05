@@ -1235,3 +1235,125 @@ describe("schema-drift-diff: --json-out concurrency + tmp-file hygiene", () => {
     expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
   });
 });
+
+describe("schema-drift-diff: --json-out stress + read-only + stderr wording", () => {
+  it("stress: many parallel writers with varying JSON sizes leave a valid, canonical JSON file", async () => {
+    const { readdirSync } = require("node:fs");
+    const dir = tmp();
+    const jsonOut = join(dir, "diff.json");
+
+    // Build N reports of varying size (varying failing-file counts) → varying
+    // JSON payload sizes for --json-out.
+    const N = 6;
+    const reports: string[] = [];
+    const canonicals: string[] = [];
+    for (let i = 0; i < N; i++) {
+      const files = Array.from({ length: i * 3 + 1 }, (_, j) => ({
+        path: `/stress/f${i}-${j}.json`,
+        ok: false,
+        browser: "chromium",
+        combined: false,
+        missing: [`m${j}`],
+        mistyped: [],
+        extra: [],
+      }));
+      const r: Report = {
+        strict: true,
+        totals: { checked: files.length, ok: 0, invalid: files.length },
+        files,
+      };
+      const p = join(dir, `report-${i}.json`);
+      writeFileSync(p, JSON.stringify(r));
+      reports.push(p);
+      const c = bun(DIFF_SCRIPT, [p, p, "--json"]);
+      expect(c.code).toBe(0);
+      canonicals.push(c.stdout);
+    }
+    // Sanity: payloads actually vary in size.
+    expect(new Set(canonicals.map((s) => s.length)).size).toBeGreaterThan(1);
+
+    const runs = await Promise.all(
+      reports.map(
+        (p) =>
+          new Promise<{ code: number }>((res) => {
+            const child = spawnSync(
+              "bun",
+              [DIFF_SCRIPT, p, p, "--json-out", jsonOut],
+              { encoding: "utf8", env: process.env },
+            );
+            res({ code: child.status ?? -1 });
+          }),
+      ),
+    );
+    for (const r of runs) expect(r.code).toBe(0);
+
+    // Final file is valid JSON and equals one of the canonical payloads
+    // (some writer's rename won the race; all payloads are self-consistent).
+    const final = _readFileSync(jsonOut, "utf8");
+    expect(() => JSON.parse(final)).not.toThrow();
+    expect(canonicals).toContain(final);
+    // No leftover .tmp files.
+    expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("read-only destination inside a read-only parent: exits 7 and preserves the original file bytes", () => {
+    if (typeof process.getuid === "function" && process.getuid() === 0) return;
+    const { chmodSync, mkdirSync } = require("node:fs");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const roDir = join(dir, "ro");
+    mkdirSync(roDir);
+    const jsonOut = join(roDir, "diff.json");
+    const preexisting = "ORIGINAL_CONTENT\n";
+    writeFileSync(jsonOut, preexisting);
+    chmodSync(jsonOut, 0o444);
+    chmodSync(roDir, 0o555);
+    try {
+      const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+      expect(code).toBe(7);
+      expect(stderr).toContain("cannot write json-out");
+      expect(stderr).toMatch(/EACCES|EPERM/);
+      // Original file bytes are unchanged.
+      expect(_readFileSync(jsonOut, "utf8")).toBe(preexisting);
+    } finally {
+      chmodSync(roDir, 0o700);
+      chmodSync(jsonOut, 0o600);
+    }
+  });
+
+  it("failure stderr uses the exact `cleanup:` wording for both temp-file states", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+
+    // Case A: mid-write hook → tmp exists and is removed.
+    const preexisting = "KEEP_ME\n";
+    writeFileSync(jsonOut, preexisting);
+    const a = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut], {
+      SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL: "1",
+    });
+    expect(a.code).toBe(7);
+    expect(a.stderr).toMatch(/cleanup: removed partial temp file "[^"]+\.\d+\.tmp"/);
+    expect(_readFileSync(jsonOut, "utf8")).toBe(preexisting);
+
+    // Case B: parent path blocked by a regular file → mkdirSync fails before
+    // any tmp file is written, so the cleanup line reports "no temp file".
+    const blocker = join(dir, "not-a-dir");
+    writeFileSync(blocker, "x");
+    const missingParent = join(blocker, "child", "diff.json");
+    const b = bun(DIFF_SCRIPT, [p, p, "--json-out", missingParent]);
+    expect(b.code).toBe(7);
+    expect(b.stderr).toMatch(/cleanup: no temp file to remove at "[^"]+\.\d+\.tmp"/);
+  });
+
+  it("test-only hook doc exists and describes SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL", () => {
+    const doc = _readFileSync(
+      resolve(__dirname, "../../docs/schema-drift-diff-test-hooks.md"),
+      "utf8",
+    );
+    expect(doc).toContain("SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL");
+    expect(doc).toContain("exit"); // documents exit code
+    expect(doc).toContain("cleanup: removed partial temp file");
+    expect(doc).toContain("byte-for-byte unchanged");
+  });
+});
