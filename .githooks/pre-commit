@@ -33,6 +33,30 @@ case "$HOOK_MATRIX" in
     exit 2 ;;
 esac
 
+# PRETTY_INDEX_HOOK_DRY_RUN=1 — print the exact reproduce command and the
+# expected diagnostic paths for the selected matrix, then exit 0 WITHOUT
+# invoking any downstream check (i18n allowlist, reproduce script, etc.)
+# and WITHOUT creating or modifying any diagnostic artifacts. Bogus
+# PRETTY_INDEX_HOOK_MATRIX still aborts fail-fast above (exit 2).
+if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
+  DR_INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
+  DR_PRE="${DR_INDEX%.json}.pre-check.json"
+  DR_REPORT="${DR_INDEX%.json}.report.json"
+  echo "▶ pre-commit [dry-run]: pretty-index gate (MATRIX=$HOOK_MATRIX)"
+  echo "  would run: scripts/reproduce-ci-pretty-index-check.sh --clean --matrix $HOOK_MATRIX $DR_INDEX"
+  echo "  expected diagnostic paths:"
+  echo "    input     : $DR_INDEX"
+  echo "    pre-check : $DR_PRE"
+  echo "    report    : $DR_REPORT"
+  if [ "$HOOK_MATRIX" = "stress" ]; then
+    echo "  CI artifact prefix: schema-drift-diff-stress-replay-pretty-index-failure-<os>"
+  else
+    echo "  CI artifact prefix: schema-drift-diff-replay-pretty-index-failure-<os>"
+  fi
+  echo "  documented exit codes: 0=ok, 1=drift, 2=usage, 3=schema, 4=missing"
+  exit 0
+fi
+
 needs_check() {
   if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
   if [ -z "$STAGED" ]; then return 1; fi
