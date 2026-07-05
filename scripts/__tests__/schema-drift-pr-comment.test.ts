@@ -760,6 +760,8 @@ describe("schema-drift-diff: --json-out atomic write failure modes", () => {
     } finally {
       require("node:fs").chmodSync(roDir, 0o700);
     }
+  });
+
 
   it("exit 7 when the temporary `<path>.<pid>.tmp` file cannot be created", () => {
     // Parent dir exists but is read-only, so writing the sibling .tmp fails.
