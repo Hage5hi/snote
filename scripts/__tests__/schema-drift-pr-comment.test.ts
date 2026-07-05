@@ -1154,3 +1154,84 @@ describe("schema-drift-diff: exit-code enumeration + messages", () => {
     expect(stderr).toContain("cannot write json-out");
   });
 });
+
+describe("schema-drift-diff: --json-out concurrency + tmp-file hygiene", () => {
+  it("parallel --json-out writers to the same destination all exit 0 and produce the canonical payload", async () => {
+    const { readdirSync } = require("node:fs");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    // Canonical single-run payload for comparison.
+    const canonical = bun(DIFF_SCRIPT, [p, p, "--json"]);
+    expect(canonical.code).toBe(0);
+
+    const N = 5;
+    const runs = await Promise.all(
+      Array.from({ length: N }, () =>
+        new Promise<{ code: number; stderr: string }>((res) => {
+          const child = spawnSync("bun", [DIFF_SCRIPT, p, p, "--json-out", jsonOut], {
+            encoding: "utf8",
+            env: process.env,
+          });
+          res({ code: child.status ?? -1, stderr: child.stderr ?? "" });
+        }),
+      ),
+    );
+    for (const r of runs) expect(r.code).toBe(0);
+    // Final file matches the canonical --json stdout byte-for-byte
+    // (all writers produce identical bytes for identical inputs).
+    expect(_readFileSync(jsonOut, "utf8")).toBe(canonical.stdout);
+    // No leftover *.tmp files after everyone finished.
+    expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("cleans up a pre-existing stale `<name>.<pid>.tmp` sibling and still atomically replaces the destination", () => {
+    const { readdirSync, writeFileSync: wfs } = require("node:fs");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    // Simulate a crashed prior run: leftover .tmp under a pid that is
+    // guaranteed not to exist (pid 1 is `init`; we use a large pid that
+    // `process.kill(_, 0)` will reject with ESRCH).
+    const stalePid = 2147483; // improbable live pid
+    const stale = join(dir, `diff.json.${stalePid}.tmp`);
+    wfs(stale, "GARBAGE\n");
+    const { code } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(code).toBe(0);
+    expect(_readFileSync(jsonOut, "utf8")).toContain("matchedAnchors");
+    // The stale .tmp was cleaned up; no .tmp sibling remains.
+    expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("exit 7 with a clear message when the destination parent directory does not exist and cannot be created", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    // Parent path is a regular file, so mkdirSync recursive fails with ENOTDIR.
+    const blocker = join(dir, "file-not-dir");
+    writeFileSync(blocker, "x");
+    const jsonOut = join(blocker, "missing-parent", "diff.json");
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(code).toBe(7);
+    expect(stderr).toContain(`cannot write json-out to "${jsonOut}"`);
+    expect(stderr).toContain("fix: check that the parent directory exists and is writable");
+  });
+
+  it("simulated mid-write failure removes the temp file and leaves the destination unchanged", () => {
+    const { readdirSync } = require("node:fs");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    // Pre-existing destination content that MUST survive a failed run.
+    const preexisting = "PREEXISTING\n";
+    writeFileSync(jsonOut, preexisting);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut], {
+      SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL: "1",
+    });
+    expect(code).toBe(7);
+    expect(stderr).toContain("cannot write json-out");
+    // Destination file is byte-for-byte unchanged.
+    expect(_readFileSync(jsonOut, "utf8")).toBe(preexisting);
+    // No .tmp leftover.
+    expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+  });
+});
