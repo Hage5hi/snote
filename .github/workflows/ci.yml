@@ -143,6 +143,21 @@ jobs:
             fs.writeFileSync(commentPath, lines.join("\n")+"\n");
             console.log(`pr-comment: ${commentPath}`);
           ' "$report"
+      # Job summary: append the same PR-comment body (top strict-validation
+      # failures) to $GITHUB_STEP_SUMMARY so the failures are visible on the
+      # run's Summary tab without downloading the artifact or opening a PR.
+      - name: schema-drift-view.sh validation job summary
+        if: always()
+        run: |
+          set -eu
+          body=reports/_ci/schema-drift-fixture/pr-comment.md
+          [ -f "$body" ] || { echo "no pr-comment.md; skipping job summary"; exit 0; }
+          {
+            echo ""
+            cat "$body"
+            echo ""
+            echo "_Artifacts: \`reports/_ci/schema-drift-fixture/validation-report.json\` and \`pr-comment.md\` are uploaded as the \`schema-drift-fixture-validation\` artifact (see docs/schema-drift-ci-artifacts.md)._"
+          } >> "$GITHUB_STEP_SUMMARY"
       # Always upload the fixture manifests + validation-report.json +
       # generated PR-comment markdown, even on failure, so reviewers can
       # download the exact inputs that triggered the annotations above.
