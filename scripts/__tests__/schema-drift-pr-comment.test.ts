@@ -16,7 +16,8 @@ import {
   type Report,
 } from "../schema-drift-pr-comment";
 import { renderSummary } from "../schema-drift-summary";
-import { computeDiff, renderDiff } from "../schema-drift-diff";
+import { computeDiff, renderDiff, compileMatcher, expandKindPatterns } from "../schema-drift-diff";
+import { readFileSync as _readFileSync } from "node:fs";
 
 const PR_SCRIPT = resolve(__dirname, "../schema-drift-pr-comment.ts");
 const SUM_SCRIPT = resolve(__dirname, "../schema-drift-summary.ts");
