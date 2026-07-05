@@ -333,5 +333,68 @@ describe("schema-drift-diff: stable anchors across reordered reports", () => {
     const expected = anchorFor(after.files[1]);
     expect(out).toContain(`#${expected}`);
     expect(out).toContain("+1 added");
+});
+
+describe("schema-drift-diff CLI: exit codes + suggested fixes", () => {
+  it("exit 3 with a suggested fix when the report file is missing", () => {
+    const missing = join(tmp(), "does-not-exist.json");
+    for (const mode of [[missing, missing], [missing, missing, "--json"]]) {
+      const { code, stderr } = bun(DIFF_SCRIPT, mode);
+      expect(code).toBe(3);
+      expect(stderr).toContain("cannot read");
+      expect(stderr).toContain("fix:");
+      expect(stderr).toContain("gh run download");
+    }
   });
+
+  it("exit 4 when the file is not valid JSON (markdown + --json)", () => {
+    const dir = tmp();
+    const p = join(dir, "bad.json");
+    writeFileSync(p, "{not json");
+    for (const mode of [[p, p], [p, p, "--json"], [p, p, "--markdown"]]) {
+      const { code, stderr } = bun(DIFF_SCRIPT, mode);
+      expect(code).toBe(4);
+      expect(stderr).toContain("not valid JSON");
+      expect(stderr).toContain("schema-drift-view.sh --validation-report");
+    }
+  });
+
+  it("exit 5 when required fields are missing (markdown + --json)", () => {
+    const dir = tmp();
+    const p = join(dir, "weird.json");
+    writeFileSync(p, JSON.stringify({ hello: "world" }));
+    for (const mode of [[p, p], [p, p, "--json"]]) {
+      const { code, stderr } = bun(DIFF_SCRIPT, mode);
+      expect(code).toBe(5);
+      expect(stderr).toContain("missing required fields");
+      expect(stderr).toContain("`strict`");
+      expect(stderr).toContain("`files`");
+      expect(stderr).toContain("Expected shape");
+    }
+  });
+});
+
+describe("schema-drift-diff: --fail-slug + JSON matchedAnchors", () => {
+  const reordered: Report = { ...FAILING, files: [...FAILING.files].reverse() };
+
+  it("computeDiff exposes matchedAnchors and counts at the top level", () => {
+    const d = computeDiff(FAILING, reordered);
+    expect(d.matchedAnchors.length).toBe(d.totals.matched);
+    expect(d.matchedAnchors).toEqual([...d.matchedAnchors].sort());
+    expect(d.totals.matched).toBeGreaterThan(0);
+  });
+
+  it("--fail-slug filters both markdown text and --json output", () => {
+    const target = anchorFor(FAILING.files.find((f) => f.browser === "chromium")!);
+    const d = computeDiff(FAILING, FAILING, { failSlugs: [target] });
+    expect(d.matchedAnchors).toEqual([target]);
+    const dp = tmp();
+    const p = writeReport(dp, FAILING);
+    const { code, stdout } = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", target]);
+    expect(code).toBe(0);
+    const parsed = JSON.parse(stdout);
+    expect(parsed.matchedAnchors).toEqual([target]);
+    expect(parsed.totals.matched).toBe(1);
+  });
+});
 });
