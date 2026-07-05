@@ -12,6 +12,17 @@ MATRIX ?= atomic
 PRE    = $(INDEX:.json=.pre-check.json)
 REPORT = $(INDEX:.json=.report.json)
 
+# Scope selector for the download-flow targets (verify, verify-summary,
+# hook-validate-downloaded, reproduce-downloaded, download-verify-reproduce).
+# Independent of MATRIX so it doesn't collide with the single-run default.
+#   atomic | stress | both     (default: both)
+PI_SCOPE ?= both
+
+# Local file where verify targets write a machine-readable
+# checksum-mismatch report on failure. Overridable.
+PI_MISMATCH_REPORT ?= _pretty-index-checksum-mismatch.json
+
+
 
 .PHONY: help pretty-index-check pretty-index-check-clean \
         pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean \
