@@ -51,6 +51,9 @@ jobs:
       # OR the validator surfaces here as its own red check.
       - name: schema-drift-view.sh --strict-manifest (fixture)
         if: always()
+        env:
+          # Default-on in CI: any diff/viewer step is gated on strict validation.
+          SCHEMA_DRIFT_REQUIRE_VALID: '1'
         run: |
           set -eu
           fx=reports/_ci/schema-drift-fixture
@@ -71,6 +74,34 @@ jobs:
             if (!r.strict) { console.error("expected strict=true"); process.exit(1); }
             console.log("fixture strict validation OK — checked="+r.totals.checked);
           ' "$fx/validation-report.json"
+      - name: schema-drift-view.sh validation annotations
+        if: always()
+        run: |
+          set -eu
+          report=reports/_ci/schema-drift-fixture/validation-report.json
+          [ -f "$report" ] || { echo "no validation report; skipping annotations"; exit 0; }
+          # Emit ::error::/::warning:: annotations summarizing the top
+          # per-file validation failures so reviewers see the browser +
+          # missing / extra / mistyped keys directly in the run's
+          # annotations pane (no artifact download required).
+          node -e '
+            const fs=require("fs");
+            const r=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
+            const bad=r.files.filter(f=>!f.ok);
+            if (bad.length===0) { console.log("::notice::schema-drift manifests: all "+r.totals.checked+" valid"); return; }
+            const MAX=10;
+            for (const f of bad.slice(0,MAX)) {
+              const label=f.combined?"combined":`browser=${f.browser||"?"}`;
+              const parts=[];
+              if (f.parseError) parts.push(`parseError: ${f.parseError}`);
+              if (f.missing && f.missing.length)  parts.push(`missing: ${f.missing.join(",")}`);
+              if (f.mistyped && f.mistyped.length) parts.push(`mistyped: ${f.mistyped.map(m=>`${m.key}(want ${m.expected}, got ${m.got})`).join(",")}`);
+              if (f.extra && f.extra.length)     parts.push(`extra: ${f.extra.join(",")}`);
+              console.log(`::error file=${f.path}::[${label}] ${parts.join(" | ")}`);
+            }
+            if (bad.length>MAX) console.log(`::warning::${bad.length-MAX} more manifest failure(s) elided (see ${process.argv[1]})`);
+            console.log(`::warning::schema-drift manifests: ${r.totals.invalid}/${r.totals.checked} invalid (strict=${r.strict})`);
+          ' "$report"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -78,6 +109,7 @@ jobs:
           path: reports/_ci/schema-drift-fixture/
           if-no-files-found: ignore
           retention-days: 14
+
       # Dedicated sticky-upsert integration + perf suite. Runs on every
       # PR (and on push to main) so regressions in marker scanning
       # bounds, pagination handling, malformed-metadata skipping, or
