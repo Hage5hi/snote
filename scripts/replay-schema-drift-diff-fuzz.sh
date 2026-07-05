@@ -234,27 +234,29 @@ fi
 [[ "$PRINT_MANIFEST" == "1" ]] && { print_manifest "$OUT/manifest.txt"; exit 0; }
 
 # Command render: build the exact command shared by dry-run + real run.
-# A missing test file or empty pattern is treated as a render error so the
-# dry-run JSON summary can distinguish it from a missing-file / checksum
-# failure via fail_reason.
-TEST_FILE="scripts/__tests__/schema-drift-pr-comment.test.ts"
-if [ ! -r "$TEST_FILE" ]; then
-  FAIL_REASON="command render error: vitest test file not readable: $TEST_FILE"
-  echo "pre-replay: FAIL $FAIL_REASON" >&2
-  # Emit the JSON summary so CI can surface the render error before we exit.
-  CMD=(); write_json_summary_safe() { :; }
-  # Fall through to write_json_summary below by declaring an empty CMD.
-  exit 8
-fi
+# Empty pattern OR a missing test file is treated as a render error so
+# the dry-run JSON summary can distinguish it from missing-file /
+# checksum failures via fail_reason. Test file is resolved against the
+# script's own repo root so the check works regardless of cwd.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+TEST_FILE_REL="scripts/__tests__/schema-drift-pr-comment.test.ts"
+TEST_FILE_ABS="$REPO_ROOT/$TEST_FILE_REL"
 if [ -z "$PATTERN" ]; then
   FAIL_REASON="command render error: empty test-name pattern"
   echo "pre-replay: FAIL $FAIL_REASON" >&2
   exit 8
 fi
-CMD=(bunx vitest run "$TEST_FILE"
+if [ ! -r "$TEST_FILE_ABS" ]; then
+  FAIL_REASON="command render error: vitest test file not readable: $TEST_FILE_ABS"
+  echo "pre-replay: FAIL $FAIL_REASON" >&2
+  exit 8
+fi
+CMD=(bunx vitest run "$TEST_FILE_REL"
      -t "$PATTERN"
      --testTimeout="$TIMEOUT_MS"
      --reporter=verbose)
+
 
 printf 'command: SCHEMA_DRIFT_DIFF_FUZZ_SEED=%q SCHEMA_DRIFT_DIFF_READER_DURATION_MS=%q' "$SEED" "$READER_MS" >&2
 printf ' %q' "${CMD[@]}" >&2
