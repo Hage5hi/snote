@@ -501,25 +501,44 @@ scripts/pretty-replay-summary.py \
 cat replay-summary.json | scripts/pretty-replay-summary.py -
 ```
 
+Deterministic-rendering flags (used by CI so snapshot bytes match
+across runners):
+
+- `--fixed-widths` — render the `manifest_mapping` table with fixed
+  column widths (`manifest_entry`=40, `required_file`=48) instead of
+  auto-sizing to the longest value.
+- `--no-color` — accepted no-op today; script emits no ANSI colors.
+  Reserved so CI can pin deterministic output. The `NO_COLOR` env var
+  is also honored.
+
 Exit codes:
 
 | Exit | Meaning |
 | --- | --- |
 | `0` | Rendered successfully; if the summary carries an integer `exit_code`, that value is mirrored instead. |
-| `2` | Bad CLI usage, unreadable file, or malformed JSON (not an object / not parseable). |
+| `2` | Bad CLI usage (unknown flag, missing/extra positional). |
 | `3` | JSON parsed as an object but failed schema validation (see below). |
+| `4` | Input file is missing. |
+| `5` | Input file exists but cannot be read (permission / I/O). |
+| `6` | Input is not valid JSON, or the top-level value is not an object. |
 
 #### Failure-mode examples
 
-**Missing file** — the path does not exist. Exit `2`, empty stdout:
+**Missing file** — exit `4`:
 
 ```
 $ python3 scripts/pretty-replay-summary.py /tmp/nope.json
-pretty-replay-summary: cannot parse /tmp/nope.json: [Errno 2] No such file or directory: '/tmp/nope.json'
+pretty-replay-summary: file not found: /tmp/nope.json
 ```
 
-**Unreadable file** — exists but not readable / not valid JSON. Same
-class as above (exit `2`):
+**Unreadable file** — exit `5` (e.g. `chmod 000`):
+
+```
+$ python3 scripts/pretty-replay-summary.py /tmp/locked.json
+pretty-replay-summary: cannot read /tmp/locked.json: [Errno 13] Permission denied
+```
+
+**Invalid JSON** — exit `6`:
 
 ```
 $ echo 'not json' > /tmp/bad.json
@@ -527,9 +546,8 @@ $ python3 scripts/pretty-replay-summary.py /tmp/bad.json
 pretty-replay-summary: cannot parse /tmp/bad.json: Expecting value: line 1 column 1 (char 0)
 ```
 
-**Fails schema validation** — parseable JSON object, but `fail_reason`
-is missing or `manifest_mapping` is malformed. Exit `3`; each problem
-is printed on its own indented line so CI logs stay grep-friendly:
+**Fails schema validation** — exit `3`; each problem is printed on its
+own indented line so CI logs stay grep-friendly:
 
 ```
 $ python3 scripts/pretty-replay-summary.py /tmp/bad-schema.json
@@ -537,6 +555,22 @@ pretty-replay-summary: schema validation failed for /tmp/bad-schema.json:
   - fail_reason is missing (required in every replay-summary.json)
   - manifest_mapping[0].role is missing
 ```
+
+#### CI artifact
+
+The `append pretty replay-summary to step summary` step writes each
+pretty-printed summary to
+`artifacts/schema-drift-diff-replay-verify/pretty/<folder>.pretty.txt`
+using `--fixed-widths --no-color`, then uploads them as a dedicated
+artifact:
+
+- `schema-drift-diff-replay-pretty-<os>` (main CI matrix)
+- `schema-drift-diff-stress-replay-pretty-<os>` (nightly stress matrix)
+
+Retention: 14 days. A direct link to the artifact is appended to the
+GitHub Actions step summary so debuggers can download only the pretty
+output without pulling the full verify bundle.
+
 
 The validation contract (also asserted by
 `scripts/__tests__/pretty-replay-summary.test.ts`):
