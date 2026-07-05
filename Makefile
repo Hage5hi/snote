@@ -16,7 +16,8 @@ REPORT = $(INDEX:.json=.report.json)
 .PHONY: help pretty-index-check pretty-index-check-clean \
         pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean \
         pretty-index-clean-dry-run \
-        pretty-index-artifacts pretty-index-hook-dry-run
+        pretty-index-artifacts pretty-index-hook-dry-run \
+        pretty-index-artifacts-download
 
 
 
