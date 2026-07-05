@@ -420,6 +420,7 @@ pretty-index-help:
         pretty-index-mismatch-validate pretty-index-mismatch-summary \
         pretty-index-mismatch-summary-json \
         pretty-index-mismatch-summary-json-merge \
+        pretty-index-mismatch-summary-validate \
         pretty-index-mismatch-csv pretty-index-mismatch-diff
 
 # Print a human-friendly per-file table (file, expected, actual, status)
