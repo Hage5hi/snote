@@ -17,6 +17,13 @@ Options:
   --no-color            No-op today (script emits no ANSI colors); accepted
                         for forward-compatibility so CI can pin deterministic
                         rendering. NO_COLOR env var is also honored.
+  --output-json PATH    Also write a machine-readable per-summary report to
+                        PATH: {summary_file, fail_reason, exit_code,
+                        pretty_txt, pretty_md}. Keys are sorted for
+                        deterministic bytes.
+  --pretty-txt PATH     Value recorded as `pretty_txt` in --output-json
+                        (no file is read/written by this flag itself).
+  --pretty-md PATH      Value recorded as `pretty_md` in --output-json.
   -h, --help            Show this help.
 
 Exit codes:
