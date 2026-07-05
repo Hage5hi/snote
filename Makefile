@@ -19,8 +19,15 @@ REPORT = $(INDEX:.json=.report.json)
 PI_SCOPE ?= both
 
 # Local file where verify targets write a machine-readable
-# checksum-mismatch report on failure. Overridable.
+# checksum-mismatch report on failure. PI_REPORT_PATH is the canonical
+# knob; PI_MISMATCH_REPORT is kept as a back-compat alias.
 PI_MISMATCH_REPORT ?= _pretty-index-checksum-mismatch.json
+PI_REPORT_PATH     ?= $(PI_MISMATCH_REPORT)
+
+# Stop verify at the first per-file MISMATCH when set to 1. Default 0
+# (walk every file so the report is complete).
+PI_FAIL_FAST ?= 0
+
 
 
 
