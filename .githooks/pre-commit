@@ -79,6 +79,19 @@ fi
 # Non-impacting changes (docs/**, README.md, src/**, unrelated configs)
 # are automatically skipped — the grep pattern below is the allowlist of
 # paths that DO trigger the check.
+# PRETTY_INDEX_HOOK_MATRIX=atomic|stress lets developers reproduce
+# atomic vs stress artifact naming locally before committing. Defaults
+# to atomic (matches the primary CI matrix). Validated up-front (fail
+# fast) so a typo aborts the commit before any check runs, regardless
+# of whether the pretty-index gate is triggered.
+HOOK_MATRIX="${PRETTY_INDEX_HOOK_MATRIX:-atomic}"
+case "$HOOK_MATRIX" in
+  atomic|stress) ;;
+  *)
+    echo "❌ pre-commit: PRETTY_INDEX_HOOK_MATRIX must be atomic|stress (got: $HOOK_MATRIX)" >&2
+    exit 2 ;;
+esac
+
 pretty_index_needs_check() {
   if [ "${PRETTY_INDEX_HOOK_SKIP:-0}" = "1" ]; then return 1; fi
   if [ "${PRETTY_INDEX_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
@@ -89,6 +102,7 @@ pretty_index_needs_check() {
     -e '^scripts/check-pretty-index-local\.sh$' \
     -e '(^|/)pretty-index\.json$'
 }
+
 
 if pretty_index_needs_check; then
   echo "▶ pre-commit: pretty-index schema-drift check"
