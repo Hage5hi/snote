@@ -305,9 +305,12 @@ pretty-index-artifacts-clean:
 # actual hash (not just mismatches) and a per-matrix + overall pass/fail
 # summary at the end. Exits 0 iff both matrices verify.
 pretty-index-artifacts-verify-summary:
-	@overall=0; \
-	atomic_status=""; stress_status=""; \
-	for matrix in atomic stress; do \
+	@case "$(PI_SCOPE)" in atomic) list="atomic";; stress) list="stress";; \
+	  both) list="atomic stress";; \
+	  *) echo "PI_SCOPE must be atomic|stress|both (got: $(PI_SCOPE))" >&2; exit 2;; esac; \
+	overall=0; \
+	atomic_status="skipped"; stress_status="skipped"; \
+	for matrix in $$list; do \
 	  dir="./_pretty-index-$$matrix"; \
 	  echo ""; echo "── MATRIX=$$matrix ── ($$dir)"; \
 	  if [ ! -d "$$dir" ]; then \
@@ -331,8 +334,64 @@ pretty-index-artifacts-verify-summary:
 	  echo "  → $$matrix: $$mstatus"; \
 	done; \
 	echo ""; \
-	echo "── summary ──"; \
+	echo "── summary (scope=$(PI_SCOPE)) ──"; \
 	echo "  atomic : $$atomic_status"; \
 	echo "  stress : $$stress_status"; \
 	if [ $$overall -eq 0 ]; then echo "  overall: PASS"; else echo "  overall: FAIL"; fi; \
 	exit $$overall
+
+# ── pretty-index help ────────────────────────────────────────────────
+# Concise usage for every pretty-index-* target, including VERBOSE=1
+# semantics per target and documented exit codes.
+.PHONY: pretty-index-help
+pretty-index-help:
+	@cat <<'PIHELP'
+pretty-index-* make targets — quick reference
+
+Local reproduce (uses your working-tree pretty-index.json):
+  pretty-index-check                         Run CI check flow (bash)
+  pretty-index-check-clean                   Same, discard prior diagnostics
+  pretty-index-check-pwsh                    Same, via PowerShell
+  pretty-index-diagnostics                   Print diagnostic paths / artifact names
+  pretty-index-clean                         Remove sibling .pre-check.json / .report.json
+  pretty-index-clean-dry-run                 Preview what -clean would delete
+  pretty-index-artifacts                     Print expected artifact filenames per matrix
+  pretty-index-hook-dry-run                  Run pre-commit hook in dry-run for both matrices
+
+Download + verify + reproduce (uses ./_pretty-index-<matrix>/):
+  pretty-index-artifacts-download            Download atomic + stress from a CI run
+                                             (needs RUN_ID=<id>, OS=ubuntu-latest by default)
+  pretty-index-artifacts-verify              sha256sum -c both dirs; writes JSON mismatch
+                                             report to $(PI_MISMATCH_REPORT) on failure
+  pretty-index-artifacts-verify-summary      Verify + pretty per-matrix PASS/FAIL summary
+                                             with per-file expected/actual hashes
+  pretty-index-hook-validate-downloaded      Verify, then run the hook in validation mode
+  pretty-index-reproduce-downloaded          One-command verify + validate
+  pretty-index-artifacts-download-verify-reproduce
+                                             Cold start: download + verify + validate
+  pretty-index-artifacts-clean               rm -rf ./_pretty-index-atomic ./_pretty-index-stress
+
+Scope / overrides:
+  PI_SCOPE=atomic|stress|both   (default: both)   restrict download-flow targets
+  MATRIX=atomic|stress          (default: atomic) single-run local-repro matrix
+  INDEX=<path>                                    override pretty-index.json path
+  RUN_ID=<id> OS=<runner>                         for -artifacts-download*
+  PI_MISMATCH_REPORT=<path>                       where -verify writes its JSON on fail
+
+VERBOSE=1 effects (per target):
+  pretty-index-reproduce-downloaded          Prints resolved INDEX, diagnostics dir,
+                                             PI_SCOPE, mismatch-report path; forwards
+                                             PRETTY_INDEX_HOOK_VERBOSE=1 to the hook so
+                                             each step lists [exists]/[absent] files.
+  pretty-index-artifacts-download-verify-reproduce
+                                             Forwards VERBOSE=1 to -reproduce-downloaded.
+  (other targets ignore VERBOSE.)
+
+Exit codes (make normalizes any recipe failure to 2 at the outer layer):
+  0  success (verify passed / hook passed / dry-run)
+  1  a downstream check failed (checksum mismatch OR hook validation failed)
+  2  usage error, missing directory, missing checksums file, or missing RUN_ID
+  Underlying pre-commit hook: 0=ok  1=drift  2=usage  3=schema  4=missing input
+  Run `.githooks/pre-commit --help` for the hook's full exit-code table.
+PIHELP
+
