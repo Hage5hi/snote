@@ -313,7 +313,64 @@ bun run schema-guard:view -- --manifest-dir reports/_ci --manifest-prefix drift 
 #   INVALID drift-chromium.json [browser=chromium] — extra: unknownField \
 #     | mistyped: combined (expected boolean, got string)
 bun run schema-guard:view -- --manifest-dir reports/_ci --manifest-prefix drift --strict-manifest
+
+# --require-valid runs validation FIRST and only proceeds to the diff/viewer
+# output if it passes; any validation failure exits non-zero BEFORE any diff
+# is printed. This is on by default in CI (SCHEMA_DRIFT_REQUIRE_VALID=1).
+bun run schema-guard:view -- \
+  --manifest-dir reports/_ci --manifest-prefix drift \
+  --strict-manifest --require-valid
 ```
+
+### `--validation-report` JSON structure
+
+`--validation-report <path>` writes a machine-readable summary of every
+`<prefix>-*.json` file the validator visited. Shape:
+
+```jsonc
+{
+  "generatedAt": "2026-01-05T12:34:56Z",   // UTC, seconds precision
+  "strict": true,                           // true when --strict-manifest was set
+  "schemaPath": "schemas/schema-drift-manifest.schema.json",
+  "totals": { "checked": 4, "ok": 3, "invalid": 1 },
+  "files": [
+    {
+      "path": "reports/_ci/drift-chromium.json",
+      "ok": false,
+      "browser": "chromium",       // null if the manifest is unparseable
+      "combined": false,           // true for the aggregate manifest
+      "parseError": null,          // non-null string when JSON.parse failed
+      "missing":  ["requiredArtifacts"],
+      "mistyped": [
+        { "key": "combined", "expected": "boolean", "got": "string" },
+        { "key": "matches",  "expected": "string[]", "got": "number[]" }
+      ],
+      "extra":    ["unknownField"] // only populated under --strict-manifest
+    }
+  ]
+}
+```
+
+CI consumes this file to emit `::error file=<path>::[browser=…] missing: …
+| mistyped: … | extra: …` annotations directly into the run's annotations
+pane. See `.github/workflows/ci.yml` → **schema-drift-view.sh validation
+annotations** for the exact projection.
+
+### Reproducing validator failures locally
+
+Committed fixture manifests live under
+[`scripts/fixtures/schema-drift-manifests/`](scripts/fixtures/schema-drift-manifests/README.md)
+— one subdirectory per failure mode (`valid`, `missing-nested`,
+`wrong-types`, `extra-keys`). Reproduce any CI validation failure with a
+single command, no bundle required:
+
+```sh
+bash scripts/schema-drift-view.sh --strict-manifest \
+  --manifest-dir scripts/fixtures/schema-drift-manifests/wrong-types \
+  --manifest-prefix drift \
+  --validation-report /tmp/report.json
+```
+
 
 ### CI expected artifact filenames (per browser)
 
