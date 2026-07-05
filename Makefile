@@ -190,13 +190,13 @@ pretty-index-artifacts-verify:
 	  if [ ! -d "$$dir" ]; then \
 	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; \
 	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
-	    printf '{"dir":"%s","status":"dir_missing"}' "$$dir" >> "$$report.tmp"; \
+	    printf '{"dir":"%s","artifact_dir":"%s","status":"dir_missing"}' "$$dir" "$$(basename -- "$$dir")" >> "$$report.tmp"; \
 	    rc=2; [ "$$fail_fast" = "1" ] && stop=1; continue; \
 	  fi; \
 	  if [ ! -f "$$dir/pretty-index.checksums.sha256" ]; then \
 	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; \
 	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
-	    printf '{"dir":"%s","status":"checksums_missing"}' "$$dir" >> "$$report.tmp"; \
+	    printf '{"dir":"%s","artifact_dir":"%s","status":"checksums_missing"}' "$$dir" "$$(basename -- "$$dir")" >> "$$report.tmp"; \
 	    rc=2; [ "$$fail_fast" = "1" ] && stop=1; continue; \
 	  fi; \
 	  echo "==> verifying $$dir"; \
@@ -214,8 +214,9 @@ pretty-index-artifacts-verify:
 	          if [ "$$exp" = "$$act" ] && [ -n "$$exp" ]; then status="OK"; else status="MISMATCH"; fi; \
 	          echo "  $$fname  expected=$${exp:-<none>}  actual=$${act:-<missing>}  [$$status]"; \
 	          [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
-	          printf '{"dir":"%s","file":"%s","expected":"%s","actual":"%s","status":"%s"}' \
-	            "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
+	          adir="$$(basename -- "$$dir")"; \
+	          printf '{"dir":"%s","artifact_dir":"%s","file":"%s","path":"%s/%s","expected":"%s","actual":"%s","status":"%s"}' \
+	            "$$dir" "$$adir" "$$fname" "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
 	          if [ "$$status" = "MISMATCH" ] && [ "$$fail_fast" = "1" ]; then \
 	            echo "── PI_FAIL_FAST=1: stopping after first mismatch ──"; stop=1; break; \
 	          fi; \
@@ -410,4 +411,61 @@ pretty-index-help:
 	@echo "  Underlying pre-commit hook: 0=ok  1=drift  2=usage  3=schema  4=missing input"
 	@echo "  Run '.githooks/pre-commit --help' for the hook's full exit-code table."
 
+
+
+# ── Post-verify inspection helpers ───────────────────────────────────
+# All three read the JSON report written by pretty-index-artifacts-verify
+# (path: $(PI_REPORT_PATH)). Require jq.
+.PHONY: pretty-index-mismatch-show pretty-index-mismatch-merge \
+        pretty-index-mismatch-validate
+
+# Print a human-friendly per-file table (file, expected, actual, status)
+# from the mismatch report. Use PI_REPORT_PATH=<path> to point elsewhere.
+pretty-index-mismatch-show:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
+	  echo "no mismatch report at $(PI_REPORT_PATH) — verify probably passed" >&2; exit 2; \
+	fi
+	@echo "── pretty-index mismatch report: $(PI_REPORT_PATH) ──"
+	@jq -r '"scope=\(.scope)  fail_fast=\(.fail_fast // false)"' -- "$(PI_REPORT_PATH)"
+	@echo ""
+	@printf "%-22s  %-42s  %-9s  %-64s  %s\n" ARTIFACT_DIR FILE STATUS EXPECTED ACTUAL
+	@jq -r '.results[] | [ (.artifact_dir // "-"), (.file // "-"), .status, (.expected // "-"), (.actual // "-") ] | @tsv' \
+	  -- "$(PI_REPORT_PATH)" \
+	| awk -F'\t' '{printf "%-22s  %-42s  %-9s  %-64s  %s\n", $$1, $$2, $$3, $$4, $$5}'
+	@echo ""
+	@n_mm=$$(jq '[.results[] | select(.status=="MISMATCH")] | length' -- "$(PI_REPORT_PATH)"); \
+	 n_err=$$(jq '[.results[] | select(.status=="dir_missing" or .status=="checksums_missing")] | length' -- "$(PI_REPORT_PATH)"); \
+	 echo "summary: $$n_mm mismatched file(s), $$n_err missing-artifact error(s)"
+
+# Merge two separately-generated mismatch reports (e.g. produced by
+# per-matrix CI jobs) into one file. Only meaningful for PI_SCOPE=both.
+#   ATOMIC_REPORT=<path>  STRESS_REPORT=<path>  PI_REPORT_PATH=<out>
+ATOMIC_REPORT ?= _pretty-index-checksum-mismatch-atomic.json
+STRESS_REPORT ?= _pretty-index-checksum-mismatch-stress.json
+pretty-index-mismatch-merge:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ "$(PI_SCOPE)" != "both" ]; then \
+	  echo "PI_SCOPE must be 'both' to merge (got: $(PI_SCOPE))" >&2; exit 2; \
+	fi
+	@for f in "$(ATOMIC_REPORT)" "$(STRESS_REPORT)"; do \
+	  [ -f "$$f" ] || { echo "missing input report: $$f" >&2; exit 2; }; \
+	done
+	@mkdir -p -- "$$(dirname -- "$(PI_REPORT_PATH)")" 2>/dev/null || true
+	@jq -s '{schema:"pretty-index-checksum-mismatch/v1", scope:"both", fail_fast: ((.[0].fail_fast // false) or (.[1].fail_fast // false)), merged_from: ["$(ATOMIC_REPORT)","$(STRESS_REPORT)"], results: ((.[0].results // []) + (.[1].results // []))}' -- "$(ATOMIC_REPORT)" "$(STRESS_REPORT)" > "$(PI_REPORT_PATH)"
+
+	@echo "merged $(ATOMIC_REPORT) + $(STRESS_REPORT) -> $(PI_REPORT_PATH)"
+	@jq -r '"  scope=\(.scope)  results=\(.results | length)  merged_from=\(.merged_from | length) file(s)"' \
+	  -- "$(PI_REPORT_PATH)"
+
+# Validate an existing mismatch report against the documented v1 schema.
+# Exit 0 = valid, exit 1 = malformed (prints the first failing rule).
+pretty-index-mismatch-validate:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
+	  echo "no report at $(PI_REPORT_PATH)" >&2; exit 2; \
+	fi
+	@err=$$(jq -r 'def bad(msg): "SCHEMA ERROR: " + msg; if type != "object" then bad("root must be an object") elif (.schema // "") != "pretty-index-checksum-mismatch/v1" then bad("schema must be pretty-index-checksum-mismatch/v1 (got: \(.schema // "<missing>"))") elif ([.scope] | inside(["atomic","stress","both"]) | not) then bad("scope must be atomic|stress|both (got: \(.scope // "<missing>"))") elif (.results | type) != "array" then bad(".results must be an array") elif (.fail_fast != null and (.fail_fast | type) != "boolean") then bad(".fail_fast must be boolean when present") else ([ .results | to_entries[] | . as $$e | ($$e.value // {}) as $$r | if ($$r | type) != "object" then "results[\($$e.key)] must be object" elif ([$$r.status] | inside(["OK","MISMATCH","dir_missing","checksums_missing"]) | not) then "results[\($$e.key)].status invalid: \($$r.status // "<missing>")" elif ($$r.status == "OK" or $$r.status == "MISMATCH") and (($$r.file // "") == "" or ($$r.expected == null) or ($$r.actual == null)) then "results[\($$e.key)] file-result must have file/expected/actual" elif (($$r.dir // "") == "") then "results[\($$e.key)].dir missing" else empty end ] | if length == 0 then "" else bad(.[0]) end) end' -- "$(PI_REPORT_PATH)" 2>&1); \
+	if [ -n "$$err" ]; then echo "$$err" >&2; echo "invalid: $(PI_REPORT_PATH)" >&2; exit 1; fi; \
+	echo "✅ $(PI_REPORT_PATH) validates against pretty-index-checksum-mismatch/v1"
 
