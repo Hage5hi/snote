@@ -37,3 +37,38 @@ deterministically reproducible in integration tests. They are read from
 3. Document every new hook here in the same shape (Where / Enable / Simulates
    / Observable behavior) so tests that rely on the hook can reference the
    exact stderr and exit code they should assert against.
+
+## `atomicWrite` failure contract
+
+`atomicWrite(dest, body, label)` in `scripts/schema-drift-diff.ts` is used by
+both `--out` and `--json-out`. When it fails, it writes a **three-line** error
+message to stderr and exits with code `7`. Tests MUST assert against these
+exact shapes so future refactors cannot silently change the contract:
+
+```
+error: cannot write <label> to "<dest>": <errno-or-message>
+  cleanup: <cleanup-line>
+  fix: check that the parent directory exists and is writable, or pass a different --<label> path
+```
+
+Where `<cleanup-line>` is exactly one of:
+
+- `removed partial temp file "<dest>.<pid>.tmp"` — the sibling `.tmp` file was
+  successfully written and then unlinked during error recovery. This is what
+  the `SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL` hook produces.
+- `no temp file to remove at "<dest>.<pid>.tmp"` — the failure happened
+  before/while creating the `.tmp` file (e.g. `mkdirSync` on a parent that is
+  a regular file, or `EACCES` on the destination directory), so nothing was
+  left to clean up.
+
+Additional guarantees that tests may rely on:
+
+1. Exit code is always `7` — never `1`, never process-signaled.
+2. A pre-existing `<dest>` file is left **byte-for-byte unchanged** on every
+   failure path.
+3. `<dest>` paths containing spaces, unicode, or shell-metacharacters (`&`,
+   `$`, `'`, parentheses) are supported — they appear verbatim inside the
+   `"<dest>"` and `"<dest>.<pid>.tmp"` quoted segments.
+4. Stale sibling `<dest>.<otherpid>.tmp` files whose pid is no longer alive
+   are best-effort removed on the next successful write. Tmp files whose pid
+   is still alive are left untouched so concurrent writers do not race.
