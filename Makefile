@@ -18,30 +18,42 @@ REPORT = $(INDEX:.json=.report.json)
 
 help:
 	@echo "Targets:"
-	@echo "  pretty-index-check          Run the CI pretty-index check flow locally."
+	@echo "  pretty-index-check          Run the CI pretty-index check flow locally (Bash)."
 	@echo "  pretty-index-check-clean    Same, but discard prior diagnostics first."
+	@echo "  pretty-index-check-pwsh     Run the PowerShell reproduce flow (needs pwsh)."
 	@echo "  pretty-index-diagnostics    Print where diagnostic artifacts are written."
 	@echo "  pretty-index-clean          Remove sibling .pre-check.json / .report.json."
 	@echo ""
-	@echo "Override the input file with: make pretty-index-check INDEX=path/to/pretty-index.json"
+	@echo "Overrides:"
+	@echo "  INDEX=path/to/pretty-index.json     (default: CI matrix path)"
+	@echo "  MATRIX=atomic|stress                (default: atomic; controls artifact prefix)"
 
 pretty-index-check:
-	@scripts/reproduce-ci-pretty-index-check.sh "$(INDEX)"
+	@scripts/reproduce-ci-pretty-index-check.sh --matrix "$(MATRIX)" "$(INDEX)"
 	@$(MAKE) --no-print-directory pretty-index-diagnostics
 
 pretty-index-check-clean:
-	@scripts/reproduce-ci-pretty-index-check.sh --clean "$(INDEX)"
+	@scripts/reproduce-ci-pretty-index-check.sh --clean --matrix "$(MATRIX)" "$(INDEX)"
+	@$(MAKE) --no-print-directory pretty-index-diagnostics
+
+pretty-index-check-pwsh:
+	@pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Matrix "$(MATRIX)" "$(INDEX)"
 	@$(MAKE) --no-print-directory pretty-index-diagnostics
 
 pretty-index-diagnostics:
 	@echo ""
-	@echo "pretty-index diagnostics artifacts:"
+	@echo "pretty-index diagnostics artifacts (matrix: $(MATRIX)):"
 	@echo "  input       : $(INDEX)"
 	@echo "  pre-check   : $(PRE)     (raw generator output, uploaded on CI failure)"
 	@echo "  report JSON : $(REPORT)  (validator --report, uploaded on CI failure)"
 	@echo ""
-	@echo "CI uploads these as: schema-drift-diff-replay-pretty-index-failure-<os>"
+	@if [ "$(MATRIX)" = "stress" ]; then \
+	  echo "CI uploads these as: schema-drift-diff-stress-replay-pretty-index-failure-<os>"; \
+	else \
+	  echo "CI uploads these as: schema-drift-diff-replay-pretty-index-failure-<os>"; \
+	fi
 
 pretty-index-clean:
 	@rm -f -- "$(PRE)" "$(REPORT)"
 	@echo "removed: $(PRE) $(REPORT)"
+
