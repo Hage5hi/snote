@@ -71,7 +71,7 @@ describe("validate-pretty-index.py --auto-migrate stderr snapshots", () => {
     expect(r.stderr).not.toContain("auto-migrating");
     expect(norm(r.stderr, f)).toMatchInlineSnapshot(`
       "validate-pretty-index: schema validation failed for <INDEX> (1 problem(s)):
-        - unsupported schema_version=99 (this validator supports [0, 1]; current=1) — regenerate pretty-index.json with scripts/pretty-replay-summary.py (or re-run the CI \\"append pretty replay-summary to step summary\\" step) to upgrade to schema_version=1; if the file is newer than this validator, update scripts/validate-pretty-index.py (see docs/schema-drift-diff-test-hooks.md)"
+        - unsupported schema_version=99 (this validator supports [0, 1]; current=1) — regenerate pretty-index.json with scripts/pretty-replay-summary.py (or re-run the CI "append pretty replay-summary to step summary" step) to upgrade to schema_version=1; if the file is newer than this validator, update scripts/validate-pretty-index.py (see docs/schema-drift-diff-test-hooks.md)"
     `);
   });
 });
