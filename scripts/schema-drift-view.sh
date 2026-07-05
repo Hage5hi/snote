@@ -148,6 +148,8 @@ while [ $# -gt 0 ]; do
     --strict-manifest)   STRICT_MANIFEST=1; VALIDATE_MANIFEST=1; shift ;;
     --validation-report)   VALIDATION_REPORT="${2:-}"; shift 2 ;;
     --validation-report=*) VALIDATION_REPORT="${1#*=}"; shift ;;
+    --require-valid)       REQUIRE_VALID=1; shift ;;
+
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
