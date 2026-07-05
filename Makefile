@@ -417,10 +417,12 @@ pretty-index-help:
 # All three read the JSON report written by pretty-index-artifacts-verify
 # (path: $(PI_REPORT_PATH)). Require jq.
 .PHONY: pretty-index-mismatch-show pretty-index-mismatch-merge \
-        pretty-index-mismatch-validate
+        pretty-index-mismatch-validate pretty-index-mismatch-summary \
+        pretty-index-mismatch-csv pretty-index-mismatch-diff
 
 # Print a human-friendly per-file table (file, expected, actual, status)
 # from the mismatch report. Use PI_REPORT_PATH=<path> to point elsewhere.
+# Optional PI_PATH_GLOB=<glob> filters rows by .path (e.g. "*.report.json").
 pretty-index-mismatch-show:
 	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
 	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
@@ -428,15 +430,80 @@ pretty-index-mismatch-show:
 	fi
 	@echo "── pretty-index mismatch report: $(PI_REPORT_PATH) ──"
 	@jq -r '"scope=\(.scope)  fail_fast=\(.fail_fast // false)"' -- "$(PI_REPORT_PATH)"
+	@if [ -n "$(PI_PATH_GLOB)" ]; then echo "filter: PI_PATH_GLOB=$(PI_PATH_GLOB)"; fi
 	@echo ""
 	@printf "%-22s  %-42s  %-9s  %-64s  %s\n" ARTIFACT_DIR FILE STATUS EXPECTED ACTUAL
-	@jq -r '.results[] | [ (.artifact_dir // "-"), (.file // "-"), .status, (.expected // "-"), (.actual // "-") ] | @tsv' \
+	@glob='$(PI_PATH_GLOB)'; \
+	 re=$$(printf '%s' "$$glob" | sed -e 's/[.[\^$$+(){}|]/\\&/g' -e 's/\*/.*/g' -e 's/?/./g'); \
+	 jq -r --arg re "$$re" '.results[] | select(($$re == "") or ((.path // .file // "") | test($$re))) | [ (.artifact_dir // "-"), (.file // "-"), .status, (.expected // "-"), (.actual // "-") ] | @tsv' \
 	  -- "$(PI_REPORT_PATH)" \
 	| awk -F'\t' '{printf "%-22s  %-42s  %-9s  %-64s  %s\n", $$1, $$2, $$3, $$4, $$5}'
 	@echo ""
 	@n_mm=$$(jq '[.results[] | select(.status=="MISMATCH")] | length' -- "$(PI_REPORT_PATH)"); \
 	 n_err=$$(jq '[.results[] | select(.status=="dir_missing" or .status=="checksums_missing")] | length' -- "$(PI_REPORT_PATH)"); \
 	 echo "summary: $$n_mm mismatched file(s), $$n_err missing-artifact error(s)"
+
+# Print counts of mismatches per matrix (atomic vs stress) with mismatched
+# vs total files. Exits 3 when any mismatch or missing-artifact error is
+# present, 0 when the report is clean.
+pretty-index-mismatch-summary:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
+	  echo "no mismatch report at $(PI_REPORT_PATH) — verify probably passed" >&2; exit 2; \
+	fi
+	@echo "── mismatch summary: $(PI_REPORT_PATH) ──"
+	@for mx in atomic stress; do \
+	  total=$$(jq --arg m "$$mx" '[.results[] | select((.matrix // "") == $$m or ((.artifact_dir // "") | test($$m)))] | length' -- "$(PI_REPORT_PATH)"); \
+	  mm=$$(jq --arg m "$$mx" '[.results[] | select(((.matrix // "") == $$m or ((.artifact_dir // "") | test($$m))) and .status=="MISMATCH")] | length' -- "$(PI_REPORT_PATH)"); \
+	  err=$$(jq --arg m "$$mx" '[.results[] | select(((.matrix // "") == $$m or ((.artifact_dir // "") | test($$m))) and (.status=="dir_missing" or .status=="checksums_missing"))] | length' -- "$(PI_REPORT_PATH)"); \
+	  echo "  $$mx: $$mm/$$total mismatched  ($$err missing-artifact err)"; \
+	done
+	@total_mm=$$(jq '[.results[] | select(.status=="MISMATCH")] | length' -- "$(PI_REPORT_PATH)"); \
+	 total_err=$$(jq '[.results[] | select(.status=="dir_missing" or .status=="checksums_missing")] | length' -- "$(PI_REPORT_PATH)"); \
+	 total_all=$$(jq '.results | length' -- "$(PI_REPORT_PATH)"); \
+	 echo "  total: $$total_mm/$$total_all mismatched  ($$total_err missing-artifact err)"; \
+	 if [ "$$total_mm" -gt 0 ] || [ "$$total_err" -gt 0 ]; then exit 3; fi
+
+# Export the mismatch JSON report into a CSV file with columns:
+# matrix, artifact_dir, path, expected_hash, actual_hash
+#   PI_REPORT_PATH=<in>  PI_CSV_PATH=<out>  (default: <report>.csv)
+PI_CSV_PATH ?= $(PI_REPORT_PATH).csv
+pretty-index-mismatch-csv:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
+	  echo "no mismatch report at $(PI_REPORT_PATH)" >&2; exit 2; \
+	fi
+	@mkdir -p -- "$$(dirname -- "$(PI_CSV_PATH)")" 2>/dev/null || true
+	@{ echo "matrix,artifact_dir,path,expected_hash,actual_hash"; \
+	   jq -r '.results[] | [ (.matrix // ""), (.artifact_dir // ""), (.path // .file // ""), (.expected // ""), (.actual // "") ] | @csv' \
+	    -- "$(PI_REPORT_PATH)"; \
+	 } > "$(PI_CSV_PATH)"
+	@n=$$(($$(wc -l < "$(PI_CSV_PATH)") - 1)); echo "wrote $$n row(s) -> $(PI_CSV_PATH)"
+
+# Compare current mismatch report against a baseline; print only NEW or
+# CHANGED entries (keyed by artifact_dir + path). Exits 4 if any diffs
+# are present, 0 if the two reports are equivalent.
+#   PI_BASELINE=<path>  PI_REPORT_PATH=<current>
+PI_BASELINE ?= _pretty-index-checksum-mismatch.baseline.json
+pretty-index-mismatch-diff:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@for f in "$(PI_BASELINE)" "$(PI_REPORT_PATH)"; do \
+	  [ -f "$$f" ] || { echo "missing report: $$f" >&2; exit 2; }; \
+	done
+	@echo "── diff: baseline=$(PI_BASELINE)  current=$(PI_REPORT_PATH) ──"
+	@diff_json=$$(jq -n --slurpfile b "$(PI_BASELINE)" --slurpfile c "$(PI_REPORT_PATH)" \
+	  'def key(r): (r.artifact_dir // "") + "\u0000" + (r.path // r.file // ""); \
+	   def idx(rs): reduce rs[] as $$r ({}; .[key($$r)] = $$r); \
+	   ((($$b[0]).results) // []) as $$br | ((($$c[0]).results) // []) as $$cr | \
+	   (idx($$br)) as $$B | (idx($$cr)) as $$C | \
+	   [ $$C | to_entries[] | . as $$e | ($$B[$$e.key]) as $$prev | \
+	     if $$prev == null then {change:"NEW", current:$$e.value} \
+	     elif ($$prev | tostring) != ($$e.value | tostring) then {change:"CHANGED", baseline:$$prev, current:$$e.value} \
+	     else empty end ]'); \
+	 count=$$(echo "$$diff_json" | jq 'length'); \
+	 echo "$$diff_json" | jq -r '.[] | "[\(.change)] \(.current.artifact_dir // "-")/\(.current.path // .current.file // "-")  status=\(.current.status)  expected=\(.current.expected // "-")  actual=\(.current.actual // "-")"'; \
+	 echo "diff entries: $$count"; \
+	 if [ "$$count" -gt 0 ]; then exit 4; fi
 
 # Merge two separately-generated mismatch reports (e.g. produced by
 # per-matrix CI jobs) into one file. Only meaningful for PI_SCOPE=both.
