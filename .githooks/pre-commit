@@ -65,3 +65,33 @@ if echo "$STAGED" | grep -Eq \
     exit 1
   fi
 fi
+
+# ── pretty-index.json schema-drift gate ───────────────────────────────
+# If any staged file could affect the pretty-index.json schema contract
+# (the generator, validator, migrator, self-check, local runner, or the
+# committed pretty-index.json itself), reproduce the CI check locally.
+# Bypass with `git commit --no-verify`.
+if echo "$STAGED" | grep -Eq \
+    -e '^scripts/(validate|migrate|check|reproduce-ci)-pretty-index[^/]*\.(py|sh)$' \
+    -e '^scripts/pretty-replay-summary\.py$' \
+    -e '^scripts/check-pretty-index-local\.sh$' \
+    -e '(^|/)pretty-index\.json$'; then
+  echo "▶ pre-commit: pretty-index schema-drift check"
+  # Only run when the default CI input file actually exists; otherwise
+  # there is nothing to validate (contributors without generator output
+  # should not be blocked).
+  INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
+  if [ -f "$INDEX" ]; then
+    if ! scripts/reproduce-ci-pretty-index-check.sh --clean "$INDEX"; then
+      echo ""
+      echo "❌ pre-commit: pretty-index CI check FAILED."
+      echo "   See the diagnostics block above (or the sibling"
+      echo "   .pre-check.json / .report.json files) for details."
+      echo "   To bypass (not recommended): git commit --no-verify"
+      exit 1
+    fi
+  else
+    echo "  (skipped — no $INDEX present)"
+  fi
+fi
+
