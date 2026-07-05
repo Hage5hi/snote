@@ -94,7 +94,7 @@ if [ "$rc" -ne 0 ]; then
 # In CI this would upload the following artifact and append a link block
 # to \$GITHUB_STEP_SUMMARY:
 #
-#   artifact: schema-drift-diff-replay-pretty-index-failure-<os>
+#   artifact: ${ARTIFACT_PREFIX}-<os>   (matrix: $MATRIX)
 #     - $INDEX
 #     - $PRE   (raw generator output BEFORE --auto-migrate)
 #     - $REPORT (validator --report machine-readable errors)
