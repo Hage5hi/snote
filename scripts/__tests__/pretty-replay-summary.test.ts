@@ -319,3 +319,157 @@ describe("pretty-replay-summary.py schema validation", () => {
     expect(r.stderr).toMatch(/fail_reason must be a string/);
   });
 });
+
+describe("pretty-replay-summary.py IO / usage exit codes", () => {
+  it("returns 4 when the input file does not exist", () => {
+    const r = spawnSync("python3", [PRETTY, "/tmp/does-not-exist-xyz.json"], { encoding: "utf8" });
+    expect(r.status).toBe(4);
+    expect(r.stderr).toMatch(/file not found/);
+  });
+
+  it("returns 6 when the file is not valid JSON", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "bad.json");
+    writeFileSync(p, "{ not json ");
+    const r = spawnSync("python3", [PRETTY, p], { encoding: "utf8" });
+    expect(r.status).toBe(6);
+    expect(r.stderr).toMatch(/cannot parse/);
+  });
+
+  it("returns 6 when top-level JSON is not an object", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "arr.json");
+    writeFileSync(p, "[1,2,3]");
+    const r = spawnSync("python3", [PRETTY, p], { encoding: "utf8" });
+    expect(r.status).toBe(6);
+  });
+
+  it("returns 2 on unknown flag", () => {
+    const r = spawnSync("python3", [PRETTY, "--nope", "/tmp/x.json"], { encoding: "utf8" });
+    expect(r.status).toBe(2);
+    expect(r.stderr).toMatch(/unknown flag/);
+  });
+
+  it("returns 2 with no arguments", () => {
+    const r = spawnSync("python3", [PRETTY], { encoding: "utf8" });
+    expect(r.status).toBe(2);
+  });
+});
+
+describe("pretty-replay-summary.py --fixed-widths deterministic rendering", () => {
+  function pretty(fixture: unknown, args: string[] = []) {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "s.json");
+    writeFileSync(p, JSON.stringify(fixture));
+    return spawnSync("python3", [PRETTY, p, ...args], { encoding: "utf8" });
+  }
+  const base = { mode: "dry-run", fail_reason: "", manifest_mapping: [
+    { manifest_entry: "A", required_file: "/f", role: "r1" },
+    { manifest_entry: "MUCH_LONGER_KEY_NAME", required_file: "/some/other/file.txt", role: "r2" },
+  ]};
+
+  it("--fixed-widths produces identical column widths regardless of content", () => {
+    const a = pretty(base, ["--fixed-widths"]);
+    const b = pretty({
+      ...base,
+      manifest_mapping: [
+        { manifest_entry: "Z", required_file: "/g", role: "r1" },
+        { manifest_entry: "Y", required_file: "/h", role: "r2" },
+      ],
+    }, ["--fixed-widths"]);
+    expect(a.status).toBe(0);
+    expect(b.status).toBe(0);
+    // Header line must be identical byte-for-byte across different inputs.
+    const headerA = a.stdout.split("\n").find(l => l.includes("manifest_entry"));
+    const headerB = b.stdout.split("\n").find(l => l.includes("manifest_entry"));
+    expect(headerA).toBe(headerB);
+    // Explicit widths: entry=40, file=48.
+    expect(headerA).toMatch(/manifest_entry {26} {2}required_file {35} {2}role/);
+  });
+
+  it("--no-color is accepted and does not alter output", () => {
+    const a = pretty(base);
+    const b = pretty(base, ["--no-color"]);
+    expect(a.stdout).toBe(b.stdout);
+  });
+});
+
+describe("pretty-replay-summary.py property/fuzz on malformed manifest_mapping", () => {
+  // Deterministic PRNG so failures reproduce.
+  function rng(seed: number) {
+    let s = seed >>> 0;
+    return () => {
+      s = (s * 1664525 + 1013904223) >>> 0;
+      return s / 0x100000000;
+    };
+  }
+  function writeFixture(f: unknown): string {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "s.json");
+    writeFileSync(p, JSON.stringify(f));
+    return p;
+  }
+  const REQUIRED = ["manifest_entry", "required_file", "role"] as const;
+  const BAD_VALUES: unknown[] = [null, 0, 1, true, false, [], {}, 3.14];
+
+  it("any manifest_mapping entry with a missing or wrong-typed field is rejected (exit 3)", () => {
+    const rand = rng(20260705);
+    for (let i = 0; i < 40; i++) {
+      const entry: Record<string, unknown> = {
+        manifest_entry: "OK", required_file: "/f", role: "r",
+      };
+      // Pick one required key to mutate.
+      const key = REQUIRED[Math.floor(rand() * REQUIRED.length)];
+      if (rand() < 0.5) {
+        delete entry[key]; // missing
+      } else {
+        entry[key] = BAD_VALUES[Math.floor(rand() * BAD_VALUES.length)]; // wrong type
+      }
+      const r = spawnSync("python3", [
+        PRETTY,
+        writeFixture({ mode: "dry-run", fail_reason: "", manifest_mapping: [entry] }),
+      ], { encoding: "utf8" });
+      expect(r.status, `iter ${i} entry=${JSON.stringify(entry)} stderr=${r.stderr}`).toBe(3);
+      expect(r.stderr).toMatch(new RegExp(`manifest_mapping\\[0\\]\\.${key}`));
+    }
+  });
+
+  it("random non-array manifest_mapping shapes are always rejected", () => {
+    const shapes: unknown[] = [
+      {}, { entries: [] }, 42, "oops", true, null,
+    ];
+    for (const shape of shapes) {
+      const r = spawnSync("python3", [
+        PRETTY,
+        writeFixture({ mode: "dry-run", fail_reason: "", manifest_mapping: shape }),
+      ], { encoding: "utf8" });
+      // null => key still present but value null; validator treats it as
+      // non-array. All shapes must fail with schema exit code.
+      expect(r.status, `shape=${JSON.stringify(shape)}`).toBe(3);
+      expect(r.stderr).toMatch(/manifest_mapping must be an array/);
+    }
+  });
+
+  it("fail_reason remains required regardless of manifest_mapping shape", () => {
+    const rand = rng(42);
+    for (let i = 0; i < 20; i++) {
+      // Well-formed mapping, but no fail_reason at all.
+      const mapping = [];
+      const n = 1 + Math.floor(rand() * 3);
+      for (let j = 0; j < n; j++) {
+        mapping.push({ manifest_entry: `E${j}`, required_file: `/f${j}`, role: `r${j}` });
+      }
+      const r = spawnSync("python3", [
+        PRETTY,
+        writeFixture({ mode: "dry-run", manifest_mapping: mapping }),
+      ], { encoding: "utf8" });
+      expect(r.status).toBe(3);
+      expect(r.stderr).toMatch(/fail_reason is missing/);
+    }
+  });
+});
+
