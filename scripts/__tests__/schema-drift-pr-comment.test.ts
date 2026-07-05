@@ -483,3 +483,56 @@ describe("schema-drift-diff: --kind stays consistent across markdown + --json", 
     expect(JSON.parse(js.stdout).matchedAnchors).toEqual([target]);
   });
 });
+
+describe("schema-drift-diff: pattern matchers (compileMatcher, expandKindPatterns)", () => {
+  it("compileMatcher supports exact, glob, and /regex/ forms", () => {
+    expect(compileMatcher("fail-a")("fail-a")).toBe(true);
+    expect(compileMatcher("fail-a")("fail-b")).toBe(false);
+    expect(compileMatcher("fail-chromium-*")("fail-chromium-drift-x")).toBe(true);
+    expect(compileMatcher("fail-chromium-*")("fail-webkit-drift-x")).toBe(false);
+    expect(compileMatcher("fail-?ebkit-*")("fail-webkit-drift-x")).toBe(true);
+    expect(compileMatcher("/^fail-(chromium|webkit)-/")("fail-webkit-drift-x")).toBe(true);
+    expect(compileMatcher("/^fail-firefox/")("fail-webkit-drift-x")).toBe(false);
+  });
+
+  it("expandKindPatterns resolves `*` to all kinds and globs to subsets", () => {
+    expect(expandKindPatterns(["*"]).sort()).toEqual(["extra", "missing", "mistyped", "parseError"]);
+    expect(expandKindPatterns(["parse*"])).toEqual(["parseError"]);
+    expect(expandKindPatterns(["mis*"]).sort()).toEqual(["missing", "mistyped"]);
+    expect(expandKindPatterns(["nope"])).toEqual([]);
+  });
+
+  it("--fail-slug wildcard filters diff output in JSON and markdown", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const js = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "fail-chromium-*"]);
+    expect(js.code).toBe(0);
+    const parsed = JSON.parse(js.stdout);
+    for (const s of parsed.matchedAnchors) expect(s).toMatch(/^fail-chromium-/);
+    expect(parsed.matchedAnchors.length).toBeGreaterThan(0);
+  });
+});
+
+describe("schema-drift-diff: --json-out + --validate-json", () => {
+  it("--json-out writes the payload to a file (implies --json) and validates against the schema", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut, "--validate-json"]);
+    expect(code).toBe(0);
+    expect(stderr).toContain("schema-drift diff (json):");
+    expect(stderr).toContain("validate-json: OK");
+    const parsed = JSON.parse(_readFileSync(jsonOut, "utf8"));
+    expect(parsed).toHaveProperty("totals.matched");
+    expect(parsed).toHaveProperty("matchedAnchors");
+    expect(Array.isArray(parsed.added)).toBe(true);
+  });
+
+  it("--validate-json without --json exits 2 with a helpful error", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--validate-json"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("--validate-json requires --json");
+  });
+});
