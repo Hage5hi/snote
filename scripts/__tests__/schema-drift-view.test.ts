@@ -190,10 +190,6 @@ describe("scripts/schema-drift-view.sh", () => {
   });
 
   describe("manifest output", () => {
-    const { mkdtempSync, readFileSync, readdirSync } = require("node:fs") as typeof import("node:fs");
-    const { tmpdir } = require("node:os") as typeof import("node:os");
-    const { join } = require("node:path") as typeof import("node:path");
-
     const withDir = (extra: string[]) => {
       const dir = mkdtempSync(join(tmpdir(), "sdv-manifest-"));
       const res = run(["--dry-run", "--manifest-dir", dir, ...extra], { OUT: "/tmp/nope-not-real" });
