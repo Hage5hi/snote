@@ -242,7 +242,7 @@ jobs:
           TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-30000}"
           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
             -t "$PATTERN" \
-            --test-timeout="$TIMEOUT_MS" \
+            --testTimeout="$TIMEOUT_MS" \
             --reporter=verbose \
             > >(tee artifacts/schema-drift-diff/vitest.stdout.log) \
             2> >(tee artifacts/schema-drift-diff/vitest.stderr.log >&2)
@@ -335,7 +335,7 @@ jobs:
             echo "::group::stress iteration $i"
             bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
               -t "$PATTERN" \
-              --test-timeout="$TIMEOUT_MS" \
+              --testTimeout="$TIMEOUT_MS" \
               --reporter=verbose \
               > >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stdout.log") \
               2> >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stderr.log" >&2)

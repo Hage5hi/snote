@@ -53,7 +53,7 @@ SCHEMA_DRIFT_DIFF_FUZZ_SEED="$SEED" \
 SCHEMA_DRIFT_DIFF_READER_DURATION_MS="$READER_MS" \
   bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
     -t "$PATTERN" \
-    --test-timeout="$TIMEOUT_MS" \
+    --testTimeout="$TIMEOUT_MS" \
     --reporter=verbose \
     > >(tee "$OUT/vitest.stdout.log") \
     2> >(tee "$OUT/vitest.stderr.log" >&2)
