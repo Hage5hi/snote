@@ -43,7 +43,7 @@ jobs:
       # merge) instead of hiding inside the aggregate `bun run test` line.
       - name: schema-drift-view.sh unit tests
         if: always()
-        run: bunx vitest run scripts/__tests__/schema-drift-view.test.ts --reporter=verbose
+        run: bunx vitest run scripts/__tests__/schema-drift-view.test.ts scripts/__tests__/schema-drift-pr-comment.test.ts --reporter=verbose
       # Fixture-based end-to-end check for --validate-manifest --strict-manifest:
       # generates a known-good per-browser + combined manifest via the script
       # itself, then re-validates them in strict mode and asserts the JSON
@@ -158,6 +158,20 @@ jobs:
             echo ""
             echo "_Artifacts: \`reports/_ci/schema-drift-fixture/validation-report.json\` and \`pr-comment.md\` are uploaded as the \`schema-drift-fixture-validation\` artifact (see docs/schema-drift-ci-artifacts.md)._"
           } >> "$GITHUB_STEP_SUMMARY"
+      # Reproducibility check: the local `schema-drift-pr-comment.ts`
+      # generator MUST produce the same Markdown body that the CI
+      # annotation step wrote to pr-comment.md. If they diverge, the
+      # local debugging command has drifted from CI and any offline
+      # repro will lie — fail loudly so it gets fixed immediately.
+      - name: schema-drift pr-comment reproducibility check
+        if: always()
+        run: |
+          set -eu
+          report=reports/_ci/schema-drift-fixture/validation-report.json
+          expected=reports/_ci/schema-drift-fixture/pr-comment.md
+          [ -f "$report" ] && [ -f "$expected" ] || { echo "no report/comment; skipping"; exit 0; }
+          bun scripts/schema-drift-pr-comment.ts "$report" --out /tmp/pr-comment-local.md
+          diff -u "$expected" /tmp/pr-comment-local.md
       # Always upload the fixture manifests + validation-report.json +
       # generated PR-comment markdown, even on failure, so reviewers can
       # download the exact inputs that triggered the annotations above.
