@@ -505,12 +505,16 @@ pretty-index-mismatch-summary-json-merge:
 	@if [ -z "$(PI_SUMMARY_INPUTS)" ]; then \
 	  echo "usage: make pretty-index-mismatch-summary-json-merge PI_SUMMARY_INPUTS='f1.json f2.json' [PI_SUMMARY_MERGED_PATH=out.json]" >&2; exit 2; \
 	fi
-	@files=""; for f in $(PI_SUMMARY_INPUTS); do \
+	@files=""; names_json="["; sep=""; \
+	for f in $(PI_SUMMARY_INPUTS); do \
 	  [ -f "$$f" ] || { echo "missing input: $$f" >&2; exit 2; }; \
 	  files="$$files $$f"; \
+	  esc=$$(printf '%s' "$$f" | sed 's/\\/\\\\/g; s/"/\\"/g'); \
+	  names_json="$$names_json$$sep\"$$esc\""; sep=","; \
 	done; \
+	names_json="$$names_json]"; \
 	mkdir -p -- "$$(dirname -- "$(PI_SUMMARY_MERGED_PATH)")" 2>/dev/null || true; \
-	jq -s 'def zero: {total:0,mismatched:0,missing:0}; def add(a;b): {total:((a.total//0)+(b.total//0)), mismatched:((a.mismatched//0)+(b.mismatched//0)), missing:((a.missing//0)+(b.missing//0))}; {schema:"pretty-index-mismatch-summary-merged/v1", merged_from:[$$ARGS.positional[]], sources:[.[] as $$s | {scope:($$s.scope // "unknown"), totals:($$s.totals // zero)}], matrices:{atomic: (reduce .[] as $$s (zero; add(.; ($$s.matrices.atomic // zero)))), stress: (reduce .[] as $$s (zero; add(.; ($$s.matrices.stress // zero))))}, totals: (reduce .[] as $$s (zero; add(.; ($$s.totals // zero))))}' --args $$files -- $$files > "$(PI_SUMMARY_MERGED_PATH)"
+	jq -s --argjson names "$$names_json" 'def zero: {total:0,mismatched:0,missing:0}; def add(a;b): {total:((a.total//0)+(b.total//0)), mismatched:((a.mismatched//0)+(b.mismatched//0)), missing:((a.missing//0)+(b.missing//0))}; . as $$in | {schema:"pretty-index-mismatch-summary-merged/v1", merged_from:$$names, sources:[range(0; $$in|length) as $$i | {path:$$names[$$i], scope:($$in[$$i].scope // "unknown"), totals:($$in[$$i].totals // zero)}], matrices:{atomic: (reduce .[] as $$s (zero; add(.; ($$s.matrices.atomic // zero)))), stress: (reduce .[] as $$s (zero; add(.; ($$s.matrices.stress // zero))))}, totals: (reduce .[] as $$s (zero; add(.; ($$s.totals // zero))))}' -- $$files > "$(PI_SUMMARY_MERGED_PATH)"
 	@echo "merged $(words $(PI_SUMMARY_INPUTS)) input(s) -> $(PI_SUMMARY_MERGED_PATH)"
 	@jq -r '"  matrices.atomic.mismatched=\(.matrices.atomic.mismatched)  matrices.stress.mismatched=\(.matrices.stress.mismatched)  totals.mismatched=\(.totals.mismatched)/\(.totals.total)"' -- "$(PI_SUMMARY_MERGED_PATH)"
 
