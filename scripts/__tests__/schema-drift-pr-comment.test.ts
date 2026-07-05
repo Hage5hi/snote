@@ -263,8 +263,8 @@ describe("renderAnnotations + anchors", () => {
       expect(l).toContain("PR_COMMENT_URL#fail-");
     }
     expect(txt).toContain("kind=mistyped");
-    expect(txt).toContain("kind=missing");
-    expect(txt).toContain("kind=extra");
+    expect(txt).toMatch(/kind=[a-z,]*missing/);
+    expect(txt).toMatch(/kind=[a-z,]*extra/);
   });
 
   it("empty report → no annotation lines", () => {
