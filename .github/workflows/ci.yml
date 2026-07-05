@@ -150,6 +150,7 @@ jobs:
             reports/_ci/schema-drift-fixture/
             reports/_ci/schema-drift-fixture/validation-report.json
             reports/_ci/schema-drift-fixture/pr-comment.md
+            reports/_ci/schema-drift-fixture/annotations.txt
           if-no-files-found: ignore
           retention-days: 14
       # Post the generated Markdown body as a PR comment on pull_request
