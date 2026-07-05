@@ -2,7 +2,7 @@
 // and filtering behavior without touching real drift bundles by using
 // --dry-run (which prints MATCH/SKIP lines instead of running viewers).
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
