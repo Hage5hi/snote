@@ -452,13 +452,8 @@ pretty-index-mismatch-merge:
 	  [ -f "$$f" ] || { echo "missing input report: $$f" >&2; exit 2; }; \
 	done
 	@mkdir -p -- "$$(dirname -- "$(PI_REPORT_PATH)")" 2>/dev/null || true
-	@jq -s '{ \
-	    schema:"pretty-index-checksum-mismatch/v1", \
-	    scope:"both", \
-	    fail_fast: ((.[0].fail_fast // false) or (.[1].fail_fast // false)), \
-	    merged_from: [ "$(ATOMIC_REPORT)", "$(STRESS_REPORT)" ], \
-	    results: ((.[0].results // []) + (.[1].results // [])) \
-	  }' -- "$(ATOMIC_REPORT)" "$(STRESS_REPORT)" > "$(PI_REPORT_PATH)"
+	@jq -s '{schema:"pretty-index-checksum-mismatch/v1", scope:"both", fail_fast: ((.[0].fail_fast // false) or (.[1].fail_fast // false)), merged_from: ["$(ATOMIC_REPORT)","$(STRESS_REPORT)"], results: ((.[0].results // []) + (.[1].results // []))}' -- "$(ATOMIC_REPORT)" "$(STRESS_REPORT)" > "$(PI_REPORT_PATH)"
+
 	@echo "merged $(ATOMIC_REPORT) + $(STRESS_REPORT) -> $(PI_REPORT_PATH)"
 	@jq -r '"  scope=\(.scope)  results=\(.results | length)  merged_from=\(.merged_from | length) file(s)"' \
 	  -- "$(PI_REPORT_PATH)"
