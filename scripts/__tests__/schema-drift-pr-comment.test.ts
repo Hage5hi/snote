@@ -9,8 +9,10 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  renderAnnotations,
   renderPrComment,
   selectFailures,
+  anchorFor,
   type Report,
 } from "../schema-drift-pr-comment";
 import { renderSummary } from "../schema-drift-summary";
