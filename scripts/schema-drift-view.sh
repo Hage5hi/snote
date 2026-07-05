@@ -55,6 +55,7 @@ OUT="${OUT:-_schema_drift}"
 FILTER="all"
 FILE_MATCHES=()     # each entry is one substring
 VIEWER="auto"
+DRY_RUN=0
 
 add_matches() {
   # Split "$1" on commas so `--file a,b` expands to two entries.
@@ -72,6 +73,7 @@ while [ $# -gt 0 ]; do
     --type=*)   FILTER="${1#*=}"; shift ;;
     --viewer)   VIEWER="${2:-auto}"; shift 2 ;;
     --viewer=*) VIEWER="${1#*=}"; shift ;;
+    --dry-run)  DRY_RUN=1; shift ;;
     -h|--help)  usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
@@ -80,7 +82,9 @@ done
 [ "$FILTER" = "schema" ] && FILTER="schemas"
 [ "$FILTER" = "type" ]   && FILTER="types"
 
-if [ ! -d "$OUT" ]; then
+# --dry-run must work without a bundle on disk so it's usable as a
+# planning/preview step and in unit tests. All other modes require OUT.
+if [ ! -d "$OUT" ] && [ "$DRY_RUN" != "1" ]; then
   echo "no drift bundle at $OUT — run: bun run schema-guard" >&2
   exit 1
 fi
