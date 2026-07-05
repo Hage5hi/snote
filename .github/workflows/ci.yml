@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly stress run for schema-drift-diff --json-out concurrency
+    # (see schema-drift-diff-stress-nightly job below).
+    - cron: '17 5 * * *'
   workflow_dispatch:
     inputs:
       sticky_cleanup_strategy:
