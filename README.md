@@ -821,6 +821,32 @@ git commit --no-verify                             # skip every pre-commit hook 
 An unknown `PRETTY_INDEX_HOOK_MATRIX` value aborts the hook with exit
 code **2** and prints `PRETTY_INDEX_HOOK_MATRIX must be atomic|stress`.
 
+#### `PRETTY_INDEX_HOOK_DRY_RUN=1`
+
+Prints exactly what the hook *would* run — the reproduce command, the
+expected diagnostic paths, and the CI artifact prefix for the current
+`PRETTY_INDEX_HOOK_MATRIX` — then exits **0** without invoking the
+reproduce script and without creating or modifying any diagnostic
+artifacts. A bogus `PRETTY_INDEX_HOOK_MATRIX` still aborts fail-fast
+with exit **2** before dry-run inspection.
+
+Paths printed:
+
+- `input     : artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json`
+- `pre-check : ….pre-check.json`
+- `report    : ….report.json`
+- CI artifact prefix (`schema-drift-diff-replay-…` for atomic, `…-stress-replay-…` for stress)
+- Documented exit codes (`0/1/2/3/4`)
+
+Copy-paste:
+
+```sh
+PRETTY_INDEX_HOOK_DRY_RUN=1 PRETTY_INDEX_HOOK_FORCE=1 .githooks/pre-commit
+PRETTY_INDEX_HOOK_DRY_RUN=1 PRETTY_INDEX_HOOK_MATRIX=stress PRETTY_INDEX_HOOK_FORCE=1 .githooks/pre-commit
+make pretty-index-hook-dry-run           # atomic + stress in one shot
+```
+
+
 ### Exit codes reference
 
 `scripts/reproduce-ci-pretty-index-check.sh` / `.ps1` / `make
