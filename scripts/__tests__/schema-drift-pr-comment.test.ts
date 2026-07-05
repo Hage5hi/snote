@@ -1663,7 +1663,7 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
       writeFileSync(after, JSON.stringify(genReport()));
       const jsonOut = join(sub, "out.json");
       const run = bun(DIFF_SCRIPT, [before, after, "--json-out", jsonOut, "--validate-json"]);
-      expect(run.code, `case ${i} stderr: ${run.stderr}`).toBe(0);
+      expect(run.code, `case ${i} (seed=${initialSeed}) stderr: ${run.stderr}`).toBe(0);
       const payload = JSON.parse(_readFileSync(jsonOut, "utf8"));
       const ok = validate(payload);
       expect(validate.errors ?? []).toEqual([]);
