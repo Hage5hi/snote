@@ -207,8 +207,89 @@ export function renderDiffMarkdown(before: Report, after: Report, opts: DiffOpts
 // Exit codes:
 //   0 = success   2 = bad CLI usage   3 = report file missing / unreadable
 //   4 = report file is not valid JSON   5 = report file is missing required fields
-function loadReport(path: string, label: string): Report {
+function loadReport(path: string, label: string, jsonErrors = false): Report {
+  const fail = (code: number, kind: string, message: string, extra: Record<string, unknown> = {}, fix = "") => {
+    if (jsonErrors) {
+      process.stderr.write(
+        JSON.stringify({ error: kind, code, label, path, message, fix, ...extra }, null, 2) + "\n",
+      );
+    } else {
+      console.error(`error: ${message}` + (fix ? `\n  fix: ${fix}` : ""));
+    }
+    process.exit(code);
+  };
   let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch (e: any) {
+    fail(
+      3, "report-unreadable",
+      `cannot read ${label} report at "${path}": ${e?.code ?? e?.message ?? e}`,
+      { errno: e?.code ?? null },
+      `pass the path to a saved validation-report.json, or download it: gh run download <run-id> -n schema-drift-fixture-validation`,
+    );
+  }
+  let parsed: unknown;
+  try { parsed = JSON.parse(raw!); }
+  catch (e: any) {
+    fail(
+      4, "report-invalid-json",
+      `${label} report at "${path}" is not valid JSON: ${e?.message ?? e}`,
+      {},
+      `regenerate with \`schema-drift-view.sh --validation-report <path>\``,
+    );
+  }
+  const r = parsed as Partial<Report>;
+  const problems: string[] = [];
+  if (!r || typeof r !== "object") problems.push("root is not an object");
+  if (r && typeof (r as any).strict !== "boolean") problems.push("`strict` (boolean) is missing");
+  if (!r || typeof r.totals !== "object" || r.totals === null) problems.push("`totals` (object) is missing");
+  else {
+    for (const k of ["checked", "ok", "invalid"] as const)
+      if (typeof (r.totals as any)[k] !== "number") problems.push(`\`totals.${k}\` (number) is missing`);
+  }
+  if (!Array.isArray(r?.files)) problems.push("`files` (array) is missing");
+  if (problems.length) {
+    const receivedKeys = r && typeof r === "object" ? Object.keys(r as object) : [];
+    const expected = ["strict", "totals", "files"] as const;
+    const missingTop = expected.filter((k) => !receivedKeys.includes(k));
+    const checklist = expected.map((k) => ({ key: k, present: receivedKeys.includes(k) }));
+    if (jsonErrors) {
+      process.stderr.write(
+        JSON.stringify(
+          {
+            error: "report-missing-fields",
+            code: 5, label, path,
+            message: `${label} report at "${path}" is missing required fields`,
+            problems,
+            receivedTopLevelKeys: receivedKeys,
+            missingTopLevelKeys: missingTop,
+            expectedChecklist: checklist,
+            expectedShape: "{ strict: boolean, totals: { checked, ok, invalid }, files: [...] }",
+            fix: "this file must be the JSON produced by `schema-drift-view.sh --validation-report`",
+          },
+          null,
+          2,
+        ) + "\n",
+      );
+    } else {
+      const clText = expected
+        .map((k) => `    ${receivedKeys.includes(k) ? "[x]" : "[ ]"} ${k}`)
+        .join("\n");
+      console.error(
+        `error: ${label} report at "${path}" is missing required fields:\n` +
+          problems.map((p) => `  - ${p}`).join("\n") + "\n" +
+          `  received top-level keys: ${receivedKeys.length ? receivedKeys.join(", ") : "(none)"}\n` +
+          (missingTop.length ? `  missing top-level keys: ${missingTop.join(", ")}\n` : "") +
+          `  expected schema checklist:\n${clText}\n` +
+          `  fix: this file must be the JSON produced by \`schema-drift-view.sh --validation-report\`.\n` +
+          `       Expected shape: { strict: boolean, totals: { checked, ok, invalid }, files: [...] }`,
+      );
+    }
+    process.exit(5);
+  }
+  return r as Report;
+}
   try {
     raw = readFileSync(path, "utf8");
   } catch (e: any) {
