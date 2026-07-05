@@ -105,6 +105,11 @@ while [ $# -gt 0 ]; do
     --viewer=*)   VIEWER="${1#*=}"; shift ;;
     --dry-run)    DRY_RUN=1; shift ;;
     --verbose|-v) VERBOSE=1; shift ;;
+    --manifest-dir)      MANIFEST_DIR="${2:-}"; shift 2 ;;
+    --manifest-dir=*)    MANIFEST_DIR="${1#*=}"; shift ;;
+    --manifest-prefix)   MANIFEST_PREFIX="${2:-schema-drift-manifest}"; shift 2 ;;
+    --manifest-prefix=*) MANIFEST_PREFIX="${1#*=}"; shift ;;
+    --combined-manifest) COMBINED_MANIFEST=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
