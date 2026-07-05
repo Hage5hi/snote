@@ -928,14 +928,15 @@ jobs:
             const enforce=process.env.E2E_RESULT==="failure";
             let bad=0;
             for (const b of browsers) {
-              const missing=req.filter(name=>{
-                const hit=(b.files||[]).find(f=>f.name===name);
-                return !hit || !hit.present;
-              });
-              if (missing.length) {
-                for (const m of missing) {
-                  console.log(`::${enforce?"error":"warning"} title=live-region ${b.browser} missing required artifact::${m}`);
-                }
+              for (const name of req) {
+                const entry=(b.files||[]).find(f=>f.name===name) || {name,present:false,path:null};
+                const missing=!entry.present;
+                if (!missing) continue;
+                const level=enforce?"error":"warning";
+                const entryJson=JSON.stringify(entry).replace(/,/g,"%2C").replace(/:/g,"%3A");
+                // Annotation includes: browser, expected filename, and the
+                // manifest entry ({name,present,path}) that triggered the miss.
+                console.log(`::${level} title=live-region missing artifact [browser=${b.browser}] [expected=${name}]::browser=${b.browser} expected=${name} entry=${entryJson}`);
                 if (enforce) bad++;
               }
             }

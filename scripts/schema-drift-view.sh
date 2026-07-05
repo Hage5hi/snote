@@ -37,6 +37,15 @@ Flags:
                                  Default: schema-drift-manifest
   --combined-manifest            Also write a single combined manifest across all
                                  selected browsers (requires --manifest-dir).
+  --require <list>               Comma-separated (or repeatable) list of expected
+                                 CI artifact filenames (e.g., trace.zip,failure.png)
+                                 that downstream CI should require per matched
+                                 browser. Persisted into the manifest as
+                                 `requiredArtifacts`. Default: empty.
+  --validate-manifest            Instead of running diff/viewer, validate every
+                                 <prefix>-*.json in --manifest-dir for the required
+                                 top-level keys and exit non-zero on any missing
+                                 key. Requires --manifest-dir.
   -h, --help                     Show this help.
 
 Env:
@@ -80,6 +89,8 @@ VERBOSE=0
 MANIFEST_DIR=""
 MANIFEST_PREFIX="schema-drift-manifest"
 COMBINED_MANIFEST=0
+REQUIRED_ARTIFACTS=()   # expected CI artifact filenames per browser
+VALIDATE_MANIFEST=0
 MATCHED_BASES=()    # populated by show() as it visits each base
 
 add_to() {
@@ -110,6 +121,9 @@ while [ $# -gt 0 ]; do
     --manifest-prefix)   MANIFEST_PREFIX="${2:-schema-drift-manifest}"; shift 2 ;;
     --manifest-prefix=*) MANIFEST_PREFIX="${1#*=}"; shift ;;
     --combined-manifest) COMBINED_MANIFEST=1; shift ;;
+    --require)    add_to REQUIRED_ARTIFACTS "${2:-}"; shift 2 ;;
+    --require=*)  add_to REQUIRED_ARTIFACTS "${1#*=}"; shift ;;
+    --validate-manifest) VALIDATE_MANIFEST=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
@@ -119,6 +133,41 @@ done
 [ "$FILTER" = "type" ]   && FILTER="types"
 
 vlog() { [ "$VERBOSE" = "1" ] && echo "[verbose] $*" >&2 || true; }
+
+# --validate-manifest short-circuits the whole pipeline: verify every
+# <prefix>-*.json under --manifest-dir has the required top-level keys,
+# print a summary, and exit BEFORE any diff/viewer step runs.
+if [ "$VALIDATE_MANIFEST" = "1" ]; then
+  if [ -z "$MANIFEST_DIR" ]; then
+    echo "--validate-manifest requires --manifest-dir <dir>" >&2; exit 2
+  fi
+  if [ ! -d "$MANIFEST_DIR" ]; then
+    echo "--validate-manifest: no such dir: $MANIFEST_DIR" >&2; exit 1
+  fi
+  REQUIRED_KEYS=(browser browsers combined generatedAt type viewer \
+    resolvedViewerCommand matches excludes expected matched requiredArtifacts)
+  bad=0; count=0
+  shopt -s nullglob
+  for f in "$MANIFEST_DIR/${MANIFEST_PREFIX}"-*.json; do
+    count=$((count+1))
+    missing=()
+    for k in "${REQUIRED_KEYS[@]}"; do
+      grep -q "\"$k\"[[:space:]]*:" "$f" || missing+=("$k")
+    done
+    if [ "${#missing[@]}" -gt 0 ]; then
+      echo "INVALID $f — missing keys: ${missing[*]}" >&2
+      bad=$((bad+1))
+    else
+      echo "OK      $f"
+    fi
+  done
+  shopt -u nullglob
+  if [ "$count" = "0" ]; then
+    echo "--validate-manifest: no manifests matched ${MANIFEST_PREFIX}-*.json in $MANIFEST_DIR" >&2
+    exit 1
+  fi
+  [ "$bad" -gt 0 ] && exit 1 || exit 0
+fi
 
 # --dry-run must work without a bundle on disk so it's usable as a
 # planning/preview step and in unit tests. All other modes require OUT.
@@ -235,7 +284,8 @@ echo ""
 files_str="${FILE_MATCHES[*]:-<none>}"
 excludes_str="${FILE_EXCLUDES[*]:-<none>}"
 browsers_str="${BROWSERS[*]:-<all>}"
-echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], exclude=[${excludes_str}], browsers=[${browsers_str}], verbose=${VERBOSE})"
+required_str="${REQUIRED_ARTIFACTS[*]:-<none>}"
+echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], exclude=[${excludes_str}], browsers=[${browsers_str}], required=[${required_str}], verbose=${VERBOSE})"
 
 # ── JSON manifest emission ────────────────────────────────────────
 # Enabled when --manifest-dir is set. One file per selected browser
@@ -301,6 +351,7 @@ if [ -n "$MANIFEST_DIR" ]; then
       printf '  "matches": %s,\n'         "$(json_arr "${FILE_MATCHES[@]:-}")"
       printf '  "excludes": %s,\n'        "$(json_arr "${FILE_EXCLUDES[@]:-}")"
       printf '  "expected": %s,\n'        "$(json_arr "${EXPECTED_BASES[@]}")"
+      printf '  "requiredArtifacts": %s,\n' "$(json_arr "${REQUIRED_ARTIFACTS[@]:-}")"
       printf '  "matched": %s\n'          "$(json_arr "${MATCHED_UNIQUE[@]:-}")"
       printf '}\n'
     } > "$path"
