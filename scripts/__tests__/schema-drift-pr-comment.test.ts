@@ -403,3 +403,51 @@ describe("schema-drift-diff: --fail-slug + JSON matchedAnchors", () => {
   });
 });
 });
+
+describe("schema-drift-diff: comma-separated --fail-slug", () => {
+  it("accepts a comma-separated list equivalent to repeated --fail-slug", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const s1 = anchorFor(FAILING.files.find((f) => f.browser === "chromium")!);
+    const s2 = anchorFor(FAILING.files.find((f) => f.browser === "webkit")!);
+    const repeated = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", s1, "--fail-slug", s2]);
+    const csv = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", `${s1},${s2}`]);
+    const csvEq = bun(DIFF_SCRIPT, [p, p, "--json", `--fail-slug=#${s1},#${s2}`]);
+    expect(repeated.code).toBe(0);
+    expect(csv.code).toBe(0);
+    expect(csvEq.code).toBe(0);
+    const a = JSON.parse(repeated.stdout).matchedAnchors.sort();
+    const b = JSON.parse(csv.stdout).matchedAnchors.sort();
+    const c = JSON.parse(csvEq.stdout).matchedAnchors.sort();
+    expect(b).toEqual(a);
+    expect(c).toEqual(a);
+    expect(a).toEqual([s1, s2].sort());
+  });
+});
+
+describe("schema-drift-diff: --kind stays consistent across markdown + --json", () => {
+  it("--kind mistyped selects the same failures in md and json (both exit 0)", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const md = bun(DIFF_SCRIPT, [p, p, "--kind", "mistyped"]);
+    const js = bun(DIFF_SCRIPT, [p, p, "--kind", "mistyped", "--json"]);
+    expect(md.code).toBe(0);
+    expect(js.code).toBe(0);
+    const parsed = JSON.parse(js.stdout);
+    const target = anchorFor(FAILING.files.find((f) => f.browser === "chromium")!);
+    expect(parsed.matchedAnchors).toEqual([target]);
+    expect(md.stdout).toContain(`#${target}`);
+    const webkit = anchorFor(FAILING.files.find((f) => f.browser === "webkit")!);
+    expect(md.stdout).not.toContain(`#${webkit}`);
+    expect(parsed.matchedAnchors).not.toContain(webkit);
+  });
+
+  it("--kind and --fail-slug can be combined and both narrow the output", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const target = anchorFor(FAILING.files.find((f) => f.browser === "chromium")!);
+    const js = bun(DIFF_SCRIPT, [p, p, "--kind", "mistyped", "--fail-slug", target, "--json"]);
+    expect(js.code).toBe(0);
+    expect(JSON.parse(js.stdout).matchedAnchors).toEqual([target]);
+  });
+});
