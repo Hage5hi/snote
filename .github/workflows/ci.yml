@@ -807,6 +807,11 @@ jobs:
             else
               status="⚠️ missing"
               rel="—"
+              # Surface each missing expected artifact as a GitHub Actions
+              # `::warning::` so it lands in the run's annotations pane in
+              # addition to the summary table below. One annotation per
+              # (browser, expected filename) — matches the summary row.
+              echo "::warning title=live-region ${BROWSER} missing artifact::${f} (expected under test-results/*${BROWSER}*/${f})"
             fi
             echo "| $status | \`$f\` | \`$rel\` |" >> "$GITHUB_STEP_SUMMARY"
             echo "[manifest ${BROWSER}] $status  $f  $rel"
