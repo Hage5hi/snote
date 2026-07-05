@@ -1,0 +1,14 @@
+{
+  "browser": "<all>",
+  "browsers": ["<all>"],
+  "combined": false,
+  "generatedAt": "2026-07-05T06:54:33Z",
+  "type": "all",
+  "viewer": "cat",
+  "resolvedViewerCommand": "pretty(cat) < <base>.diff",
+  "matches": [""],
+  "excludes": [""],
+  "expected": ["focus-trap-inspect-report.schema.json","focus-trap-inspect-diff.schema.json","focus-trap-inspect-schema.types.gen.ts"],
+  "requiredArtifacts": [""],
+  "matched": ["focus-trap-inspect-report.schema.json","focus-trap-inspect-diff.schema.json","focus-trap-inspect-schema.types.gen.ts"]
+}
