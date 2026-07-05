@@ -196,7 +196,7 @@ pretty-index-artifacts-verify:
 	  if [ ! -f "$$dir/pretty-index.checksums.sha256" ]; then \
 	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; \
 	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
-	    printf '{"dir":"%s","status":"checksums_missing"}' "$$dir" >> "$$report.tmp"; \
+	    printf '{"dir":"%s","artifact_dir":"%s","status":"checksums_missing"}' "$$dir" "$$(basename -- "$$dir")" >> "$$report.tmp"; \
 	    rc=2; [ "$$fail_fast" = "1" ] && stop=1; continue; \
 	  fi; \
 	  echo "==> verifying $$dir"; \
