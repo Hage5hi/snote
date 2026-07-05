@@ -1660,29 +1660,49 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
   });
 
   it.skipIf(isWindows)(
-    "--json-out with a symlink pointing to a directory fails with exit 7 and the exact cleanup line",
+    "--json-out with a symlink pointing to a directory: replaces the symlink entry on success and, on forced failure, exits 7 with the exact cleanup line and leaves the target dir untouched",
     () => {
-      const { symlinkSync, mkdirSync, readdirSync, existsSync } = require("node:fs");
+      const { symlinkSync, mkdirSync, readdirSync, existsSync, lstatSync, unlinkSync } =
+        require("node:fs");
       const dir = tmp();
       const p = writeReport(dir, FAILING);
       const targetDir = join(dir, "target-is-a-dir");
       mkdirSync(targetDir);
+      writeFileSync(join(targetDir, "sentinel"), "KEEP\n");
       const link = join(dir, "unsafe-link.json");
       symlinkSync(targetDir, link);
 
-      const run = bun(DIFF_SCRIPT, [p, p, "--json-out", link]);
-      expect(run.code).toBe(7);
-      expect(run.stderr).toContain(`cannot write json-out to "${link}"`);
-      // renameSync over a symlink→dir fails after the .tmp write, so the
-      // recovery path unlinks the partial temp file (exact contract wording).
-      expect(run.stderr).toMatch(/cleanup: removed partial temp file ".*\.\d+\.tmp"/);
-      expect(run.stderr).toContain("fix: check that the parent directory exists and is writable");
-      // Target directory is untouched; no stale .tmp siblings remain.
+      // Success path: renameSync atomically replaces the symlink entry with a
+      // regular file — documents current behavior and proves the atomicity
+      // guarantee holds even for symlink→dir destinations.
+      const ok = bun(DIFF_SCRIPT, [p, p, "--json-out", link]);
+      expect(ok.code).toBe(0);
+      expect(lstatSync(link).isFile()).toBe(true);
       expect(existsSync(targetDir)).toBe(true);
+      expect(_readFileSync(join(targetDir, "sentinel"), "utf8")).toBe("KEEP\n");
+      expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+
+      // Failure path: rebuild the symlink and force a mid-write failure. The
+      // atomicWrite contract must hold: exit 7, exact three-line stderr with
+      // the `removed partial temp file` cleanup line, no leftover .tmp, and
+      // the symlink target directory is byte-for-byte unchanged.
+      try { unlinkSync(link); } catch {}
+      symlinkSync(targetDir, link);
+      const fail = bun(DIFF_SCRIPT, [p, p, "--json-out", link], {
+        SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL: "1",
+      });
+      expect(fail.code).toBe(7);
+      expect(fail.stderr).toContain(`cannot write json-out to "${link}"`);
+      expect(fail.stderr).toMatch(/cleanup: removed partial temp file ".*\.\d+\.tmp"/);
+      expect(fail.stderr).toContain("fix: check that the parent directory exists and is writable");
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(existsSync(targetDir)).toBe(true);
+      expect(_readFileSync(join(targetDir, "sentinel"), "utf8")).toBe("KEEP\n");
       expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
     },
   );
 });
+
 
 
 
