@@ -328,15 +328,40 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts/schema-drift-diff-stress
+          DEFAULT_PATTERN='concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink'
+          PATTERN="${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-$DEFAULT_PATTERN}"
+          TIMEOUT_MS="${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-60000}"
           for i in $(seq 1 "${SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS}"); do
             echo "::group::stress iteration $i"
             bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
-              -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink" \
+              -t "$PATTERN" \
+              --test-timeout="$TIMEOUT_MS" \
               --reporter=verbose \
               > >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stdout.log") \
               2> >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stderr.log" >&2)
             echo "::endgroup::"
           done
+      - name: print replay block on failure
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          SEED="$(grep -hoE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff-stress/*.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
+          SEED="${SEED:-${SCHEMA_DRIFT_DIFF_FUZZ_SEED:-<unset>}}"
+          echo "::group::schema-drift-diff replay block (copy verbatim)"
+          cat <<EOF
+          # ---- schema-drift-diff --json-out stress replay block ----
+          SCHEMA_DRIFT_DIFF_FUZZ_SEED=${SEED}
+          SCHEMA_DRIFT_DIFF_READER_DURATION_MS=${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}
+          SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS=${SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS}
+          SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN=${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS=${SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:-60000}
+
+          # Local reproduction:
+          scripts/replay-schema-drift-diff-fuzz.sh ${SEED} ${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300} "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}"
+          # ----------------------------------------------------------
+          EOF
+          echo "::endgroup::"
+
       - name: capture failing --json-out destinations
         if: failure() || cancelled()
         shell: bash
