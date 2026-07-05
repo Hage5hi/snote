@@ -164,13 +164,27 @@ pretty-index-artifacts-download:
 # target re-runs `sha256sum -c` against the downloaded files so local
 # inspection can trust the bytes.
 pretty-index-artifacts-verify:
-	@rc=0; \
-	for dir in ./_pretty-index-atomic ./_pretty-index-stress; do \
+	@case "$(PI_SCOPE)" in atomic) dirs="./_pretty-index-atomic";; \
+	  stress) dirs="./_pretty-index-stress";; \
+	  both) dirs="./_pretty-index-atomic ./_pretty-index-stress";; \
+	  *) echo "PI_SCOPE must be atomic|stress|both (got: $(PI_SCOPE))" >&2; exit 2;; esac; \
+	rc=0; \
+	report="$(PI_MISMATCH_REPORT)"; \
+	rm -f -- "$$report"; \
+	first=1; \
+	printf '{"schema":"pretty-index-checksum-mismatch/v1","scope":"$(PI_SCOPE)","results":[' > "$$report.tmp"; \
+	for dir in $$dirs; do \
 	  if [ ! -d "$$dir" ]; then \
-	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; rc=2; continue; \
+	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; \
+	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
+	    printf '{"dir":"%s","status":"dir_missing"}' "$$dir" >> "$$report.tmp"; \
+	    rc=2; continue; \
 	  fi; \
 	  if [ ! -f "$$dir/pretty-index.checksums.sha256" ]; then \
-	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; rc=2; continue; \
+	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; \
+	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
+	    printf '{"dir":"%s","status":"checksums_missing"}' "$$dir" >> "$$report.tmp"; \
+	    rc=2; continue; \
 	  fi; \
 	  echo "==> verifying $$dir"; \
 	  log="$$(mktemp)"; \
@@ -183,9 +197,12 @@ pretty-index-artifacts-verify:
 	          fname="$${line%%:*}"; \
 	          exp=$$(grep " $$fname$$" "$$dir/pretty-index.checksums.sha256" | awk '{print $$1}'); \
 	          act=$$( ( cd "$$dir" && sha256sum "$$fname" 2>/dev/null ) | awk '{print $$1}'); \
-	          if [ -z "$$act" ]; then act="<missing>"; fi; \
+	          if [ -z "$$act" ]; then act=""; fi; \
 	          if [ "$$exp" = "$$act" ] && [ -n "$$exp" ]; then status="OK"; else status="MISMATCH"; fi; \
-	          echo "  $$fname  expected=$${exp:-<none>}  actual=$$act  [$$status]"; \
+	          echo "  $$fname  expected=$${exp:-<none>}  actual=$${act:-<missing>}  [$$status]"; \
+	          [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
+	          printf '{"dir":"%s","file":"%s","expected":"%s","actual":"%s","status":"%s"}' \
+	            "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
 	          ;; \
 	      esac; \
 	    done < "$$log"; \
@@ -195,8 +212,16 @@ pretty-index-artifacts-verify:
 	    cat "$$log"; rm -f "$$log"; \
 	  fi; \
 	done; \
-	if [ $$rc -eq 0 ]; then echo ""; echo "✅ all downloaded pretty-index artifacts verified"; fi; \
+	printf ']}\n' >> "$$report.tmp"; \
+	if [ $$rc -ne 0 ]; then \
+	  mv -- "$$report.tmp" "$$report"; \
+	  echo ""; echo "wrote mismatch report: $$report"; \
+	else \
+	  rm -f -- "$$report.tmp"; \
+	  echo ""; echo "✅ pretty-index artifacts verified (scope=$(PI_SCOPE))"; \
+	fi; \
 	exit $$rc
+
 
 # Reproduce a CI failure locally by running the pre-commit hook in
 # validation mode against each downloaded pretty-index directory. Copies
