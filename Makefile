@@ -487,6 +487,33 @@ pretty-index-mismatch-summary-json:
 	@jq '. as $$root | (.results // []) as $$r | def cnt(m): {total: ([$$r[] | select((.matrix // "") == m or ((.artifact_dir // "") | test(m)))] | length), mismatched: ([$$r[] | select(((.matrix // "") == m or ((.artifact_dir // "") | test(m))) and .status=="MISMATCH")] | length), missing: ([$$r[] | select(((.matrix // "") == m or ((.artifact_dir // "") | test(m))) and (.status=="dir_missing" or .status=="checksums_missing"))] | length)}; {schema:"pretty-index-mismatch-summary/v1", scope:($$root.scope // "both"), matrices:{atomic: cnt("atomic"), stress: cnt("stress")}, totals:{total: ($$r | length), mismatched: ([$$r[] | select(.status=="MISMATCH")] | length), missing: ([$$r[] | select(.status=="dir_missing" or .status=="checksums_missing")] | length)}}' -- "$(PI_REPORT_PATH)" > "$(PI_SUMMARY_JSON_PATH)"
 	@echo "wrote summary -> $(PI_SUMMARY_JSON_PATH)"
 
+# Merge multiple pretty-index-mismatch-summary-json outputs (e.g. one per
+# matrix job in CI) into a single consolidated JSON. Sums per-matrix and
+# per-totals counters element-wise and records the source file list.
+# Output shape:
+#   {"schema":"pretty-index-mismatch-summary-merged/v1",
+#    "merged_from":[...],
+#    "sources":[{"path":..., "scope":..., "totals":{...}}, ...],
+#    "matrices":{"atomic":{"total":N,"mismatched":N,"missing":N},
+#                "stress":{"total":N,"mismatched":N,"missing":N}},
+#    "totals":{"total":N,"mismatched":N,"missing":N}}
+#   PI_SUMMARY_INPUTS='<glob or space-separated list>'   e.g. "/tmp/*.summary.json"
+#   PI_SUMMARY_MERGED_PATH=<out>                          default: pretty-index-mismatch-summary.merged.json
+PI_SUMMARY_MERGED_PATH ?= pretty-index-mismatch-summary.merged.json
+pretty-index-mismatch-summary-json-merge:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ -z "$(PI_SUMMARY_INPUTS)" ]; then \
+	  echo "usage: make pretty-index-mismatch-summary-json-merge PI_SUMMARY_INPUTS='f1.json f2.json' [PI_SUMMARY_MERGED_PATH=out.json]" >&2; exit 2; \
+	fi
+	@files=""; for f in $(PI_SUMMARY_INPUTS); do \
+	  [ -f "$$f" ] || { echo "missing input: $$f" >&2; exit 2; }; \
+	  files="$$files $$f"; \
+	done; \
+	mkdir -p -- "$$(dirname -- "$(PI_SUMMARY_MERGED_PATH)")" 2>/dev/null || true; \
+	jq -s 'def zero: {total:0,mismatched:0,missing:0}; def add(a;b): {total:((a.total//0)+(b.total//0)), mismatched:((a.mismatched//0)+(b.mismatched//0)), missing:((a.missing//0)+(b.missing//0))}; {schema:"pretty-index-mismatch-summary-merged/v1", merged_from:[$$ARGS.positional[]], sources:[.[] as $$s | {scope:($$s.scope // "unknown"), totals:($$s.totals // zero)}], matrices:{atomic: (reduce .[] as $$s (zero; add(.; ($$s.matrices.atomic // zero)))), stress: (reduce .[] as $$s (zero; add(.; ($$s.matrices.stress // zero))))}, totals: (reduce .[] as $$s (zero; add(.; ($$s.totals // zero))))}' --args $$files -- $$files > "$(PI_SUMMARY_MERGED_PATH)"
+	@echo "merged $(words $(PI_SUMMARY_INPUTS)) input(s) -> $(PI_SUMMARY_MERGED_PATH)"
+	@jq -r '"  matrices.atomic.mismatched=\(.matrices.atomic.mismatched)  matrices.stress.mismatched=\(.matrices.stress.mismatched)  totals.mismatched=\(.totals.mismatched)/\(.totals.total)"' -- "$(PI_SUMMARY_MERGED_PATH)"
+
 # Export the mismatch JSON report into a CSV file with columns:
 # matrix, artifact_dir, path, expected_hash, actual_hash
 #   PI_REPORT_PATH=<in>  PI_CSV_PATH=<out>  (default: <report>.csv)
