@@ -82,7 +82,7 @@ describe("make pretty-index-artifacts-verify — checksum regression", () => {
     seedDir(root, "stress");
     const r = runVerify(root);
     expect(r.status).toBe(0);
-    expect(r.stdout).toContain("all downloaded pretty-index artifacts verified");
+    expect(r.stdout).toMatch(/pretty-index artifacts verified/);
   });
 
   it("exits 1 with per-file mismatch detail when a downloaded file is corrupted", () => {

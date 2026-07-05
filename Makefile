@@ -12,6 +12,17 @@ MATRIX ?= atomic
 PRE    = $(INDEX:.json=.pre-check.json)
 REPORT = $(INDEX:.json=.report.json)
 
+# Scope selector for the download-flow targets (verify, verify-summary,
+# hook-validate-downloaded, reproduce-downloaded, download-verify-reproduce).
+# Independent of MATRIX so it doesn't collide with the single-run default.
+#   atomic | stress | both     (default: both)
+PI_SCOPE ?= both
+
+# Local file where verify targets write a machine-readable
+# checksum-mismatch report on failure. Overridable.
+PI_MISMATCH_REPORT ?= _pretty-index-checksum-mismatch.json
+
+
 
 .PHONY: help pretty-index-check pretty-index-check-clean \
         pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean \
@@ -23,7 +34,9 @@ REPORT = $(INDEX:.json=.report.json)
         pretty-index-reproduce-downloaded \
         pretty-index-artifacts-download-verify-reproduce \
         pretty-index-artifacts-clean \
-        pretty-index-artifacts-verify-summary
+        pretty-index-artifacts-verify-summary \
+        pretty-index-help
+
 
 
 
@@ -153,13 +166,27 @@ pretty-index-artifacts-download:
 # target re-runs `sha256sum -c` against the downloaded files so local
 # inspection can trust the bytes.
 pretty-index-artifacts-verify:
-	@rc=0; \
-	for dir in ./_pretty-index-atomic ./_pretty-index-stress; do \
+	@case "$(PI_SCOPE)" in atomic) dirs="./_pretty-index-atomic";; \
+	  stress) dirs="./_pretty-index-stress";; \
+	  both) dirs="./_pretty-index-atomic ./_pretty-index-stress";; \
+	  *) echo "PI_SCOPE must be atomic|stress|both (got: $(PI_SCOPE))" >&2; exit 2;; esac; \
+	rc=0; \
+	report="$(PI_MISMATCH_REPORT)"; \
+	rm -f -- "$$report"; \
+	first=1; \
+	printf '{"schema":"pretty-index-checksum-mismatch/v1","scope":"$(PI_SCOPE)","results":[' > "$$report.tmp"; \
+	for dir in $$dirs; do \
 	  if [ ! -d "$$dir" ]; then \
-	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; rc=2; continue; \
+	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; \
+	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
+	    printf '{"dir":"%s","status":"dir_missing"}' "$$dir" >> "$$report.tmp"; \
+	    rc=2; continue; \
 	  fi; \
 	  if [ ! -f "$$dir/pretty-index.checksums.sha256" ]; then \
-	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; rc=2; continue; \
+	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; \
+	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
+	    printf '{"dir":"%s","status":"checksums_missing"}' "$$dir" >> "$$report.tmp"; \
+	    rc=2; continue; \
 	  fi; \
 	  echo "==> verifying $$dir"; \
 	  log="$$(mktemp)"; \
@@ -172,9 +199,12 @@ pretty-index-artifacts-verify:
 	          fname="$${line%%:*}"; \
 	          exp=$$(grep " $$fname$$" "$$dir/pretty-index.checksums.sha256" | awk '{print $$1}'); \
 	          act=$$( ( cd "$$dir" && sha256sum "$$fname" 2>/dev/null ) | awk '{print $$1}'); \
-	          if [ -z "$$act" ]; then act="<missing>"; fi; \
+	          if [ -z "$$act" ]; then act=""; fi; \
 	          if [ "$$exp" = "$$act" ] && [ -n "$$exp" ]; then status="OK"; else status="MISMATCH"; fi; \
-	          echo "  $$fname  expected=$${exp:-<none>}  actual=$$act  [$$status]"; \
+	          echo "  $$fname  expected=$${exp:-<none>}  actual=$${act:-<missing>}  [$$status]"; \
+	          [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
+	          printf '{"dir":"%s","file":"%s","expected":"%s","actual":"%s","status":"%s"}' \
+	            "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
 	          ;; \
 	      esac; \
 	    done < "$$log"; \
@@ -184,8 +214,16 @@ pretty-index-artifacts-verify:
 	    cat "$$log"; rm -f "$$log"; \
 	  fi; \
 	done; \
-	if [ $$rc -eq 0 ]; then echo ""; echo "✅ all downloaded pretty-index artifacts verified"; fi; \
+	printf ']}\n' >> "$$report.tmp"; \
+	if [ $$rc -ne 0 ]; then \
+	  mv -- "$$report.tmp" "$$report"; \
+	  echo ""; echo "wrote mismatch report: $$report"; \
+	else \
+	  rm -f -- "$$report.tmp"; \
+	  echo ""; echo "✅ pretty-index artifacts verified (scope=$(PI_SCOPE))"; \
+	fi; \
 	exit $$rc
+
 
 # Reproduce a CI failure locally by running the pre-commit hook in
 # validation mode against each downloaded pretty-index directory. Copies
@@ -193,10 +231,13 @@ pretty-index-artifacts-verify:
 # ($(INDEX)) and invokes the hook with PRETTY_INDEX_HOOK_FORCE=1 so it
 # runs regardless of staged files, once per MATRIX.
 pretty-index-hook-validate-downloaded:
-	@$(MAKE) --no-print-directory pretty-index-artifacts-verify
+	@$(MAKE) --no-print-directory pretty-index-artifacts-verify PI_SCOPE=$(PI_SCOPE)
 	@mkdir -p -- "$(dir $(INDEX))"
-	@rc=0; \
-	for matrix in atomic stress; do \
+	@case "$(PI_SCOPE)" in atomic) list="atomic";; stress) list="stress";; \
+	  both) list="atomic stress";; \
+	  *) echo "PI_SCOPE must be atomic|stress|both (got: $(PI_SCOPE))" >&2; exit 2;; esac; \
+	rc=0; \
+	for matrix in $$list; do \
 	  dir="./_pretty-index-$$matrix"; \
 	  if [ ! -f "$$dir/pretty-index.json" ]; then \
 	    echo "❌ $$dir/pretty-index.json missing" >&2; rc=2; continue; \
@@ -209,48 +250,47 @@ pretty-index-hook-validate-downloaded:
 	exit $$rc
 
 # One-command local reproduction of a CI pretty-index failure:
-#   1. verify sha256 checksums of downloaded atomic + stress artifacts
-#   2. run the pre-commit hook in validation mode against BOTH directories
+#   1. verify sha256 checksums of downloaded artifacts (PI_SCOPE)
+#   2. run the pre-commit hook in validation mode against them
 # Fails fast (exit 1) on the first checksum mismatch — the hook step is
 # skipped entirely if verify fails, so you never validate corrupted bytes.
 #
-# Set VERBOSE=1 to print the resolved PRETTY_INDEX_HOOK_MATRIX, the
-# diagnostics directory, and full per-step command output for each stage.
+# PI_SCOPE=atomic|stress|both  (default: both) — restrict to one matrix.
+# VERBOSE=1                    — print resolved paths + hook verbose output.
 pretty-index-reproduce-downloaded:
 	@if [ "$(VERBOSE)" = "1" ]; then \
 	  echo "── pretty-index-reproduce-downloaded [verbose] ──"; \
 	  echo "  INDEX (diagnostics path) : $(INDEX)"; \
 	  echo "  diagnostics directory    : $(dir $(INDEX))"; \
-	  echo "  matrices                 : atomic stress"; \
-	  echo "  per-matrix downloaded dir: ./_pretty-index-atomic  ./_pretty-index-stress"; \
+	  echo "  PI_SCOPE                 : $(PI_SCOPE)"; \
+	  echo "  mismatch report (if any) : $(PI_MISMATCH_REPORT)"; \
 	  echo ""; \
 	fi
-	@echo "==> [1/2] verifying downloaded pretty-index checksums"
-	@$(MAKE) --no-print-directory pretty-index-artifacts-verify
+	@echo "==> [1/2] verifying downloaded pretty-index checksums (scope=$(PI_SCOPE))"
+	@$(MAKE) --no-print-directory pretty-index-artifacts-verify PI_SCOPE=$(PI_SCOPE)
 	@echo ""
-	@echo "==> [2/2] running pre-commit hook (validation mode) against atomic + stress"
+	@echo "==> [2/2] running pre-commit hook (validation mode) scope=$(PI_SCOPE)"
 	@if [ "$(VERBOSE)" = "1" ]; then \
 	  PRETTY_INDEX_HOOK_VERBOSE=1 \
-	    $(MAKE) --no-print-directory pretty-index-hook-validate-downloaded; \
+	    $(MAKE) --no-print-directory pretty-index-hook-validate-downloaded PI_SCOPE=$(PI_SCOPE); \
 	else \
-	  $(MAKE) --no-print-directory pretty-index-hook-validate-downloaded; \
+	  $(MAKE) --no-print-directory pretty-index-hook-validate-downloaded PI_SCOPE=$(PI_SCOPE); \
 	fi
 
-# One-command "cold-start" reproduction: download BOTH matrices'
-# artifacts from a failed CI run, verify their sha256 checksums, then
-# run the validation hook against both directories. Requires RUN_ID.
-#
-#   make pretty-index-artifacts-download-verify-reproduce RUN_ID=<id> [OS=ubuntu-latest] [VERBOSE=1]
+# Cold-start reproduction: download, verify, run the hook. Requires RUN_ID.
+#   make pretty-index-artifacts-download-verify-reproduce RUN_ID=<id> \
+#       [OS=ubuntu-latest] [PI_SCOPE=atomic|stress|both] [VERBOSE=1]
 pretty-index-artifacts-download-verify-reproduce:
 	@if [ -z "$(RUN_ID)" ]; then \
-	  echo "usage: make pretty-index-artifacts-download-verify-reproduce RUN_ID=<run-id> [OS=ubuntu-latest] [VERBOSE=1]" >&2; \
+	  echo "usage: make pretty-index-artifacts-download-verify-reproduce RUN_ID=<run-id> [OS=ubuntu-latest] [PI_SCOPE=atomic|stress|both] [VERBOSE=1]" >&2; \
 	  exit 2; \
 	fi
-	@echo "==> [1/3] downloading atomic + stress artifacts (RUN_ID=$(RUN_ID), OS=$(OS))"
+	@echo "==> [1/3] downloading artifacts (RUN_ID=$(RUN_ID), OS=$(OS), scope=$(PI_SCOPE))"
 	@$(MAKE) --no-print-directory pretty-index-artifacts-download RUN_ID=$(RUN_ID) OS=$(OS)
 	@echo ""
-	@echo "==> [2/3] + [3/3] verify + reproduce"
-	@$(MAKE) --no-print-directory pretty-index-reproduce-downloaded VERBOSE=$(VERBOSE)
+	@echo "==> [2/3] + [3/3] verify + reproduce (scope=$(PI_SCOPE))"
+	@$(MAKE) --no-print-directory pretty-index-reproduce-downloaded PI_SCOPE=$(PI_SCOPE) VERBOSE=$(VERBOSE)
+
 
 # Remove the downloaded per-matrix pretty-index diagnostic directories
 # to keep local repro environments tidy. Only touches ./_pretty-index-*
@@ -267,9 +307,12 @@ pretty-index-artifacts-clean:
 # actual hash (not just mismatches) and a per-matrix + overall pass/fail
 # summary at the end. Exits 0 iff both matrices verify.
 pretty-index-artifacts-verify-summary:
-	@overall=0; \
-	atomic_status=""; stress_status=""; \
-	for matrix in atomic stress; do \
+	@case "$(PI_SCOPE)" in atomic) list="atomic";; stress) list="stress";; \
+	  both) list="atomic stress";; \
+	  *) echo "PI_SCOPE must be atomic|stress|both (got: $(PI_SCOPE))" >&2; exit 2;; esac; \
+	overall=0; \
+	atomic_status="skipped"; stress_status="skipped"; \
+	for matrix in $$list; do \
 	  dir="./_pretty-index-$$matrix"; \
 	  echo ""; echo "── MATRIX=$$matrix ── ($$dir)"; \
 	  if [ ! -d "$$dir" ]; then \
@@ -293,8 +336,63 @@ pretty-index-artifacts-verify-summary:
 	  echo "  → $$matrix: $$mstatus"; \
 	done; \
 	echo ""; \
-	echo "── summary ──"; \
+	echo "── summary (scope=$(PI_SCOPE)) ──"; \
 	echo "  atomic : $$atomic_status"; \
 	echo "  stress : $$stress_status"; \
 	if [ $$overall -eq 0 ]; then echo "  overall: PASS"; else echo "  overall: FAIL"; fi; \
 	exit $$overall
+
+# ── pretty-index help ────────────────────────────────────────────────
+# Concise usage for every pretty-index-* target, including VERBOSE=1
+# semantics per target and documented exit codes.
+.PHONY: pretty-index-help
+pretty-index-help:
+	@echo "pretty-index-* make targets — quick reference"
+	@echo ""
+	@echo "Local reproduce (uses your working-tree pretty-index.json):"
+	@echo "  pretty-index-check                         Run CI check flow (bash)"
+	@echo "  pretty-index-check-clean                   Same, discard prior diagnostics"
+	@echo "  pretty-index-check-pwsh                    Same, via PowerShell"
+	@echo "  pretty-index-diagnostics                   Print diagnostic paths / artifact names"
+	@echo "  pretty-index-clean                         Remove sibling .pre-check.json / .report.json"
+	@echo "  pretty-index-clean-dry-run                 Preview what -clean would delete"
+	@echo "  pretty-index-artifacts                     Print expected artifact filenames per matrix"
+	@echo "  pretty-index-hook-dry-run                  Run pre-commit hook in dry-run for both matrices"
+	@echo ""
+	@echo "Download + verify + reproduce (uses ./_pretty-index-<matrix>/):"
+	@echo "  pretty-index-artifacts-download            Download atomic + stress from a CI run"
+	@echo "                                             (needs RUN_ID=<id>, OS=ubuntu-latest by default)"
+	@echo "  pretty-index-artifacts-verify              sha256sum -c both dirs; writes JSON mismatch"
+	@echo "                                             report to \$$(PI_MISMATCH_REPORT) on failure"
+	@echo "  pretty-index-artifacts-verify-summary      Verify + pretty per-matrix PASS/FAIL summary"
+	@echo "                                             with per-file expected/actual hashes"
+	@echo "  pretty-index-hook-validate-downloaded      Verify, then run the hook in validation mode"
+	@echo "  pretty-index-reproduce-downloaded          One-command verify + validate"
+	@echo "  pretty-index-artifacts-download-verify-reproduce"
+	@echo "                                             Cold start: download + verify + validate"
+	@echo "  pretty-index-artifacts-clean               rm -rf ./_pretty-index-atomic ./_pretty-index-stress"
+	@echo ""
+	@echo "Scope / overrides:"
+	@echo "  PI_SCOPE=atomic|stress|both   (default: both)   restrict download-flow targets"
+	@echo "  MATRIX=atomic|stress          (default: atomic) single-run local-repro matrix"
+	@echo "  INDEX=<path>                                    override pretty-index.json path"
+	@echo "  RUN_ID=<id> OS=<runner>                         for -artifacts-download*"
+	@echo "  PI_MISMATCH_REPORT=<path>                       where -verify writes its JSON on fail"
+	@echo ""
+	@echo "VERBOSE=1 effects (per target):"
+	@echo "  pretty-index-reproduce-downloaded          Prints resolved INDEX, diagnostics dir,"
+	@echo "                                             PI_SCOPE, mismatch-report path; forwards"
+	@echo "                                             PRETTY_INDEX_HOOK_VERBOSE=1 to the hook so"
+	@echo "                                             each step lists [exists]/[absent] files."
+	@echo "  pretty-index-artifacts-download-verify-reproduce"
+	@echo "                                             Forwards VERBOSE=1 to -reproduce-downloaded."
+	@echo "  (other targets ignore VERBOSE.)"
+	@echo ""
+	@echo "Exit codes (make normalizes any recipe failure to 2 at the outer layer):"
+	@echo "  0  success (verify passed / hook passed / dry-run)"
+	@echo "  1  a downstream check failed (checksum mismatch OR hook validation failed)"
+	@echo "  2  usage error, missing directory, missing checksums file, or missing RUN_ID"
+	@echo "  Underlying pre-commit hook: 0=ok  1=drift  2=usage  3=schema  4=missing input"
+	@echo "  Run '.githooks/pre-commit --help' for the hook's full exit-code table."
+
+
