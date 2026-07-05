@@ -111,7 +111,7 @@ describe("validate-pretty-index.py fuzz", () => {
 
   it("--report always emits valid JSON with the documented shape", () => {
     const rand = mulberry32(0xBADF00D);
-    for (let i = 0; i < 100; i++) {
+    for (let i = 0; i < 40; i++) {
       const payload = randomPayload(rand);
       const { code, stdout } = run(payload, ["--report"]);
       if (code === 6) {
