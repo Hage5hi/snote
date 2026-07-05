@@ -218,8 +218,8 @@ pretty-index-artifacts-verify:
 	          printf '{"dir":"%s","artifact_dir":"%s","file":"%s","path":"%s/%s","expected":"%s","actual":"%s","status":"%s"}' \
 	            "$$dir" "$$adir" "$$fname" "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
 	          if [ "$$status" = "MISMATCH" ] && [ "$$fail_fast" = "1" ]; then \
-
 	            echo "── PI_FAIL_FAST=1: stopping after first mismatch ──"; stop=1; break; \
+
 	          fi; \
 	          ;; \
 	      esac; \
