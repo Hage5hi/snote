@@ -16,6 +16,7 @@ import {
   type Report,
 } from "../schema-drift-pr-comment";
 import { renderSummary } from "../schema-drift-summary";
+import { renderDiff } from "../schema-drift-diff";
 
 const PR_SCRIPT = resolve(__dirname, "../schema-drift-pr-comment.ts");
 const SUM_SCRIPT = resolve(__dirname, "../schema-drift-summary.ts");
