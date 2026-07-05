@@ -156,7 +156,27 @@ pretty-index-artifacts-verify:
 	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; rc=2; continue; \
 	  fi; \
 	  echo "==> verifying $$dir"; \
-	  ( cd "$$dir" && sha256sum -c pretty-index.checksums.sha256 ) || rc=1; \
+	  log="$$(mktemp)"; \
+	  if ! ( cd "$$dir" && sha256sum -c pretty-index.checksums.sha256 ) > "$$log" 2>&1; then \
+	    cat "$$log"; \
+	    echo ""; echo "── checksum mismatch detail ($$dir) ──"; \
+	    while IFS= read -r line; do \
+	      case "$$line" in \
+	        *FAILED*|*OK*) \
+	          fname="$${line%%:*}"; \
+	          exp=$$(grep " $$fname$$" "$$dir/pretty-index.checksums.sha256" | awk '{print $$1}'); \
+	          act=$$( ( cd "$$dir" && sha256sum "$$fname" 2>/dev/null ) | awk '{print $$1}'); \
+	          if [ -z "$$act" ]; then act="<missing>"; fi; \
+	          if [ "$$exp" = "$$act" ] && [ -n "$$exp" ]; then status="OK"; else status="MISMATCH"; fi; \
+	          echo "  $$fname  expected=$${exp:-<none>}  actual=$$act  [$$status]"; \
+	          ;; \
+	      esac; \
+	    done < "$$log"; \
+	    rm -f "$$log"; \
+	    rc=1; \
+	  else \
+	    cat "$$log"; rm -f "$$log"; \
+	  fi; \
 	done; \
 	if [ $$rc -eq 0 ]; then echo ""; echo "✅ all downloaded pretty-index artifacts verified"; fi; \
 	exit $$rc
@@ -181,5 +201,17 @@ pretty-index-hook-validate-downloaded:
 	    .githooks/pre-commit || rc=1; \
 	done; \
 	exit $$rc
+
+# One-command local reproduction of a CI pretty-index failure:
+#   1. verify sha256 checksums of downloaded atomic + stress artifacts
+#   2. run the pre-commit hook in validation mode against BOTH directories
+# Fails fast (exit 1) on the first checksum mismatch — the hook step is
+# skipped entirely if verify fails, so you never validate corrupted bytes.
+pretty-index-reproduce-downloaded:
+	@echo "==> [1/2] verifying downloaded pretty-index checksums"
+	@$(MAKE) --no-print-directory pretty-index-artifacts-verify
+	@echo ""
+	@echo "==> [2/2] running pre-commit hook (validation mode) against atomic + stress"
+	@$(MAKE) --no-print-directory pretty-index-hook-validate-downloaded
 
 
