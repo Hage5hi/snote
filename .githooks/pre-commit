@@ -67,15 +67,30 @@ if echo "$STAGED" | grep -Eq \
 fi
 
 # ── pretty-index.json schema-drift gate ───────────────────────────────
-# If any staged file could affect the pretty-index.json schema contract
-# (the generator, validator, migrator, self-check, local runner, or the
-# committed pretty-index.json itself), reproduce the CI check locally.
-# Bypass with `git commit --no-verify`.
-if echo "$STAGED" | grep -Eq \
+# Runs the CI check locally when a staged file could affect the
+# pretty-index.json schema contract (generator, validator, migrator,
+# self-check, local runner, or the committed pretty-index.json itself).
+#
+# Overrides:
+#   PRETTY_INDEX_HOOK_SKIP=1   force-skip even if relevant files are staged
+#   PRETTY_INDEX_HOOK_FORCE=1  force-run even for docs-only / unrelated commits
+#   git commit --no-verify     bypass every pre-commit hook (emergency)
+#
+# Non-impacting changes (docs/**, README.md, src/**, unrelated configs)
+# are automatically skipped — the grep pattern below is the allowlist of
+# paths that DO trigger the check.
+pretty_index_needs_check() {
+  if [ "${PRETTY_INDEX_HOOK_SKIP:-0}" = "1" ]; then return 1; fi
+  if [ "${PRETTY_INDEX_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
+  if [ -z "$STAGED" ]; then return 1; fi
+  echo "$STAGED" | grep -Eq \
     -e '^scripts/(validate|migrate|check|reproduce-ci)-pretty-index[^/]*\.(py|sh)$' \
     -e '^scripts/pretty-replay-summary\.py$' \
     -e '^scripts/check-pretty-index-local\.sh$' \
-    -e '(^|/)pretty-index\.json$'; then
+    -e '(^|/)pretty-index\.json$'
+}
+
+if pretty_index_needs_check; then
   echo "▶ pre-commit: pretty-index schema-drift check"
   # Only run when the default CI input file actually exists; otherwise
   # there is nothing to validate (contributors without generator output
