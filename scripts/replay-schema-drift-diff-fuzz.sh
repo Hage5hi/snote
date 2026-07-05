@@ -162,13 +162,32 @@ EOF
 
 echo "replay -> $OUT" >&2
 cat "$OUT/manifest.txt" >&2
-
-# Pre-replay verification.
+# Pre-replay verification. Missing/unreadable/empty files are tracked in
+# MISSING_FILES so the JSON summary can enumerate exactly what broke.
+MISSING_FILES=()
+FAIL_REASON=""
 verify() {
   local label="$1" path="$2"
-  [ -e "$path" ] || { echo "pre-replay: FAIL $label missing: $path" >&2; exit 8; }
-  [ -r "$path" ] || { echo "pre-replay: FAIL $label unreadable: $path" >&2; exit 8; }
-  [ -s "$path" ] || { echo "pre-replay: FAIL $label is empty: $path" >&2; exit 8; }
+  vlog "verify: $label -> $path"
+  if [ ! -e "$path" ]; then
+    MISSING_FILES+=("$path")
+    FAIL_REASON="$label missing: $path"
+    echo "pre-replay: FAIL $label missing: $path" >&2
+    [[ "$VERBOSE" == "1" ]] && echo "verbose:   parent=$(dirname "$path") ls: $(ls -la "$(dirname "$path")" 2>/dev/null | tr '\n' '|' )" >&2
+    exit 8
+  fi
+  if [ ! -r "$path" ]; then
+    MISSING_FILES+=("$path")
+    FAIL_REASON="$label unreadable: $path"
+    echo "pre-replay: FAIL $label unreadable: $path" >&2
+    exit 8
+  fi
+  if [ ! -s "$path" ]; then
+    MISSING_FILES+=("$path")
+    FAIL_REASON="$label empty: $path"
+    echo "pre-replay: FAIL $label is empty: $path" >&2
+    exit 8
+  fi
   echo "pre-replay: OK   $label ($path)" >&2
 }
 verify "manifest"  "$OUT/manifest.txt"
@@ -177,15 +196,31 @@ verify "checksums" "$OUT/checksums.sha256"
 [ -w "$OUT/vitest.stdout.log" ] || { echo "pre-replay: FAIL stdout log not writable" >&2; exit 8; }
 [ -w "$OUT/vitest.stderr.log" ] || { echo "pre-replay: FAIL stderr log not writable" >&2; exit 8; }
 grep -q "^SCHEMA_DRIFT_DIFF_FUZZ_SEED:" "$OUT/manifest.txt" || {
-  echo "pre-replay: FAIL manifest missing SCHEMA_DRIFT_DIFF_FUZZ_SEED line" >&2; exit 8;
+  FAIL_REASON="manifest missing SCHEMA_DRIFT_DIFF_FUZZ_SEED line"
+  echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8;
 }
 CHECKSUM_STATUS="ok"
-if ! ( cd "$OUT" && sha256sum -c checksums.sha256 ) >/dev/null; then
+CHECKSUM_OUT="$(cd "$OUT" && sha256sum -c checksums.sha256 2>&1)"; CHECKSUM_RC=$?
+if [[ $CHECKSUM_RC -ne 0 ]]; then
   CHECKSUM_STATUS="mismatch"
-  echo "pre-replay: FAIL checksum mismatch in $OUT/checksums.sha256" >&2
+  FAIL_REASON="checksum mismatch in $OUT/checksums.sha256"
+  echo "pre-replay: FAIL $FAIL_REASON" >&2
+  printf '%s\n' "$CHECKSUM_OUT" >&2
+  if [[ "$VERBOSE" == "1" ]]; then
+    echo "verbose: failing checksum entries:" >&2
+    printf '%s\n' "$CHECKSUM_OUT" | grep -Ev ': OK$' | sed 's/^/verbose:   /' >&2
+  fi
   exit 8
 fi
 echo "pre-replay: OK   checksums verified" >&2
+if [[ "$VERBOSE" == "1" ]]; then
+  echo "verbose: manifest entries mapped to required files:" >&2
+  echo "verbose:   manifest.txt        <- required (source of seed/reader/pattern/timeout)" >&2
+  echo "verbose:   env.sh              <- required (env passthrough for reproducibility)" >&2
+  echo "verbose:   checksums.sha256    <- required (integrity of manifest.txt + env.sh)" >&2
+  echo "verbose:   vitest.stdout.log   <- writable placeholder (populated on real run)" >&2
+  echo "verbose:   vitest.stderr.log   <- writable placeholder (populated on real run)" >&2
+fi
 
 [[ "$PRINT_MANIFEST" == "1" ]] && { print_manifest "$OUT/manifest.txt"; exit 0; }
 
@@ -198,6 +233,64 @@ printf 'command: SCHEMA_DRIFT_DIFF_FUZZ_SEED=%q SCHEMA_DRIFT_DIFF_READER_DURATIO
 printf ' %q' "${CMD[@]}" >&2
 printf '\n' >&2
 
+# Emit a JSON summary next to replay-summary.txt when --json-summary is set.
+# Uses jq if available (safe quoting for arbitrary pattern strings); falls
+# back to a hand-rolled writer that escapes backslashes and double quotes.
+write_json_summary() {
+  local mode="$1" code="$2" duration="$3"
+  [[ "$JSON_SUMMARY" == "1" ]] || return 0
+  local dest="$OUT/replay-summary.json"
+  if command -v jq >/dev/null 2>&1; then
+    jq -n \
+      --arg   mode      "$mode" \
+      --argjson exit_code "${code:-null}" \
+      --argjson duration_seconds "${duration:-null}" \
+      --arg   checksum  "$CHECKSUM_STATUS" \
+      --arg   seed      "$SEED" \
+      --arg   reader_ms "$READER_MS" \
+      --arg   pattern   "$PATTERN" \
+      --arg   timeout_ms "$TIMEOUT_MS" \
+      --argjson missing_files "$(printf '%s\n' "${MISSING_FILES[@]:-}" | jq -R . | jq -s 'map(select(length>0))')" \
+      --arg   fail_reason "$FAIL_REASON" \
+      --arg   folder    "$OUT" \
+      '{mode:$mode, exit_code:$exit_code, duration_seconds:$duration_seconds,
+        checksum_verified:$checksum, seed:$seed, reader_ms:$reader_ms,
+        pattern:$pattern, timeout_ms:$timeout_ms,
+        missing_files:$missing_files, fail_reason:$fail_reason, folder:$folder}' \
+      > "$dest"
+  else
+    esc() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+    local missing_json="[]"
+    if [[ ${#MISSING_FILES[@]} -gt 0 ]]; then
+      missing_json="["
+      local first=1 f
+      for f in "${MISSING_FILES[@]}"; do
+        [[ $first -eq 1 ]] || missing_json+=","
+        missing_json+="\"$(esc "$f")\""
+        first=0
+      done
+      missing_json+="]"
+    fi
+    local ec="${code:-null}" du="${duration:-null}"
+    cat > "$dest" <<JSON
+{
+  "mode": "$(esc "$mode")",
+  "exit_code": ${ec},
+  "duration_seconds": ${du},
+  "checksum_verified": "$(esc "$CHECKSUM_STATUS")",
+  "seed": "$(esc "$SEED")",
+  "reader_ms": "$(esc "$READER_MS")",
+  "pattern": "$(esc "$PATTERN")",
+  "timeout_ms": "$(esc "$TIMEOUT_MS")",
+  "missing_files": ${missing_json},
+  "fail_reason": "$(esc "$FAIL_REASON")",
+  "folder": "$(esc "$OUT")"
+}
+JSON
+  fi
+  echo "json summary -> $dest" >&2
+}
+
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "dry-run: verification complete, not executing vitest" >&2
   {
@@ -209,6 +302,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
     echo "pattern:             $PATTERN"
     echo "timeout_ms:          $TIMEOUT_MS"
   } > "$OUT/replay-summary.txt"
+  write_json_summary "dry-run" "" ""
   exit 0
 fi
 
@@ -243,5 +337,6 @@ echo "exit_code: $CODE (see $OUT/exit_code.txt)" >&2
   echo "postrun_checksums:   $OUT/checksums.postrun.sha256"
 } > "$OUT/replay-summary.txt"
 echo "summary -> $OUT/replay-summary.txt" >&2
+write_json_summary "run" "$CODE" "$DURATION"
 
 exit "$CODE"
