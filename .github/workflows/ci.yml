@@ -576,13 +576,17 @@ print(json.dumps({
             echo "- [$NAME]($URL) — pretty-printed \`replay-summary.json\` (\`*.pretty.txt\`, \`*.pretty.md\`) + machine-readable triage index (\`pretty-index.json\`), retention 14 days"
             echo ''
             echo '  Per-summary files (inside the artifact above):'
-            for f in artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt; do
+            # Sorted so link order (*.pretty.md before *.pretty.txt,
+            # pretty-index.json last) is deterministic across runs/OSes.
+            for f in $(printf '%s\n' artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt | LC_ALL=C sort); do
+              [[ -f "$f" ]] || continue
               base="${f##*/}"; base="${base%.pretty.txt}"
-              echo "  - \`${base}\` → [\`${base}.pretty.txt\`]($URL), [\`${base}.pretty.md\`]($URL)"
+              echo "  - \`${base}\` → [\`${base}.pretty.md\`]($URL), [\`${base}.pretty.txt\`]($URL)"
             done
             if [[ -f artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json ]]; then
               echo "  - [pretty-index.json]($URL) — aggregate triage (fail_reason / exit_code / pretty filenames per summary)"
             fi
+
           } >> "$GITHUB_STEP_SUMMARY"
 
 
