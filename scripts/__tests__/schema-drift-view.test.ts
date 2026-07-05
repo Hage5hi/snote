@@ -250,3 +250,4 @@ describe("scripts/schema-drift-view.sh", () => {
     });
   });
 });
+
