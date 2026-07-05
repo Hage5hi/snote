@@ -2,7 +2,9 @@
 // and filtering behavior without touching real drift bundles by using
 // --dry-run (which prints MATCH/SKIP lines instead of running viewers).
 import { spawnSync } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SCRIPT = resolve(__dirname, "../schema-drift-view.sh");
@@ -131,4 +133,120 @@ describe("scripts/schema-drift-view.sh", () => {
       expect(stdout).toMatch(/files=\[report diff\]/);
     });
   });
+
+  describe("--exclude", () => {
+    const dry = (extra: string[]) => run(["--dry-run", ...extra], { OUT: "/tmp/nope-not-real" });
+
+    it("single --exclude drops matching bases", () => {
+      const { stdout } = dry(["--exclude", "diff"]);
+      expect(stdout).toMatch(/SKIP\s+focus-trap-inspect-diff\.schema\.json/);
+      expect(stdout).toMatch(/MATCH\s+focus-trap-inspect-report\.schema\.json/);
+      expect(stdout).toMatch(/MATCH\s+focus-trap-inspect-schema\.types\.gen\.ts/);
+    });
+
+    it("repeatable --exclude unions substrings", () => {
+      const { stdout } = dry(["--exclude", "diff", "--exclude", "types.gen"]);
+      expect(stdout).toMatch(/SKIP\s+focus-trap-inspect-diff\.schema\.json/);
+      expect(stdout).toMatch(/SKIP\s+focus-trap-inspect-schema\.types\.gen\.ts/);
+      expect(stdout).toMatch(/MATCH\s+focus-trap-inspect-report\.schema\.json/);
+    });
+
+    it("comma-separated --exclude expands to multiple substrings", () => {
+      const { stdout } = dry(["--exclude", "diff,types.gen"]);
+      expect(stdout).toMatch(/SKIP\s+focus-trap-inspect-diff\.schema\.json/);
+      expect(stdout).toMatch(/SKIP\s+focus-trap-inspect-schema\.types\.gen\.ts/);
+      expect(stdout).toMatch(/MATCH\s+focus-trap-inspect-report\.schema\.json/);
+    });
+
+    it("--exclude wins over --file when both match a base", () => {
+      const { stdout } = dry(["--file", "report,diff", "--exclude", "diff"]);
+      expect(stdout).toMatch(/MATCH\s+focus-trap-inspect-report\.schema\.json/);
+      expect(stdout).toMatch(/SKIP\s+focus-trap-inspect-diff\.schema\.json/);
+    });
+
+    it("footer echoes exclude list", () => {
+      const { stdout } = dry(["--exclude", "diff,report"]);
+      expect(stdout).toMatch(/exclude=\[diff report\]/);
+    });
+  });
+
+  describe("--verbose", () => {
+    const dry = (extra: string[]) => run(["--dry-run", "--verbose", ...extra], { OUT: "/tmp/nope-not-real" });
+
+    it("emits [verbose] trace lines to stderr for matched files", () => {
+      const { code, stderr } = dry([]);
+      expect(code).toBe(0);
+      expect(stderr).toMatch(/\[verbose\] match focus-trap-inspect-report\.schema\.json/);
+    });
+
+    it("emits [verbose] trace lines for skipped files", () => {
+      const { stderr } = dry(["--exclude", "diff"]);
+      expect(stderr).toMatch(/\[verbose\] skip focus-trap-inspect-diff\.schema\.json/);
+    });
+
+    it("footer reports verbose=1", () => {
+      const { stdout } = dry([]);
+      expect(stdout).toMatch(/verbose=1/);
+    });
+  });
+
+  describe("manifest output", () => {
+    const withDir = (extra: string[]) => {
+      const dir = mkdtempSync(join(tmpdir(), "sdv-manifest-"));
+      const res = run(["--dry-run", "--manifest-dir", dir, ...extra], { OUT: "/tmp/nope-not-real" });
+      return { dir, ...res };
+    };
+
+    it("writes a single <prefix>-all.json when --browsers is unset", () => {
+      const { code, dir } = withDir([]);
+      expect(code).toBe(0);
+      const files = readdirSync(dir);
+      expect(files).toEqual(["schema-drift-manifest-all.json"]);
+    });
+
+    it("--manifest-prefix controls the filename prefix", () => {
+      const { dir } = withDir(["--manifest-prefix", "drift"]);
+      expect(readdirSync(dir)).toEqual(["drift-all.json"]);
+    });
+
+    it("writes one file per browser when --browsers is set", () => {
+      const { dir } = withDir(["--browsers", "chromium,firefox"]);
+      expect(readdirSync(dir).sort()).toEqual([
+        "schema-drift-manifest-chromium.json",
+        "schema-drift-manifest-firefox.json",
+      ]);
+    });
+
+    it("--combined-manifest also emits a combined file", () => {
+      const { dir } = withDir(["--browsers", "chromium,firefox", "--combined-manifest"]);
+      expect(readdirSync(dir).sort()).toEqual([
+        "schema-drift-manifest-chromium.json",
+        "schema-drift-manifest-combined.json",
+        "schema-drift-manifest-firefox.json",
+      ]);
+      const combined = JSON.parse(readFileSync(join(dir, "schema-drift-manifest-combined.json"), "utf8"));
+      expect(combined.combined).toBe(true);
+      expect(combined.browsers).toEqual(["chromium", "firefox"]);
+    });
+
+    it("manifest JSON includes viewer command, matches, excludes, expected, matched", () => {
+      const { dir } = withDir([
+        "--type", "schemas",
+        "--file", "report",
+        "--exclude", "diff",
+        "--viewer", "diff-y",
+      ]);
+      const m = JSON.parse(readFileSync(join(dir, "schema-drift-manifest-all.json"), "utf8"));
+      expect(m.viewer).toBe("diff-y");
+      expect(m.resolvedViewerCommand).toMatch(/^diff -y/);
+      expect(m.matches).toEqual(["report"]);
+      expect(m.excludes).toEqual(["diff"]);
+      expect(m.expected).toEqual([
+        "focus-trap-inspect-report.schema.json",
+        "focus-trap-inspect-diff.schema.json",
+      ]);
+      expect(m.matched).toEqual(["focus-trap-inspect-report.schema.json"]);
+    });
+  });
 });
+
