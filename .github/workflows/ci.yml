@@ -453,6 +453,37 @@ jobs:
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
+      # Integration check: parse $GITHUB_STEP_SUMMARY after the pretty
+      # blocks were appended and assert it actually contains the
+      # pretty-printed replay-summary content. This catches regressions
+      # where the pretty step silently no-ops (missing python, wrong
+      # glob) or where the schema drifts and the printer bails to the
+      # `(pretty-print failed for ...)` fallback. When no
+      # replay-summary.json exists at all (e.g. prepare-replay was
+      # skipped) the check is a no-op — that's the sensible fallback.
+      - name: verify step summary contains pretty replay-summary
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          summaries=(artifacts/schema-drift-diff-replay/*/replay-summary.json)
+          if [[ ${#summaries[@]} -eq 0 ]]; then
+            echo "no replay-summary.json files produced -> skipping step-summary assertion"
+            exit 0
+          fi
+          test -s "$GITHUB_STEP_SUMMARY" || { echo "step summary file is empty"; exit 1; }
+          grep -q "== replay-summary ==" "$GITHUB_STEP_SUMMARY" \
+            || { echo "step summary is missing the pretty '== replay-summary ==' header"; exit 1; }
+          grep -q "(pretty-print failed for" "$GITHUB_STEP_SUMMARY" \
+            && { echo "pretty-print fallback fired -> schema drift?"; exit 1; }
+          # Sensible fallback: if none of the produced summaries carry a
+          # non-empty manifest_mapping, the '-- manifest_mapping --'
+          # header must NOT appear in the step summary.
+          if ! grep -l '"manifest_mapping": \[ *{' "${summaries[@]}" >/dev/null 2>&1; then
+            grep -q -- "-- manifest_mapping --" "$GITHUB_STEP_SUMMARY" \
+              && { echo "ghost 'manifest_mapping' header without any mapping data"; exit 1; } || true
+          fi
+          echo "step-summary content check OK (${#summaries[@]} replay-summary.json file(s))"
 
 
 
@@ -684,6 +715,26 @@ jobs:
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
+      - name: verify step summary contains pretty replay-summary
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          summaries=(artifacts/schema-drift-diff-replay/*/replay-summary.json)
+          if [[ ${#summaries[@]} -eq 0 ]]; then
+            echo "no replay-summary.json files produced -> skipping step-summary assertion"
+            exit 0
+          fi
+          test -s "$GITHUB_STEP_SUMMARY" || { echo "step summary file is empty"; exit 1; }
+          grep -q "== replay-summary ==" "$GITHUB_STEP_SUMMARY" \
+            || { echo "step summary is missing the pretty '== replay-summary ==' header"; exit 1; }
+          grep -q "(pretty-print failed for" "$GITHUB_STEP_SUMMARY" \
+            && { echo "pretty-print fallback fired -> schema drift?"; exit 1; }
+          if ! grep -l '"manifest_mapping": \[ *{' "${summaries[@]}" >/dev/null 2>&1; then
+            grep -q -- "-- manifest_mapping --" "$GITHUB_STEP_SUMMARY" \
+              && { echo "ghost 'manifest_mapping' header without any mapping data"; exit 1; } || true
+          fi
+          echo "step-summary content check OK (${#summaries[@]} replay-summary.json file(s))"
 
 
 

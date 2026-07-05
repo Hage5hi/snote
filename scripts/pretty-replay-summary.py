@@ -68,6 +68,39 @@ def render(summary: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def validate(summary: dict) -> list[str]:
+    """Return a list of schema problems (empty when the summary is valid).
+
+    Contract:
+      - `fail_reason` is REQUIRED and must be a string (may be "").
+      - `manifest_mapping`, when present, must be a list of objects each
+        carrying string `manifest_entry`, `required_file`, and `role`.
+      - Missing `manifest_mapping` and empty `manifest_mapping` are BOTH
+        valid — the mapping is only populated when the helper runs with
+        `--verbose`.
+    """
+    problems: list[str] = []
+    if "fail_reason" not in summary:
+        problems.append("fail_reason is missing (required in every replay-summary.json)")
+    elif not isinstance(summary["fail_reason"], str):
+        problems.append("fail_reason must be a string")
+    if "manifest_mapping" in summary:
+        mapping = summary["manifest_mapping"]
+        if not isinstance(mapping, list):
+            problems.append("manifest_mapping must be an array when present")
+        else:
+            for i, m in enumerate(mapping):
+                if not isinstance(m, dict):
+                    problems.append(f"manifest_mapping[{i}] must be an object")
+                    continue
+                for k in ("manifest_entry", "required_file", "role"):
+                    if k not in m:
+                        problems.append(f"manifest_mapping[{i}].{k} is missing")
+                    elif not isinstance(m[k], str):
+                        problems.append(f"manifest_mapping[{i}].{k} must be a string")
+    return problems
+
+
 def main(argv: list[str]) -> int:
     if len(argv) != 2 or argv[1] in ("-h", "--help"):
         sys.stderr.write(__doc__ or "")
@@ -82,6 +115,13 @@ def main(argv: list[str]) -> int:
     if not isinstance(summary, dict):
         sys.stderr.write("pretty-replay-summary: top-level JSON must be an object\n")
         return 2
+    problems = validate(summary)
+    if problems:
+        sys.stderr.write(
+            f"pretty-replay-summary: schema validation failed for {src}:\n"
+            + "".join(f"  - {p}\n" for p in problems)
+        )
+        return 3
     sys.stdout.write(render(summary))
     code = summary.get("exit_code")
     return int(code) if isinstance(code, int) else 0
