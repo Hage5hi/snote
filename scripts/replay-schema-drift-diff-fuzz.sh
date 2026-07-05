@@ -88,11 +88,12 @@ EOF
 : > "$OUT/vitest.stdout.log"
 : > "$OUT/vitest.stderr.log"
 
-# ---- (3) checksums for pre-replay verification. Written BEFORE vitest runs
-# so `--from` can validate them offline. The log files start empty so their
-# checksums pin the "fresh replay folder" state — they are re-hashed after
-# the run and appended to checksums.sha256 with a `.postrun` suffix.
-( cd "$OUT" && sha256sum manifest.txt env.sh vitest.stdout.log vitest.stderr.log > checksums.sha256 )
+# ---- (3) checksums for pre-replay verification. Only immutable inputs
+# (manifest + env sidecar) are hashed so `--from` can validate the folder
+# no matter how many times it has been replayed. Log files are outputs —
+# their post-run hashes go into `checksums.postrun.sha256` for provenance.
+( cd "$OUT" && sha256sum manifest.txt env.sh > checksums.sha256 )
+
 
 echo "replay -> $OUT" >&2
 cat "$OUT/manifest.txt" >&2
