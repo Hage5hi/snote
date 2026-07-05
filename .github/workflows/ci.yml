@@ -203,7 +203,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -212,6 +212,9 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - name: --print-schema + atomic --json-out tests
+        # Use bash on every OS (including Windows) so the `\` line
+        # continuations below are honored consistently.
+        shell: bash
         run: |
           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
             -t "print-schema|atomic write failure modes" \
