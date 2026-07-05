@@ -131,6 +131,7 @@ describe("scripts/schema-drift-view.sh", () => {
       expect(stdout).toMatch(/type=schemas/);
       expect(stdout).toMatch(/viewer=cat/);
       expect(stdout).toMatch(/files=\[report diff\]/);
+    });
   });
 
   describe("--exclude", () => {
