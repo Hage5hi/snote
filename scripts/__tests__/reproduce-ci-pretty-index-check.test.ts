@@ -121,4 +121,37 @@ describe("reproduce-ci-pretty-index-check.sh — exit + diagnostics harness", ()
       "schema-drift-diff-stress-replay-pretty-index-failure",
     );
   });
+
+  it.each(["atomic", "stress"] as const)(
+    "--clean removes ONLY the sibling .pre-check.json / .report.json for MATRIX=%s",
+    (matrix) => {
+      const { file } = seed(BAD);
+      const pre = file.replace(/\.json$/, ".pre-check.json");
+      const report = file.replace(/\.json$/, ".report.json");
+      // Sibling that must NOT be touched (unrelated file in same dir).
+      const bystander = join(file, "..", "unrelated.json");
+      writeFileSync(bystander, "{}");
+      // Seed prior diagnostics that --clean must delete.
+      writeFileSync(pre, "stale-pre");
+      writeFileSync(report, "stale-report");
+
+      const r = spawnSync(
+        "bash",
+        [REPRO, "--clean", "--matrix", matrix, file],
+        { encoding: "utf8" },
+      );
+      expect(r.status).not.toBe(0); // BAD input still fails
+      const fs = require("node:fs") as typeof import("node:fs");
+      // The scripts write fresh diagnostics after --clean, so files exist
+      // but MUST no longer equal the stale sentinels.
+      expect(fs.readFileSync(pre, "utf8")).not.toBe("stale-pre");
+      const reportExists = fs.existsSync(report);
+      if (reportExists) {
+        expect(fs.readFileSync(report, "utf8")).not.toBe("stale-report");
+      }
+      // Unrelated sibling untouched.
+      expect(fs.readFileSync(bystander, "utf8")).toBe("{}");
+    },
+  );
 });
+
