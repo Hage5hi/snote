@@ -26,6 +26,47 @@ import {
 
 export type DiffOpts = FilterOpts & { max?: number; failSlugs?: string[] };
 
+const ALL_KINDS: Kind[] = ["missing", "mistyped", "extra", "parseError"];
+
+/**
+ * Compile a filter pattern to a predicate. Supported forms:
+ *   - `/regex/flags` — anchored RegExp (use `.*` explicitly for partial)
+ *   - contains `*` or `?` — glob (e.g. `fail-chromium-*`)
+ *   - anything else — exact string match
+ */
+export function compileMatcher(pattern: string): (v: string) => boolean {
+  const rx = /^\/(.+)\/([gimsuy]*)$/.exec(pattern);
+  if (rx) {
+    const re = new RegExp(rx[1], rx[2]);
+    return (v) => re.test(v);
+  }
+  if (/[*?]/.test(pattern)) {
+    const src =
+      "^" +
+      pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") +
+      "$";
+    const re = new RegExp(src);
+    return (v) => re.test(v);
+  }
+  return (v) => v === pattern;
+}
+
+function matchesAny(value: string, patterns: string[] | null): boolean {
+  if (!patterns) return true;
+  for (const p of patterns) if (compileMatcher(p)(value)) return true;
+  return false;
+}
+
+/** Expand kind patterns (`*`, `parse*`, `/^p/`) against ALL_KINDS. */
+export function expandKindPatterns(patterns: string[]): Kind[] {
+  const out = new Set<Kind>();
+  for (const p of patterns) {
+    const m = compileMatcher(p);
+    for (const k of ALL_KINDS) if (m(k)) out.add(k);
+  }
+  return [...out];
+}
+
 function fingerprint(f: FileEntry): string {
   return JSON.stringify({
     p: f.parseError ?? null,
