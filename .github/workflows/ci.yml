@@ -847,7 +847,8 @@ print(json.dumps({
           shopt -s nullglob
           mkdir -p artifacts/schema-drift-diff-replay-verify/pretty
           index="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-          echo '[' > "$index"
+          # v1 envelope — mirror of the regular-matrix generator above.
+          echo '{"schema_version": 1, "entries": [' > "$index"
           first=1
           hard_fail=0
           count=0
