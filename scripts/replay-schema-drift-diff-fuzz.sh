@@ -29,7 +29,6 @@ if [[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   sed -n '2,27p' "$0"
   exit 2
 fi
-
 # ---- flag pre-parse: pull known flags from anywhere on the command line;
 # leave the rest as positional args.
 DRY_RUN=0
@@ -37,6 +36,7 @@ PRINT_MANIFEST=0
 VERBOSE=0
 JSON_SUMMARY=0
 PATTERN_OVERRIDE=""
+OUTPUT_DIR_OVERRIDE=""
 POSARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,10 +46,13 @@ while [[ $# -gt 0 ]]; do
     --json-summary)        JSON_SUMMARY=1; shift ;;
     --test-name-pattern)   PATTERN_OVERRIDE="${2:?--test-name-pattern requires a value}"; shift 2 ;;
     --test-name-pattern=*) PATTERN_OVERRIDE="${1#*=}"; shift ;;
+    --output-dir)          OUTPUT_DIR_OVERRIDE="${2:?--output-dir requires a value}"; shift 2 ;;
+    --output-dir=*)        OUTPUT_DIR_OVERRIDE="${1#*=}"; shift ;;
     *)                     POSARGS+=("$1"); shift ;;
   esac
 done
 set -- "${POSARGS[@]}"
+
 
 vlog() { [[ "$VERBOSE" == "1" ]] && echo "verbose: $*" >&2 || true; }
 
