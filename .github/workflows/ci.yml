@@ -617,6 +617,10 @@ jobs:
               echo '</details>'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # Retention: 14 days (see the atomic-crossos job above for the
+      # rationale + where to find these in the Actions UI). Uploaded on
+      # success AND failure so you can diff a green stress run's
+      # replay-summary.json against a red one without re-running.
       - name: upload dry-run verify + replay-command artifacts
         id: upload-verify
         if: always() && steps.prepare-replay.outputs.folder != ''
@@ -624,6 +628,7 @@ jobs:
         with:
           name: schema-drift-diff-stress-replay-verify-${{ matrix.os }}
           if-no-files-found: ignore
+          retention-days: 14
           path: |
             artifacts/schema-drift-diff-replay-verify/dry-run-verify.log
             artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
@@ -639,7 +644,9 @@ jobs:
             echo ''
             echo "- [schema-drift-diff-stress-replay-verify-${{ matrix.os }}](${{ steps.upload-verify.outputs.artifact-url }}) — contains \`dry-run-verify.log\`, \`replay-command.sh\`, and every \`replay-summary.json\`"
             echo "  - CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-stress-replay-verify-${{ matrix.os }}\`"
+            echo "  - Retention: 14 days from this run. Uploaded on both success and failure."
           } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
