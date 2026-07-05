@@ -93,6 +93,7 @@ function parseArgs(argv: string[]): { reportPath: string; opts: SummaryOpts } {
     else if (a === "--path") { opts.path = need(i, "--path"); i++; }
     else if (a === "--kind") { kinds.push(need(i, "--kind") as Kind); i++; }
     else if (a === "--max") { opts.max = parseInt(need(i, "--max"), 10); i++; }
+    else if (a === "--group-by-browser") { opts.groupByBrowser = true; }
     else if (!reportPath) reportPath = a;
     else { console.error(`unknown arg: ${a}`); process.exit(2); }
   }
