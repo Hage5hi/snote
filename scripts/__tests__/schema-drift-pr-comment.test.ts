@@ -103,12 +103,12 @@ describe("renderPrComment", () => {
     const md = renderPrComment(FAILING);
     const rowOrder = md
       .split("\n")
-      .filter((l) => l.startsWith("| `/"))
-      .map((l) => l.split("|")[1].trim());
+      .filter((l) => l.startsWith("| <a id="))
+      .map((l) => (l.match(/`([^`]+\.json)`/) ?? [])[1]);
     expect(rowOrder).toEqual([
-      "`/a/drift-chromium.json`",
-      "`/a/drift-combined.json`",
-      "`/z/drift-webkit.json`",
+      "/a/drift-chromium.json",
+      "/a/drift-combined.json",
+      "/z/drift-webkit.json",
     ]);
   });
 
