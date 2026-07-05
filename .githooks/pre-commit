@@ -18,8 +18,40 @@
 #   bun run hooks:install
 set -euo pipefail
 
+# --help / -h — document supported env vars and exit codes without
+# running the hook body. Safe to run at any time.
+case "${1:-}" in
+  -h|--help)
+    cat <<'HELP'
+Lovable pre-commit hook — i18n allowlist + pretty-index schema-drift gate.
+
+Environment overrides:
+  I18N_HOOK_FORCE=1                  run i18n check even if no i18n files staged
+  PRETTY_INDEX_HOOK_SKIP=1           skip the pretty-index gate
+  PRETTY_INDEX_HOOK_FORCE=1          run the pretty-index gate for any commit
+  PRETTY_INDEX_HOOK_MATRIX=<value>   atomic | stress   (default: atomic)
+  PRETTY_INDEX_HOOK_DRY_RUN=1        print resolved paths + exit 0, no writes
+
+Bypass entirely:
+  git commit --no-verify
+
+Documented exit codes:
+  0  ok / dry-run / no relevant files staged
+  1  check failed (i18n allowlist drift OR pretty-index schema drift)
+  2  usage error (invalid PRETTY_INDEX_HOOK_MATRIX value)
+  3  pretty-index schema validation failed
+  4  pretty-index input file missing
+
+CI artifact prefixes (uploaded on failure, per matrix):
+  atomic  ->  schema-drift-diff-replay-pretty-index-failure-<os>
+  stress  ->  schema-drift-diff-stress-replay-pretty-index-failure-<os>
+HELP
+    exit 0 ;;
+esac
+
 # Files staged for this commit (added/copied/modified/renamed).
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR || true)
+
 
 # Fail-fast: validate PRETTY_INDEX_HOOK_MATRIX before ANY early-return
 # so a typo (e.g. `PRETTY_INDEX_HOOK_MATRIX=bogus git commit ...`) aborts
@@ -42,7 +74,10 @@ if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
   DR_INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
   DR_PRE="${DR_INDEX%.json}.pre-check.json"
   DR_REPORT="${DR_INDEX%.json}.report.json"
-  echo "▶ pre-commit [dry-run]: pretty-index gate (MATRIX=$HOOK_MATRIX)"
+  DR_DIR="$(dirname -- "$DR_INDEX")"
+  echo "▶ pre-commit [dry-run]: pretty-index gate"
+  echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
+  echo "  diagnostic directory              = $DR_DIR"
   echo "  would run: scripts/reproduce-ci-pretty-index-check.sh --clean --matrix $HOOK_MATRIX $DR_INDEX"
   echo "  expected diagnostic paths:"
   echo "    input     : $DR_INDEX"
@@ -54,8 +89,10 @@ if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
     echo "  CI artifact prefix: schema-drift-diff-replay-pretty-index-failure-<os>"
   fi
   echo "  documented exit codes: 0=ok, 1=drift, 2=usage, 3=schema, 4=missing"
+  echo "▶ pre-commit [dry-run]: exiting 0 (no files created or modified)"
   exit 0
 fi
+
 
 needs_check() {
   if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
@@ -134,16 +171,14 @@ pretty_index_needs_check() {
 
 if pretty_index_needs_check; then
   echo "▶ pre-commit: pretty-index schema-drift check"
-  # Only run when the default CI input file actually exists; otherwise
-  # there is nothing to validate (contributors without generator output
-  # should not be blocked).
   INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
   # HOOK_MATRIX was validated up-front (fail-fast) — safe to use as-is.
   # PRETTY_INDEX_HOOK_DRY_RUN is handled at the top of this hook.
-
-
+  echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
+  echo "  diagnostic directory              = $(dirname -- "$INDEX")"
 
   if [ -f "$INDEX" ]; then
+
     if ! scripts/reproduce-ci-pretty-index-check.sh --clean --matrix "$HOOK_MATRIX" "$INDEX"; then
       echo ""
       echo "❌ pre-commit: pretty-index CI check FAILED."

@@ -15,7 +15,9 @@ REPORT = $(INDEX:.json=.report.json)
 
 .PHONY: help pretty-index-check pretty-index-check-clean \
         pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean \
+        pretty-index-clean-dry-run \
         pretty-index-artifacts pretty-index-hook-dry-run
+
 
 
 
@@ -64,6 +66,23 @@ pretty-index-diagnostics:
 pretty-index-clean:
 	@rm -f -- "$(PRE)" "$(REPORT)"
 	@echo "removed: $(PRE) $(REPORT)"
+
+pretty-index-clean-dry-run:
+	@echo "pretty-index-clean dry-run — the following files WOULD be removed:"
+	@echo ""
+	@echo "  MATRIX=atomic (artifact: schema-drift-diff-replay-pretty-index-failure-<os>)"
+	@for f in "$(PRE)" "$(REPORT)"; do \
+	  if [ -e "$$f" ]; then echo "    [exists] $$f"; else echo "    [absent] $$f"; fi; \
+	done
+	@echo ""
+	@echo "  MATRIX=stress (artifact: schema-drift-diff-stress-replay-pretty-index-failure-<os>)"
+	@for f in "$(PRE)" "$(REPORT)"; do \
+	  if [ -e "$$f" ]; then echo "    [exists] $$f"; else echo "    [absent] $$f"; fi; \
+	done
+	@echo ""
+	@echo "(both matrices share the same on-disk siblings; only the CI artifact upload name differs)"
+	@echo "run 'make pretty-index-clean' to actually remove them."
+
 
 pretty-index-artifacts:
 	@echo "Expected pretty-index diagnostic artifact filenames:"
