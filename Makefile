@@ -17,7 +17,9 @@ REPORT = $(INDEX:.json=.report.json)
         pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean \
         pretty-index-clean-dry-run \
         pretty-index-artifacts pretty-index-hook-dry-run \
-        pretty-index-artifacts-download
+        pretty-index-artifacts-download \
+        pretty-index-artifacts-verify \
+        pretty-index-hook-validate-downloaded
 
 
 
@@ -136,4 +138,48 @@ pretty-index-artifacts-download:
 	@ls -1 ./_pretty-index-atomic ./_pretty-index-stress 2>/dev/null || true
 	@echo ""
 	@echo "inspect with:  jq . ./_pretty-index-atomic/pretty-index.report.json"
+	@echo "verify with:   make pretty-index-artifacts-verify"
+	@echo "reproduce with: make pretty-index-hook-validate-downloaded"
+
+# Verify sha256 checksums of the downloaded atomic/stress pretty-index
+# diagnostic artifacts. Each uploaded artifact ships a sibling
+# pretty-index.checksums.sha256 (computed in CI just before upload); this
+# target re-runs `sha256sum -c` against the downloaded files so local
+# inspection can trust the bytes.
+pretty-index-artifacts-verify:
+	@rc=0; \
+	for dir in ./_pretty-index-atomic ./_pretty-index-stress; do \
+	  if [ ! -d "$$dir" ]; then \
+	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; rc=2; continue; \
+	  fi; \
+	  if [ ! -f "$$dir/pretty-index.checksums.sha256" ]; then \
+	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; rc=2; continue; \
+	  fi; \
+	  echo "==> verifying $$dir"; \
+	  ( cd "$$dir" && sha256sum -c pretty-index.checksums.sha256 ) || rc=1; \
+	done; \
+	if [ $$rc -eq 0 ]; then echo ""; echo "✅ all downloaded pretty-index artifacts verified"; fi; \
+	exit $$rc
+
+# Reproduce a CI failure locally by running the pre-commit hook in
+# validation mode against each downloaded pretty-index directory. Copies
+# the downloaded pretty-index.json into the expected on-disk path
+# ($(INDEX)) and invokes the hook with PRETTY_INDEX_HOOK_FORCE=1 so it
+# runs regardless of staged files, once per MATRIX.
+pretty-index-hook-validate-downloaded:
+	@$(MAKE) --no-print-directory pretty-index-artifacts-verify
+	@mkdir -p -- "$(dir $(INDEX))"
+	@rc=0; \
+	for matrix in atomic stress; do \
+	  dir="./_pretty-index-$$matrix"; \
+	  if [ ! -f "$$dir/pretty-index.json" ]; then \
+	    echo "❌ $$dir/pretty-index.json missing" >&2; rc=2; continue; \
+	  fi; \
+	  echo ""; echo "==> pre-commit hook validation (MATRIX=$$matrix) against $$dir"; \
+	  cp -- "$$dir/pretty-index.json" "$(INDEX)"; \
+	  PRETTY_INDEX_HOOK_FORCE=1 PRETTY_INDEX_HOOK_MATRIX=$$matrix \
+	    .githooks/pre-commit || rc=1; \
+	done; \
+	exit $$rc
+
 
