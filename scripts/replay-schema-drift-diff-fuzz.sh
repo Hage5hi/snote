@@ -95,8 +95,9 @@ if [[ "${1:-}" == "--from" ]]; then
     echo "verbose:   SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS      -> env passthrough (vitest --testTimeout)" >&2
   fi
   echo "--from: verifying checksums in $SUMS" >&2
+  set +e
   SUMS_OUT="$(cd "$SRC" && sha256sum -c checksums.sha256 2>&1)"; SUMS_RC=$?
-  echo "$SUMS_OUT" >&2
+  set -e
   if [[ $SUMS_RC -ne 0 ]]; then
     echo "--from: FAIL checksum mismatch in $SRC" >&2
     if [[ "$VERBOSE" == "1" ]]; then
