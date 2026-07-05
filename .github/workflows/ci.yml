@@ -911,8 +911,10 @@ print(json.dumps({
               echo '</details>'
             } >> "$GITHUB_STEP_SUMMARY"
           done
-          echo ']' >> "$index"
-          if ! val_err=$(python3 scripts/validate-pretty-index.py "$index" 2>&1 1>/dev/null); then
+          echo ']}' >> "$index"
+          # Enforce schema_version=1 (matches the generator literal above)
+          # so drift between generator and validator fails loudly here.
+          if ! val_err=$(python3 scripts/validate-pretty-index.py --require-version 1 "$index" 2>&1 1>/dev/null); then
             first_line=$(printf '%s\n' "$val_err" | head -n1)
             echo "::error file=${index}::pretty-index.json failed schema validation at ${index}: ${first_line}" >&2
             {
