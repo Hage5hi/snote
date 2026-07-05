@@ -198,9 +198,19 @@ function loadReport(path: string, label: string): Report {
   }
   if (!Array.isArray(r?.files)) problems.push("`files` (array) is missing");
   if (problems.length) {
+    const receivedKeys =
+      r && typeof r === "object" ? Object.keys(r as object) : [];
+    const expected = ["strict", "totals", "files"] as const;
+    const missingTop = expected.filter((k) => !receivedKeys.includes(k));
+    const checklist = expected
+      .map((k) => `    ${receivedKeys.includes(k) ? "[x]" : "[ ]"} ${k}`)
+      .join("\n");
     console.error(
       `error: ${label} report at "${path}" is missing required fields:\n` +
       problems.map((p) => `  - ${p}`).join("\n") + "\n" +
+      `  received top-level keys: ${receivedKeys.length ? receivedKeys.join(", ") : "(none)"}\n` +
+      (missingTop.length ? `  missing top-level keys: ${missingTop.join(", ")}\n` : "") +
+      `  expected schema checklist:\n${checklist}\n` +
       `  fix: this file must be the JSON produced by \`schema-drift-view.sh --validation-report\`.\n` +
       `       Expected shape: { strict: boolean, totals: { checked, ok, invalid }, files: [...] }`,
     );
@@ -231,13 +241,13 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     else if (a === "--markdown") markdown = true;
     else if (a === "--json") json = true;
     else if (a === "--dry-run") dryRun = true;
-    else if (a === "--fail-slug") { failSlugs.push(need(i, "--fail-slug")); i++; }
-    else if (a.startsWith("--fail-slug=")) failSlugs.push(a.slice(12));
+    else if (a === "--fail-slug") { failSlugs.push(...need(i, "--fail-slug").split(",")); i++; }
+    else if (a.startsWith("--fail-slug=")) failSlugs.push(...a.slice(12).split(","));
     else if (a.startsWith("--")) { console.error(`error: unknown arg: ${a}`); process.exit(2); }
     else positional.push(a);
   }
   if (kinds.length) opts.kind = kinds;
-  if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.replace(/^#/, ""));
+  if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.trim().replace(/^#/, "")).filter(Boolean);
   if (positional.length !== 2) {
     console.error("Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> [flags]");
     process.exit(2);

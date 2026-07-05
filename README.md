@@ -472,15 +472,27 @@ input order.
 
 Text (default), Markdown (`--markdown` or an `--out *.md` path), or JSON
 (`--json`). `--dry-run` prints the body without writing `--out`.
-`--fail-slug <slug>` (repeatable) limits both markdown and JSON output to
-specific anchors (e.g. `--fail-slug fail-chromium-drift-chromium`); a
-leading `#` is stripped, so `--fail-slug '#fail-…'` also works.
+`--fail-slug <slug>` limits both markdown and JSON output to specific
+anchors (e.g. `--fail-slug fail-chromium-drift-chromium`); a leading `#`
+is stripped. The flag is repeatable **and** accepts a comma-separated
+list, so all of these are equivalent:
+
+```bash
+--fail-slug fail-a --fail-slug fail-b
+--fail-slug fail-a,fail-b
+--fail-slug='#fail-a,#fail-b'
+```
 
 Exit codes: `0` success, `2` bad CLI usage, `3` report file missing /
 unreadable, `4` file is not valid JSON, `5` file is missing required
-fields (each error includes a suggested `fix:` line).
+fields. Errors for exit codes `3–5` include a suggested `fix:` line;
+exit `5` additionally prints the exact received top-level keys and an
+`[x] / [ ]` expected-schema checklist so it's obvious which field is
+absent.
 
-`--json` schema (top-level `matchedAnchors` + counts for programmatic use):
+The `--json` output shape is described by
+[`schemas/schema-drift-diff.schema.json`](schemas/schema-drift-diff.schema.json)
+(JSON Schema draft-07). A realistic payload:
 
 ```json
 {
