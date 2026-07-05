@@ -473,3 +473,78 @@ describe("pretty-replay-summary.py property/fuzz on malformed manifest_mapping",
   });
 });
 
+describe("pretty-replay-summary.py CRLF vs LF input", () => {
+  const FIXTURE = {
+    mode: "dry-run",
+    fail_reason: "",
+    manifest_mapping: [
+      { manifest_entry: "A", required_file: "/f", role: "r1" },
+      { manifest_entry: "B_LONGER", required_file: "/x/y.txt", role: "r2" },
+    ],
+  };
+
+  function run(raw: string): { status: number | null; stdout: string; stderr: string } {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "s.json");
+    writeFileSync(p, raw);
+    const r = spawnSync("python3", [PRETTY, "--fixed-widths", "--no-color", p], { encoding: "utf8" });
+    return { status: r.status, stdout: r.stdout, stderr: r.stderr };
+  }
+
+  it("--fixed-widths --no-color produces byte-identical output for LF and CRLF inputs", () => {
+    const lf = JSON.stringify(FIXTURE, null, 2);
+    const crlf = lf.replace(/\n/g, "\r\n");
+    const a = run(lf);
+    const b = run(crlf);
+    expect(a.status, a.stderr).toBe(0);
+    expect(b.status, b.stderr).toBe(0);
+    expect(b.stdout).toBe(a.stdout);
+    // Sanity: no stray \r bytes in output regardless of input EOLs.
+    expect(a.stdout.includes("\r")).toBe(false);
+    expect(b.stdout.includes("\r")).toBe(false);
+  });
+});
+
+describe("pretty-replay-summary.py --markdown", () => {
+  const FIXTURE = {
+    mode: "dry-run",
+    fail_reason: "",
+    manifest_mapping: [
+      { manifest_entry: "A", required_file: "/f", role: "r1" },
+      { manifest_entry: "MUCH_LONGER_KEY_NAME", required_file: "/some/other/file.txt", role: "r2" },
+    ],
+  };
+
+  function pretty(args: string[]) {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "s.json");
+    writeFileSync(p, JSON.stringify(FIXTURE));
+    return spawnSync("python3", [PRETTY, p, ...args], { encoding: "utf8" });
+  }
+
+  it("renders a Markdown table with pipes and a divider row", () => {
+    const r = pretty(["--markdown", "--fixed-widths", "--no-color"]);
+    expect(r.status, r.stderr).toBe(0);
+    const tableLines = r.stdout.split("\n").filter(l => l.startsWith("|"));
+    // header + divider + 2 rows
+    expect(tableLines.length).toBe(4);
+    expect(tableLines[0]).toMatch(/^\| manifest_entry\s+\| required_file\s+\| role\s+\|$/);
+    expect(tableLines[1]).toMatch(/^\| -+ \| -+ \| -+ \|$/);
+    expect(tableLines[2]).toContain("| A ");
+    expect(tableLines[3]).toContain("| MUCH_LONGER_KEY_NAME ");
+    // All rows have equal length under --fixed-widths.
+    const widths = new Set(tableLines.map(l => l.length));
+    expect(widths.size).toBe(1);
+  });
+
+  it("without --markdown falls back to the plain aligned table", () => {
+    const r = pretty(["--fixed-widths", "--no-color"]);
+    expect(r.status).toBe(0);
+    expect(r.stdout).not.toMatch(/^\|/m);
+    expect(r.stdout).toContain("-- manifest_mapping --");
+  });
+});
+
+

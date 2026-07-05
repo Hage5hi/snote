@@ -10,6 +10,10 @@ Options:
                         widths (entry=40, file=48) instead of auto-sizing.
                         Guarantees byte-identical output across environments
                         with different manifest values.
+  --markdown            Render the manifest_mapping table as a
+                        GitHub-friendly Markdown table (`| col | ... |`).
+                        Combine with --fixed-widths for deterministic
+                        cell padding.
   --no-color            No-op today (script emits no ANSI colors); accepted
                         for forward-compatibility so CI can pin deterministic
                         rendering. NO_COLOR env var is also honored.
@@ -55,7 +59,7 @@ FIXED_ENTRY_WIDTH = 40
 FIXED_FILE_WIDTH = 48
 
 
-def render(summary: dict, *, fixed_widths: bool = False) -> str:
+def render(summary: dict, *, fixed_widths: bool = False, markdown: bool = False) -> str:
     lines: list[str] = ["== replay-summary =="]
     width = max(len(k) for k in FIELD_ORDER)
     for key in FIELD_ORDER:
@@ -84,16 +88,35 @@ def render(summary: dict, *, fixed_widths: bool = False) -> str:
         else:
             entry_w = max(len(str(m.get("manifest_entry", ""))) for m in mapping)
             file_w = max(len(str(m.get("required_file", ""))) for m in mapping)
-        header = f"  {'manifest_entry'.ljust(entry_w)}  {'required_file'.ljust(file_w)}  role"
-        lines.append(header)
-        lines.append(f"  {'-' * entry_w}  {'-' * file_w}  {'-' * 4}")
-        for m in mapping:
+        if markdown:
+            # GitHub-friendly Markdown table. Cells are padded to the same
+            # fixed widths so `--fixed-widths --markdown` output is
+            # deterministic across environments and line-ending styles.
+            role_w = max(4, max((len(str(m.get("role", ""))) for m in mapping), default=4))
             lines.append(
-                f"  {str(m.get('manifest_entry', '')).ljust(entry_w)}"
-                f"  {str(m.get('required_file', '')).ljust(file_w)}"
-                f"  {m.get('role', '')}"
+                f"| {'manifest_entry'.ljust(entry_w)} | {'required_file'.ljust(file_w)} | {'role'.ljust(role_w)} |"
             )
+            lines.append(
+                f"| {'-' * entry_w} | {'-' * file_w} | {'-' * role_w} |"
+            )
+            for m in mapping:
+                lines.append(
+                    f"| {str(m.get('manifest_entry', '')).ljust(entry_w)}"
+                    f" | {str(m.get('required_file', '')).ljust(file_w)}"
+                    f" | {str(m.get('role', '')).ljust(role_w)} |"
+                )
+        else:
+            header = f"  {'manifest_entry'.ljust(entry_w)}  {'required_file'.ljust(file_w)}  role"
+            lines.append(header)
+            lines.append(f"  {'-' * entry_w}  {'-' * file_w}  {'-' * 4}")
+            for m in mapping:
+                lines.append(
+                    f"  {str(m.get('manifest_entry', '')).ljust(entry_w)}"
+                    f"  {str(m.get('required_file', '')).ljust(file_w)}"
+                    f"  {m.get('role', '')}"
+                )
     return "\n".join(lines) + "\n"
+
 
 
 def validate(summary: dict) -> list[str]:
@@ -135,11 +158,14 @@ def main(argv: list[str]) -> int:
         sys.stderr.write(__doc__ or "")
         return EXIT_USAGE
     fixed_widths = False
+    markdown = False
     # --no-color is accepted (no-op) for deterministic CI rendering.
     positional: list[str] = []
     for a in args:
         if a == "--fixed-widths":
             fixed_widths = True
+        elif a == "--markdown":
+            markdown = True
         elif a == "--no-color":
             pass
         elif a.startswith("--"):
@@ -187,9 +213,10 @@ def main(argv: list[str]) -> int:
             + "".join(f"  - {p}\n" for p in problems)
         )
         return EXIT_SCHEMA
-    sys.stdout.write(render(summary, fixed_widths=fixed_widths))
+    sys.stdout.write(render(summary, fixed_widths=fixed_widths, markdown=markdown))
     code = summary.get("exit_code")
     return int(code) if isinstance(code, int) else EXIT_OK
+
 
 
 if __name__ == "__main__":
