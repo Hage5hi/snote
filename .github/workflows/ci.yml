@@ -1244,6 +1244,7 @@ print(json.dumps({
           cat /tmp/pi-mismatch-summary-stress.json
 
       - name: upload pretty-index mismatch summary JSON (MATRIX=stress)
+        id: upload-pi-summary-stress
         if: failure() && hashFiles('/tmp/pi-mismatch-summary-stress.json') != ''
         uses: actions/upload-artifact@v4
         with:
@@ -1251,6 +1252,29 @@ print(json.dumps({
           path: /tmp/pi-mismatch-summary-stress.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: append pretty-index mismatch summary to step summary (MATRIX=stress)
+        if: failure() && hashFiles('/tmp/pi-mismatch-summary-stress.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          F=/tmp/pi-mismatch-summary-stress.json
+          URL="${{ steps.upload-pi-summary-stress.outputs.artifact-url }}"
+          {
+            echo ""
+            echo "### pretty-index mismatch summary (MATRIX=stress, ${{ matrix.os }})"
+            echo ""
+            echo "| matrix | total | mismatched | missing |"
+            echo "| --- | ---: | ---: | ---: |"
+            jq -r '.matrices | to_entries[] | "| \(.key) | \(.value.total) | \(.value.mismatched) | \(.value.missing) |"' -- "$F"
+            jq -r '.totals   | "| **total** | \(.total) | \(.mismatched) | \(.missing) |"' -- "$F"
+            echo ""
+            if [ -n "$URL" ]; then
+              echo "- [download \`pretty-index-mismatch-summary-stress-${{ matrix.os }}.json\`]($URL)"
+            else
+              echo "- _summary.json artifact URL unavailable_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
 
 
