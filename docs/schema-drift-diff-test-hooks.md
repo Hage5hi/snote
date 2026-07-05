@@ -510,6 +510,11 @@ across runners):
 - `--no-color` — accepted no-op today; script emits no ANSI colors.
   Reserved so CI can pin deterministic output. The `NO_COLOR` env var
   is also honored.
+- `--markdown` — render the `manifest_mapping` table as a
+  GitHub-friendly Markdown table (`| col | ... |` with a `---` divider
+  row). Combine with `--fixed-widths` for deterministic cell padding.
+- Input line endings are normalized: CRLF and LF inputs produce
+  byte-identical stdout under `--fixed-widths --no-color`.
 
 Exit codes:
 
