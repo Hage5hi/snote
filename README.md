@@ -222,6 +222,28 @@ bun run schema-guard -- --strict  # parity with CI: exits 1 on drift
 bun run schema-guard:view         # side-by-side viewer for the diffs
 bun run schema-guard:view types   # just the .types.gen.ts diff
 bun run schema-guard:view schemas # just the two schema JSON diffs
+
+# Preview without a bundle on disk (planning / CI dry-run).
+# Prints MATCH/SKIP lines and the exact diff/view command per file.
+bun run schema-guard:view -- --dry-run
+bun run schema-guard:view -- --dry-run --type schemas --viewer diff-y
+
+# --file is repeatable AND accepts comma-separated substrings, so you can
+# narrow to several bases in a single invocation without rerunning.
+bun run schema-guard:view -- --file report --file diff
+bun run schema-guard:view -- --file report,types.gen
+
+# --browsers scopes the manifest + viewer output to a subset of Playwright
+# projects (matches the CI matrix names). Comma-separated or repeatable.
+bun run schema-guard:view -- --browsers chromium,firefox
+```
+
+The CI **schema-guard** workflow additionally emits a per-browser
+artifact manifest (expected filename → actual `test-results/` path,
+with `✅ present` or `⚠️ missing`) into the job summary and echoes any
+missing files as `::warning::` annotations so they surface in the run's
+annotations pane. The same manifest is reproducible locally via
+`--dry-run` — no CI artifact download required.
 ```
 
 Drift diffs are always written to **`_schema_drift/`** in the repo root:
