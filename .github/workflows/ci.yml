@@ -434,6 +434,25 @@ jobs:
             echo "  - CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-replay-verify-${{ matrix.os }}\`"
             echo "  - Retention: 14 days from this run. Uploaded on both success and failure so you can diff summaries across runs."
           } >> "$GITHUB_STEP_SUMMARY"
+      # Pretty-print each replay-summary.json into the step summary so
+      # debuggers can eyeball mode / exit_code / seed / fail_reason /
+      # manifest_mapping without downloading the verify artifact.
+      - name: append pretty replay-summary to step summary
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in artifacts/schema-drift-diff-replay/*/replay-summary.json; do
+            {
+              echo ''
+              echo "<details><summary>pretty replay-summary: <code>${f}</code></summary>"
+              echo ''
+              echo '```'
+              python3 scripts/pretty-replay-summary.py "$f" || echo "(pretty-print failed for $f)"
+              echo '```'
+              echo '</details>'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
 
 
 
@@ -646,6 +665,25 @@ jobs:
             echo "  - CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-stress-replay-verify-${{ matrix.os }}\`"
             echo "  - Retention: 14 days from this run. Uploaded on both success and failure."
           } >> "$GITHUB_STEP_SUMMARY"
+      # Pretty-print each replay-summary.json into the step summary so
+      # nightly-stress debuggers can see the summary inline without
+      # downloading the verify artifact.
+      - name: append pretty replay-summary to step summary
+        if: always()
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for f in artifacts/schema-drift-diff-replay/*/replay-summary.json; do
+            {
+              echo ''
+              echo "<details><summary>pretty replay-summary: <code>${f}</code></summary>"
+              echo ''
+              echo '```'
+              python3 scripts/pretty-replay-summary.py "$f" || echo "(pretty-print failed for $f)"
+              echo '```'
+              echo '</details>'
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
 
 
 

@@ -504,6 +504,75 @@ cat replay-summary.json | scripts/pretty-replay-summary.py -
 Exit code mirrors the summarised replay's own `exit_code` when set
 (`null` in dry-run → exit `0`), and `2` on parse/argument errors.
 
+#### Example output — summary without `manifest_mapping`
+
+Input `replay-summary.json` (produced by `--dry-run --json-summary`,
+i.e. no `--verbose`):
+
+```json
+{"mode":"dry-run","exit_code":null,"checksum_verified":"ok","seed":"11",
+ "reader_ms":"100","pattern":"pat","timeout_ms":"30000",
+ "missing_files":[],"fail_reason":"","folder":"/tmp/x","manifest_mapping":[]}
+```
+
+`python3 scripts/pretty-replay-summary.py replay-summary.json` prints:
+
+```
+== replay-summary ==
+mode              : dry-run
+exit_code         : (null)
+checksum_verified : ok
+seed              : 11
+reader_ms         : 100
+pattern           : pat
+timeout_ms        : 30000
+missing_files     : (none)
+fail_reason       : 
+folder            : /tmp/x
+```
+
+Fields absent from the JSON are skipped (they do **not** render as
+`(null)`), so a real run that includes `duration_seconds` prints one
+extra line between `exit_code` and `checksum_verified`.
+
+#### Example output — summary with `manifest_mapping` (`--verbose`)
+
+Adding `--verbose` to the helper populates `manifest_mapping`; the
+pretty printer then appends an aligned table:
+
+```
+== replay-summary ==
+mode              : dry-run
+exit_code         : (null)
+checksum_verified : ok
+seed              : 22
+...
+folder            : /tmp/y
+
+-- manifest_mapping --
+  manifest_entry                        required_file                role
+  ------------------------------------  ---------------------------  ----
+  SCHEMA_DRIFT_DIFF_FUZZ_SEED           /tmp/y/manifest.txt          source of seed
+  SCHEMA_DRIFT_DIFF_READER_DURATION_MS  /tmp/y/manifest.txt          source of reader window ms
+  SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN   /tmp/y/manifest.txt          source of vitest -t filter
+  SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS     /tmp/y/manifest.txt          source of vitest --testTimeout
+  (env passthrough)                     /tmp/y/env.sh                env vars sourced before replay
+  (integrity)                           /tmp/y/checksums.sha256      sha256 of manifest.txt + env.sh
+```
+
+The table is regression-tested by
+`scripts/__tests__/pretty-replay-summary.test.ts`, which also asserts
+that every `manifest_mapping` entry emitted by the helper carries the
+documented `{manifest_entry, required_file, role}` shape and that
+`fail_reason` is always present in `replay-summary.json`.
+
+CI wires this in automatically: the atomic and nightly stress jobs run
+`python3 scripts/pretty-replay-summary.py` on every uploaded
+`replay-summary.json` and append the rendered block to
+`$GITHUB_STEP_SUMMARY` inside a collapsible `<details>` element, so you
+can eyeball `mode` / `exit_code` / `fail_reason` / `manifest_mapping`
+from the run page without downloading the verify artifact.
+
 ### `fail_reason` classes in `replay-summary.json`
 
 For dry-run failures the helper always populates `fail_reason` with one
