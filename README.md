@@ -766,9 +766,38 @@ cases by the printed stdout signature, not by the numeric exit alone:
 | `PRETTY_INDEX_HOOK_MATRIX must be atomic\|stress` | Invalid matrix env var | Only `atomic` or `stress` are accepted |
 
 If verify fails, the hook step is **skipped entirely** — you will never
-be asked to validate corrupted bytes. Run
-`.githooks/pre-commit --help` for the full documented hook exit-code
-table (0/1/2/3/4).
+be asked to validate corrupted bytes. A machine-readable mismatch
+report is written to `_pretty-index-checksum-mismatch.json` (override
+with `PI_MISMATCH_REPORT=<path>`) so you can inspect the diff after
+the fact. Run `.githooks/pre-commit --help` for the full documented
+hook exit-code table (0/1/2/3/4).
+
+**Scope (`PI_SCOPE`)** — every download-flow target accepts
+`PI_SCOPE=atomic|stress|both` (default: `both`) to restrict the work:
+
+```sh
+make pretty-index-artifacts-verify           PI_SCOPE=atomic
+make pretty-index-artifacts-verify-summary   PI_SCOPE=stress
+make pretty-index-reproduce-downloaded       PI_SCOPE=atomic VERBOSE=1
+make pretty-index-artifacts-download-verify-reproduce RUN_ID=<id> PI_SCOPE=stress
+```
+
+**Exit codes returned by each `pretty-index-*` make target:**
+
+| Target | 0 | 1 | 2 |
+| --- | --- | --- | --- |
+| `pretty-index-artifacts-verify` | all listed checksums match | at least one file mismatched or missing (writes `PI_MISMATCH_REPORT`) | dir missing / `.checksums.sha256` missing / bad `PI_SCOPE` |
+| `pretty-index-artifacts-verify-summary` | all matrices `PASS` | any matrix `FAIL` | bad `PI_SCOPE` |
+| `pretty-index-artifacts-download` | download succeeded | — | `RUN_ID` unset / `gh` not installed |
+| `pretty-index-hook-validate-downloaded` | verify + hook both passed | verify failed **or** hook reported schema drift | dir / `pretty-index.json` / `PI_SCOPE` invalid |
+| `pretty-index-reproduce-downloaded` | verify + hook both passed | verify failed **or** hook drift | same as above |
+| `pretty-index-artifacts-download-verify-reproduce` | full pipeline passed | verify or hook failed | `RUN_ID` unset or same as above |
+| `pretty-index-artifacts-clean` | always 0 | — | — |
+| `pretty-index-hook-dry-run` | always 0 (hook prints paths only) | — | invalid `PRETTY_INDEX_HOOK_MATRIX` (from the hook, exit 2) |
+
+Run `make pretty-index-help` for a concise on-terminal reference of
+every target, override, and `VERBOSE=1` behavior.
+
 
 
 
