@@ -190,4 +190,5 @@ if [ "$DRY_RUN" != "1" ] && [ -s "$OUT/cli-schema-versions.txt" ]; then
 fi
 echo ""
 files_str="${FILE_MATCHES[*]:-<none>}"
-echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}])"
+browsers_str="${BROWSERS[*]:-<all>}"
+echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], browsers=[${browsers_str}])"
