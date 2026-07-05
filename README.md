@@ -798,6 +798,102 @@ make pretty-index-artifacts-download-verify-reproduce RUN_ID=<id> PI_SCOPE=stres
 Run `make pretty-index-help` for a concise on-terminal reference of
 every target, override, and `VERBOSE=1` behavior.
 
+**Fast feedback (`PI_FAIL_FAST=1`)** — abort the verify walk at the
+first per-file `MISMATCH` (or missing dir / missing checksums file).
+The generated report still parses as valid JSON and includes a
+`"fail_fast": true` marker so consumers know the results array is
+partial:
+
+```sh
+make pretty-index-artifacts-verify PI_FAIL_FAST=1
+```
+
+**Custom mismatch report path (`PI_REPORT_PATH`)** — by default the
+verify targets write the machine-readable mismatch report to
+`_pretty-index-checksum-mismatch.json` in the current directory. Point
+it anywhere:
+
+```sh
+make pretty-index-artifacts-verify PI_REPORT_PATH=/tmp/pi-mismatch.json
+make pretty-index-artifacts-verify PI_REPORT_PATH=reports/pi/mismatch.json
+```
+
+Parent directories are created automatically. The legacy variable
+`PI_MISMATCH_REPORT` is still honored (used as the default value of
+`PI_REPORT_PATH`).
+
+### Checksum-mismatch report JSON format
+
+The report is a single JSON object written **only when verification
+fails**. On success, no file is written (any stale copy is removed
+first). Uploaded from CI as
+`pretty-index-checksum-mismatch-<matrix>-<os>` (retention 14 days).
+
+**Top-level shape:**
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `schema` | string | Always `"pretty-index-checksum-mismatch/v1"`. |
+| `scope` | `"atomic"` \| `"stress"` \| `"both"` | Value of `PI_SCOPE` used for the run (or the matrix name in CI). |
+| `fail_fast` | boolean | `true` iff the walk was cut short by `PI_FAIL_FAST=1`. Only present in local Make output. |
+| `matrix` | `"atomic"` \| `"stress"` | CI-only. Same as `scope` when the run is single-matrix. |
+| `dir` | string | CI-only. The on-disk diagnostics directory verified. |
+| `results` | array | One entry per file checked OR per error case (see below). Empty array = no files were reachable (all directories missing). |
+
+**`results[]` entry shapes:**
+
+Per-file result (the common case):
+
+```json
+{
+  "dir": "./_pretty-index-atomic",
+  "file": "pretty-index.report.json",
+  "expected": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "actual":   "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "status":   "MISMATCH"
+}
+```
+
+Error-case results (no `expected`/`actual` — the file couldn't be checked at all):
+
+```json
+{ "dir": "./_pretty-index-stress", "status": "dir_missing" }
+{ "dir": "./_pretty-index-atomic", "status": "checksums_missing" }
+```
+
+**Status values:**
+
+| `status` | Meaning |
+| --- | --- |
+| `MISMATCH` | Both hashes were computable but differ. `actual: ""` means the file listed in `pretty-index.checksums.sha256` no longer exists on disk. |
+| `OK` | File verified; only surfaces alongside `MISMATCH` siblings in the same failed run (so consumers can see the full picture). |
+| `dir_missing` | `_pretty-index-<matrix>/` was not present — user needs to run `make pretty-index-artifacts-download RUN_ID=<id>`. |
+| `checksums_missing` | Directory exists but `pretty-index.checksums.sha256` was not uploaded with the artifact. |
+
+**Complete example (local, `PI_SCOPE=both`, one file corrupted):**
+
+```json
+{
+  "schema": "pretty-index-checksum-mismatch/v1",
+  "scope": "both",
+  "fail_fast": false,
+  "results": [
+    { "dir": "./_pretty-index-atomic", "file": "pretty-index.json",           "expected": "…", "actual": "…", "status": "OK" },
+    { "dir": "./_pretty-index-atomic", "file": "pretty-index.pre-check.json", "expected": "…", "actual": "…", "status": "OK" },
+    { "dir": "./_pretty-index-atomic", "file": "pretty-index.report.json",    "expected": "e3b0…b855", "actual": "9f86…0a08", "status": "MISMATCH" },
+    { "dir": "./_pretty-index-stress", "status": "dir_missing" }
+  ]
+}
+```
+
+Parse with `jq`:
+
+```sh
+jq '[.results[] | select(.status=="MISMATCH")]' _pretty-index-checksum-mismatch.json
+```
+
+
+
 
 
 
