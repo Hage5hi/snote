@@ -48,6 +48,28 @@ EOF
 echo "replay -> $OUT" >&2
 cat "$OUT/manifest.txt" >&2
 
+# Pre-replay verification. If any of these fail we exit BEFORE spawning
+# vitest so a broken output directory doesn't get silently retried and
+# obscure the failing seed. All checks are cheap and use only the shell.
+verify() {
+  local label="$1" path="$2"
+  [ -e "$path" ]   || { echo "pre-replay: FAIL $label missing: $path" >&2; return 1; }
+  [ -r "$path" ]   || { echo "pre-replay: FAIL $label unreadable: $path" >&2; return 1; }
+  [ -s "$path" ]   || { echo "pre-replay: FAIL $label is empty: $path"   >&2; return 1; }
+  echo "pre-replay: OK   $label ($path)" >&2
+}
+: > "$OUT/vitest.stdout.log"
+: > "$OUT/vitest.stderr.log"
+verify "manifest"           "$OUT/manifest.txt"
+[ -w "$OUT/vitest.stdout.log" ] || { echo "pre-replay: FAIL stdout log not writable: $OUT/vitest.stdout.log" >&2; exit 8; }
+[ -w "$OUT/vitest.stderr.log" ] || { echo "pre-replay: FAIL stderr log not writable: $OUT/vitest.stderr.log" >&2; exit 8; }
+grep -q "^SCHEMA_DRIFT_DIFF_FUZZ_SEED:" "$OUT/manifest.txt" || {
+  echo "pre-replay: FAIL manifest missing SCHEMA_DRIFT_DIFF_FUZZ_SEED line" >&2; exit 8;
+}
+echo "pre-replay: OK   log files writable, manifest complete" >&2
+
+
+
 set +e
 SCHEMA_DRIFT_DIFF_FUZZ_SEED="$SEED" \
 SCHEMA_DRIFT_DIFF_READER_DURATION_MS="$READER_MS" \
