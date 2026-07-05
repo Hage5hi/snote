@@ -46,6 +46,10 @@ Flags:
                                  <prefix>-*.json in --manifest-dir for the required
                                  top-level keys and exit non-zero on any missing
                                  key. Requires --manifest-dir.
+  --strict-manifest              Like --validate-manifest, but ALSO fails on any
+                                 extra unknown top-level keys or on any key whose
+                                 value has the wrong type (e.g., matches must be
+                                 string[], combined must be boolean).
   -h, --help                     Show this help.
 
 Env:
