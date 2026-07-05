@@ -202,7 +202,7 @@ grep -q "^SCHEMA_DRIFT_DIFF_FUZZ_SEED:" "$OUT/manifest.txt" || {
   echo "pre-replay: FAIL $FAIL_REASON" >&2; exit 8;
 }
 CHECKSUM_STATUS="ok"
-CHECKSUM_OUT="$(cd "$OUT" && sha256sum -c checksums.sha256 2>&1)"; CHECKSUM_RC=$?
+set +e; CHECKSUM_OUT="$(cd "$OUT" && sha256sum -c checksums.sha256 2>&1)"; CHECKSUM_RC=$?; set -e
 if [[ $CHECKSUM_RC -ne 0 ]]; then
   CHECKSUM_STATUS="mismatch"
   FAIL_REASON="checksum mismatch in $OUT/checksums.sha256"
