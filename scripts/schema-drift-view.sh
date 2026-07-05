@@ -1,38 +1,82 @@
 #!/usr/bin/env bash
-# Pretty-print / side-by-side view of the drift bundle written by
+# schema-drift-view — pretty-print the drift bundle written by
 # `bun run schema-guard` (or the CI schema-guard workflow's `schema-drift`
 # artifact once unzipped into ./_schema_drift/).
-#
-# Usage:
-#   scripts/schema-drift-view.sh                          # print all diffs
-#   scripts/schema-drift-view.sh types                    # only .types.gen.ts.diff
-#   scripts/schema-drift-view.sh schemas                  # only *.schema.json.diff
-#   scripts/schema-drift-view.sh --file report            # substring-match a filename
-#   scripts/schema-drift-view.sh --type schema            # schema | types
-#   scripts/schema-drift-view.sh --viewer delta           # diff-y | delta | bat | cat
-#   OUT=./somewhere/_schema_drift scripts/schema-drift-view.sh
 set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/schema-drift-view.sh [POSITIONAL] [FLAGS]
+
+Positional (optional):
+  all | types | schemas          Shorthand for --type
+
+Flags:
+  --type   schemas|types|all     Restrict to schema JSON diffs, types.gen.ts diff, or both.
+  --file   <substr>              Show only files whose name contains <substr>.
+                                 Repeatable. Also accepts comma-separated values.
+  --viewer auto|diff-y|delta|bat|cat
+                                 Force a viewer. `auto` (default) picks diff -y when the
+                                 terminal is ≥180 cols, else delta, then bat, then cat.
+  -h, --help                     Show this help.
+
+Env:
+  OUT                            Drift bundle directory. Default: _schema_drift
+
+Examples:
+  # All diffs, auto viewer (side-by-side if the terminal is wide enough)
+  scripts/schema-drift-view.sh
+
+  # Only the .types.gen.ts diff
+  scripts/schema-drift-view.sh --type types
+  scripts/schema-drift-view.sh types            # positional shorthand
+
+  # Only the two schema JSON diffs
+  scripts/schema-drift-view.sh --type schemas
+
+  # Filter by substring (repeatable + comma-separated both work)
+  scripts/schema-drift-view.sh --file report
+  scripts/schema-drift-view.sh --file report --file diff
+  scripts/schema-drift-view.sh --file report,diff
+
+  # Force a specific viewer regardless of terminal width
+  scripts/schema-drift-view.sh --viewer diff-y
+  scripts/schema-drift-view.sh --viewer delta
+  scripts/schema-drift-view.sh --viewer bat
+  scripts/schema-drift-view.sh --viewer cat
+
+  # Point at an unzipped CI artifact
+  OUT=./downloads/schema-drift scripts/schema-drift-view.sh --type schemas
+EOF
+}
 
 OUT="${OUT:-_schema_drift}"
 FILTER="all"
-FILE_MATCH=""
-VIEWER="auto"   # auto | diff-y | delta | bat | cat
+FILE_MATCHES=()     # each entry is one substring
+VIEWER="auto"
+
+add_matches() {
+  # Split "$1" on commas so `--file a,b` expands to two entries.
+  local IFS=,
+  # shellcheck disable=SC2206
+  local parts=($1)
+  for p in "${parts[@]}"; do [ -n "$p" ] && FILE_MATCHES+=("$p"); done
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --file)    FILE_MATCH="${2:-}"; shift 2 ;;
-    --file=*)  FILE_MATCH="${1#*=}"; shift ;;
-    --type)    FILTER="${2:-all}"; shift 2 ;;
-    --type=*)  FILTER="${1#*=}"; shift ;;
-    --viewer)  VIEWER="${2:-auto}"; shift 2 ;;
+    --file)     add_matches "${2:-}"; shift 2 ;;
+    --file=*)   add_matches "${1#*=}"; shift ;;
+    --type)     FILTER="${2:-all}"; shift 2 ;;
+    --type=*)   FILTER="${1#*=}"; shift ;;
+    --viewer)   VIEWER="${2:-auto}"; shift 2 ;;
     --viewer=*) VIEWER="${1#*=}"; shift ;;
-    -h|--help)
-      sed -n '2,15p' "$0"; exit 0 ;;
+    -h|--help)  usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
-    *) echo "unknown flag: $1" >&2; exit 2 ;;
+    *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
   esac
 done
-# Normalize `--type schema` (singular) → `schemas`.
 [ "$FILTER" = "schema" ] && FILTER="schemas"
 [ "$FILTER" = "type" ]   && FILTER="types"
 
@@ -42,7 +86,6 @@ if [ ! -d "$OUT" ]; then
 fi
 
 COLS=$(tput cols 2>/dev/null || echo 160)
-# Resolve viewer preference.
 resolve_viewer() {
   case "$VIEWER" in
     diff-y|diff|side-by-side) echo "diff-y" ;;
@@ -67,9 +110,19 @@ pretty() {
   esac
 }
 
+matches_filter() {
+  # No --file filters ⇒ everything passes.
+  [ "${#FILE_MATCHES[@]}" -eq 0 ] && return 0
+  local base="$1" m
+  for m in "${FILE_MATCHES[@]}"; do
+    [[ "$base" == *"$m"* ]] && return 0
+  done
+  return 1
+}
+
 show() {
   local base="$1"
-  [ -n "$FILE_MATCH" ] && [[ "$base" != *"$FILE_MATCH"* ]] && return 0
+  matches_filter "$base" || return 0
   local committed="$OUT/committed/$base"
   local regen="$OUT/regenerated/$base"
   local diff_file="$OUT/${base}.diff"
@@ -98,7 +151,7 @@ case "$FILTER" in
   all|"")  show "focus-trap-inspect-report.schema.json"
            show "focus-trap-inspect-diff.schema.json"
            show "focus-trap-inspect-schema.types.gen.ts" ;;
-  *) echo "usage: $0 [all|types|schemas] [--file <substr>] [--type schemas|types] [--viewer auto|diff-y|delta|bat|cat]" >&2; exit 2 ;;
+  *) echo "unknown --type: $FILTER" >&2; usage >&2; exit 2 ;;
 esac
 
 if [ -s "$OUT/cli-schema-versions.txt" ]; then
@@ -107,4 +160,5 @@ if [ -s "$OUT/cli-schema-versions.txt" ]; then
   cat "$OUT/cli-schema-versions.txt"
 fi
 echo ""
-echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, filter=$FILTER, file~='${FILE_MATCH}')"
+files_str="${FILE_MATCHES[*]:-<none>}"
+echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}])"
