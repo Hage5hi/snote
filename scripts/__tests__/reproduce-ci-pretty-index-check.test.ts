@@ -89,5 +89,36 @@ describe("reproduce-ci-pretty-index-check.sh — exit + diagnostics harness", ()
     });
     expect(r.status).toBe(2);
     expect(r.stderr).toMatch(/--matrix must be atomic\|stress/);
+    // Usage error must NOT print the validator-failure step-summary block
+    // or any artifact prefix — those would mislead about what actually broke.
+    expect(r.stderr).not.toContain("pretty-index.json check failed");
+    expect(r.stderr).not.toContain(
+      "schema-drift-diff-replay-pretty-index-failure",
+    );
+    expect(r.stderr).not.toContain(
+      "schema-drift-diff-stress-replay-pretty-index-failure",
+    );
+  });
+
+  it("make pretty-index-check MATRIX=bogus surfaces the same usage error", () => {
+    const hasMake =
+      spawnSync("make", ["--version"], { encoding: "utf8" }).status === 0;
+    if (!hasMake) return;
+    const { file } = seed(BAD);
+    const r = spawnSync(
+      "make",
+      ["-s", "pretty-index-check", `INDEX=${file}`, "MATRIX=bogus"],
+      { cwd: REPO, encoding: "utf8" },
+    );
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/--matrix must be atomic\|stress/);
+    const combined = r.stderr + r.stdout;
+    expect(combined).not.toContain("pretty-index.json check failed");
+    expect(combined).not.toContain(
+      "schema-drift-diff-replay-pretty-index-failure",
+    );
+    expect(combined).not.toContain(
+      "schema-drift-diff-stress-replay-pretty-index-failure",
+    );
   });
 });

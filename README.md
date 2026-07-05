@@ -754,6 +754,38 @@ All three entry points write the same sibling `.pre-check.json` /
 non-zero exit. See `docs/schema-drift-diff-test-hooks.md` for the full
 exit-code contract.
 
+#### Exact CI commands (mirror the step-summary artifact prefix without guessing)
+
+Copy-paste these to reproduce **exactly** what each CI matrix runs. The
+only thing that differs between atomic and stress is the artifact
+prefix printed in the step-summary failure block — the underlying
+validator command is identical.
+
+```sh
+# ── atomic-crossos matrix ────────────────────────────────────────────
+# CI artifact on failure: schema-drift-diff-replay-pretty-index-failure-<os>
+make pretty-index-check MATRIX=atomic
+scripts/reproduce-ci-pretty-index-check.sh --matrix atomic \
+  artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Matrix atomic `
+  artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+
+# ── nightly-stress matrix ────────────────────────────────────────────
+# CI artifact on failure: schema-drift-diff-stress-replay-pretty-index-failure-<os>
+make pretty-index-check MATRIX=stress
+scripts/reproduce-ci-pretty-index-check.sh --matrix stress \
+  artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+pwsh scripts/reproduce-ci-pretty-index-check.ps1 -Matrix stress `
+  artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+```
+
+`MATRIX` (Makefile) / `--matrix` (bash) / `-Matrix` (PowerShell) all
+default to `atomic`. Passing an unknown value (e.g. `MATRIX=bogus`)
+exits with code **2** and prints `--matrix must be atomic|stress`
+without any misleading validator-failure step-summary block.
+
+
+
 
 ### Pre-commit hook — skipping the pretty-index check
 

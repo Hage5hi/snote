@@ -66,7 +66,7 @@ describe.skipIf(!hasPwsh)("reproduce-ci-pretty-index-check.ps1 — Windows harne
     expect(ps.stderr).toContain(".report.json");
   });
 
-  it("-Matrix atomic emits the atomic-crossos artifact prefix", () => {
+  it("-Matrix atomic emits the atomic-crossos artifact prefix + exact sibling filenames", () => {
     const file = seed(BAD);
     const ps = spawnSync(
       "pwsh",
@@ -76,9 +76,14 @@ describe.skipIf(!hasPwsh)("reproduce-ci-pretty-index-check.ps1 — Windows harne
     expect(ps.status).not.toBe(0);
     expect(ps.stderr).toContain("schema-drift-diff-replay-pretty-index-failure");
     expect(ps.stderr).not.toContain("schema-drift-diff-stress-replay-pretty-index-failure");
+    // Sibling artifact names must be rendered exactly (no drift in naming).
+    expect(ps.stderr).toContain("pretty-index.json");
+    expect(ps.stderr).toContain("pretty-index.pre-check.json");
+    expect(ps.stderr).toContain("pretty-index.report.json");
+    expect(ps.stderr).toContain("(matrix: atomic)");
   });
 
-  it("-Matrix stress emits the nightly-stress artifact prefix", () => {
+  it("-Matrix stress emits the nightly-stress artifact prefix + exact sibling filenames", () => {
     const file = seed(BAD);
     const ps = spawnSync(
       "pwsh",
@@ -87,6 +92,10 @@ describe.skipIf(!hasPwsh)("reproduce-ci-pretty-index-check.ps1 — Windows harne
     );
     expect(ps.status).not.toBe(0);
     expect(ps.stderr).toContain("schema-drift-diff-stress-replay-pretty-index-failure");
+    expect(ps.stderr).toContain("pretty-index.json");
+    expect(ps.stderr).toContain("pretty-index.pre-check.json");
+    expect(ps.stderr).toContain("pretty-index.report.json");
+    expect(ps.stderr).toContain("(matrix: stress)");
   });
 
   it("rejects an unknown -Matrix value (PowerShell ValidateSet)", () => {
