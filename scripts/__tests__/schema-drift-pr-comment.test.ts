@@ -1716,7 +1716,76 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
       expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
     },
   );
+
+  // Snapshot the exact atomicWrite failure stderr shape across every failure
+  // mode, with paths/pids/errnos normalized. This is the single source of
+  // truth for the three-line contract — every other test asserts a subset of
+  // this shape via `toContain` / `toMatch` and only this test needs to be
+  // updated when the wording changes.
+  it("atomicWrite stderr matches a normalized snapshot across all failure modes", () => {
+    const { mkdirSync, chmodSync } = require("node:fs");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+
+    const normalize = (s: string, destAbs: string) => {
+      const escaped = destAbs.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+      return s
+        .replace(new RegExp(`"${escaped}\\.\\d+\\.tmp"`, "g"), '"<DEST>.<PID>.tmp"')
+        .replace(new RegExp(`"${escaped}"`, "g"), '"<DEST>"')
+        .replace(/: (EACCES|EPERM|EISDIR|ENOENT|ENOTDIR|EIO_SIM)\b/g, ": <ERRNO>")
+        .trim();
+    };
+
+    // (a) Forced mid-write failure → cleanup: removed partial temp file
+    const okDest = join(dir, "sub", "diff.json");
+    const forced = bun(DIFF_SCRIPT, [p, p, "--json-out", okDest], {
+      SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL: "1",
+    });
+    expect(forced.code).toBe(7);
+    expect(normalize(forced.stderr, resolve(okDest))).toMatchInlineSnapshot(`
+      "error: cannot write json-out to "<DEST>"<ERRNO>
+        cleanup: removed partial temp file "<DEST>.<PID>.tmp"
+        fix: check that the parent directory exists and is writable, or pass a different --json-out path"
+    `);
+
+    // (b) Parent directory cannot be created (blocked by a regular file) →
+    //     cleanup: no temp file to remove
+    const blocker = join(dir, "blocker");
+    writeFileSync(blocker, "x");
+    const blocked = join(blocker, "nested", "diff.json");
+    const mp = bun(DIFF_SCRIPT, [p, p, "--json-out", blocked]);
+    expect(mp.code).toBe(7);
+    expect(normalize(mp.stderr, resolve(blocked))).toMatchInlineSnapshot(`
+      "error: cannot write json-out to "<DEST>"<ERRNO>
+        cleanup: no temp file to remove at "<DEST>.<PID>.tmp"
+        fix: check that the parent directory exists and is writable, or pass a different --json-out path"
+    `);
+
+    // (c) Permission denied on a read-only parent (skipped on Windows/root).
+    const isRoot = typeof (process as any).getuid === "function" && (process as any).getuid() === 0;
+    if (!isRoot && !isWindows) {
+      const roDir = join(dir, "ro");
+      mkdirSync(roDir, { recursive: true });
+      const roDest = join(roDir, "diff.json");
+      writeFileSync(roDest, "ORIG\n");
+      chmodSync(roDest, 0o444);
+      chmodSync(roDir, 0o555);
+      try {
+        const pd = bun(DIFF_SCRIPT, [p, p, "--json-out", roDest]);
+        expect(pd.code).toBe(7);
+        expect(normalize(pd.stderr, resolve(roDest))).toMatchInlineSnapshot(`
+          "error: cannot write json-out to "<DEST>"<ERRNO>
+            cleanup: no temp file to remove at "<DEST>.<PID>.tmp"
+            fix: check that the parent directory exists and is writable, or pass a different --json-out path"
+        `);
+      } finally {
+        try { chmodSync(roDir, 0o755); } catch {}
+        try { chmodSync(roDest, 0o644); } catch {}
+      }
+    }
+  });
 });
+
 
 
 
