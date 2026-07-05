@@ -631,8 +631,22 @@ python3 scripts/pretty-replay-summary.py \
 | `summary_file` | string | Path passed on the CLI. |
 | `fail_reason` | string | Copied verbatim from the summary (`""` on success). |
 | `exit_code` | integer \| null | Summary's `exit_code` if int, else `null`. |
-| `pretty_txt` | string \| null | Value of `--pretty-txt` (or `null` if omitted). |
-| `pretty_md` | string \| null | Value of `--pretty-md` (or `null` if omitted). |
+| `pretty_txt` | string \| null | Value of `--pretty-txt`, or `null` if omitted. **Always present** — never absent, never `undefined`. |
+| `pretty_md` | string \| null | Value of `--pretty-md`, or `null` if omitted. **Always present** — never absent, never `undefined`. |
+
+Contract details for `pretty_txt` / `pretty_md`:
+
+- Both keys are always emitted in the report; consumers can rely on
+  `obj.pretty_txt` / `obj.pretty_md` existing without a
+  `hasOwnProperty` guard.
+- The value is a JSON string when the corresponding CLI flag was
+  supplied, and JSON `null` otherwise. It is never the JavaScript
+  `undefined` sentinel or a missing key.
+- Since Python's `json.dumps(..., sort_keys=True)` is used, the byte
+  layout of the report is deterministic across runs and platforms.
+- CI's `pretty-index.json` inherits this contract entry-by-entry and
+  is enforced by `scripts/validate-pretty-index.py`, which fails the
+  job (exit 3) when either key is missing or has the wrong type.
 
 CI's `pretty-index.json` is the concatenation of these per-summary
 reports (one array entry per `replay-summary.json`), so its schema is
