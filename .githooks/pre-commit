@@ -110,16 +110,8 @@ if pretty_index_needs_check; then
   # there is nothing to validate (contributors without generator output
   # should not be blocked).
   INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-  # PRETTY_INDEX_HOOK_MATRIX=atomic|stress lets developers reproduce
-  # atomic vs stress artifact naming locally before committing. Defaults
-  # to atomic (matches the primary CI matrix).
-  HOOK_MATRIX="${PRETTY_INDEX_HOOK_MATRIX:-atomic}"
-  case "$HOOK_MATRIX" in
-    atomic|stress) ;;
-    *)
-      echo "❌ pre-commit: PRETTY_INDEX_HOOK_MATRIX must be atomic|stress (got: $HOOK_MATRIX)" >&2
-      exit 2 ;;
-  esac
+  # HOOK_MATRIX was validated up-front (fail-fast) — safe to use as-is.
+
   if [ -f "$INDEX" ]; then
     if ! scripts/reproduce-ci-pretty-index-check.sh --clean --matrix "$HOOK_MATRIX" "$INDEX"; then
       echo ""
