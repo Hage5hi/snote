@@ -231,8 +231,8 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     else if (a === "--markdown") markdown = true;
     else if (a === "--json") json = true;
     else if (a === "--dry-run") dryRun = true;
-    else if (a === "--fail-slug") { failSlugs.push(need(i, "--fail-slug")); i++; }
-    else if (a.startsWith("--fail-slug=")) failSlugs.push(a.slice(12));
+    else if (a === "--fail-slug") { failSlugs.push(...need(i, "--fail-slug").split(",")); i++; }
+    else if (a.startsWith("--fail-slug=")) failSlugs.push(...a.slice(12).split(","));
     else if (a.startsWith("--")) { console.error(`error: unknown arg: ${a}`); process.exit(2); }
     else positional.push(a);
   }
