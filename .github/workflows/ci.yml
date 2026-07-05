@@ -285,10 +285,11 @@ jobs:
             cp -a "$d"/. "$base"/ 2>/dev/null || true
           done
       # Kick off the replay helper on failure so the timestamped folder
-      # (manifest + logs) is materialized inside the workspace and can be
-      # downloaded as an artifact. Uses `|| true` because the replay itself
-      # is expected to also fail — we only care about the folder it writes.
-      - name: materialize replay folder on failure
+      # (manifest + env.sh + checksums) is materialized inside the workspace.
+      # Uses --dry-run here so vitest is NOT invoked yet — we only want the
+      # folder + integrity artifacts written to disk.
+      - name: prepare replay folder on failure (dry-run materialize)
+        id: prepare-replay
         if: failure() || cancelled()
         shell: bash
         run: |
@@ -299,7 +300,23 @@ jobs:
               "$SEED" \
               "${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}" \
               "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}" \
-            || true
+              --dry-run
+          FOLDER="$(ls -dt artifacts/schema-drift-diff-replay/*/ 2>/dev/null | head -n1)"
+          echo "folder=${FOLDER%/}" >> "$GITHUB_OUTPUT"
+      # Fail early if the just-materialized folder is missing files or its
+      # checksums don't verify. This protects against a corrupt upload
+      # silently producing an unusable replay artifact.
+      - name: dry-run verify replay folder integrity
+        if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
+        shell: bash
+        run: scripts/replay-schema-drift-diff-fuzz.sh --from "${{ steps.prepare-replay.outputs.folder }}" --dry-run
+      # Now execute the real replay against the verified folder.
+      # `|| true` because the replay is expected to also fail — we only
+      # care about the postrun logs it writes.
+      - name: materialize replay folder on failure (real replay)
+        if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
+        shell: bash
+        run: scripts/replay-schema-drift-diff-fuzz.sh --from "${{ steps.prepare-replay.outputs.folder }}" || true
       - name: upload --json-out debug artifacts
         id: upload-json-out
         if: failure() || cancelled()
@@ -314,7 +331,9 @@ jobs:
             artifacts/schema-drift-diff/dest-snapshot/**
             artifacts/schema-drift-diff-replay/**
       # Print an exact copy-paste replay command referencing the just-uploaded
-      # artifact (name + manifest path + seed + reader duration + timeout).
+      # artifact (name + manifest path + seed + reader duration + timeout),
+      # AND append the same block + replay-summary.txt to the workflow
+      # step summary so debuggers can find it without opening job logs.
       - name: print copy-paste replay command
         if: (failure() || cancelled()) && steps.upload-json-out.outcome == 'success'
         shell: bash
@@ -326,8 +345,7 @@ jobs:
           SEED="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_FUZZ_SEED"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
           READER="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_READER_DURATION_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
           TIMEOUT="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
-          echo "::group::schema-drift-diff copy-paste replay command"
-          cat <<EOF
+          BLOCK=$(cat <<EOF
           # 1) Download the CI artifact:
           #    gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-json-out-debug-${{ matrix.os }} -D ./replay-download
           #    (artifact contains: manifest.txt, env.sh, checksums.sha256, vitest.stdout/stderr.log)
@@ -344,7 +362,28 @@ jobs:
           # reader_ms:     ${READER}
           # timeout_ms:    ${TIMEOUT}
           EOF
+          )
+          echo "::group::schema-drift-diff copy-paste replay command"
+          printf '%s\n' "$BLOCK"
           echo "::endgroup::"
+          {
+            echo '### schema-drift-diff --json-out replay (copy-paste)'
+            echo ''
+            echo '```bash'
+            printf '%s\n' "$BLOCK"
+            echo '```'
+            if [ -r "$FOLDER/replay-summary.txt" ]; then
+              echo ''
+              echo '<details><summary>replay-summary.txt</summary>'
+              echo ''
+              echo '```'
+              cat "$FOLDER/replay-summary.txt"
+              echo '```'
+              echo ''
+              echo '</details>'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
@@ -428,7 +467,8 @@ jobs:
             mkdir -p "$base"
             cp -a "$d"/. "$base"/ 2>/dev/null || true
           done
-      - name: materialize replay folder on failure
+      - name: prepare replay folder on failure (dry-run materialize)
+        id: prepare-replay
         if: failure() || cancelled()
         shell: bash
         run: |
@@ -439,7 +479,17 @@ jobs:
               "$SEED" \
               "${SCHEMA_DRIFT_DIFF_READER_DURATION_MS:-300}" \
               "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}" \
-            || true
+              --dry-run
+          FOLDER="$(ls -dt artifacts/schema-drift-diff-replay/*/ 2>/dev/null | head -n1)"
+          echo "folder=${FOLDER%/}" >> "$GITHUB_OUTPUT"
+      - name: dry-run verify replay folder integrity
+        if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
+        shell: bash
+        run: scripts/replay-schema-drift-diff-fuzz.sh --from "${{ steps.prepare-replay.outputs.folder }}" --dry-run
+      - name: materialize replay folder on failure (real replay)
+        if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
+        shell: bash
+        run: scripts/replay-schema-drift-diff-fuzz.sh --from "${{ steps.prepare-replay.outputs.folder }}" || true
       - name: upload stress debug artifacts
         id: upload-stress
         if: failure() || cancelled()
@@ -463,8 +513,7 @@ jobs:
           SEED="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_FUZZ_SEED"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
           READER="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_READER_DURATION_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
           TIMEOUT="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
-          echo "::group::schema-drift-diff copy-paste replay command"
-          cat <<EOF
+          BLOCK=$(cat <<EOF
           # 1) Download the CI artifact:
           #    gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-stress-debug-${{ matrix.os }} -D ./replay-download
           # 2) Replay from the manifest (checksum-verified):
@@ -480,7 +529,28 @@ jobs:
           # reader_ms:     ${READER}
           # timeout_ms:    ${TIMEOUT}
           EOF
+          )
+          echo "::group::schema-drift-diff copy-paste replay command"
+          printf '%s\n' "$BLOCK"
           echo "::endgroup::"
+          {
+            echo '### schema-drift-diff --json-out stress replay (copy-paste)'
+            echo ''
+            echo '```bash'
+            printf '%s\n' "$BLOCK"
+            echo '```'
+            if [ -r "$FOLDER/replay-summary.txt" ]; then
+              echo ''
+              echo '<details><summary>replay-summary.txt</summary>'
+              echo ''
+              echo '```'
+              cat "$FOLDER/replay-summary.txt"
+              echo '```'
+              echo ''
+              echo '</details>'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
