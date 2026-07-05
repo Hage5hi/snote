@@ -12,7 +12,8 @@
  *                                    [--browser <name>] [--path <substr>]
  *                                    [--kind ...] [--max <n>]
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 
 import {
   anchorFor,
@@ -96,10 +97,16 @@ export function renderDiff(before: Report, after: Report, opts: DiffOpts = {}): 
   return lines.join("\n") + "\n";
 }
 
-function parseArgs(argv: string[]): { before: string; after: string; opts: DiffOpts } {
+export function renderDiffMarkdown(before: Report, after: Report, opts: DiffOpts = {}): string {
+  return "```\n" + renderDiff(before, after, opts) + "```\n";
+}
+
+function parseArgs(argv: string[]): { before: string; after: string; out: string; markdown: boolean; opts: DiffOpts } {
   const opts: DiffOpts = {};
   const positional: string[] = [];
   const kinds: Kind[] = [];
+  let out = "";
+  let markdown = false;
   const need = (i: number, name: string) => {
     const v = argv[i + 1];
     if (v === undefined) { console.error(`missing value for ${name}`); process.exit(2); }
@@ -111,6 +118,9 @@ function parseArgs(argv: string[]): { before: string; after: string; opts: DiffO
     else if (a === "--path") { opts.path = need(i, "--path"); i++; }
     else if (a === "--kind") { kinds.push(need(i, "--kind") as Kind); i++; }
     else if (a === "--max") { opts.max = parseInt(need(i, "--max"), 10); i++; }
+    else if (a === "--out") { out = need(i, "--out"); i++; }
+    else if (a.startsWith("--out=")) out = a.slice(6);
+    else if (a === "--markdown") markdown = true;
     else if (a.startsWith("--")) { console.error(`unknown arg: ${a}`); process.exit(2); }
     else positional.push(a);
   }
@@ -119,7 +129,7 @@ function parseArgs(argv: string[]): { before: string; after: string; opts: DiffO
     console.error("Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> [flags]");
     process.exit(2);
   }
-  return { before: positional[0], after: positional[1], opts };
+  return { before: positional[0], after: positional[1], out, markdown, opts };
 }
 
 function main() {
@@ -131,10 +141,19 @@ function main() {
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const { before, after, opts } = parseArgs(args);
+  const { before, after, out, markdown, opts } = parseArgs(args);
   const b: Report = JSON.parse(readFileSync(before, "utf8"));
   const a: Report = JSON.parse(readFileSync(after, "utf8"));
-  process.stdout.write(renderDiff(b, a, opts));
+  const body = markdown || (out && out.endsWith(".md"))
+    ? renderDiffMarkdown(b, a, opts)
+    : renderDiff(b, a, opts);
+  if (out) {
+    mkdirSync(dirname(resolve(out)), { recursive: true });
+    writeFileSync(out, body);
+    console.error(`schema-drift diff: ${out}`);
+  } else {
+    process.stdout.write(body);
+  }
 }
 
 if (import.meta.main) main();

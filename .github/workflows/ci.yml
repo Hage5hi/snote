@@ -119,11 +119,20 @@ jobs:
           set -eu
           body=reports/_ci/schema-drift-fixture/pr-comment.md
           [ -f "$body" ] || { echo "no pr-comment.md; skipping job summary"; exit 0; }
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
           {
             echo ""
             cat "$body"
             echo ""
-            echo "_Artifacts: \`reports/_ci/schema-drift-fixture/validation-report.json\` and \`pr-comment.md\` are uploaded as the \`schema-drift-fixture-validation\` artifact (see docs/schema-drift-ci-artifacts.md)._"
+            echo "#### Download artifacts"
+            echo ""
+            echo "| Artifact name | Contents | Download |"
+            echo "|---|---|---|"
+            echo "| \`schema-drift-pr-comment\`         | \`pr-comment.md\`         | [open run]($run_url#artifacts) |"
+            echo "| \`schema-drift-annotations\`        | \`annotations.txt\`       | [open run]($run_url#artifacts) |"
+            echo "| \`schema-drift-fixture-validation\` | full fixture folder + \`validation-report.json\` | [open run]($run_url#artifacts) |"
+            echo ""
+            echo "CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-pr-comment\` (see docs/schema-drift-ci-artifacts.md)."
           } >> "$GITHUB_STEP_SUMMARY"
       # Reproducibility check: the local `schema-drift-pr-comment.ts`
       # generator MUST produce the same Markdown body that the CI

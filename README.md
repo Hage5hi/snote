@@ -445,13 +445,28 @@ bun scripts/schema-drift-pr-comment.ts /tmp/report.json \
   --comment-url "https://github.com/OWNER/REPO/actions/runs/12345"
 
 # 5. One-shot: terminal summary + generated pr-comment.md path
+# 5. One-shot: terminal summary + generated pr-comment.md path
 bash scripts/schema-drift-debug.sh /tmp/report.json \
   -- --browser webkit --kind missing
+
+# 6. Preview selected failures + annotations without writing any file
+bun scripts/schema-drift-pr-comment.ts /tmp/report.json --dry-run --max 3
+
+# 7. Group terminal summary by browser with per-browser subtotals
+bun scripts/schema-drift-summary.ts /tmp/report.json --group-by-browser
+
+# 8. Diff two saved validation reports and write Markdown for a PR/issue
+bun scripts/schema-drift-diff.ts /tmp/report-before.json /tmp/report-after.json \
+  --browser chromium --kind missing --max 5 \
+  --markdown --out /tmp/schema-drift-diff.md
 ```
 
 Determinism: both CLIs sort failures by `(path ASC, browser ASC)` before
 applying `--max`, so the identical top-N appear in the terminal summary,
-`pr-comment.md`, and the CI job summary.
+`pr-comment.md`, and the CI job summary. `schema-drift-diff.ts`
+re-computes anchors via the same `anchorFor()` helper, so a row that
+appears in both reports keeps the same `#fail-<slug>` link regardless of
+input order.
 
 
 
