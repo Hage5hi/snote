@@ -309,7 +309,17 @@ jobs:
       - name: dry-run verify replay folder integrity
         if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
         shell: bash
-        run: scripts/replay-schema-drift-diff-fuzz.sh --from "${{ steps.prepare-replay.outputs.folder }}" --dry-run
+        run: |
+          mkdir -p artifacts/schema-drift-diff-replay-verify
+          LOG="artifacts/schema-drift-diff-replay-verify/dry-run-verify.log"
+          set +e
+          scripts/replay-schema-drift-diff-fuzz.sh \
+            --from "${{ steps.prepare-replay.outputs.folder }}" \
+            --dry-run --verbose --json-summary 2>&1 | tee "$LOG"
+          RC=${PIPESTATUS[0]}
+          set -e
+          echo "$RC" > artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
+          exit "$RC"
       # Now execute the real replay against the verified folder.
       # `|| true` because the replay is expected to also fail — we only
       # care about the postrun logs it writes.
@@ -363,6 +373,9 @@ jobs:
           # timeout_ms:    ${TIMEOUT}
           EOF
           )
+          mkdir -p artifacts/schema-drift-diff-replay-verify
+          printf '%s\n' "$BLOCK" > artifacts/schema-drift-diff-replay-verify/replay-command.sh
+          chmod +x artifacts/schema-drift-diff-replay-verify/replay-command.sh || true
           echo "::group::schema-drift-diff copy-paste replay command"
           printf '%s\n' "$BLOCK"
           echo "::endgroup::"
@@ -383,6 +396,20 @@ jobs:
               echo '</details>'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      # Separate, easy-to-find artifact holding ONLY the dry-run verification
+      # log + labeled copy-paste replay command so debuggers can `gh run
+      # download` this one artifact without pulling the full debug bundle.
+      - name: upload dry-run verify + replay-command artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-diff-replay-verify-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            artifacts/schema-drift-diff-replay-verify/dry-run-verify.log
+            artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
+            artifacts/schema-drift-diff-replay-verify/replay-command.sh
+            artifacts/schema-drift-diff-replay/**/replay-summary.json
 
 
 
@@ -485,7 +512,17 @@ jobs:
       - name: dry-run verify replay folder integrity
         if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
         shell: bash
-        run: scripts/replay-schema-drift-diff-fuzz.sh --from "${{ steps.prepare-replay.outputs.folder }}" --dry-run
+        run: |
+          mkdir -p artifacts/schema-drift-diff-replay-verify
+          LOG="artifacts/schema-drift-diff-replay-verify/dry-run-verify.log"
+          set +e
+          scripts/replay-schema-drift-diff-fuzz.sh \
+            --from "${{ steps.prepare-replay.outputs.folder }}" \
+            --dry-run --verbose --json-summary 2>&1 | tee "$LOG"
+          RC=${PIPESTATUS[0]}
+          set -e
+          echo "$RC" > artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
+          exit "$RC"
       - name: materialize replay folder on failure (real replay)
         if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
         shell: bash
@@ -530,6 +567,9 @@ jobs:
           # timeout_ms:    ${TIMEOUT}
           EOF
           )
+          mkdir -p artifacts/schema-drift-diff-replay-verify
+          printf '%s\n' "$BLOCK" > artifacts/schema-drift-diff-replay-verify/replay-command.sh
+          chmod +x artifacts/schema-drift-diff-replay-verify/replay-command.sh || true
           echo "::group::schema-drift-diff copy-paste replay command"
           printf '%s\n' "$BLOCK"
           echo "::endgroup::"
@@ -550,6 +590,17 @@ jobs:
               echo '</details>'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: upload dry-run verify + replay-command artifacts
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-drift-diff-stress-replay-verify-${{ matrix.os }}
+          if-no-files-found: ignore
+          path: |
+            artifacts/schema-drift-diff-replay-verify/dry-run-verify.log
+            artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
+            artifacts/schema-drift-diff-replay-verify/replay-command.sh
+            artifacts/schema-drift-diff-replay/**/replay-summary.json
 
 
 
