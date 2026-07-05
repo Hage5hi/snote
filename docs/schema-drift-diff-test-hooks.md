@@ -501,8 +501,52 @@ scripts/pretty-replay-summary.py \
 cat replay-summary.json | scripts/pretty-replay-summary.py -
 ```
 
-Exit code mirrors the summarised replay's own `exit_code` when set
-(`null` in dry-run → exit `0`), and `2` on parse/argument errors.
+Exit codes:
+
+| Exit | Meaning |
+| --- | --- |
+| `0` | Rendered successfully; if the summary carries an integer `exit_code`, that value is mirrored instead. |
+| `2` | Bad CLI usage, unreadable file, or malformed JSON (not an object / not parseable). |
+| `3` | JSON parsed as an object but failed schema validation (see below). |
+
+#### Failure-mode examples
+
+**Missing file** — the path does not exist. Exit `2`, empty stdout:
+
+```
+$ python3 scripts/pretty-replay-summary.py /tmp/nope.json
+pretty-replay-summary: cannot parse /tmp/nope.json: [Errno 2] No such file or directory: '/tmp/nope.json'
+```
+
+**Unreadable file** — exists but not readable / not valid JSON. Same
+class as above (exit `2`):
+
+```
+$ echo 'not json' > /tmp/bad.json
+$ python3 scripts/pretty-replay-summary.py /tmp/bad.json
+pretty-replay-summary: cannot parse /tmp/bad.json: Expecting value: line 1 column 1 (char 0)
+```
+
+**Fails schema validation** — parseable JSON object, but `fail_reason`
+is missing or `manifest_mapping` is malformed. Exit `3`; each problem
+is printed on its own indented line so CI logs stay grep-friendly:
+
+```
+$ python3 scripts/pretty-replay-summary.py /tmp/bad-schema.json
+pretty-replay-summary: schema validation failed for /tmp/bad-schema.json:
+  - fail_reason is missing (required in every replay-summary.json)
+  - manifest_mapping[0].role is missing
+```
+
+The validation contract (also asserted by
+`scripts/__tests__/pretty-replay-summary.test.ts`):
+
+- `fail_reason` is **required** and must be a string (`""` on success).
+- `manifest_mapping` is **optional**; when present it must be an array
+  of objects each carrying string `manifest_entry`, `required_file`,
+  and `role`. Missing key and empty array are both valid — the
+  mapping is only populated when the helper runs with `--verbose`.
+
 
 #### Example output — summary without `manifest_mapping`
 
