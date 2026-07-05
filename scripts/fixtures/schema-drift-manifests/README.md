@@ -13,6 +13,7 @@ validator at it directly:
 | `wrong-types/`    | `combined` is a string, `matches` is `number[]`         | `1`           |
 | `extra-keys/`     | Adds `unknownField` / `anotherExtra` (strict-only fail) | `1` (strict)  |
 | `combined-mismatch/` | Combined manifest is missing `browser`, per-browser file (`webkit`) is not listed in the combined `browsers` array | `1` |
+| `combined-type-conflict/` | Same key `browser` in both files but sibling keys (`browsers`, `combined`, `matches`, `requiredArtifacts`) have conflicting value types across combined vs per-browser (exercises strict cross-file type mismatch edge cases) | `1` (strict) |
 
 ## Reproduce locally
 
