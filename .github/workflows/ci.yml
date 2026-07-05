@@ -309,7 +309,17 @@ jobs:
       - name: dry-run verify replay folder integrity
         if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
         shell: bash
-        run: scripts/replay-schema-drift-diff-fuzz.sh --from "${{ steps.prepare-replay.outputs.folder }}" --dry-run
+        run: |
+          mkdir -p artifacts/schema-drift-diff-replay-verify
+          LOG="artifacts/schema-drift-diff-replay-verify/dry-run-verify.log"
+          set +e
+          scripts/replay-schema-drift-diff-fuzz.sh \
+            --from "${{ steps.prepare-replay.outputs.folder }}" \
+            --dry-run --verbose --json-summary 2>&1 | tee "$LOG"
+          RC=${PIPESTATUS[0]}
+          set -e
+          echo "$RC" > artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
+          exit "$RC"
       # Now execute the real replay against the verified folder.
       # `|| true` because the replay is expected to also fail — we only
       # care about the postrun logs it writes.
