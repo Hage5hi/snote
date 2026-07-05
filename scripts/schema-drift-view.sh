@@ -121,6 +121,9 @@ while [ $# -gt 0 ]; do
     --manifest-prefix)   MANIFEST_PREFIX="${2:-schema-drift-manifest}"; shift 2 ;;
     --manifest-prefix=*) MANIFEST_PREFIX="${1#*=}"; shift ;;
     --combined-manifest) COMBINED_MANIFEST=1; shift ;;
+    --require)    add_to REQUIRED_ARTIFACTS "${2:-}"; shift 2 ;;
+    --require=*)  add_to REQUIRED_ARTIFACTS "${1#*=}"; shift ;;
+    --validate-manifest) VALIDATE_MANIFEST=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
