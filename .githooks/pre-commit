@@ -197,6 +197,17 @@ if pretty_index_needs_check; then
   # PRETTY_INDEX_HOOK_DRY_RUN is handled at the top of this hook.
   echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
   echo "  diagnostic directory              = $(dirname -- "$INDEX")"
+  if [ "$VERBOSE" = "1" ]; then
+    V_DIR="$(dirname -- "$INDEX")"
+    V_PRE="${INDEX%.json}.pre-check.json"
+    V_REPORT="${INDEX%.json}.report.json"
+    echo "  [verbose] resolved diagnostic directory: $V_DIR"
+    echo "  [verbose] candidate pretty-index files (validated or removed by --clean):"
+    for f in "$INDEX" "$V_PRE" "$V_REPORT"; do
+      if [ -e "$f" ]; then echo "    [exists] $f"; else echo "    [absent] $f"; fi
+    done
+  fi
+
 
   if [ -f "$INDEX" ]; then
 
