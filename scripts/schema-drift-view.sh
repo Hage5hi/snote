@@ -350,6 +350,7 @@ if [ -n "$MANIFEST_DIR" ]; then
       printf '  "matches": %s,\n'         "$(json_arr "${FILE_MATCHES[@]:-}")"
       printf '  "excludes": %s,\n'        "$(json_arr "${FILE_EXCLUDES[@]:-}")"
       printf '  "expected": %s,\n'        "$(json_arr "${EXPECTED_BASES[@]}")"
+      printf '  "requiredArtifacts": %s,\n' "$(json_arr "${REQUIRED_ARTIFACTS[@]:-}")"
       printf '  "matched": %s\n'          "$(json_arr "${MATCHED_UNIQUE[@]:-}")"
       printf '}\n'
     } > "$path"
