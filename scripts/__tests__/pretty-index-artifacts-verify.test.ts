@@ -234,15 +234,16 @@ describe("pretty-index mismatch-report inspection targets", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-glob-"));
     tmps.push(root);
     seedReport(root);
-    // Match only report.json entries.
+    // Glob syntax (not regex): `*` matches any chars. Match only
+    // *report.json (excludes pre-check.json and pretty-index.json).
     const matched = runTarget(root, "pretty-index-mismatch-show", {
-      PI_PATH_GLOB: "report\\.json$",
+      PI_PATH_GLOB: "*report.json",
     });
     expect(matched.status).toBe(0);
     expect(matched.stdout).toMatch(/pretty-index\.report\.json/);
     expect(matched.stdout).not.toMatch(/pretty-index\.pre-check\.json/);
 
-    // A glob that matches nothing should still succeed but show no rows.
+    // A glob that matches nothing → target still exits 0 with no rows.
     const empty = runTarget(root, "pretty-index-mismatch-show", {
       PI_PATH_GLOB: "no-such-file-xyz",
     });
@@ -250,14 +251,13 @@ describe("pretty-index mismatch-report inspection targets", () => {
     expect(empty.stdout).not.toMatch(/pretty-index\.report\.json/);
   });
 
-  it("diff exits 4 when current has NEW entries vs baseline, 0 when equal", () => {
+  it("diff detects NEW entries vs baseline (non-zero) and matches equal baseline (zero)", () => {
     const root = mkdtempSync(join(tmpdir(), "pi-diff-"));
     tmps.push(root);
     seedReport(root);
     const reportPath = join(root, "_pretty-index-checksum-mismatch.json");
     const baseline = join(root, "baseline.json");
-    // Baseline = empty results → current has NEW entries.
-    require("node:fs").writeFileSync(
+    writeFileSync(
       baseline,
       JSON.stringify({
         schema: "pretty-index-checksum-mismatch/v1",
@@ -265,10 +265,13 @@ describe("pretty-index mismatch-report inspection targets", () => {
         results: [],
       }),
     );
+    // Baseline = empty results → current has NEW entries. Recipe emits
+    // `exit 4`; make wraps recipe failures as exit 2.
     const rDiff = runTarget(root, "pretty-index-mismatch-diff", {
       PI_BASELINE: baseline,
     });
-    expect(rDiff.status).toBe(4);
+    expect(rDiff.status).not.toBe(0);
+    expect(rDiff.stderr + rDiff.stdout).toMatch(/Error 4/);
     expect(rDiff.stdout).toMatch(/\[NEW\]/);
 
     // Equal → exit 0.
