@@ -24,7 +24,7 @@ import {
   type Report,
 } from "./schema-drift-pr-comment";
 
-export type DiffOpts = FilterOpts & { max?: number };
+export type DiffOpts = FilterOpts & { max?: number; failSlugs?: string[] };
 
 function fingerprint(f: FileEntry): string {
   return JSON.stringify({
@@ -90,26 +90,30 @@ export function computeDiff(before: Report, after: Report, opts: DiffOpts = {}):
   }
   for (const [k, f] of b) if (!a.has(k)) removed.push(f);
   matched.sort();
+  const slugs = opts.failSlugs && opts.failSlugs.length ? new Set(opts.failSlugs) : null;
+  const keepA = (x: { anchor: string }) => !slugs || slugs.has(x.anchor);
+  const aList = added.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })).filter(keepA);
+  const rList = removed.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })).filter(keepA);
+  const cList = changed.map(({ before: bf, after: af }) => ({
+    path: af.path, ...scopeOf(af), anchor: anchorFor(af),
+    missing: diffList(bf.missing ?? [], af.missing ?? []),
+    extra: diffList(bf.extra ?? [], af.extra ?? []),
+    mistyped: diffList(
+      (bf.mistyped ?? []).map((m) => `${m.key}:${m.expected}→${m.got}`),
+      (af.mistyped ?? []).map((m) => `${m.key}:${m.expected}→${m.got}`),
+    ),
+    parseError: (bf.parseError ?? null) !== (af.parseError ?? null)
+      ? { before: bf.parseError ?? null, after: af.parseError ?? null } : null,
+  })).filter(keepA);
+  const matchedFiltered = slugs ? matched.filter((s) => slugs.has(s)) : matched;
   return {
     totals: {
       before: { checked: before.totals.checked, invalid: before.totals.invalid },
       after: { checked: after.totals.checked, invalid: after.totals.invalid },
-      added: added.length, removed: removed.length, changed: changed.length, matched: matched.length,
+      added: aList.length, removed: rList.length, changed: cList.length, matched: matchedFiltered.length,
     },
-    added: added.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })),
-    removed: removed.map((f) => ({ path: f.path, ...scopeOf(f), anchor: anchorFor(f) })),
-    changed: changed.map(({ before: bf, after: af }) => ({
-      path: af.path, ...scopeOf(af), anchor: anchorFor(af),
-      missing: diffList(bf.missing ?? [], af.missing ?? []),
-      extra: diffList(bf.extra ?? [], af.extra ?? []),
-      mistyped: diffList(
-        (bf.mistyped ?? []).map((m) => `${m.key}:${m.expected}→${m.got}`),
-        (af.mistyped ?? []).map((m) => `${m.key}:${m.expected}→${m.got}`),
-      ),
-      parseError: (bf.parseError ?? null) !== (af.parseError ?? null)
-        ? { before: bf.parseError ?? null, after: af.parseError ?? null } : null,
-    })),
-    matchedAnchors: matched,
+    added: aList, removed: rList, changed: cList,
+    matchedAnchors: matchedFiltered,
   };
 }
 
@@ -209,6 +213,7 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
   const opts: DiffOpts = {};
   const positional: string[] = [];
   const kinds: Kind[] = [];
+  const failSlugs: string[] = [];
   let out = ""; let markdown = false; let json = false; let dryRun = false;
   const need = (i: number, name: string) => {
     const v = argv[i + 1];
@@ -226,10 +231,13 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     else if (a === "--markdown") markdown = true;
     else if (a === "--json") json = true;
     else if (a === "--dry-run") dryRun = true;
+    else if (a === "--fail-slug") { failSlugs.push(need(i, "--fail-slug")); i++; }
+    else if (a.startsWith("--fail-slug=")) failSlugs.push(a.slice(12));
     else if (a.startsWith("--")) { console.error(`error: unknown arg: ${a}`); process.exit(2); }
     else positional.push(a);
   }
   if (kinds.length) opts.kind = kinds;
+  if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.replace(/^#/, ""));
   if (positional.length !== 2) {
     console.error("Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> [flags]");
     process.exit(2);
