@@ -1743,7 +1743,7 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
     });
     expect(forced.code).toBe(7);
     expect(normalize(forced.stderr, resolve(okDest))).toMatchInlineSnapshot(`
-      "error: cannot write json-out to "<DEST>"<ERRNO>
+      "error: cannot write json-out to "<DEST>": <ERRNO>
         cleanup: removed partial temp file "<DEST>.<PID>.tmp"
         fix: check that the parent directory exists and is writable, or pass a different --json-out path"
     `);
@@ -1756,7 +1756,7 @@ describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlin
     const mp = bun(DIFF_SCRIPT, [p, p, "--json-out", blocked]);
     expect(mp.code).toBe(7);
     expect(normalize(mp.stderr, resolve(blocked))).toMatchInlineSnapshot(`
-      "error: cannot write json-out to "<DEST>"<ERRNO>
+      "error: cannot write json-out to "<DEST>": <ERRNO>
         cleanup: no temp file to remove at "<DEST>.<PID>.tmp"
         fix: check that the parent directory exists and is writable, or pass a different --json-out path"
     `);
