@@ -230,6 +230,85 @@ describe("reproduce-ci-pretty-index-check.sh — exit + diagnostics harness", ()
       }
     }
   });
+
+  it.each(["atomic", "stress"] as const)(
+    "PRETTY_INDEX_HOOK_DRY_RUN=1 (MATRIX=%s) prints paths, exits 0, touches no diagnostics",
+    (matrix) => {
+      const HOOK = resolve(REPO, ".githooks", "pre-commit");
+      const DIR = resolve(
+        REPO,
+        "artifacts/schema-drift-diff-replay-verify/pretty",
+      );
+      const fs = require("node:fs") as typeof import("node:fs");
+      const PRE = join(DIR, "pretty-index.pre-check.json");
+      const REPORT = join(DIR, "pretty-index.report.json");
+      const snap = (p: string) =>
+        fs.existsSync(p)
+          ? { exists: true, body: fs.readFileSync(p, "utf8") }
+          : { exists: false, body: "" };
+      const before = { pre: snap(PRE), report: snap(REPORT) };
+
+      const r = spawnSync("bash", [HOOK], {
+        cwd: REPO,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PRETTY_INDEX_HOOK_DRY_RUN: "1",
+          PRETTY_INDEX_HOOK_MATRIX: matrix,
+        },
+      });
+      expect(r.status).toBe(0);
+      const out = r.stdout + r.stderr;
+      expect(out).toContain(`[dry-run]: pretty-index gate (MATRIX=${matrix})`);
+      expect(out).toContain("pretty-index.pre-check.json");
+      expect(out).toContain("pretty-index.report.json");
+      expect(out).toContain(
+        matrix === "stress"
+          ? "schema-drift-diff-stress-replay-pretty-index-failure"
+          : "schema-drift-diff-replay-pretty-index-failure",
+      );
+
+      // Diagnostics untouched by dry-run.
+      const after = { pre: snap(PRE), report: snap(REPORT) };
+      expect(after).toEqual(before);
+    },
+  );
+
+  it("make pretty-index-clean never removes files outside pretty-index siblings", () => {
+    const hasMake =
+      spawnSync("make", ["--version"], { encoding: "utf8" }).status === 0;
+    if (!hasMake) return;
+    const { file } = seed(BAD);
+    const dir = join(file, "..");
+    const fs = require("node:fs") as typeof import("node:fs");
+    const pre = file.replace(/\.json$/, ".pre-check.json");
+    const report = file.replace(/\.json$/, ".report.json");
+    // Mix of unrelated artifacts from prior atomic + stress runs.
+    const bystanders: Record<string, string> = {
+      [join(dir, "unrelated.json")]: '{"keep":true}',
+      [join(dir, "other-index.json")]: '{"other":true}',
+      [join(dir, "other-index.pre-check.json")]: "other-pre",
+      [join(dir, "other-index.report.json")]: "other-report",
+      [join(dir, "atomic-run.log")]: "atomic",
+      [join(dir, "stress-run.log")]: "stress",
+    };
+    for (const [p, body] of Object.entries(bystanders)) writeFileSync(p, body);
+    writeFileSync(pre, "stale-pre");
+    writeFileSync(report, "stale-report");
+
+    const r = spawnSync(
+      "make",
+      ["-s", "pretty-index-clean", `INDEX=${file}`],
+      { cwd: REPO, encoding: "utf8" },
+    );
+    expect(r.status).toBe(0);
+    expect(fs.existsSync(pre)).toBe(false);
+    expect(fs.existsSync(report)).toBe(false);
+    for (const [p, body] of Object.entries(bystanders)) {
+      expect(fs.readFileSync(p, "utf8")).toBe(body);
+    }
+    expect(fs.readFileSync(file, "utf8")).toBe(BAD);
+  });
 });
 
 
