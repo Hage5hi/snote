@@ -291,12 +291,17 @@ function loadReport(path: string, label: string, jsonErrors = false): Report {
   return r as Report;
 }
 
-function parseArgs(argv: string[]): { before: string; after: string; out: string; markdown: boolean; json: boolean; dryRun: boolean; opts: DiffOpts } {
+function parseArgs(argv: string[]): {
+  before: string; after: string; out: string; jsonOut: string;
+  markdown: boolean; json: boolean; dryRun: boolean; validateJson: boolean;
+  opts: DiffOpts;
+} {
   const opts: DiffOpts = {};
   const positional: string[] = [];
-  const kinds: Kind[] = [];
+  const kindPatterns: string[] = [];
   const failSlugs: string[] = [];
-  let out = ""; let markdown = false; let json = false; let dryRun = false;
+  let out = ""; let jsonOut = "";
+  let markdown = false; let json = false; let dryRun = false; let validateJson = false;
   const need = (i: number, name: string) => {
     const v = argv[i + 1];
     if (v === undefined) { console.error(`error: missing value for ${name}`); process.exit(2); }
@@ -306,19 +311,30 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     const a = argv[i];
     if (a === "--browser") { opts.browser = need(i, "--browser"); i++; }
     else if (a === "--path") { opts.path = need(i, "--path"); i++; }
-    else if (a === "--kind") { kinds.push(need(i, "--kind") as Kind); i++; }
+    else if (a === "--kind") { kindPatterns.push(...need(i, "--kind").split(",")); i++; }
+    else if (a.startsWith("--kind=")) kindPatterns.push(...a.slice(7).split(","));
     else if (a === "--max") { opts.max = parseInt(need(i, "--max"), 10); i++; }
     else if (a === "--out") { out = need(i, "--out"); i++; }
     else if (a.startsWith("--out=")) out = a.slice(6);
+    else if (a === "--json-out") { jsonOut = need(i, "--json-out"); i++; }
+    else if (a.startsWith("--json-out=")) jsonOut = a.slice(11);
     else if (a === "--markdown") markdown = true;
     else if (a === "--json") json = true;
+    else if (a === "--validate-json") validateJson = true;
     else if (a === "--dry-run") dryRun = true;
     else if (a === "--fail-slug") { failSlugs.push(...need(i, "--fail-slug").split(",")); i++; }
     else if (a.startsWith("--fail-slug=")) failSlugs.push(...a.slice(12).split(","));
     else if (a.startsWith("--")) { console.error(`error: unknown arg: ${a}`); process.exit(2); }
     else positional.push(a);
   }
-  if (kinds.length) opts.kind = kinds;
+  if (kindPatterns.length) {
+    const expanded = expandKindPatterns(kindPatterns.map((p) => p.trim()).filter(Boolean));
+    if (!expanded.length) {
+      console.error(`error: --kind pattern(s) matched no known kinds (${ALL_KINDS.join("|")}): ${kindPatterns.join(", ")}`);
+      process.exit(2);
+    }
+    opts.kind = expanded;
+  }
   if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.trim().replace(/^#/, "")).filter(Boolean);
   if (positional.length !== 2) {
     console.error("Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> [flags]");
@@ -328,7 +344,8 @@ function parseArgs(argv: string[]): { before: string; after: string; out: string
     console.error("error: --json and --markdown are mutually exclusive");
     process.exit(2);
   }
-  return { before: positional[0], after: positional[1], out, markdown, json, dryRun, opts };
+  if (jsonOut) json = true;
+  return { before: positional[0], after: positional[1], out, jsonOut, markdown, json, dryRun, validateJson, opts };
 }
 
 function main() {
