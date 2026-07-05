@@ -77,6 +77,10 @@ BROWSERS=()         # each entry is one playwright project name
 VIEWER="auto"
 DRY_RUN=0
 VERBOSE=0
+MANIFEST_DIR=""
+MANIFEST_PREFIX="schema-drift-manifest"
+COMBINED_MANIFEST=0
+MATCHED_BASES=()    # populated by show() as it visits each base
 
 add_to() {
   # $1 = nameref array, $2 = comma-list
