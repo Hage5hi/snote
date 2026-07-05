@@ -8,8 +8,10 @@
 SHELL := /usr/bin/env bash
 
 INDEX ?= artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+MATRIX ?= atomic
 PRE    = $(INDEX:.json=.pre-check.json)
 REPORT = $(INDEX:.json=.report.json)
+
 
 .PHONY: help pretty-index-check pretty-index-check-clean \
         pretty-index-diagnostics pretty-index-clean
