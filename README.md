@@ -393,7 +393,66 @@ the following env vars (all integers, all defaulted):
 Overflow is summarized as `…+N more` in-line and — when whole manifests
 are elided — a trailing `::warning::` pointing at the uploaded
 `schema-drift-fixture-validation` artifact (which now always includes
-`validation-report.json` and the generated `pr-comment.md`).
+`validation-report.json`, the generated `pr-comment.md`, and the
+`annotations.txt` workflow-command file).
+
+#### Local debug commands
+
+Two thin CLIs read `validation-report.json` directly so you can
+reproduce (and filter) the CI output without re-running the workflow:
+
+| Script                                    | Output                                             |
+|-------------------------------------------|----------------------------------------------------|
+| `scripts/schema-drift-summary.ts`         | Concise terminal text (path + missing/mistyped/extra) |
+| `scripts/schema-drift-pr-comment.ts`      | Markdown body identical to CI's `pr-comment.md`    |
+| `scripts/schema-drift-debug.sh`           | Wrapper: runs both and prints the `pr-comment.md` path |
+
+Both CLIs share the same filter + cap flags — pass them once and the
+rendered rows / anchors / truncation match byte-for-byte:
+
+| Flag                       | Effect                                                                                                                    |
+|----------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| `--browser <name>`         | Only include failures whose `browser` field equals `<name>` (e.g. `chromium`).                                            |
+| `--path <substr>`          | Only include failures whose `path` contains `<substr>`.                                                                   |
+| `--kind <k>`               | Only include failures exhibiting `<k>` (`missing` \| `mistyped` \| `extra` \| `parseError`). Repeatable.                  |
+| `--max <n>`                | Cap the number of failure rows rendered (overrides `SCHEMA_DRIFT_ANNOTATION_MAX`).                                        |
+| `--missing-cap <n>`        | Cap items in the per-row `missing:` list (overrides `SCHEMA_DRIFT_MISSING_CAP`). *pr-comment only.*                       |
+| `--mistyped-cap <n>`       | Cap items in the per-row `mistyped:` list (overrides `SCHEMA_DRIFT_MISTYPED_CAP`). *pr-comment only.*                     |
+| `--extra-cap <n>`          | Cap items in the per-row `extra:` list (overrides `SCHEMA_DRIFT_EXTRA_CAP`). *pr-comment only.*                           |
+| `--out <path>`             | Write the Markdown body to `<path>` instead of stdout. *pr-comment only.*                                                 |
+| `--annotations-file <path>`| Also write a workflow-commands file (one `::error::` line per selected row, each linking to `#fail-<slug>` in `pr-comment.md`). *pr-comment only.* |
+| `--comment-url <url>`      | Base URL prepended to each anchor in `--annotations-file` (defaults to empty). *pr-comment only.*                         |
+
+Examples:
+
+```sh
+# 1. Terminal summary of only chromium mistyped failures
+bun scripts/schema-drift-summary.ts /tmp/report.json \
+  --browser chromium --kind mistyped
+
+# 2. Regenerate CI's PR-comment body offline (byte-identical)
+bun scripts/schema-drift-pr-comment.ts /tmp/report.json \
+  --out /tmp/pr-comment.md
+
+# 3. Same, but scoped to combined manifests, capping lists at 5
+bun scripts/schema-drift-pr-comment.ts /tmp/report.json \
+  --path combined --max 5 --missing-cap 5 --mistyped-cap 5 --extra-cap 5
+
+# 4. Emit a stand-alone GitHub Actions annotations file
+bun scripts/schema-drift-pr-comment.ts /tmp/report.json \
+  --out /tmp/pr-comment.md \
+  --annotations-file /tmp/annotations.txt \
+  --comment-url "https://github.com/OWNER/REPO/actions/runs/12345"
+
+# 5. One-shot: terminal summary + generated pr-comment.md path
+bash scripts/schema-drift-debug.sh /tmp/report.json \
+  -- --browser webkit --kind missing
+```
+
+Determinism: both CLIs sort failures by `(path ASC, browser ASC)` before
+applying `--max`, so the identical top-N appear in the terminal summary,
+`pr-comment.md`, and the CI job summary.
+
 
 
 
