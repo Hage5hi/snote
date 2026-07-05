@@ -1,0 +1,7 @@
+mode:                dry-run
+checksum_verified:   ok
+would_run:           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts -t pat --testTimeout=30000 --reporter=verbose
+seed:                42
+reader_ms:           100
+pattern:             pat
+timeout_ms:          30000

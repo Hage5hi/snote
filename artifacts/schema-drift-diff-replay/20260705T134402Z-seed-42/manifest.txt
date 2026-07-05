@@ -1,0 +1,8 @@
+timestamp_utc:                          20260705T134402Z
+SCHEMA_DRIFT_DIFF_FUZZ_SEED:            42
+SCHEMA_DRIFT_DIFF_READER_DURATION_MS:   100
+SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:    pat
+SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:      30000
+git_commit:                             05d7767704a54706cd5b9ad0a0f76f79235fb663
+node:                                   v22.22.0
+bun:                                    1.3.3

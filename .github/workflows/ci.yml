@@ -284,13 +284,14 @@ jobs:
             mkdir -p "$base"
             cp -a "$d"/. "$base"/ 2>/dev/null || true
           done
-      # Kick off the replay helper on failure so the timestamped folder
+      # Kick off the replay helper so the timestamped folder
       # (manifest + env.sh + checksums) is materialized inside the workspace.
       # Uses --dry-run here so vitest is NOT invoked yet — we only want the
-      # folder + integrity artifacts written to disk.
-      - name: prepare replay folder on failure (dry-run materialize)
+      # folder + integrity artifacts written to disk. Runs on success too so
+      # the verify log + replay-summary.json are uploaded on every run.
+      - name: prepare replay folder (dry-run materialize)
         id: prepare-replay
-        if: failure() || cancelled()
+        if: always()
         shell: bash
         run: |
           SEED="$(grep -oE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff/vitest.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
@@ -303,11 +304,11 @@ jobs:
               --dry-run
           FOLDER="$(ls -dt artifacts/schema-drift-diff-replay/*/ 2>/dev/null | head -n1)"
           echo "folder=${FOLDER%/}" >> "$GITHUB_OUTPUT"
-      # Fail early if the just-materialized folder is missing files or its
-      # checksums don't verify. This protects against a corrupt upload
-      # silently producing an unusable replay artifact.
+      # Fail early on failure if the just-materialized folder is missing files
+      # or its checksums don't verify. On success we still write the verify
+      # log for upload but don't fail the job.
       - name: dry-run verify replay folder integrity
-        if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
+        if: always() && steps.prepare-replay.outputs.folder != ''
         shell: bash
         run: |
           mkdir -p artifacts/schema-drift-diff-replay-verify
@@ -319,7 +320,8 @@ jobs:
           RC=${PIPESTATUS[0]}
           set -e
           echo "$RC" > artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
-          exit "$RC"
+          if [ "${{ job.status }}" = "success" ]; then exit 0; else exit "$RC"; fi
+
       # Now execute the real replay against the verified folder.
       # `|| true` because the replay is expected to also fail — we only
       # care about the postrun logs it writes.
@@ -397,10 +399,12 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
       # Separate, easy-to-find artifact holding ONLY the dry-run verification
-      # log + labeled copy-paste replay command so debuggers can `gh run
-      # download` this one artifact without pulling the full debug bundle.
+      # log + labeled copy-paste replay command + replay-summary.json so
+      # debuggers can `gh run download` this one artifact without pulling
+      # the full debug bundle. Uploaded on success and failure alike.
       - name: upload dry-run verify + replay-command artifacts
-        if: failure() || cancelled()
+        id: upload-verify
+        if: always() && steps.prepare-replay.outputs.folder != ''
         uses: actions/upload-artifact@v4
         with:
           name: schema-drift-diff-replay-verify-${{ matrix.os }}
@@ -410,6 +414,18 @@ jobs:
             artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
             artifacts/schema-drift-diff-replay-verify/replay-command.sh
             artifacts/schema-drift-diff-replay/**/replay-summary.json
+      - name: append verify artifact link to step summary
+        if: always() && steps.upload-verify.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          {
+            echo ''
+            echo '#### schema-drift-diff replay verify artifacts (${{ matrix.os }})'
+            echo ''
+            echo "- [schema-drift-diff-replay-verify-${{ matrix.os }}](${{ steps.upload-verify.outputs.artifact-url }}) — contains \`dry-run-verify.log\`, \`replay-command.sh\`, and every \`replay-summary.json\`"
+            echo "  - CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-replay-verify-${{ matrix.os }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
@@ -494,9 +510,9 @@ jobs:
             mkdir -p "$base"
             cp -a "$d"/. "$base"/ 2>/dev/null || true
           done
-      - name: prepare replay folder on failure (dry-run materialize)
+      - name: prepare replay folder (dry-run materialize)
         id: prepare-replay
-        if: failure() || cancelled()
+        if: always()
         shell: bash
         run: |
           SEED="$(grep -hoE 'SCHEMA_DRIFT_DIFF_FUZZ_SEED=[0-9]+' artifacts/schema-drift-diff-stress/*.stderr.log 2>/dev/null | tail -n1 | cut -d= -f2)"
@@ -510,7 +526,7 @@ jobs:
           FOLDER="$(ls -dt artifacts/schema-drift-diff-replay/*/ 2>/dev/null | head -n1)"
           echo "folder=${FOLDER%/}" >> "$GITHUB_OUTPUT"
       - name: dry-run verify replay folder integrity
-        if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
+        if: always() && steps.prepare-replay.outputs.folder != ''
         shell: bash
         run: |
           mkdir -p artifacts/schema-drift-diff-replay-verify
@@ -522,7 +538,8 @@ jobs:
           RC=${PIPESTATUS[0]}
           set -e
           echo "$RC" > artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
-          exit "$RC"
+          if [ "${{ job.status }}" = "success" ]; then exit 0; else exit "$RC"; fi
+
       - name: materialize replay folder on failure (real replay)
         if: (failure() || cancelled()) && steps.prepare-replay.outputs.folder != ''
         shell: bash
@@ -591,7 +608,8 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
       - name: upload dry-run verify + replay-command artifacts
-        if: failure() || cancelled()
+        id: upload-verify
+        if: always() && steps.prepare-replay.outputs.folder != ''
         uses: actions/upload-artifact@v4
         with:
           name: schema-drift-diff-stress-replay-verify-${{ matrix.os }}
@@ -601,6 +619,18 @@ jobs:
             artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
             artifacts/schema-drift-diff-replay-verify/replay-command.sh
             artifacts/schema-drift-diff-replay/**/replay-summary.json
+      - name: append verify artifact link to step summary
+        if: always() && steps.upload-verify.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          {
+            echo ''
+            echo '#### schema-drift-diff stress replay verify artifacts (${{ matrix.os }})'
+            echo ''
+            echo "- [schema-drift-diff-stress-replay-verify-${{ matrix.os }}](${{ steps.upload-verify.outputs.artifact-url }}) — contains \`dry-run-verify.log\`, \`replay-command.sh\`, and every \`replay-summary.json\`"
+            echo "  - CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-stress-replay-verify-${{ matrix.os }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
