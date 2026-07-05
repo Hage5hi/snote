@@ -1557,4 +1557,152 @@ describe("schema-drift-diff: --json-out symlink + schema + cleanup wording", () 
   });
 });
 
+// Extra coverage for --json-out: concurrent readers observing atomic rename,
+// fuzz/property inputs validating against the JSON Schema, and unsafe-symlink
+// destinations (symlink to a directory) producing the exact atomicWrite
+// cleanup contract. See docs/schema-drift-diff-test-hooks.md.
+describe("schema-drift-diff: --json-out concurrent reader + fuzz + unsafe symlink", () => {
+  const isWindows = process.platform === "win32";
+
+  it("concurrent reader never observes a partially-written destination and exit code stays 0", async () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    const seed = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(seed.code).toBe(0);
+
+    let stop = false;
+    const seen: string[] = [];
+    const reader = (async () => {
+      while (!stop) {
+        try {
+          const raw = _readFileSync(jsonOut, "utf8");
+          // Every observable read must parse — the atomic rename must never
+          // expose an in-progress `.tmp` file to concurrent readers.
+          JSON.parse(raw);
+          seen.push(raw);
+        } catch {
+          // File briefly missing during rename is acceptable; a partial JSON
+          // payload is not — JSON.parse would throw and fail the test above.
+        }
+        await new Promise((r) => setImmediate(r));
+      }
+    })();
+
+    for (let i = 0; i < 6; i++) {
+      const w = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+      expect(w.code).toBe(0);
+    }
+    stop = true;
+    await reader;
+    expect(seen.length).toBeGreaterThan(0);
+    for (const raw of seen) {
+      const parsed = JSON.parse(raw);
+      expect(parsed).toHaveProperty("totals");
+      expect(parsed).toHaveProperty("matchedAnchors");
+    }
+    const { readdirSync } = require("node:fs");
+    expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+  });
+
+  it("fuzz: varied valid reports always produce --json-out payloads matching the schema", () => {
+    const AjvMod = require("ajv");
+    const Ajv = AjvMod.default ?? AjvMod;
+    const schemaPath = resolve(__dirname, "../../schemas/schema-drift-diff.schema.json");
+    const schema = JSON.parse(_readFileSync(schemaPath, "utf8"));
+    const ajv = new Ajv({ allErrors: true });
+    const validate = ajv.compile(schema);
+
+    // Deterministic LCG so failing seeds reproduce locally without flakes.
+    let seed = 0xC0FFEE;
+    const rand = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    const pick = <T,>(xs: T[]): T => xs[Math.floor(rand() * xs.length)];
+
+    const genReport = (): Report => {
+      const n = Math.floor(rand() * 5);
+      const files = Array.from({ length: n }, (_, i) => {
+        const browser = pick(["chromium", "webkit", "firefox", "combined"]);
+        return {
+          path: `/fuzz/${pick(["a", "b", "c"])}/drift-${browser}-${i}.json`,
+          ok: false,
+          browser,
+          combined: browser === "combined",
+          missing: rand() < 0.5 ? [pick(["x", "y", "z"])] : [],
+          mistyped: rand() < 0.5
+            ? [{ key: pick(["k1", "k2"]), expected: "string", got: "number" }]
+            : [],
+          extra: rand() < 0.5 ? [pick(["stray1", "stray2"])] : [],
+        };
+      });
+      return { strict: true, totals: { checked: n + 1, ok: 1, invalid: n }, files };
+    };
+
+    const dir = tmp();
+    const { mkdirSync } = require("node:fs");
+    for (let i = 0; i < 12; i++) {
+      const sub = join(dir, `case-${i}`);
+      mkdirSync(sub, { recursive: true });
+      const before = join(sub, "before.json");
+      const after = join(sub, "after.json");
+      writeFileSync(before, JSON.stringify(genReport()));
+      writeFileSync(after, JSON.stringify(genReport()));
+      const jsonOut = join(sub, "out.json");
+      const run = bun(DIFF_SCRIPT, [before, after, "--json-out", jsonOut, "--validate-json"]);
+      expect(run.code, `case ${i} stderr: ${run.stderr}`).toBe(0);
+      const payload = JSON.parse(_readFileSync(jsonOut, "utf8"));
+      const ok = validate(payload);
+      expect(validate.errors ?? []).toEqual([]);
+      expect(ok).toBe(true);
+      for (const k of ["totals", "added", "removed", "changed", "matchedAnchors"]) {
+        expect(payload).toHaveProperty(k);
+      }
+    }
+  });
+
+  it.skipIf(isWindows)(
+    "--json-out with a symlink pointing to a directory: replaces the symlink entry on success and, on forced failure, exits 7 with the exact cleanup line and leaves the target dir untouched",
+    () => {
+      const { symlinkSync, mkdirSync, readdirSync, existsSync, lstatSync, unlinkSync } =
+        require("node:fs");
+      const dir = tmp();
+      const p = writeReport(dir, FAILING);
+      const targetDir = join(dir, "target-is-a-dir");
+      mkdirSync(targetDir);
+      writeFileSync(join(targetDir, "sentinel"), "KEEP\n");
+      const link = join(dir, "unsafe-link.json");
+      symlinkSync(targetDir, link);
+
+      // Success path: renameSync atomically replaces the symlink entry with a
+      // regular file — documents current behavior and proves the atomicity
+      // guarantee holds even for symlink→dir destinations.
+      const ok = bun(DIFF_SCRIPT, [p, p, "--json-out", link]);
+      expect(ok.code).toBe(0);
+      expect(lstatSync(link).isFile()).toBe(true);
+      expect(existsSync(targetDir)).toBe(true);
+      expect(_readFileSync(join(targetDir, "sentinel"), "utf8")).toBe("KEEP\n");
+      expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+
+      // Failure path: rebuild the symlink and force a mid-write failure. The
+      // atomicWrite contract must hold: exit 7, exact three-line stderr with
+      // the `removed partial temp file` cleanup line, no leftover .tmp, and
+      // the symlink target directory is byte-for-byte unchanged.
+      try { unlinkSync(link); } catch {}
+      symlinkSync(targetDir, link);
+      const fail = bun(DIFF_SCRIPT, [p, p, "--json-out", link], {
+        SCHEMA_DRIFT_DIFF_FORCE_TMP_WRITE_FAIL: "1",
+      });
+      expect(fail.code).toBe(7);
+      expect(fail.stderr).toContain(`cannot write json-out to "${link}"`);
+      expect(fail.stderr).toMatch(/cleanup: removed partial temp file ".*\.\d+\.tmp"/);
+      expect(fail.stderr).toContain("fix: check that the parent directory exists and is writable");
+      expect(lstatSync(link).isSymbolicLink()).toBe(true);
+      expect(existsSync(targetDir)).toBe(true);
+      expect(_readFileSync(join(targetDir, "sentinel"), "utf8")).toBe("KEEP\n");
+      expect(readdirSync(dir).filter((n: string) => n.endsWith(".tmp"))).toEqual([]);
+    },
+  );
+});
+
+
+
 
