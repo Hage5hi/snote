@@ -37,6 +37,13 @@ jobs:
       - run: bun run lint
       - run: bunx tsc --noEmit
       - run: bun run test
+      # Dedicated visibility for the schema-drift-view.sh CLI unit tests
+      # so a failure in flag parsing / --dry-run / --file / --viewer /
+      # --browsers surfaces as its own red check on every PR (and blocks
+      # merge) instead of hiding inside the aggregate `bun run test` line.
+      - name: schema-drift-view.sh unit tests
+        if: always()
+        run: bunx vitest run scripts/__tests__/schema-drift-view.test.ts --reporter=verbose
       # Dedicated sticky-upsert integration + perf suite. Runs on every
       # PR (and on push to main) so regressions in marker scanning
       # bounds, pagination handling, malformed-metadata skipping, or
