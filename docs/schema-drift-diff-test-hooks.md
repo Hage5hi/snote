@@ -611,6 +611,45 @@ Additional files uploaded alongside the plain `*.pretty.txt`:
   ]
   ```
 
+##### `--output-json` (per-summary report)
+
+Individual reports can be generated directly by the pretty-printer:
+
+```bash
+python3 scripts/pretty-replay-summary.py \
+  --fixed-widths --no-color \
+  --output-json report.json \
+  --pretty-txt /out/x.pretty.txt \
+  --pretty-md  /out/x.pretty.md \
+  replay-summary.json
+```
+
+`report.json` contains exactly these keys (sorted, deterministic):
+
+| Key | Type | Notes |
+| --- | --- | --- |
+| `summary_file` | string | Path passed on the CLI. |
+| `fail_reason` | string | Copied verbatim from the summary (`""` on success). |
+| `exit_code` | integer \| null | Summary's `exit_code` if int, else `null`. |
+| `pretty_txt` | string \| null | Value of `--pretty-txt` (or `null` if omitted). |
+| `pretty_md` | string \| null | Value of `--pretty-md` (or `null` if omitted). |
+
+CI's `pretty-index.json` is the concatenation of these per-summary
+reports (one array entry per `replay-summary.json`), so its schema is
+tested end-to-end in `scripts/__tests__/pretty-replay-summary.test.ts`.
+
+##### Per-summary artifact links in the step summary
+
+The `append pretty artifact link to step summary` step, in addition to
+the top-level artifact link, now enumerates every processed summary
+with per-file links back into the artifact bundle:
+
+```
+- <folder> → `<folder>.pretty.txt`, `<folder>.pretty.md`
+- pretty-index.json — aggregate triage (fail_reason / exit_code / pretty filenames per summary)
+```
+
+
 ##### `--markdown` output — no `manifest_mapping`
 
 When the summary omits `manifest_mapping` (or has an empty array),

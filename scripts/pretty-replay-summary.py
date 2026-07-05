@@ -17,6 +17,13 @@ Options:
   --no-color            No-op today (script emits no ANSI colors); accepted
                         for forward-compatibility so CI can pin deterministic
                         rendering. NO_COLOR env var is also honored.
+  --output-json PATH    Also write a machine-readable per-summary report to
+                        PATH: {summary_file, fail_reason, exit_code,
+                        pretty_txt, pretty_md}. Keys are sorted for
+                        deterministic bytes.
+  --pretty-txt PATH     Value recorded as `pretty_txt` in --output-json
+                        (no file is read/written by this flag itself).
+  --pretty-md PATH      Value recorded as `pretty_md` in --output-json.
   -h, --help            Show this help.
 
 Exit codes:
@@ -159,20 +166,37 @@ def main(argv: list[str]) -> int:
         return EXIT_USAGE
     fixed_widths = False
     markdown = False
+    output_json: str | None = None
+    pretty_txt: str | None = None
+    pretty_md: str | None = None
     # --no-color is accepted (no-op) for deterministic CI rendering.
     positional: list[str] = []
-    for a in args:
+    i = 0
+    while i < len(args):
+        a = args[i]
         if a == "--fixed-widths":
             fixed_widths = True
         elif a == "--markdown":
             markdown = True
         elif a == "--no-color":
             pass
+        elif a in ("--output-json", "--pretty-txt", "--pretty-md"):
+            i += 1
+            if i >= len(args):
+                sys.stderr.write(f"pretty-replay-summary: {a} requires a path argument\n")
+                return EXIT_USAGE
+            if a == "--output-json":
+                output_json = args[i]
+            elif a == "--pretty-txt":
+                pretty_txt = args[i]
+            else:
+                pretty_md = args[i]
         elif a.startswith("--"):
             sys.stderr.write(f"pretty-replay-summary: unknown flag: {a}\n")
             return EXIT_USAGE
         else:
             positional.append(a)
+        i += 1
     if os.environ.get("NO_COLOR"):
         pass  # explicit no-op; script emits no ANSI colors
     if len(positional) != 1:
@@ -215,7 +239,26 @@ def main(argv: list[str]) -> int:
         return EXIT_SCHEMA
     sys.stdout.write(render(summary, fixed_widths=fixed_widths, markdown=markdown))
     code = summary.get("exit_code")
+
+    if output_json is not None:
+        report = {
+            "summary_file": src,
+            "fail_reason": summary.get("fail_reason", ""),
+            "exit_code": code if isinstance(code, int) else None,
+            "pretty_txt": pretty_txt,
+            "pretty_md": pretty_md,
+        }
+        try:
+            Path(output_json).write_text(
+                json.dumps(report, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            sys.stderr.write(f"pretty-replay-summary: cannot write {output_json}: {exc}\n")
+            return EXIT_UNREADABLE
+
     return int(code) if isinstance(code, int) else EXIT_OK
+
 
 
 
