@@ -667,6 +667,27 @@ print(json.dumps({
           if-no-files-found: error
           retention-days: 14
 
+      - name: build pretty-index mismatch summary JSON (MATRIX=atomic)
+        if: failure() && hashFiles('/tmp/pi-mismatch-atomic.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -s pretty-index-mismatch-summary-json \
+            PI_REPORT_PATH=/tmp/pi-mismatch-atomic.json \
+            PI_SUMMARY_JSON_PATH=/tmp/pi-mismatch-summary-atomic.json
+          echo "── summary (MATRIX=atomic) ──"
+          cat /tmp/pi-mismatch-summary-atomic.json
+
+      - name: upload pretty-index mismatch summary JSON (MATRIX=atomic)
+        if: failure() && hashFiles('/tmp/pi-mismatch-summary-atomic.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-summary-atomic-${{ matrix.os }}
+          path: /tmp/pi-mismatch-summary-atomic.json
+          if-no-files-found: error
+          retention-days: 14
+
+
 
 
       - name: assert pretty-index failure artifact was uploaded (MATRIX=atomic)
