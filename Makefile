@@ -14,7 +14,8 @@ REPORT = $(INDEX:.json=.report.json)
 
 
 .PHONY: help pretty-index-check pretty-index-check-clean \
-        pretty-index-diagnostics pretty-index-clean
+        pretty-index-check-pwsh pretty-index-diagnostics pretty-index-clean
+
 
 help:
 	@echo "Targets:"
