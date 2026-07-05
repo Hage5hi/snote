@@ -788,3 +788,129 @@ describe("schema-drift-diff: --json-out atomic write failure modes", () => {
     }
   });
 });
+
+describe("schema-drift-diff: --validate-json failure payload details", () => {
+  it("stderr JSON includes ajvErrors[].instancePath/schemaPath and full expectedChecklist keys", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(
+      DIFF_SCRIPT, [p, p, "--json", "--validate-json"],
+      { SCHEMA_DRIFT_DIFF_FORCE_INVALID: "1" },
+    );
+    expect(code).toBe(6);
+    const parsed = JSON.parse(stderr);
+    expect(parsed.error).toBe("json-schema-mismatch");
+    expect(parsed.code).toBe(6);
+    expect(parsed.schemaPath).toMatch(/schema-drift-diff\.schema\.json$/);
+    expect(parsed.fix).toBeTruthy();
+    // ajvErrors expose the exact failing path(s)
+    expect(Array.isArray(parsed.ajvErrors)).toBe(true);
+    expect(parsed.ajvErrors.length).toBeGreaterThan(0);
+    for (const e of parsed.ajvErrors) {
+      expect(e).toHaveProperty("instancePath");
+      expect(e).toHaveProperty("schemaPath");
+      expect(e).toHaveProperty("keyword");
+      expect(e).toHaveProperty("message");
+    }
+    // At least one error should point at the `totals` field of the forced-bad payload
+    const paths = parsed.ajvErrors.map((e: any) => e.instancePath + " " + e.schemaPath).join("\n");
+    expect(paths).toMatch(/totals/);
+    // full checklist of expected top-level keys is present
+    const keys = parsed.expectedChecklist.map((c: any) => c.key);
+    expect(keys).toEqual(
+      expect.arrayContaining(["totals", "added", "removed", "changed", "matchedAnchors"]),
+    );
+    for (const c of parsed.expectedChecklist) {
+      expect(c).toHaveProperty("present");
+      expect(typeof c.present).toBe("boolean");
+    }
+  });
+});
+
+describe("schema-drift-diff: invalid --fail-slug/--kind patterns fail fast", () => {
+  it("--fail-slug with an invalid /regex/ exits 2 with a clear error", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "/[unclosed/"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("invalid --fail-slug pattern");
+    expect(stderr).toContain("/[unclosed/");
+    expect(stderr).toContain("fix:");
+  });
+
+  it("--kind with an invalid /regex/ exits 2 with a clear error", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--kind", "/(unbalanced/"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("invalid --kind pattern");
+    expect(stderr).toContain("fix:");
+  });
+
+  it("--fail-slug comma-list fails fast on the first invalid pattern", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "fail-chromium-*,/[bad/"]);
+    expect(code).toBe(2);
+    expect(stderr).toContain("invalid --fail-slug pattern");
+    expect(stderr).toContain("/[bad/");
+  });
+});
+
+describe("schema-drift-diff: --help examples stay in sync with CLI behavior", () => {
+  const runHelp = () => bun(DIFF_SCRIPT, ["--help"]);
+
+  it("advertises --json + --validate-json example and the flag actually works", () => {
+    const { code, stderr } = runHelp();
+    expect(code).toBe(0);
+    expect(stderr).toContain("--json --validate-json");
+    // sanity: the advertised combination actually runs cleanly
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const run = bun(DIFF_SCRIPT, [p, p, "--json", "--validate-json"]);
+    expect(run.code).toBe(0);
+    expect(run.stderr).toContain("validate-json: OK");
+  });
+
+  it("advertises --json-out and the atomic write actually produces the file", () => {
+    const { stderr } = runHelp();
+    expect(stderr).toContain("--json-out");
+    expect(stderr).toMatch(/atomic/i);
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const jsonOut = join(dir, "diff.json");
+    const run = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(run.code).toBe(0);
+    expect(_readFileSync(jsonOut, "utf8")).toContain("matchedAnchors");
+  });
+
+  it("advertises wildcard --fail-slug example and the glob filter actually works", () => {
+    const { stderr } = runHelp();
+    expect(stderr).toContain("--fail-slug 'fail-chromium-*'");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const run = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "fail-chromium-*"]);
+    expect(run.code).toBe(0);
+    // valid JSON payload, no invalid-pattern error
+    expect(() => JSON.parse(run.stdout)).not.toThrow();
+  });
+
+  it("advertises /regex/flags example and a /regex/ pattern actually works", () => {
+    const { stderr } = runHelp();
+    expect(stderr).toContain("/regex/");
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const run = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "/^fail-/i"]);
+    expect(run.code).toBe(0);
+    expect(() => JSON.parse(run.stdout)).not.toThrow();
+  });
+
+  it("advertises --print-schema example and the flag actually prints valid JSON Schema", () => {
+    const { stderr } = runHelp();
+    expect(stderr).toContain("--print-schema");
+    const run = bun(DIFF_SCRIPT, ["--print-schema"]);
+    expect(run.code).toBe(0);
+    const parsed = JSON.parse(run.stdout);
+    expect(parsed).toHaveProperty("$id");
+  });
+});
