@@ -565,16 +565,26 @@ pretty-replay-summary: schema validation failed for /tmp/bad-schema.json:
 
 The `append pretty replay-summary to step summary` step writes each
 pretty-printed summary to
-`artifacts/schema-drift-diff-replay-verify/pretty/<folder>.pretty.txt`
-using `--fixed-widths --no-color`, then uploads them as a dedicated
-artifact:
+`artifacts/schema-drift-diff-replay-verify/pretty/<folder>.<fail_reason>.pretty.txt`
+(the sanitized `fail_reason` — or `ok` on success, `unparseable` when
+JSON parsing fails — is baked into the filename for triage), then
+uploads them as a dedicated artifact:
 
 - `schema-drift-diff-replay-pretty-<os>` (main CI matrix)
 - `schema-drift-diff-stress-replay-pretty-<os>` (nightly stress matrix)
 
+The `<details>` header in the step summary also surfaces
+`fail_reason=<value>` alongside the pretty-printer status
+(`ok` / `schema-error` / `missing-file` / `unreadable` / `parse-error`).
+
+The step **fails the job** when `pretty-replay-summary.py` returns exit
+`3`, `4`, `5`, or `6` — schema or file errors no longer rely solely on
+grep-based post-checks.
+
 Retention: 14 days. A direct link to the artifact is appended to the
 GitHub Actions step summary so debuggers can download only the pretty
 output without pulling the full verify bundle.
+
 
 
 The validation contract (also asserted by
