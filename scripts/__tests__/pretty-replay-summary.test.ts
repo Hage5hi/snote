@@ -601,5 +601,159 @@ describe("pretty-replay-summary.py --markdown fallback (no / empty manifest_mapp
   });
 });
 
+describe("pretty-replay-summary.py --markdown with non-empty manifest_mapping", () => {
+  const FIXTURE = {
+    mode: "dry-run",
+    fail_reason: "",
+    folder: "/tmp/y",
+    manifest_mapping: [
+      { manifest_entry: "A", required_file: "/f", role: "r1" },
+      { manifest_entry: "LONG_KEY", required_file: "/x/y.txt", role: "r2" },
+    ],
+  };
+
+  function pretty(args: string[]) {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const p = join(dir, "s.json");
+    writeFileSync(p, JSON.stringify(FIXTURE));
+    return spawnSync("python3", [PRETTY, p, ...args], { encoding: "utf8" });
+  }
+
+  it("--markdown --fixed-widths: exact snapshot (row order + spacing)", () => {
+    const r = pretty(["--markdown", "--fixed-widths", "--no-color"]);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout).toMatchInlineSnapshot(`
+      "== replay-summary ==
+      mode              : dry-run
+      fail_reason       : 
+      folder            : /tmp/y
+
+      -- manifest_mapping --
+      | manifest_entry                           | required_file                                    | role |
+      | ---------------------------------------- | ------------------------------------------------ | ---- |
+      | A                                        | /f                                               | r1   |
+      | LONG_KEY                                 | /x/y.txt                                         | r2   |
+      "
+    `);
+  });
+
+  it("row order matches input order (not sorted alphabetically)", () => {
+    const r = pretty(["--markdown", "--fixed-widths", "--no-color"]);
+    const rows = r.stdout.split("\n").filter(l => l.startsWith("|") && !l.includes("---") && !l.includes("manifest_entry"));
+    expect(rows[0]).toContain("| A ");
+    expect(rows[1]).toContain("| LONG_KEY ");
+  });
+});
+
+describe("pretty-replay-summary.py --output-json", () => {
+  function run(fixture: unknown, extra: string[]) {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const src = join(dir, "s.json");
+    const rep = join(dir, "report.json");
+    writeFileSync(src, JSON.stringify(fixture));
+    const r = spawnSync("python3", [
+      PRETTY, src,
+      "--fixed-widths", "--no-color",
+      "--output-json", rep,
+      ...extra,
+    ], { encoding: "utf8" });
+    return { r, rep, src };
+  }
+
+  it("writes {summary_file, fail_reason, exit_code, pretty_txt, pretty_md} with pretty filenames threaded through", () => {
+    const { r, rep, src } = run(
+      { mode: "dry-run", fail_reason: "checksum mismatch", exit_code: 7, folder: "/tmp/y" },
+      ["--pretty-txt", "/out/x.pretty.txt", "--pretty-md", "/out/x.pretty.md"],
+    );
+    expect(r.status, r.stderr).toBe(7); // mirrors summary.exit_code
+    const parsed = JSON.parse(readFileSync(rep, "utf8"));
+    expect(parsed).toEqual({
+      summary_file: src,
+      fail_reason: "checksum mismatch",
+      exit_code: 7,
+      pretty_txt: "/out/x.pretty.txt",
+      pretty_md: "/out/x.pretty.md",
+    });
+  });
+
+  it("records null exit_code and null pretty filenames when omitted", () => {
+    const { r, rep } = run({ mode: "dry-run", fail_reason: "" }, []);
+    expect(r.status).toBe(0);
+    const parsed = JSON.parse(readFileSync(rep, "utf8"));
+    expect(parsed.exit_code).toBeNull();
+    expect(parsed.pretty_txt).toBeNull();
+    expect(parsed.pretty_md).toBeNull();
+    expect(parsed.fail_reason).toBe("");
+  });
+
+  it("--output-json requires a path argument (exit 2)", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const src = join(dir, "s.json");
+    writeFileSync(src, JSON.stringify({ mode: "dry-run", fail_reason: "" }));
+    const r = spawnSync("python3", [PRETTY, "--output-json", src], { encoding: "utf8" });
+    // Last arg treated as --output-json's value -> no positional -> exit 2.
+    expect(r.status).toBe(2);
+  });
+});
+
+describe("pretty-index.json schema (CI aggregate)", () => {
+  // Reproduces what CI does: run --output-json per replay-summary.json
+  // and aggregate the reports into a single pretty-index.json array,
+  // then assert every entry conforms to the documented schema.
+  it("every entry has required, well-typed fields", () => {
+    const dir = mkdtempSync(join(tmpdir(), "pretty-replay-test-"));
+    cleanups.push(dir);
+    const fixtures: Array<Record<string, unknown>> = [
+      { mode: "dry-run", fail_reason: "", exit_code: null, folder: "/a" },
+      { mode: "dry-run", fail_reason: "missing file: /x", exit_code: 7, folder: "/b" },
+      { mode: "dry-run", fail_reason: "checksum mismatch", exit_code: 7, folder: "/c",
+        manifest_mapping: [{ manifest_entry: "K", required_file: "/f", role: "r" }] },
+    ];
+    const index: unknown[] = [];
+    fixtures.forEach((fx, i) => {
+      const src = join(dir, `s${i}.json`);
+      const rep = join(dir, `s${i}.report.json`);
+      writeFileSync(src, JSON.stringify(fx));
+      const r = spawnSync("python3", [
+        PRETTY, src, "--fixed-widths", "--no-color",
+        "--output-json", rep,
+        "--pretty-txt", `/pretty/s${i}.pretty.txt`,
+        "--pretty-md", `/pretty/s${i}.pretty.md`,
+      ], { encoding: "utf8" });
+      expect([0, 7]).toContain(r.status);
+      index.push(JSON.parse(readFileSync(rep, "utf8")));
+    });
+
+    // Fixed schema check — mirrors docs/schema-drift-diff-test-hooks.md.
+    const REQUIRED_KEYS = ["summary_file", "fail_reason", "exit_code", "pretty_txt", "pretty_md"] as const;
+    expect(Array.isArray(index)).toBe(true);
+    expect(index.length).toBe(fixtures.length);
+    for (const [i, entry] of index.entries()) {
+      const e = entry as Record<string, unknown>;
+      // Every required key present.
+      for (const k of REQUIRED_KEYS) {
+        expect(Object.prototype.hasOwnProperty.call(e, k), `entry ${i} missing ${k}`).toBe(true);
+      }
+      // No extra keys.
+      expect(Object.keys(e).sort()).toEqual([...REQUIRED_KEYS].sort());
+      // Type contract.
+      expect(typeof e.summary_file).toBe("string");
+      expect(typeof e.fail_reason).toBe("string");
+      expect(e.exit_code === null || typeof e.exit_code === "number").toBe(true);
+      expect(typeof e.pretty_txt).toBe("string");
+      expect(typeof e.pretty_md).toBe("string");
+      expect((e.pretty_txt as string).endsWith(".pretty.txt")).toBe(true);
+      expect((e.pretty_md as string).endsWith(".pretty.md")).toBe(true);
+    }
+    // fail_reason values propagate verbatim.
+    expect((index[1] as { fail_reason: string }).fail_reason).toBe("missing file: /x");
+    expect((index[2] as { fail_reason: string }).fail_reason).toBe("checksum mismatch");
+  });
+});
+
+
 
 
