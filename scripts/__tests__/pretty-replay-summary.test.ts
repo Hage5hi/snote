@@ -68,18 +68,17 @@ describe("pretty-replay-summary.py formatting", () => {
       "fail_reason",
       "folder",
     ];
-    const positions = order.map((k) => out.indexOf(`${k.padEnd(16)} :`));
+    const positions = order.map((k) => out.search(new RegExp(`^${k}\\s+:`, "m")));
     for (let i = 0; i < positions.length; i++) {
       expect(positions[i], `field ${order[i]} not found`).toBeGreaterThan(-1);
       if (i > 0) expect(positions[i]).toBeGreaterThan(positions[i - 1]);
     }
     // duration_seconds was omitted from input -> must not appear
     expect(out).not.toContain("duration_seconds");
-    // empty list rendered as `(none)`, empty string preserved verbatim
-    expect(out).toContain("missing_files    : (none)");
-    expect(out).toContain("fail_reason      : ");
-    // null rendered as (null)
-    expect(out).toContain("exit_code        : (null)");
+    // empty list rendered as `(none)`, null as `(null)`, empty string preserved
+    expect(out).toMatch(/^missing_files\s+: \(none\)$/m);
+    expect(out).toMatch(/^exit_code\s+: \(null\)$/m);
+    expect(out).toMatch(/^fail_reason\s+: $/m);
   });
 
   it("renders manifest_mapping as an aligned table with headers", () => {
