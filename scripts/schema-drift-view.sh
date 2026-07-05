@@ -49,7 +49,13 @@ Flags:
   --strict-manifest              Like --validate-manifest, but ALSO fails on any
                                  extra unknown top-level keys or on any key whose
                                  value has the wrong type (e.g., matches must be
-                                 string[], combined must be boolean).
+                                 string[], combined must be boolean). Required
+                                 keys AND property types are read from the shipped
+                                 JSON Schema at schemas/schema-drift-manifest.schema.json
+                                 (override via SCHEMA_PATH env).
+  --validation-report <path>     Write a machine-readable JSON report of every
+                                 checked file with { missing, mistyped, extra,
+                                 parseError, ok } — useful for CI to consume.
   -h, --help                     Show this help.
 
 Env:
