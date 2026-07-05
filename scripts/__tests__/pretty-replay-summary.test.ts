@@ -210,11 +210,47 @@ describe("pretty-replay-summary.py exact-output snapshots", () => {
   }
 
   it("no-mapping fixture: exact snapshot", () => {
-    expect(pretty(FIXTURE_NO_MAPPING)).toMatchInlineSnapshot();
+    expect(pretty(FIXTURE_NO_MAPPING)).toMatchInlineSnapshot(`
+      "== replay-summary ==
+      mode              : dry-run
+      exit_code         : (null)
+      duration_seconds  : (null)
+      checksum_verified : ok
+      seed              : 42
+      reader_ms         : 100
+      pattern           : pat
+      timeout_ms        : 30000
+      missing_files     : (none)
+      fail_reason       : 
+      folder            : /tmp/x
+      "
+    `);
   });
 
   it("with-mapping fixture: exact snapshot including table", () => {
-    expect(pretty(FIXTURE_WITH_MAPPING)).toMatchInlineSnapshot();
+    expect(pretty(FIXTURE_WITH_MAPPING)).toMatchInlineSnapshot(`
+      "== replay-summary ==
+      mode              : dry-run
+      exit_code         : (null)
+      duration_seconds  : (null)
+      checksum_verified : ok
+      seed              : 22
+      reader_ms         : 100
+      pattern           : pat
+      timeout_ms        : 30000
+      missing_files     : (none)
+      fail_reason       : 
+      folder            : /tmp/y
+
+      -- manifest_mapping --
+        manifest_entry                        required_file            role
+        ------------------------------------  -----------------------  ----
+        SCHEMA_DRIFT_DIFF_FUZZ_SEED           /tmp/y/manifest.txt      source of seed
+        SCHEMA_DRIFT_DIFF_READER_DURATION_MS  /tmp/y/manifest.txt      source of reader window ms
+        (env passthrough)                     /tmp/y/env.sh            env vars sourced before replay
+        (integrity)                           /tmp/y/checksums.sha256  sha256 of manifest.txt + env.sh
+      "
+    `);
   });
 });
 
