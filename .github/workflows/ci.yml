@@ -591,6 +591,20 @@ print(json.dumps({
             exit 1
           fi
           echo "::notice title=pretty-index diagnostics present (MATRIX=atomic)::all 3 expected files found in $DIR"
+      - name: compute pretty-index diagnostic checksums (MATRIX=atomic)
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="artifacts/schema-drift-diff-replay-verify/pretty"
+          ( cd "$DIR" && sha256sum \
+              pretty-index.json \
+              pretty-index.pre-check.json \
+              pretty-index.report.json \
+              > pretty-index.checksums.sha256 )
+          echo "::group::pretty-index checksums (MATRIX=atomic)"
+          cat "$DIR/pretty-index.checksums.sha256"
+          echo "::endgroup::"
       - name: upload pretty-index failure diagnostics (MATRIX=atomic)
         id: upload-pretty-failure
         if: failure()
@@ -603,6 +617,16 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.pre-check.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.report.json
+            artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.checksums.sha256
+      - name: verify pretty-index diagnostic checksums (MATRIX=atomic)
+        if: failure()
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="artifacts/schema-drift-diff-replay-verify/pretty"
+          ( cd "$DIR" && sha256sum -c pretty-index.checksums.sha256 )
+          echo "::notice title=pretty-index checksums verified (MATRIX=atomic)::sha256sum -c passed for $DIR/pretty-index.checksums.sha256"
+
       - name: assert pretty-index failure artifact was uploaded (MATRIX=atomic)
         if: failure()
         shell: bash
