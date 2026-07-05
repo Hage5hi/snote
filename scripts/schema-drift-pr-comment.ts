@@ -266,17 +266,29 @@ function main() {
       "Usage: bun scripts/schema-drift-pr-comment.ts <report.json> " +
         "[--browser <name>] [--path <substr>] [--kind missing|mistyped|extra|parseError] " +
         "[--max <n>] [--missing-cap <n>] [--mistyped-cap <n>] [--extra-cap <n>] " +
-        "[--out <path>] [--annotations-file <path>] [--comment-url <url>]",
+        "[--out <path>] [--annotations-file <path>] [--comment-url <url>] [--dry-run]",
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const { reportPath, out, annotationsFile, commentUrl, opts } = parseArgs(args);
+  const { reportPath, out, annotationsFile, commentUrl, dryRun, opts } = parseArgs(args);
   if (!reportPath) {
     console.error("missing <report.json> positional argument");
     process.exit(2);
   }
   const r: Report = JSON.parse(readFileSync(reportPath, "utf8"));
   const body = renderPrComment(r, opts);
+  const annotations = renderAnnotations(r, { ...opts, commentUrl });
+  if (dryRun) {
+    const sel = selectFailures(r, opts);
+    process.stderr.write(
+      `dry-run: ${sel.length} selected failure(s); would write` +
+        `${out ? ` pr-comment=${out}` : " pr-comment=<stdout>"}` +
+        `${annotationsFile ? ` annotations=${annotationsFile}` : ""}\n`,
+    );
+    process.stdout.write(body);
+    if (annotations) process.stdout.write("\n--- annotations ---\n" + annotations);
+    return;
+  }
   if (out) {
     mkdirSync(dirname(resolve(out)), { recursive: true });
     writeFileSync(out, body);
@@ -286,7 +298,7 @@ function main() {
   }
   if (annotationsFile) {
     mkdirSync(dirname(resolve(annotationsFile)), { recursive: true });
-    writeFileSync(annotationsFile, renderAnnotations(r, { ...opts, commentUrl }));
+    writeFileSync(annotationsFile, annotations);
     console.error(`annotations: ${annotationsFile}`);
   }
 }
