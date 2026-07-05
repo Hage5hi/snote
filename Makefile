@@ -465,28 +465,7 @@ pretty-index-mismatch-validate:
 	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
 	  echo "no report at $(PI_REPORT_PATH)" >&2; exit 2; \
 	fi
-	@err=$$(jq -r ' \
-	  def bad(msg): "SCHEMA ERROR: " + msg; \
-	  if type != "object" then bad("root must be an object") \
-	  elif (.schema // "") != "pretty-index-checksum-mismatch/v1" \
-	    then bad("schema must be \"pretty-index-checksum-mismatch/v1\" (got: \(.schema // "<missing>"))") \
-	  elif ([.scope] | inside(["atomic","stress","both"]) | not) \
-	    then bad("scope must be atomic|stress|both (got: \(.scope // "<missing>"))") \
-	  elif (.results | type) != "array" then bad(".results must be an array") \
-	  elif (.fail_fast != null and (.fail_fast | type) != "boolean") \
-	    then bad(".fail_fast must be boolean when present") \
-	  else ( \
-	    [ .results | to_entries[] | . as $$e \
-	      | ($$e.value // {}) as $$r \
-	      | if ($$r | type) != "object" then "results[\($$e.key)] must be object" \
-	        elif ([$$r.status] | inside(["OK","MISMATCH","dir_missing","checksums_missing"]) | not) \
-	          then "results[\($$e.key)].status invalid: \($$r.status // "<missing>")" \
-	        elif ($$r.status == "OK" or $$r.status == "MISMATCH") and \
-	             (($$r.file // "") == "" or ($$r.expected == null) or ($$r.actual == null)) \
-	          then "results[\($$e.key)] file-result must have file/expected/actual" \
-	        elif (($$r.dir // "") == "") then "results[\($$e.key)].dir missing" \
-	        else empty end \
-	    ] | if length == 0 then "" else bad(.[0]) end \
-	  ) end' -- "$(PI_REPORT_PATH)"); \
+	@err=$$(jq -r 'def bad(msg): "SCHEMA ERROR: " + msg; if type != "object" then bad("root must be an object") elif (.schema // "") != "pretty-index-checksum-mismatch/v1" then bad("schema must be pretty-index-checksum-mismatch/v1 (got: \(.schema // "<missing>"))") elif ([.scope] | inside(["atomic","stress","both"]) | not) then bad("scope must be atomic|stress|both (got: \(.scope // "<missing>"))") elif (.results | type) != "array" then bad(".results must be an array") elif (.fail_fast != null and (.fail_fast | type) != "boolean") then bad(".fail_fast must be boolean when present") else ([ .results | to_entries[] | . as $$e | ($$e.value // {}) as $$r | if ($$r | type) != "object" then "results[\($$e.key)] must be object" elif ([$$r.status] | inside(["OK","MISMATCH","dir_missing","checksums_missing"]) | not) then "results[\($$e.key)].status invalid: \($$r.status // "<missing>")" elif ($$r.status == "OK" or $$r.status == "MISMATCH") and (($$r.file // "") == "" or ($$r.expected == null) or ($$r.actual == null)) then "results[\($$e.key)] file-result must have file/expected/actual" elif (($$r.dir // "") == "") then "results[\($$e.key)].dir missing" else empty end ] | if length == 0 then "" else bad(.[0]) end) end' -- "$(PI_REPORT_PATH)" 2>&1); \
 	if [ -n "$$err" ]; then echo "$$err" >&2; echo "invalid: $(PI_REPORT_PATH)" >&2; exit 1; fi; \
 	echo "✅ $(PI_REPORT_PATH) validates against pretty-index-checksum-mismatch/v1"
+
