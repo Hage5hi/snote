@@ -59,3 +59,15 @@ pretty-index-clean:
 	@rm -f -- "$(PRE)" "$(REPORT)"
 	@echo "removed: $(PRE) $(REPORT)"
 
+pretty-index-artifacts:
+	@echo "Expected pretty-index diagnostic artifact filenames:"
+	@echo ""
+	@echo "  input file  : $(INDEX)"
+	@echo "  siblings    : $(PRE)"
+	@echo "                $(REPORT)"
+	@echo ""
+	@echo "  atomic  -> uploaded as: schema-drift-diff-replay-pretty-index-failure-<os>"
+	@echo "  stress  -> uploaded as: schema-drift-diff-stress-replay-pretty-index-failure-<os>"
+	@echo ""
+	@echo "  current MATRIX=$(MATRIX)  (override with: make pretty-index-artifacts MATRIX=stress)"
+
