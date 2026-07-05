@@ -327,19 +327,57 @@ scripts/replay-schema-drift-diff-fuzz.sh \
 ```
 
 `--json-summary` writes a machine-readable `replay-summary.json` next to
-`replay-summary.txt` with `exit_code`, `duration_seconds`, `seed`,
-`reader_ms`, `checksum_verified`, `missing_files`, and `fail_reason`:
+`replay-summary.txt`. Field reference:
 
-```bash
-scripts/replay-schema-drift-diff-fuzz.sh 42 100 "pat" --dry-run --json-summary
-cat artifacts/schema-drift-diff-replay/*/replay-summary.json
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `mode` | string | `"dry-run"` or `"run"`. |
+| `exit_code` | number \| null | Vitest exit code (null in dry-run). |
+| `duration_seconds` | number \| null | Wall-clock replay duration (null in dry-run). |
+| `checksum_verified` | string | `"ok"` or `"mismatch"`. |
+| `seed` | string | `SCHEMA_DRIFT_DIFF_FUZZ_SEED` used. |
+| `reader_ms` | string | `SCHEMA_DRIFT_DIFF_READER_DURATION_MS` used. |
+| `pattern` | string | Effective vitest `-t` filter. |
+| `timeout_ms` | string | `SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS` used. |
+| `missing_files` | string[] | Paths that failed the pre-replay `verify()` check. |
+| `fail_reason` | string | Human-readable reason for the last failure (empty on success). |
+| `folder` | string | The timestamped replay folder path. |
+| `manifest_mapping` | object[] | Only populated when `--verbose` is set. Each entry has `manifest_entry`, `required_file`, `role` — the same mapping printed to stderr. |
+
+Example (`--dry-run --verbose --json-summary`):
+
+```json
+{
+  "mode": "dry-run",
+  "exit_code": null,
+  "duration_seconds": null,
+  "checksum_verified": "ok",
+  "seed": "12648430",
+  "reader_ms": "300",
+  "pattern": "concurrent reader \\+ fuzz \\+ unsafe symlink",
+  "timeout_ms": "30000",
+  "missing_files": [],
+  "fail_reason": "",
+  "folder": "artifacts/schema-drift-diff-replay/20260705T111030Z-seed-12648430",
+  "manifest_mapping": [
+    {"manifest_entry": "SCHEMA_DRIFT_DIFF_FUZZ_SEED",          "required_file": "…/manifest.txt",       "role": "source of seed"},
+    {"manifest_entry": "SCHEMA_DRIFT_DIFF_READER_DURATION_MS", "required_file": "…/manifest.txt",       "role": "source of reader window ms"},
+    {"manifest_entry": "SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN",  "required_file": "…/manifest.txt",       "role": "source of vitest -t filter"},
+    {"manifest_entry": "SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS",    "required_file": "…/manifest.txt",       "role": "source of vitest --testTimeout"},
+    {"manifest_entry": "(env passthrough)",                    "required_file": "…/env.sh",             "role": "env vars sourced before replay"},
+    {"manifest_entry": "(integrity)",                          "required_file": "…/checksums.sha256",   "role": "sha256 of manifest.txt + env.sh"}
+  ]
+}
 ```
 
-Both jobs (`atomic-crossos`, `stress-nightly`) now run the CI dry-run
-verify step with `--verbose --json-summary`, `tee`-ing to
+Both jobs (`atomic-crossos`, `stress-nightly`) run the CI dry-run
+verify step with `--verbose --json-summary` on **every** run (success
+and failure), `tee`-ing to
 `artifacts/schema-drift-diff-replay-verify/dry-run-verify.log`, and
 upload that log + `replay-command.sh` (the labeled copy-paste command)
 + every `replay-summary.json` as a **separate** artifact
-(`schema-drift-diff-replay-verify-<os>` / `schema-drift-diff-stress-replay-verify-<os>`)
-so you can `gh run download` just those files without pulling the full
-debug bundle.
+(`schema-drift-diff-replay-verify-<os>` /
+`schema-drift-diff-stress-replay-verify-<os>`). A direct download link
+to that artifact is appended to `$GITHUB_STEP_SUMMARY` so you can grab
+it in one click without pulling the full debug bundle.
+
