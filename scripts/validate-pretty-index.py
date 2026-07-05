@@ -160,9 +160,22 @@ def main(argv: list[str]) -> int:
         if flag in args:
             report = True
             args.remove(flag)
+    require_version: int | None = None
+    if "--require-version" in args:
+        idx = args.index("--require-version")
+        try:
+            require_version = int(args[idx + 1])
+        except (IndexError, ValueError):
+            sys.stderr.write(
+                "usage: validate-pretty-index.py [--report] "
+                "[--require-version N] <pretty-index.json>\n"
+            )
+            return 2
+        del args[idx : idx + 2]
     if len(args) != 1:
         sys.stderr.write(
-            "usage: validate-pretty-index.py [--report] <pretty-index.json>\n"
+            "usage: validate-pretty-index.py [--report] "
+            "[--require-version N] <pretty-index.json>\n"
         )
         return 2
     p = Path(args[0])
