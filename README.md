@@ -943,6 +943,11 @@ make pretty-index-mismatch-diff PI_BASELINE=baseline.json
 | `pretty-index-mismatch-show` (± `PI_PATH_GLOB`) | printed table (may be empty after glob filter) | `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-diff` | current report matches baseline | `4` NEW/CHANGED entries found, `2` either report absent or `jq` missing |
 
+Recipes emit `exit 3` / `exit 4` intentionally; GNU make wraps any
+failing recipe as its own exit status `2` and prints `make: *** [target]
+Error N`, so scripts that need the granular code should parse `Error N`
+from stderr (or invoke the recipe directly via `bash -c`).
+
 
 
 
