@@ -178,22 +178,26 @@ pretty-index-artifacts-verify:
 	  both) dirs="./_pretty-index-atomic ./_pretty-index-stress";; \
 	  *) echo "PI_SCOPE must be atomic|stress|both (got: $(PI_SCOPE))" >&2; exit 2;; esac; \
 	rc=0; \
-	report="$(PI_MISMATCH_REPORT)"; \
+	report="$(PI_REPORT_PATH)"; \
+	fail_fast="$(PI_FAIL_FAST)"; \
+	mkdir -p -- "$$(dirname -- "$$report")" 2>/dev/null || true; \
 	rm -f -- "$$report"; \
-	first=1; \
-	printf '{"schema":"pretty-index-checksum-mismatch/v1","scope":"$(PI_SCOPE)","results":[' > "$$report.tmp"; \
+	first=1; stop=0; \
+	printf '{"schema":"pretty-index-checksum-mismatch/v1","scope":"$(PI_SCOPE)","fail_fast":%s,"results":[' \
+	  "$$( [ "$$fail_fast" = "1" ] && echo true || echo false )" > "$$report.tmp"; \
 	for dir in $$dirs; do \
+	  [ $$stop -eq 1 ] && break; \
 	  if [ ! -d "$$dir" ]; then \
 	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; \
 	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
 	    printf '{"dir":"%s","status":"dir_missing"}' "$$dir" >> "$$report.tmp"; \
-	    rc=2; continue; \
+	    rc=2; [ "$$fail_fast" = "1" ] && stop=1; continue; \
 	  fi; \
 	  if [ ! -f "$$dir/pretty-index.checksums.sha256" ]; then \
 	    echo "❌ $$dir/pretty-index.checksums.sha256 missing — artifact was uploaded without checksums" >&2; \
 	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
 	    printf '{"dir":"%s","status":"checksums_missing"}' "$$dir" >> "$$report.tmp"; \
-	    rc=2; continue; \
+	    rc=2; [ "$$fail_fast" = "1" ] && stop=1; continue; \
 	  fi; \
 	  echo "==> verifying $$dir"; \
 	  log="$$(mktemp)"; \
@@ -212,6 +216,9 @@ pretty-index-artifacts-verify:
 	          [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
 	          printf '{"dir":"%s","file":"%s","expected":"%s","actual":"%s","status":"%s"}' \
 	            "$$dir" "$$fname" "$$exp" "$$act" "$$status" >> "$$report.tmp"; \
+	          if [ "$$status" = "MISMATCH" ] && [ "$$fail_fast" = "1" ]; then \
+	            echo "── PI_FAIL_FAST=1: stopping after first mismatch ──"; stop=1; break; \
+	          fi; \
 	          ;; \
 	      esac; \
 	    done < "$$log"; \
@@ -230,6 +237,7 @@ pretty-index-artifacts-verify:
 	  echo ""; echo "✅ pretty-index artifacts verified (scope=$(PI_SCOPE))"; \
 	fi; \
 	exit $$rc
+
 
 
 # Reproduce a CI failure locally by running the pre-commit hook in
