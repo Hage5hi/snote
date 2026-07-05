@@ -284,7 +284,8 @@ echo ""
 files_str="${FILE_MATCHES[*]:-<none>}"
 excludes_str="${FILE_EXCLUDES[*]:-<none>}"
 browsers_str="${BROWSERS[*]:-<all>}"
-echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], exclude=[${excludes_str}], browsers=[${browsers_str}], verbose=${VERBOSE})"
+required_str="${REQUIRED_ARTIFACTS[*]:-<none>}"
+echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], exclude=[${excludes_str}], browsers=[${browsers_str}], required=[${required_str}], verbose=${VERBOSE})"
 
 # ── JSON manifest emission ────────────────────────────────────────
 # Enabled when --manifest-dir is set. One file per selected browser
