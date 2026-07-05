@@ -24,7 +24,16 @@ import {
   type Report,
 } from "./schema-drift-pr-comment";
 
-export type SummaryOpts = FilterOpts & { max?: number };
+export type SummaryOpts = FilterOpts & { max?: number; groupByBrowser?: boolean };
+
+function countKinds(f: import("./schema-drift-pr-comment").FileEntry) {
+  return {
+    missing: f.missing?.length ?? 0,
+    mistyped: f.mistyped?.length ?? 0,
+    extra: f.extra?.length ?? 0,
+    parseError: f.parseError ? 1 : 0,
+  };
+}
 
 export function renderSummary(r: Report, opts: SummaryOpts = {}): string {
   const bad = selectFailures(r, opts);
@@ -36,6 +45,21 @@ export function renderSummary(r: Report, opts: SummaryOpts = {}): string {
   lines.push(
     `FAIL ${r.totals.invalid}/${r.totals.checked} invalid (strict=${r.strict})`,
   );
+  if (opts.groupByBrowser) {
+    const subtotals = new Map<string, { files: number; missing: number; mistyped: number; extra: number; parseError: number }>();
+    for (const f of bad) {
+      const key = f.combined ? "combined" : (f.browser ?? "unknown");
+      const c = countKinds(f);
+      const s = subtotals.get(key) ?? { files: 0, missing: 0, mistyped: 0, extra: 0, parseError: 0 };
+      s.files++; s.missing += c.missing; s.mistyped += c.mistyped; s.extra += c.extra; s.parseError += c.parseError;
+      subtotals.set(key, s);
+    }
+    lines.push("  subtotals by browser:");
+    for (const k of [...subtotals.keys()].sort()) {
+      const s = subtotals.get(k)!;
+      lines.push(`    ${k}: ${s.files} file(s)  missing=${s.missing} mistyped=${s.mistyped} extra=${s.extra} parseError=${s.parseError}`);
+    }
+  }
   for (const f of bad.slice(0, MAX)) {
     const scope = f.combined ? "combined" : `browser=${f.browser ?? "?"}`;
     lines.push(`  ${f.path}  [${scope}]`);
