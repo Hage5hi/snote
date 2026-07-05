@@ -371,6 +371,9 @@ describe("scripts/schema-drift-view.sh", () => {
         expect(stdout).toMatch(/OK\s+.*drift-chromium\.json/);
         expect(stdout).not.toMatch(/MATCH\s+focus-trap-inspect/);
         expect(stderr).not.toMatch(/INVALID/);
+      });
+
+
 
       it("fails on an invalid combined-manifest (missing keys) and labels it [combined]", () => {
         const dir = mkdtempSync(join(tmpdir(), "sdv-validate-combined-"));
