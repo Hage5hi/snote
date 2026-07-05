@@ -36,7 +36,9 @@
 param(
   [string]$Index = "artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json",
   [switch]$Clean,
-  [switch]$Keep
+  [switch]$Keep,
+  [ValidateSet("atomic","stress")]
+  [string]$Matrix = "atomic"
 )
 
 $ErrorActionPreference = "Stop"
