@@ -30,22 +30,28 @@ if [[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
   exit 2
 fi
 
-# ---- flag pre-parse: pull out --dry-run / --test-name-pattern / --print-manifest
-# from anywhere on the command line; leave the rest as positional args.
+# ---- flag pre-parse: pull known flags from anywhere on the command line;
+# leave the rest as positional args.
 DRY_RUN=0
 PRINT_MANIFEST=0
+VERBOSE=0
+JSON_SUMMARY=0
 PATTERN_OVERRIDE=""
 POSARGS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run)             DRY_RUN=1; shift ;;
     --print-manifest)      PRINT_MANIFEST=1; shift ;;
+    --verbose|-v)          VERBOSE=1; shift ;;
+    --json-summary)        JSON_SUMMARY=1; shift ;;
     --test-name-pattern)   PATTERN_OVERRIDE="${2:?--test-name-pattern requires a value}"; shift 2 ;;
     --test-name-pattern=*) PATTERN_OVERRIDE="${1#*=}"; shift ;;
     *)                     POSARGS+=("$1"); shift ;;
   esac
 done
 set -- "${POSARGS[@]}"
+
+vlog() { [[ "$VERBOSE" == "1" ]] && echo "verbose: $*" >&2 || true; }
 
 # Small helper: pretty-print a manifest with derived fields.
 print_manifest() {
