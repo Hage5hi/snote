@@ -914,3 +914,129 @@ describe("schema-drift-diff: --help examples stay in sync with CLI behavior", ()
     expect(parsed).toHaveProperty("$id");
   });
 });
+
+describe("schema-drift-diff: --validate-json stable ordering", () => {
+  const runOnce = () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const { code, stderr } = bun(
+      DIFF_SCRIPT, [p, p, "--json", "--validate-json"],
+      { SCHEMA_DRIFT_DIFF_FORCE_INVALID: "1" },
+    );
+    expect(code).toBe(6);
+    return JSON.parse(stderr);
+  };
+
+  it("ajvErrors and expectedChecklist ordering is stable across repeated runs", () => {
+    const a = runOnce();
+    const b = runOnce();
+    const c = runOnce();
+    const keyOf = (e: any) => `${e.instancePath}|${e.schemaPath}|${e.keyword}|${e.message}`;
+    expect(a.ajvErrors.map(keyOf)).toEqual(b.ajvErrors.map(keyOf));
+    expect(b.ajvErrors.map(keyOf)).toEqual(c.ajvErrors.map(keyOf));
+    expect(a.expectedChecklist.map((x: any) => x.key)).toEqual(
+      b.expectedChecklist.map((x: any) => x.key),
+    );
+    expect(b.expectedChecklist.map((x: any) => x.key)).toEqual(
+      c.expectedChecklist.map((x: any) => x.key),
+    );
+  });
+});
+
+describe("schema-drift-diff: --fail-slug + --kind combined", () => {
+  it("intersects both filters and returns a valid JSON payload with matching anchors", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const run = bun(DIFF_SCRIPT, [
+      p, p, "--json",
+      "--kind", "missing",
+      "--fail-slug", "fail-*",
+    ]);
+    expect(run.code).toBe(0);
+    const payload = JSON.parse(run.stdout);
+    // before === after, so no add/remove/change; matches only
+    expect(payload.totals.added).toBe(0);
+    expect(payload.totals.removed).toBe(0);
+    expect(payload.totals.changed).toBe(0);
+    expect(payload.matchedAnchors.length).toBeGreaterThan(0);
+    expect(payload.totals.matched).toBe(payload.matchedAnchors.length);
+    // every returned anchor matches the fail-slug glob
+    for (const a of payload.matchedAnchors) expect(a).toMatch(/^fail-/);
+  });
+
+  it("--kind filter narrower than --fail-slug returns strictly fewer or equal anchors", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const wide = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "fail-*"]);
+    const narrow = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "fail-*", "--kind", "missing"]);
+    expect(wide.code).toBe(0);
+    expect(narrow.code).toBe(0);
+    const w = JSON.parse(wide.stdout);
+    const n = JSON.parse(narrow.stdout);
+    expect(n.matchedAnchors.length).toBeLessThanOrEqual(w.matchedAnchors.length);
+    // narrow ⊆ wide
+    const wideSet = new Set(w.matchedAnchors);
+    for (const a of n.matchedAnchors) expect(wideSet.has(a)).toBe(true);
+  });
+});
+
+describe("schema-drift-diff: --json-out long destination path", () => {
+  it("atomic rename succeeds with a deeply-nested long destination path", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    // Build a long-but-portable path: 10 nested segments of 20 chars each
+    // (~220 chars under tmp) — well below Windows MAX_PATH=260 for the
+    // tmp prefix but long enough to catch buffer/encoding regressions in
+    // renameSync on any platform.
+    const segments = Array.from({ length: 10 }, (_, i) => `seg-${i}-${"x".repeat(15)}`);
+    const jsonOut = join(dir, ...segments, "diff.json");
+    const { code, stderr } = bun(DIFF_SCRIPT, [p, p, "--json-out", jsonOut]);
+    expect(code).toBe(0);
+    expect(stderr).toContain("schema-drift diff (json):");
+    expect(_readFileSync(jsonOut, "utf8")).toContain("matchedAnchors");
+    // No `.tmp` sibling left behind
+    const parentListing = require("node:fs").readdirSync(join(dir, ...segments));
+    expect(parentListing.filter((f: string) => f.endsWith(".tmp"))).toEqual([]);
+  });
+});
+
+describe("schema-drift-diff: --help examples stable under flag reordering/aliases", () => {
+  it("--help output is byte-identical whether -h or --help is used", () => {
+    const a = bun(DIFF_SCRIPT, ["--help"]);
+    const b = bun(DIFF_SCRIPT, ["-h"]);
+    expect(a.code).toBe(0);
+    expect(b.code).toBe(0);
+    expect(a.stderr).toBe(b.stderr);
+  });
+
+  it("advertised examples still work with flags in reversed order", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    // Reversed order: --validate-json before --json
+    const a = bun(DIFF_SCRIPT, [p, p, "--validate-json", "--json"]);
+    expect(a.code).toBe(0);
+    expect(a.stderr).toContain("validate-json: OK");
+    // Reversed order: --fail-slug before positionals
+    const b = bun(DIFF_SCRIPT, ["--fail-slug", "fail-chromium-*", "--json", p, p]);
+    expect(b.code).toBe(0);
+    expect(() => JSON.parse(b.stdout)).not.toThrow();
+  });
+
+  it("=-form aliases (--kind=..., --fail-slug=..., --json-out=...) behave identically to space-form", () => {
+    const dir = tmp();
+    const p = writeReport(dir, FAILING);
+    const space = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug", "fail-*", "--kind", "missing"]);
+    const eq = bun(DIFF_SCRIPT, [p, p, "--json", "--fail-slug=fail-*", "--kind=missing"]);
+    expect(space.code).toBe(0);
+    expect(eq.code).toBe(0);
+    expect(JSON.parse(space.stdout)).toEqual(JSON.parse(eq.stdout));
+
+    const outSpace = join(dir, "space.json");
+    const outEq = join(dir, "eq.json");
+    const rs = bun(DIFF_SCRIPT, [p, p, "--json-out", outSpace]);
+    const re = bun(DIFF_SCRIPT, [p, p, `--json-out=${outEq}`]);
+    expect(rs.code).toBe(0);
+    expect(re.code).toBe(0);
+    expect(_readFileSync(outSpace, "utf8")).toBe(_readFileSync(outEq, "utf8"));
+  });
+});
