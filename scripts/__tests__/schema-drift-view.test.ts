@@ -456,7 +456,7 @@ describe("scripts/schema-drift-view.sh", () => {
         ]);
         expect(code).toBe(1);
         expect(stderr).toMatch(/mistyped:.*combined \(expected boolean, got string\)/);
-        expect(stderr).toMatch(/mistyped:.*matches \(expected string\[\], got array\)/);
+        expect(stderr).toMatch(/mistyped:.*matches \(expected string\[\], got number\[\]\)/);
       });
 
       it("catches nested item type mismatches in matches/excludes on BOTH per-browser and combined", () => {
