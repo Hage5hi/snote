@@ -190,7 +190,7 @@ pretty-index-artifacts-verify:
 	  if [ ! -d "$$dir" ]; then \
 	    echo "❌ $$dir missing — run 'make pretty-index-artifacts-download RUN_ID=...' first" >&2; \
 	    [ $$first -eq 1 ] || printf ',' >> "$$report.tmp"; first=0; \
-	    printf '{"dir":"%s","status":"dir_missing"}' "$$dir" >> "$$report.tmp"; \
+	    printf '{"dir":"%s","artifact_dir":"%s","status":"dir_missing"}' "$$dir" "$$(basename -- "$$dir")" >> "$$report.tmp"; \
 	    rc=2; [ "$$fail_fast" = "1" ] && stop=1; continue; \
 	  fi; \
 	  if [ ! -f "$$dir/pretty-index.checksums.sha256" ]; then \
