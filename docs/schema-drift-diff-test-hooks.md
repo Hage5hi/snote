@@ -195,3 +195,116 @@ contributor would set to reproduce a flake.
 | `SCHEMA_DRIFT_DIFF_FUZZ_SEED` | same | LCG default (`12648430`) | Pins the fuzz seed. Appears in the CI replay block on failure. |
 | `SCHEMA_DRIFT_DIFF_READER_DURATION_MS` | same | `300` | Widens the concurrent-reader window. |
 | `SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS` | same | `5` | Number of full-suite loops in the nightly stress job. |
+
+## Replay helper flags: `--dry-run`, `--test-name-pattern`, `--print-manifest`
+
+`scripts/replay-schema-drift-diff-fuzz.sh` supports three non-executing
+flags that let you inspect and verify a replay folder without invoking
+`vitest`. They compose with both the positional form
+(`<SEED> [READER_MS] [PATTERN]`) and the CI form (`--from <FOLDER>`).
+
+### `--dry-run` — verify checksums + files, print the exact command
+
+Materializes the timestamped replay folder (`manifest.txt`, `env.sh`,
+`checksums.sha256`), runs the same integrity checks the real replay does,
+writes `replay-summary.txt`, then exits `0` **without** executing vitest.
+Exits `8` on any missing/unreadable file or checksum mismatch. This is
+what CI uses on failure to pre-validate the artifact before running the
+real replay.
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh 12648430 500 "concurrent reader" --dry-run
+```
+
+Expected tail of stderr:
+
+```
+pre-replay: OK   checksums verified
+command: SCHEMA_DRIFT_DIFF_FUZZ_SEED=12648430 SCHEMA_DRIFT_DIFF_READER_DURATION_MS=500 bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts -t concurrent\ reader --testTimeout=30000 --reporter=verbose
+dry-run: verification complete, not executing vitest
+```
+
+Expected `artifacts/schema-drift-diff-replay/<ts>-seed-<seed>/replay-summary.txt`:
+
+```
+mode:                dry-run
+checksum_verified:   ok
+would_run:           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts -t concurrent reader --testTimeout=30000 --reporter=verbose
+seed:                12648430
+reader_ms:           500
+pattern:             concurrent reader
+timeout_ms:          30000
+```
+
+### `--test-name-pattern <p>` — override the vitest `-t` filter
+
+Takes precedence over both the 3rd positional argument and the
+`SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN` value in a `--from` manifest.
+Useful when you want to replay a captured seed but narrow to a single
+failing test name without editing `env.sh`.
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh \
+  --from ./replay-download/20260705T111030Z-seed-777 \
+  --test-name-pattern "concurrent reader observes only fully-written" \
+  --dry-run
+```
+
+Expected: the resulting `replay-summary.txt` shows
+`pattern:             concurrent reader observes only fully-written` and
+`would_run: … -t concurrent reader observes only fully-written …`,
+regardless of what the manifest's `SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN`
+line says.
+
+### `--print-manifest` — pretty-print manifest + derived fields
+
+Prints the raw manifest followed by a `-- derived --` block with
+`seed`, `reader_ms`, `test_pattern`, and `timeout_ms` extracted for
+readability. Exits `0`. Combine with `--from` to inspect a downloaded CI
+artifact without running anything.
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh --from ./replay-download/20260705T111030Z-seed-777 --print-manifest
+```
+
+Expected output:
+
+```
+== manifest: ./replay-download/20260705T111030Z-seed-777/manifest.txt ==
+timestamp_utc:                          20260705T111030Z
+SCHEMA_DRIFT_DIFF_FUZZ_SEED:            777
+SCHEMA_DRIFT_DIFF_READER_DURATION_MS:   100
+SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:    concurrent reader observes only fully-written
+SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:      30000
+…
+
+-- derived --
+seed          = 777
+reader_ms     = 100
+test_pattern  = concurrent reader observes only fully-written
+timeout_ms    = 30000
+```
+
+### CI integration
+
+The `schema-drift-diff-atomic-crossos` and `schema-drift-diff-stress-nightly`
+jobs use these flags on failure in this order:
+
+1. **prepare replay folder on failure (dry-run materialize)** — runs the
+   helper with `--dry-run` to write the folder + `checksums.sha256`
+   without invoking vitest.
+2. **dry-run verify replay folder integrity** — `--from <folder> --dry-run`
+   fails the job step (exit `8`) if any required file is missing or a
+   checksum mismatches, so a corrupt upload never silently produces an
+   unusable replay artifact.
+3. **materialize replay folder on failure (real replay)** — `--from
+   <folder>` executes the real vitest command against the verified
+   folder (with `|| true` so the expected re-failure doesn't hide the
+   uploaded logs).
+4. **print copy-paste replay command** — appends the labeled
+   `gh run download …` + `scripts/replay-schema-drift-diff-fuzz.sh --from …`
+   block **and** `replay-summary.txt` to `$GITHUB_STEP_SUMMARY` so
+   debuggers can grab them without opening job logs.
+
+Regression coverage for these flags lives in
+`scripts/__tests__/replay-schema-drift-diff-fuzz.test.ts`.
