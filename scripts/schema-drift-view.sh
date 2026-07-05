@@ -236,3 +236,89 @@ files_str="${FILE_MATCHES[*]:-<none>}"
 excludes_str="${FILE_EXCLUDES[*]:-<none>}"
 browsers_str="${BROWSERS[*]:-<all>}"
 echo "Bundle: $OUT/  (viewer=$RESOLVED_VIEWER, cols=$COLS, type=$FILTER, files=[${files_str}], exclude=[${excludes_str}], browsers=[${browsers_str}], verbose=${VERBOSE})"
+
+# ── JSON manifest emission ────────────────────────────────────────
+# Enabled when --manifest-dir is set. One file per selected browser
+# (or a single "<all>" entry when --browsers is unset), plus an
+# optional combined file across every selected browser.
+if [ -n "$MANIFEST_DIR" ]; then
+  mkdir -p "$MANIFEST_DIR"
+  # JSON-array helper: prints ["a","b"] from array positional args.
+  json_arr() {
+    local first=1 s='['
+    for x in "$@"; do
+      [ $first -eq 1 ] || s+=','
+      first=0
+      # Escape backslashes and double-quotes for safe JSON embedding.
+      local esc="${x//\\/\\\\}"; esc="${esc//\"/\\\"}"
+      s+="\"$esc\""
+    done
+    s+=']'
+    printf '%s' "$s"
+  }
+  case "$FILTER" in
+    types)   EXPECTED_BASES=("focus-trap-inspect-schema.types.gen.ts") ;;
+    schemas) EXPECTED_BASES=("focus-trap-inspect-report.schema.json"
+                             "focus-trap-inspect-diff.schema.json") ;;
+    *)       EXPECTED_BASES=("focus-trap-inspect-report.schema.json"
+                             "focus-trap-inspect-diff.schema.json"
+                             "focus-trap-inspect-schema.types.gen.ts") ;;
+  esac
+  if [ "$RESOLVED_VIEWER" = "diff-y" ]; then
+    VIEWER_CMD="diff -y --width=$COLS <committed> <regenerated>"
+  else
+    VIEWER_CMD="pretty($RESOLVED_VIEWER) < <base>.diff"
+  fi
+  # De-dupe MATCHED_BASES (show() may be called >1x per run).
+  MATCHED_UNIQUE=(); declare -A _seen=()
+  for b in "${MATCHED_BASES[@]:-}"; do
+    [ -z "$b" ] && continue
+    [ -n "${_seen[$b]:-}" ] && continue
+    _seen[$b]=1; MATCHED_UNIQUE+=("$b")
+  done
+
+  GEN_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  SEL_BROWSERS=("${BROWSERS[@]:-<all>}")
+
+  write_manifest() {
+    # $1 = output path, $2 = browser label, $3 = "1" if combined
+    local path="$1" browser="$2" combined="$3"
+    local browsers_json
+    if [ "$combined" = "1" ]; then
+      browsers_json="$(json_arr "${SEL_BROWSERS[@]}")"
+    else
+      browsers_json="$(json_arr "$browser")"
+    fi
+    {
+      printf '{\n'
+      printf '  "browser": %s,\n'         "$(json_arr "$browser" | sed 's/^\[//; s/\]$//')"
+      printf '  "browsers": %s,\n'        "$browsers_json"
+      printf '  "combined": %s,\n'        "$([ "$combined" = "1" ] && echo true || echo false)"
+      printf '  "generatedAt": "%s",\n'   "$GEN_AT"
+      printf '  "type": "%s",\n'          "$FILTER"
+      printf '  "viewer": "%s",\n'        "$RESOLVED_VIEWER"
+      printf '  "resolvedViewerCommand": "%s",\n' "$VIEWER_CMD"
+      printf '  "matches": %s,\n'         "$(json_arr "${FILE_MATCHES[@]:-}")"
+      printf '  "excludes": %s,\n'        "$(json_arr "${FILE_EXCLUDES[@]:-}")"
+      printf '  "expected": %s,\n'        "$(json_arr "${EXPECTED_BASES[@]}")"
+      printf '  "matched": %s\n'          "$(json_arr "${MATCHED_UNIQUE[@]:-}")"
+      printf '}\n'
+    } > "$path"
+    echo "manifest: $path"
+    vlog "wrote manifest $path"
+  }
+
+  # Per-browser manifests (or a single "<all>" file when unset).
+  if [ "${#BROWSERS[@]}" -eq 0 ]; then
+    write_manifest "$MANIFEST_DIR/${MANIFEST_PREFIX}-all.json" "<all>" 0
+  else
+    for b in "${BROWSERS[@]}"; do
+      write_manifest "$MANIFEST_DIR/${MANIFEST_PREFIX}-${b}.json" "$b" 0
+    done
+  fi
+
+  # Combined manifest across all selected browsers.
+  if [ "$COMBINED_MANIFEST" = "1" ]; then
+    write_manifest "$MANIFEST_DIR/${MANIFEST_PREFIX}-combined.json" "combined" 1
+  fi
+fi
