@@ -74,7 +74,10 @@ if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
   DR_INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
   DR_PRE="${DR_INDEX%.json}.pre-check.json"
   DR_REPORT="${DR_INDEX%.json}.report.json"
-  echo "▶ pre-commit [dry-run]: pretty-index gate (MATRIX=$HOOK_MATRIX)"
+  DR_DIR="$(dirname -- "$DR_INDEX")"
+  echo "▶ pre-commit [dry-run]: pretty-index gate"
+  echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
+  echo "  diagnostic directory              = $DR_DIR"
   echo "  would run: scripts/reproduce-ci-pretty-index-check.sh --clean --matrix $HOOK_MATRIX $DR_INDEX"
   echo "  expected diagnostic paths:"
   echo "    input     : $DR_INDEX"
@@ -86,8 +89,10 @@ if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
     echo "  CI artifact prefix: schema-drift-diff-replay-pretty-index-failure-<os>"
   fi
   echo "  documented exit codes: 0=ok, 1=drift, 2=usage, 3=schema, 4=missing"
+  echo "▶ pre-commit [dry-run]: exiting 0 (no files created or modified)"
   exit 0
 fi
+
 
 needs_check() {
   if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
