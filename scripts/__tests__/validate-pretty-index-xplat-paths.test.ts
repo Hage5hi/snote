@@ -69,7 +69,7 @@ describe("validate-pretty-index.py cross-platform path normalization", () => {
     const { mkdirSync } = require("node:fs");
     mkdirSync(join(d, "sub"), { recursive: true });
     const f = join(d, "sub", "pretty-index.json");
-    writeFileSync(f, "[]");
+    writeFileSync(f, JSON.stringify({ schema_version: 1, entries: [] }));
     const r = run("--require-version", "1", "--report", f);
     expect(r.status).toBe(0);
     expect(JSON.parse(r.stdout).file).toBe(f);
