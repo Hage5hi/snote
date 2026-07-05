@@ -154,22 +154,44 @@ if [ "$VALIDATE_MANIFEST" = "1" ]; then
   if [ ! -d "$MANIFEST_DIR" ]; then
     echo "--validate-manifest: no such dir: $MANIFEST_DIR" >&2; exit 1
   fi
+  # Locate the shipped JSON Schema (schemas/schema-drift-manifest.schema.json)
+  # relative to this script. If it's missing we fail loudly — --strict-manifest
+  # is documented to derive its checks from the schema.
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  SCHEMA_PATH="${SCHEMA_PATH:-$SCRIPT_DIR/../schemas/schema-drift-manifest.schema.json}"
   MANIFEST_DIR="$MANIFEST_DIR" MANIFEST_PREFIX="$MANIFEST_PREFIX" \
-    STRICT="$STRICT_MANIFEST" node -e '
+    STRICT="$STRICT_MANIFEST" REPORT="$VALIDATION_REPORT" \
+    SCHEMA_PATH="$SCHEMA_PATH" node -e '
     const fs=require("fs"),path=require("path");
     const dir=process.env.MANIFEST_DIR, pref=process.env.MANIFEST_PREFIX;
     const strict=process.env.STRICT==="1";
-    // name → expected JS type ("string"|"boolean"|"string[]")
-    const SCHEMA={
-      browser:"string", browsers:"string[]", combined:"boolean",
-      generatedAt:"string", type:"string", viewer:"string",
-      resolvedViewerCommand:"string", matches:"string[]", excludes:"string[]",
-      expected:"string[]", matched:"string[]", requiredArtifacts:"string[]",
+    const reportPath=process.env.REPORT||"";
+    const schemaPath=process.env.SCHEMA_PATH;
+    let schema;
+    try { schema=JSON.parse(fs.readFileSync(schemaPath,"utf8")); }
+    catch (e) { console.error(`cannot load schema at ${schemaPath}: ${e.message}`); process.exit(2); }
+    const REQUIRED=schema.required||[];
+    const PROPS=schema.properties||{};
+    const KNOWN=new Set(Object.keys(PROPS));
+    // Convert a JSON-Schema property node to a compact type label used in
+    // error messages: "string" | "boolean" | "string[]" | "<t>[]".
+    const labelOf=p=>{
+      if (!p) return "unknown";
+      if (p.type==="array") {
+        const it=p.items&&p.items.type ? p.items.type : "any";
+        return `${it}[]`;
+      }
+      return p.type||"unknown";
     };
-    const KNOWN=new Set(Object.keys(SCHEMA));
-    const typeOf=v=>Array.isArray(v)
-      ? (v.every(x=>typeof x==="string")?"string[]":"array")
-      : typeof v;
+    // Actual type of a JS value, matching the label vocabulary above.
+    const typeOfVal=v=>{
+      if (Array.isArray(v)) {
+        if (v.length===0) return "string[]"; // empty ⇒ satisfies string[]
+        const ts=new Set(v.map(x=>Array.isArray(x)?"array":typeof x));
+        return ts.size===1 ? `${[...ts][0]}[]` : "array";
+      }
+      return typeof v;
+    };
     const files=fs.readdirSync(dir)
       .filter(f=>f.startsWith(pref+"-")&&f.endsWith(".json"))
       .sort();
@@ -177,35 +199,52 @@ if [ "$VALIDATE_MANIFEST" = "1" ]; then
       console.error(`--validate-manifest: no manifests matched ${pref}-*.json in ${dir}`);
       process.exit(1);
     }
+    // Machine-readable report accumulator.
+    const report={
+      generatedAt: new Date().toISOString().replace(/\.\d+Z$/,"Z"),
+      strict, schemaPath, files: [],
+      totals: { checked: 0, ok: 0, invalid: 0 },
+    };
     let bad=0;
     for (const f of files) {
       const p=path.join(dir,f);
+      const entry={ path: p, ok: true, missing: [], mistyped: [], extra: [], parseError: null };
       let doc;
       try { doc=JSON.parse(fs.readFileSync(p,"utf8")); }
       catch (e) {
+        entry.ok=false; entry.parseError=e.message;
         console.error(`INVALID ${p} — malformed JSON: ${e.message}`);
-        bad++; continue;
+        bad++; report.files.push(entry); continue;
       }
-      const missing=[], mistyped=[], extra=[];
-      for (const [k,t] of Object.entries(SCHEMA)) {
-        if (!(k in doc)) { missing.push(k); continue; }
-        const got=typeOf(doc[k]);
-        if (got!==t) mistyped.push(`${k} (expected ${t}, got ${got})`);
+      entry.browser = doc.browser || null;
+      entry.combined = doc.combined === true;
+      for (const k of REQUIRED) {
+        if (!(k in doc)) { entry.missing.push(k); continue; }
+        const want=labelOf(PROPS[k]);
+        const got=typeOfVal(doc[k]);
+        if (got!==want) entry.mistyped.push({ key: k, expected: want, got });
       }
-      if (strict) for (const k of Object.keys(doc)) if (!KNOWN.has(k)) extra.push(k);
+      if (strict) for (const k of Object.keys(doc)) if (!KNOWN.has(k)) entry.extra.push(k);
       const problems=[];
-      if (missing.length)  problems.push(`missing: ${missing.join(", ")}`);
-      if (mistyped.length) problems.push(`mistyped: ${mistyped.join(", ")}`);
-      if (extra.length)    problems.push(`extra: ${extra.join(", ")}`);
-      // Combined manifests get an explicit label in the report so failures
-      // in the aggregate file are obvious vs per-browser regressions.
-      const label=doc.combined===true ? "[combined] " : `[browser=${doc.browser||"?"}] `;
+      if (entry.missing.length)  problems.push(`missing: ${entry.missing.join(", ")}`);
+      if (entry.mistyped.length) problems.push(`mistyped: ${entry.mistyped.map(m=>`${m.key} (expected ${m.expected}, got ${m.got})`).join(", ")}`);
+      if (entry.extra.length)    problems.push(`extra: ${entry.extra.join(", ")}`);
+      const label=entry.combined ? "[combined] " : `[browser=${entry.browser||"?"}] `;
       if (problems.length) {
+        entry.ok=false; bad++;
         console.error(`INVALID ${p} ${label}— ${problems.join(" | ")}`);
-        bad++;
       } else {
         console.log(`OK      ${p} ${label}`);
       }
+      report.files.push(entry);
+    }
+    report.totals.checked=files.length;
+    report.totals.invalid=bad;
+    report.totals.ok=files.length-bad;
+    if (reportPath) {
+      fs.mkdirSync(path.dirname(path.resolve(reportPath)),{recursive:true});
+      fs.writeFileSync(reportPath, JSON.stringify(report,null,2));
+      console.log(`report: ${reportPath}`);
     }
     if (bad>0) {
       console.error(`--validate-manifest: ${bad}/${files.length} manifest(s) failed (strict=${strict})`);
