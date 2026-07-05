@@ -21,9 +21,21 @@ Options:
                         PATH: {summary_file, fail_reason, exit_code,
                         pretty_txt, pretty_md}. Keys are sorted for
                         deterministic bytes.
+
+                        Contract for `pretty_txt` / `pretty_md`:
+                          * Both keys are ALWAYS present in the report
+                            (never missing, never `undefined`).
+                          * The value is a JSON string when the matching
+                            --pretty-{txt,md} flag was supplied, and
+                            JSON null otherwise. No other types.
+                          * This makes downstream triage safe to index
+                            with `obj["pretty_txt"]` / `obj["pretty_md"]`
+                            without a presence check.
   --pretty-txt PATH     Value recorded as `pretty_txt` in --output-json
                         (no file is read/written by this flag itself).
+                        Omit to record `null`.
   --pretty-md PATH      Value recorded as `pretty_md` in --output-json.
+                        Omit to record `null`.
   -h, --help            Show this help.
 
 Exit codes:
