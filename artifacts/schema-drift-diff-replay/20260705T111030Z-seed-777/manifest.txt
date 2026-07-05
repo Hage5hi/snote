@@ -1,0 +1,9 @@
+timestamp_utc:                          20260705T111030Z
+SCHEMA_DRIFT_DIFF_FUZZ_SEED:            777
+SCHEMA_DRIFT_DIFF_READER_DURATION_MS:   100
+SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:    concurrent reader observes only fully-written
+SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS:      30000
+git_commit:                             155e399222e6ed570192cce1a4e07d5d22519a69
+node:                                   v22.22.0
+bun:                                    1.3.3
+tampered

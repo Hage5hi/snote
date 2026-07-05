@@ -301,6 +301,7 @@ jobs:
               "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}" \
             || true
       - name: upload --json-out debug artifacts
+        id: upload-json-out
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
@@ -312,6 +313,39 @@ jobs:
             artifacts/schema-drift-diff/dest-listing.txt
             artifacts/schema-drift-diff/dest-snapshot/**
             artifacts/schema-drift-diff-replay/**
+      # Print an exact copy-paste replay command referencing the just-uploaded
+      # artifact (name + manifest path + seed + reader duration + timeout).
+      - name: print copy-paste replay command
+        if: (failure() || cancelled()) && steps.upload-json-out.outcome == 'success'
+        shell: bash
+        run: |
+          FOLDER="$(ls -dt artifacts/schema-drift-diff-replay/*/ 2>/dev/null | head -n1)"
+          FOLDER="${FOLDER%/}"
+          [ -n "$FOLDER" ] || { echo "no replay folder found — skipping"; exit 0; }
+          REL="${FOLDER#artifacts/schema-drift-diff-replay/}"
+          SEED="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_FUZZ_SEED"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
+          READER="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_READER_DURATION_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
+          TIMEOUT="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
+          echo "::group::schema-drift-diff copy-paste replay command"
+          cat <<EOF
+          # 1) Download the CI artifact:
+          #    gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-json-out-debug-${{ matrix.os }} -D ./replay-download
+          #    (artifact contains: manifest.txt, env.sh, checksums.sha256, vitest.stdout/stderr.log)
+          # 2) Replay from the manifest (checksum-verified):
+          scripts/replay-schema-drift-diff-fuzz.sh --from ./replay-download/${REL}
+          #
+          # Or replay by seed/reader duration directly:
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS=${TIMEOUT} \\
+            scripts/replay-schema-drift-diff-fuzz.sh ${SEED} ${READER} "concurrent reader \+ fuzz \+ unsafe symlink"
+          #
+          # manifest_path: ${FOLDER}/manifest.txt
+          # env_context:   ${FOLDER}/env.sh
+          # seed:          ${SEED}
+          # reader_ms:     ${READER}
+          # timeout_ms:    ${TIMEOUT}
+          EOF
+          echo "::endgroup::"
+
 
 
 
@@ -407,6 +441,7 @@ jobs:
               "${SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN:-concurrent reader \+ fuzz \+ unsafe symlink}" \
             || true
       - name: upload stress debug artifacts
+        id: upload-stress
         if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
@@ -417,6 +452,36 @@ jobs:
             artifacts/schema-drift-diff-stress/dest-listing.txt
             artifacts/schema-drift-diff-stress/dest-snapshot/**
             artifacts/schema-drift-diff-replay/**
+      - name: print copy-paste replay command
+        if: (failure() || cancelled()) && steps.upload-stress.outcome == 'success'
+        shell: bash
+        run: |
+          FOLDER="$(ls -dt artifacts/schema-drift-diff-replay/*/ 2>/dev/null | head -n1)"
+          FOLDER="${FOLDER%/}"
+          [ -n "$FOLDER" ] || { echo "no replay folder found — skipping"; exit 0; }
+          REL="${FOLDER#artifacts/schema-drift-diff-replay/}"
+          SEED="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_FUZZ_SEED"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
+          READER="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_READER_DURATION_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
+          TIMEOUT="$(awk -F: '$1=="SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS"{sub(/^[^:]*:[ \t]*/,""); print; exit}' "$FOLDER/manifest.txt")"
+          echo "::group::schema-drift-diff copy-paste replay command"
+          cat <<EOF
+          # 1) Download the CI artifact:
+          #    gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-stress-debug-${{ matrix.os }} -D ./replay-download
+          # 2) Replay from the manifest (checksum-verified):
+          scripts/replay-schema-drift-diff-fuzz.sh --from ./replay-download/${REL}
+          #
+          # Or replay directly:
+          SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS=${TIMEOUT} \\
+            scripts/replay-schema-drift-diff-fuzz.sh ${SEED} ${READER} "concurrent reader \+ fuzz \+ unsafe symlink"
+          #
+          # manifest_path: ${FOLDER}/manifest.txt
+          # env_context:   ${FOLDER}/env.sh
+          # seed:          ${SEED}
+          # reader_ms:     ${READER}
+          # timeout_ms:    ${TIMEOUT}
+          EOF
+          echo "::endgroup::"
+
 
 
 
