@@ -98,6 +98,7 @@ if [[ "${1:-}" == "--from" ]]; then
   set +e
   SUMS_OUT="$(cd "$SRC" && sha256sum -c checksums.sha256 2>&1)"; SUMS_RC=$?
   set -e
+  printf '%s\n' "$SUMS_OUT" >&2
   if [[ $SUMS_RC -ne 0 ]]; then
     echo "--from: FAIL checksum mismatch in $SRC" >&2
     if [[ "$VERBOSE" == "1" ]]; then
