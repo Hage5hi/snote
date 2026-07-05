@@ -925,27 +925,28 @@ print(json.dumps({
             } >> "$GITHUB_STEP_SUMMARY"
           done
           echo ']}' >> "$index"
-          # Enforce schema_version=1 (matches the generator literal above)
-          # so drift between generator and validator fails loudly here.
-          if ! val_err=$(python3 scripts/validate-pretty-index.py --require-version 1 "$index" 2>&1 1>/dev/null); then
+          # Snapshot the generator output BEFORE any migration so failure
+          # uploads always include the exact bytes the validator saw.
+          cp -- "$index" "${index}.pre-check.json"
+          report="${index%.json}.report.json"
+          # Single-entry-point drift + schema check via the shared local
+          # script. --report writes the validator's machine-readable JSON
+          # so the failure-upload step can attach it as an artifact.
+          if ! val_err=$(scripts/check-pretty-index-local.sh --report "$report" "$index" 2>&1); then
+            rc=$?
             first_line=$(printf '%s\n' "$val_err" | head -n1)
-            echo "::error file=${index}::pretty-index.json failed schema validation at ${index}: ${first_line}" >&2
+            echo "::error file=${index}::pretty-index.json check failed (exit ${rc}): ${first_line}" >&2
             {
               echo ''
               echo "### ❌ pretty-index.json schema validation failed"
               echo ''
               echo "- Path: \`${index}\`"
+              echo "- Script exit: \`${rc}\` (1=drift, 3=schema, 4=missing)"
               echo ''
               echo '```'
               printf '%s\n' "$val_err"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          # Generator self-check: fail with a regeneration hint in
-          # $GITHUB_STEP_SUMMARY when the generator's schema_version
-          # drifts from the validator's CURRENT_SCHEMA_VERSION.
-          if ! python3 scripts/check-pretty-index-schema-version.py "$index"; then
             exit 1
           fi
           {
