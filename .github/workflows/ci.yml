@@ -548,7 +548,7 @@ print(json.dumps({
           if ! python3 scripts/check-pretty-index-schema-version.py "$index"; then
             exit 1
           fi
-          true # (kept so the following `fi`-terminated block stays valid)
+          
           # Per-matrix validated count so reviewers can see at a glance
           # how many replay-summary.json entries were pretty-printed
           # and validated on this runner.
