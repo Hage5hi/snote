@@ -219,6 +219,11 @@ jobs:
         # Use bash on every OS (including Windows) so the `\` line
         # continuations below are honored consistently.
         shell: bash
+        # `SCHEMA_DRIFT_DIFF_FUZZ_SEED` (repo variable, optional) forces the
+        # fuzz test to a known seed so a red run can be replayed byte-for-byte.
+        # When unset, the test prints the seed it picked to stderr.
+        env:
+          SCHEMA_DRIFT_DIFF_FUZZ_SEED: ${{ vars.SCHEMA_DRIFT_DIFF_FUZZ_SEED }}
         # Filter picks up:
         #   - print-schema
         #   - atomic write failure modes
@@ -230,21 +235,40 @@ jobs:
           mkdir -p artifacts/schema-drift-diff
           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
             -t "print-schema|atomic write failure modes|long destination path|spaces and special characters|symlink \+ schema \+ cleanup wording|concurrent reader \+ fuzz \+ unsafe symlink" \
-            --reporter=verbose 2>&1 | tee artifacts/schema-drift-diff/vitest.log
-      # On failure, upload the vitest log plus any leftover `*.tmp` siblings
-      # from the OS temp dir so the atomicWrite cleanup path can be inspected
-      # offline. `if-no-files-found: ignore` avoids noisy warnings when the
-      # tests succeeded and cleaned up after themselves.
-      - name: upload --json-out debug artifacts on failure
-        if: failure()
+            --reporter=verbose \
+            > >(tee artifacts/schema-drift-diff/vitest.stdout.log) \
+            2> >(tee artifacts/schema-drift-diff/vitest.stderr.log >&2)
+      # On failure OR timeout/cancel, snapshot the OS temp dir so the exact
+      # failing --json-out destinations and any leftover `.tmp` siblings are
+      # inspectable offline. Includes both stdout and stderr logs so the fuzz
+      # seed printed by the test is preserved for replay.
+      - name: capture failing --json-out destinations
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          mkdir -p artifacts/schema-drift-diff/dest-snapshot
+          # List every schema-drift-report-* tmp dir the tests created and
+          # copy any surviving .tmp siblings + regular files under it.
+          {
+            find "${TMPDIR:-/tmp}" -maxdepth 3 -name 'schema-drift-report-*' -print 2>/dev/null || true
+            find "${RUNNER_TEMP:-/tmp}" -maxdepth 3 -name 'schema-drift-report-*' -print 2>/dev/null || true
+          } | sort -u | tee artifacts/schema-drift-diff/dest-listing.txt | while read -r d; do
+            [ -d "$d" ] || continue
+            base="artifacts/schema-drift-diff/dest-snapshot/$(basename "$d")"
+            mkdir -p "$base"
+            cp -a "$d"/. "$base"/ 2>/dev/null || true
+          done
+      - name: upload --json-out debug artifacts
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: schema-drift-diff-json-out-debug-${{ matrix.os }}
           if-no-files-found: ignore
           path: |
-            artifacts/schema-drift-diff/vitest.log
-            /tmp/**/*.tmp
-            ${{ runner.temp }}/**/*.tmp
+            artifacts/schema-drift-diff/vitest.stdout.log
+            artifacts/schema-drift-diff/vitest.stderr.log
+            artifacts/schema-drift-diff/dest-listing.txt
+            artifacts/schema-drift-diff/dest-snapshot/**
 
   # Nightly parallel-writer stress job for --json-out. Race conditions in
   # the atomic rename / stale-tmp cleanup path only surface occasionally,
@@ -258,11 +282,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
-    # `SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS` mirrors the local knob documented
-    # in docs/schema-drift-diff-test-hooks.md so contributors can reproduce
-    # nightly conditions without hard-coding the loop count.
+    # Knobs (all optional). Contributors reproducing locally set the same
+    # env vars — see docs/schema-drift-diff-test-hooks.md.
     env:
       SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS: ${{ vars.SCHEMA_DRIFT_DIFF_STRESS_ITERATIONS || '5' }}
+      SCHEMA_DRIFT_DIFF_FUZZ_SEED: ${{ vars.SCHEMA_DRIFT_DIFF_FUZZ_SEED }}
+      SCHEMA_DRIFT_DIFF_READER_DURATION_MS: ${{ vars.SCHEMA_DRIFT_DIFF_READER_DURATION_MS }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -277,19 +302,36 @@ jobs:
             echo "::group::stress iteration $i"
             bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts \
               -t "concurrency \+ tmp-file hygiene|stress \+ read-only \+ stderr wording|concurrent reader \+ fuzz \+ unsafe symlink" \
-              --reporter=verbose 2>&1 | tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.log"
+              --reporter=verbose \
+              > >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stdout.log") \
+              2> >(tee -a "artifacts/schema-drift-diff-stress/vitest-iter-$i.stderr.log" >&2)
             echo "::endgroup::"
           done
-      - name: upload stress debug artifacts on failure
-        if: failure()
+      - name: capture failing --json-out destinations
+        if: failure() || cancelled()
+        shell: bash
+        run: |
+          mkdir -p artifacts/schema-drift-diff-stress/dest-snapshot
+          {
+            find "${TMPDIR:-/tmp}" -maxdepth 3 -name 'schema-drift-report-*' -print 2>/dev/null || true
+            find "${RUNNER_TEMP:-/tmp}" -maxdepth 3 -name 'schema-drift-report-*' -print 2>/dev/null || true
+          } | sort -u | tee artifacts/schema-drift-diff-stress/dest-listing.txt | while read -r d; do
+            [ -d "$d" ] || continue
+            base="artifacts/schema-drift-diff-stress/dest-snapshot/$(basename "$d")"
+            mkdir -p "$base"
+            cp -a "$d"/. "$base"/ 2>/dev/null || true
+          done
+      - name: upload stress debug artifacts
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v4
         with:
           name: schema-drift-diff-stress-debug-${{ matrix.os }}
           if-no-files-found: ignore
           path: |
             artifacts/schema-drift-diff-stress/*.log
-            /tmp/**/*.tmp
-            ${{ runner.temp }}/**/*.tmp
+            artifacts/schema-drift-diff-stress/dest-listing.txt
+            artifacts/schema-drift-diff-stress/dest-snapshot/**
+
 
 
 
