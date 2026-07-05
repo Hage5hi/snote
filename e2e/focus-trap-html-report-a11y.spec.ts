@@ -557,14 +557,30 @@ test.describe("focus-trap --html-report a11y", () => {
             }
             const failedNow = testInfo.errors.length > 0;
             const runUrl = process.env.GITHUB_SERVER_URL && process.env.GITHUB_REPOSITORY && process.env.GITHUB_RUN_ID
-              ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}#artifacts`
+              ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
               : "";
+            // GitHub's Artifacts UI groups files by artifact name; deep-links
+            // aren't supported, so each per-file link points at the run's
+            // #artifacts anchor with the exact filename as the link text.
+            const filesOnFail = ["live-region-trace.zip", "live-region-failure.png", "dom-snapshot.html", "live-region-log.json"];
             const artifactCell = failedNow && runUrl
-              ? `[trace+screenshot](${runUrl} "live-region-trace.zip · live-region-failure.png · dom-snapshot.html · live-region-log.json for ${browserName}")`
-              : (runUrl ? `[run](${runUrl})` : "—");
+              ? filesOnFail.map((f) => `[${f}](${runUrl}#artifacts "playwright-report → test-results/*${browserName}*/${f}")`).join("<br>")
+              : (runUrl ? `[run](${runUrl}#artifacts)` : "—");
             appendFileSync(path,
               `| ${browserName} | ${log.length} | ${waitDurationMs} / ${waitMs} | ${usagePct}% | ${Date.now() - t0} | ${artifactCell} |\n`);
           } catch {/* best-effort */}
+        }
+
+        // On failure, echo the exact local repro command into the CI log
+        // (also as a `::error::` annotation) so on-call can copy/paste and
+        // rerun the failing spec with the same attachment env vars.
+        const failedNow2 = testInfo.errors.length > 0;
+        if (failedNow2) {
+          const spec = "e2e/focus-trap-html-report-a11y.spec.ts";
+          const cmd = `E2E_ATTACH_TRACE=1 E2E_ATTACH_SCREENSHOT=1 bunx playwright test ${spec} --project=${browserName} -g "rapid filter \\+ disclosure toggles" --reporter=list`;
+          console.log(`[live-region ${browserName}] LOCAL REPRO:\n  ${cmd}`);
+          if (process.env.CI) console.log(`::error title=live-region ${browserName} repro::${cmd}`);
+          testInfo.annotations.push({ type: "live-region-repro", description: cmd });
         }
       } finally {
         const failed = testInfo.errors.length > 0 || testInfo.status === "failed";
