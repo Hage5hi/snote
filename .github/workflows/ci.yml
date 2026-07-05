@@ -88,60 +88,27 @@ jobs:
           set -eu
           report=reports/_ci/schema-drift-fixture/validation-report.json
           [ -f "$report" ] || { echo "no validation report; skipping annotations"; exit 0; }
-          # Emit ::error::/::warning:: annotations summarizing the top
-          # per-file validation failures so reviewers see the browser +
-          # missing / extra / mistyped keys directly in the run's
-          # annotations pane (no artifact download required). Also
-          # writes a Markdown PR-comment body to
-          # reports/_ci/schema-drift-fixture/pr-comment.md that a
-          # downstream sticky-comment step (or `gh pr comment -F`) can
-          # post verbatim.
+          out=reports/_ci/schema-drift-fixture
+          # Generate pr-comment.md (with stable per-row anchors) and a
+          # separate annotations file listing each selected top failure
+          # with kind + a #fail-<slug> anchor into pr-comment.md. Using
+          # the same local script the debug docs point at keeps CI and
+          # `bun scripts/schema-drift-pr-comment.ts` byte-for-byte
+          # identical (see the reproducibility diff step below).
+          run_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          bun scripts/schema-drift-pr-comment.ts "$report" \
+            --out "$out/pr-comment.md" \
+            --annotations-file "$out/annotations.txt" \
+            --comment-url "$run_url"
+          # Cat the annotations file so each ::error:: line becomes a real
+          # GitHub Actions annotation in the run's annotations pane.
+          [ -s "$out/annotations.txt" ] && cat "$out/annotations.txt" || true
+          # Emit a single roll-up ::warning:: summary so the run banner
+          # shows counts even when the row-level annotations are collapsed.
           node -e '
-            const fs=require("fs"),path=require("path");
-            const r=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));
-            const intEnv=(k,d)=>{ const n=parseInt(process.env[k]||"",10); return Number.isFinite(n)&&n>=0?n:d; };
-            const MAX=intEnv("SCHEMA_DRIFT_ANNOTATION_MAX",10);
-            const MISS_CAP=intEnv("SCHEMA_DRIFT_MISSING_CAP",20);
-            const TYPE_CAP=intEnv("SCHEMA_DRIFT_MISTYPED_CAP",20);
-            const EXTRA_CAP=intEnv("SCHEMA_DRIFT_EXTRA_CAP",20);
-            const cap=(a,n)=>{ const t=(a||[]).slice(0,n); if((a||[]).length>n) t.push(`…+${a.length-n} more`); return t; };
-            const bad=r.files.filter(f=>!f.ok);
-            const outDir=path.dirname(process.argv[1]);
-            const commentPath=path.join(outDir,"pr-comment.md");
-            if (bad.length===0) {
-              console.log(`::notice::schema-drift manifests: all ${r.totals.checked} valid`);
-              fs.writeFileSync(commentPath, `### schema-drift manifests ✅\n\nAll ${r.totals.checked} manifest(s) passed strict validation.\n`);
-              return;
-            }
-            for (const f of bad.slice(0,MAX)) {
-              const label=f.combined?"combined":`browser=${f.browser||"?"}`;
-              const parts=[];
-              if (f.parseError) parts.push(`parseError: ${f.parseError}`);
-              if (f.missing && f.missing.length)  parts.push(`missing: ${cap(f.missing,MISS_CAP).join(",")}`);
-              if (f.mistyped && f.mistyped.length) parts.push(`mistyped: ${cap(f.mistyped.map(m=>`${m.key}(want ${m.expected}, got ${m.got})`),TYPE_CAP).join(",")}`);
-              if (f.extra && f.extra.length)     parts.push(`extra: ${cap(f.extra,EXTRA_CAP).join(",")}`);
-              console.log(`::error file=${f.path}::[${label}] ${parts.join(" | ")}`);
-            }
-            if (bad.length>MAX) console.log(`::warning::${bad.length-MAX} more manifest failure(s) elided (see ${process.argv[1]})`);
-            console.log(`::warning::schema-drift manifests: ${r.totals.invalid}/${r.totals.checked} invalid (strict=${r.strict})`);
-            // Build a Markdown PR comment mirroring the annotations.
-            const lines=[];
-            lines.push(`### schema-drift manifests ❌ ${r.totals.invalid}/${r.totals.checked} invalid (strict=${r.strict})`);
-            lines.push("");
-            lines.push("| Manifest | Scope | Issues |");
-            lines.push("|---|---|---|");
-            for (const f of bad.slice(0,MAX)) {
-              const label=f.combined?"combined":`browser=\`${f.browser||"?"}\``;
-              const parts=[];
-              if (f.parseError) parts.push(`parseError: \`${f.parseError}\``);
-              if (f.missing && f.missing.length)  parts.push(`missing: \`${cap(f.missing,MISS_CAP).join(", ")}\``);
-              if (f.mistyped && f.mistyped.length) parts.push(`mistyped: \`${cap(f.mistyped.map(m=>`${m.key}(want ${m.expected}, got ${m.got})`),TYPE_CAP).join(", ")}\``);
-              if (f.extra && f.extra.length)     parts.push(`extra: \`${cap(f.extra,EXTRA_CAP).join(", ")}\``);
-              lines.push(`| \`${f.path}\` | ${label} | ${parts.join("<br>")} |`);
-            }
-            if (bad.length>MAX) lines.push(`\n_${bad.length-MAX} additional failure(s) elided — see the uploaded \`schema-drift-fixture-validation\` artifact._`);
-            fs.writeFileSync(commentPath, lines.join("\n")+"\n");
-            console.log(`pr-comment: ${commentPath}`);
+            const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+            if (r.totals.invalid>0) console.log(`::warning::schema-drift manifests: ${r.totals.invalid}/${r.totals.checked} invalid (strict=${r.strict})`);
+            else                    console.log(`::notice::schema-drift manifests: all ${r.totals.checked} valid`);
           ' "$report"
       # Job summary: append the same PR-comment body (top strict-validation
       # failures) to $GITHUB_STEP_SUMMARY so the failures are visible on the
