@@ -136,9 +136,13 @@ pretty() {
 }
 
 matches_filter() {
+  local base="$1" m
+  # --exclude wins over --file (skip if any exclude matches).
+  for m in "${FILE_EXCLUDES[@]}"; do
+    [[ "$base" == *"$m"* ]] && return 1
+  done
   # No --file filters ⇒ everything passes.
   [ "${#FILE_MATCHES[@]}" -eq 0 ] && return 0
-  local base="$1" m
   for m in "${FILE_MATCHES[@]}"; do
     [[ "$base" == *"$m"* ]] && return 0
   done
@@ -147,18 +151,24 @@ matches_filter() {
 
 show() {
   local base="$1"
-  matches_filter "$base" || { [ "$DRY_RUN" = "1" ] && echo "SKIP  $base  (no --file match)"; return 0; }
+  if ! matches_filter "$base"; then
+    vlog "skip $base (--file/--exclude filter)"
+    [ "$DRY_RUN" = "1" ] && echo "SKIP  $base  (filtered by --file/--exclude)"
+    return 0
+  fi
   local committed="$OUT/committed/$base"
   local regen="$OUT/regenerated/$base"
   local diff_file="$OUT/${base}.diff"
 
+  local cmd
+  if [ "$RESOLVED_VIEWER" = "diff-y" ]; then
+    cmd="diff -y --width=$COLS $committed $regen"
+  else
+    cmd="pretty($RESOLVED_VIEWER) < $diff_file"
+  fi
+  vlog "match $base → $cmd"
+
   if [ "$DRY_RUN" = "1" ]; then
-    local cmd
-    if [ "$RESOLVED_VIEWER" = "diff-y" ]; then
-      cmd="diff -y --width=$COLS $committed $regen"
-    else
-      cmd="pretty($RESOLVED_VIEWER) < $diff_file"
-    fi
     echo "MATCH $base  →  $cmd"
     return 0
   fi
@@ -174,9 +184,17 @@ show() {
   fi
 
   if [ "$RESOLVED_VIEWER" = "diff-y" ] && [ -s "$committed" ] && [ -s "$regen" ]; then
-    diff -y --width="$COLS" "$committed" "$regen" || true
+    if [ "$VERBOSE" = "1" ]; then
+      diff -y --width="$COLS" "$committed" "$regen" | tee /dev/stderr || true
+    else
+      diff -y --width="$COLS" "$committed" "$regen" || true
+    fi
   else
-    pretty < "$diff_file"
+    if [ "$VERBOSE" = "1" ]; then
+      pretty < "$diff_file" | tee /dev/stderr
+    else
+      pretty < "$diff_file"
+    fi
   fi
 }
 
