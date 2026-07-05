@@ -290,6 +290,17 @@ write_json_summary() {
       missing_json+="]"
     fi
     local ec="${code:-null}" du="${duration:-null}"
+    local mapping_json='[]'
+    if [[ "$VERBOSE" == "1" ]]; then
+      mapping_json="[
+        {\"manifest_entry\":\"SCHEMA_DRIFT_DIFF_FUZZ_SEED\",\"required_file\":\"$(esc "$OUT/manifest.txt")\",\"role\":\"source of seed\"},
+        {\"manifest_entry\":\"SCHEMA_DRIFT_DIFF_READER_DURATION_MS\",\"required_file\":\"$(esc "$OUT/manifest.txt")\",\"role\":\"source of reader window ms\"},
+        {\"manifest_entry\":\"SCHEMA_DRIFT_DIFF_TEST_NAME_PATTERN\",\"required_file\":\"$(esc "$OUT/manifest.txt")\",\"role\":\"source of vitest -t filter\"},
+        {\"manifest_entry\":\"SCHEMA_DRIFT_DIFF_TEST_TIMEOUT_MS\",\"required_file\":\"$(esc "$OUT/manifest.txt")\",\"role\":\"source of vitest --testTimeout\"},
+        {\"manifest_entry\":\"(env passthrough)\",\"required_file\":\"$(esc "$OUT/env.sh")\",\"role\":\"env vars sourced before replay\"},
+        {\"manifest_entry\":\"(integrity)\",\"required_file\":\"$(esc "$OUT/checksums.sha256")\",\"role\":\"sha256 of manifest.txt + env.sh\"}
+      ]"
+    fi
     cat > "$dest" <<JSON
 {
   "mode": "$(esc "$mode")",
@@ -302,7 +313,8 @@ write_json_summary() {
   "timeout_ms": "$(esc "$TIMEOUT_MS")",
   "missing_files": ${missing_json},
   "fail_reason": "$(esc "$FAIL_REASON")",
-  "folder": "$(esc "$OUT")"
+  "folder": "$(esc "$OUT")",
+  "manifest_mapping": ${mapping_json}
 }
 JSON
   fi
