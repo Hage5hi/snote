@@ -173,6 +173,7 @@ show() {
     [ "$DRY_RUN" = "1" ] && echo "SKIP  $base  (filtered by --file/--exclude)"
     return 0
   fi
+  MATCHED_BASES+=("$base")
   local committed="$OUT/committed/$base"
   local regen="$OUT/regenerated/$base"
   local diff_file="$OUT/${base}.diff"
