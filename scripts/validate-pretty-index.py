@@ -99,12 +99,19 @@ def _normalize(data: object) -> tuple[list | None, list[dict]]:
     if isinstance(data, list):
         return data, []  # legacy v0
     if isinstance(data, dict):
+        # Only treat as a versioned envelope when at least one envelope
+        # key is present; otherwise fall through to the "unrecognized
+        # top-level" branch (exit 6) for backward-compatibility with
+        # callers that expected an array.
+        if "schema_version" not in data and "entries" not in data:
+            return None, []
         if "schema_version" not in data:
             return None, [{
                 "index": None, "path": "$.schema_version",
                 "expected": "int", "actual": "missing",
                 "message": "top-level object is missing schema_version",
             }]
+
         v = data.get("schema_version")
         if not isinstance(v, int) or isinstance(v, bool):
             return None, [{
