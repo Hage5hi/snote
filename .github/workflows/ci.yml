@@ -679,6 +679,7 @@ print(json.dumps({
           cat /tmp/pi-mismatch-summary-atomic.json
 
       - name: upload pretty-index mismatch summary JSON (MATRIX=atomic)
+        id: upload-pi-summary-atomic
         if: failure() && hashFiles('/tmp/pi-mismatch-summary-atomic.json') != ''
         uses: actions/upload-artifact@v4
         with:
@@ -686,6 +687,29 @@ print(json.dumps({
           path: /tmp/pi-mismatch-summary-atomic.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: append pretty-index mismatch summary to step summary (MATRIX=atomic)
+        if: failure() && hashFiles('/tmp/pi-mismatch-summary-atomic.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          F=/tmp/pi-mismatch-summary-atomic.json
+          URL="${{ steps.upload-pi-summary-atomic.outputs.artifact-url }}"
+          {
+            echo ""
+            echo "### pretty-index mismatch summary (MATRIX=atomic, ${{ matrix.os }})"
+            echo ""
+            echo "| matrix | total | mismatched | missing |"
+            echo "| --- | ---: | ---: | ---: |"
+            jq -r '.matrices | to_entries[] | "| \(.key) | \(.value.total) | \(.value.mismatched) | \(.value.missing) |"' -- "$F"
+            jq -r '.totals   | "| **total** | \(.total) | \(.mismatched) | \(.missing) |"' -- "$F"
+            echo ""
+            if [ -n "$URL" ]; then
+              echo "- [download \`pretty-index-mismatch-summary-atomic-${{ matrix.os }}.json\`]($URL)"
+            else
+              echo "- _summary.json artifact URL unavailable_"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
 
 
