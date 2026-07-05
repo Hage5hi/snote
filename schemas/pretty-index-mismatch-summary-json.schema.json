@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/lovable/schemas/pretty-index-mismatch-summary-json.schema.json",
+  "title": "pretty-index-mismatch-summary-json",
+  "description": "Machine-readable summary produced by `make pretty-index-mismatch-summary-json` and the merged variant produced by `make pretty-index-mismatch-summary-json-merge`. Both shapes are validated by `make pretty-index-mismatch-summary-validate`.",
+  "type": "object",
+  "required": ["schema", "matrices", "totals"],
+  "additionalProperties": true,
+  "properties": {
+    "schema": {
+      "type": "string",
+      "enum": [
+        "pretty-index-mismatch-summary/v1",
+        "pretty-index-mismatch-summary-merged/v1"
+      ]
+    },
+    "scope": { "type": "string" },
+    "merged_from": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "totals"],
+        "properties": {
+          "path": { "type": "string" },
+          "scope": { "type": "string" },
+          "missing": { "type": "boolean" },
+          "totals": { "$ref": "#/definitions/counts" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "matrices": {
+      "type": "object",
+      "required": ["atomic", "stress"],
+      "properties": {
+        "atomic": { "$ref": "#/definitions/counts" },
+        "stress": { "$ref": "#/definitions/counts" }
+      },
+      "additionalProperties": false
+    },
+    "totals": { "$ref": "#/definitions/counts" }
+  },
+  "definitions": {
+    "counts": {
+      "type": "object",
+      "required": ["total", "mismatched", "missing"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "mismatched": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
