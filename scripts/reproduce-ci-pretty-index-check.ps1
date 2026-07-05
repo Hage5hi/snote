@@ -49,6 +49,12 @@ if (-not (Test-Path -LiteralPath $Index -PathType Leaf)) {
   exit 4
 }
 
+$artifactPrefix = if ($Matrix -eq 'stress') {
+  'schema-drift-diff-stress-replay-pretty-index-failure'
+} else {
+  'schema-drift-diff-replay-pretty-index-failure'
+}
+
 $stem   = [IO.Path]::ChangeExtension($Index, $null).TrimEnd('.')
 $pre    = "$stem.pre-check.json"
 $report = "$stem.report.json"
