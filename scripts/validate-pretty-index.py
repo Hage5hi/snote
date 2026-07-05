@@ -201,6 +201,25 @@ def main(argv: list[str]) -> int:
         for i, entry in enumerate(entries):
             problems.extend(validate_entry(i, entry))
 
+    # --require-version N: fail with a clear regeneration hint when the
+    # file's schema_version does not match what the caller (typically CI)
+    # expects. Legacy bare arrays are treated as v0.
+    if require_version is not None and entries is not None and not envelope_problems:
+        actual = 0 if isinstance(data, list) else data.get("schema_version")
+        if actual != require_version:
+            problems.append({
+                "index": None,
+                "path": "$.schema_version",
+                "expected": str(require_version),
+                "actual": str(actual),
+                "message": (
+                    f"schema_version={actual} does not match required "
+                    f"version={require_version}; regenerate with "
+                    "`scripts/migrate-pretty-index.py <path> --in-place` "
+                    "(see docs/schema-drift-diff-test-hooks.md)"
+                ),
+            })
+
     if problems:
         sys.stderr.write(
             f"validate-pretty-index: schema validation failed for {p} "
