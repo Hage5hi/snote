@@ -923,6 +923,12 @@ print(json.dumps({
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+          {
+            echo ''
+            echo "### ✅ pretty-index.json validated (${count} entr$( [[ $count -eq 1 ]] && echo y || echo ies ) on \`${{ matrix.os }}\`)"
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+
           if [[ "$hard_fail" -ne 0 ]]; then
             echo "pretty-replay-summary.py returned a schema/file error (see step summary)" >&2
             exit 1
