@@ -198,9 +198,19 @@ function loadReport(path: string, label: string): Report {
   }
   if (!Array.isArray(r?.files)) problems.push("`files` (array) is missing");
   if (problems.length) {
+    const receivedKeys =
+      r && typeof r === "object" ? Object.keys(r as object) : [];
+    const expected = ["strict", "totals", "files"] as const;
+    const missingTop = expected.filter((k) => !receivedKeys.includes(k));
+    const checklist = expected
+      .map((k) => `    ${receivedKeys.includes(k) ? "[x]" : "[ ]"} ${k}`)
+      .join("\n");
     console.error(
       `error: ${label} report at "${path}" is missing required fields:\n` +
       problems.map((p) => `  - ${p}`).join("\n") + "\n" +
+      `  received top-level keys: ${receivedKeys.length ? receivedKeys.join(", ") : "(none)"}\n` +
+      (missingTop.length ? `  missing top-level keys: ${missingTop.join(", ")}\n` : "") +
+      `  expected schema checklist:\n${checklist}\n` +
       `  fix: this file must be the JSON produced by \`schema-drift-view.sh --validation-report\`.\n` +
       `       Expected shape: { strict: boolean, totals: { checked, ok, invalid }, files: [...] }`,
     );
