@@ -699,6 +699,19 @@ diagnostics" block that links directly to an uploaded artifact:
 | `atomic-crossos` | `schema-drift-diff-replay-pretty-index-failure-<os>` | `pretty-index.json`, `pretty-index.pre-check.json`, `pretty-index.report.json` |
 | `nightly stress` | `schema-drift-diff-stress-replay-pretty-index-failure-<os>` | same three files |
 
+**Where the diagnostic files are written on disk** (both matrices write
+to the same directory — only the uploaded artifact *name* differs):
+
+| Matrix | Directory | Files |
+| --- | --- | --- |
+| `atomic-crossos` (`MATRIX=atomic`) | `artifacts/schema-drift-diff-replay-verify/pretty/` | `pretty-index.json`, `pretty-index.pre-check.json`, `pretty-index.report.json` |
+| `nightly stress` (`MATRIX=stress`) | `artifacts/schema-drift-diff-replay-verify/pretty/` | same three files, uploaded under the `stress-replay-...` artifact name |
+
+Override the directory via `INDEX=path/to/pretty-index.json` — the
+`.pre-check.json` / `.report.json` siblings are always written next to
+the input file.
+
+
 Each file's role:
 
 - `pretty-index.json` — post-`--auto-migrate` index the validator saw
