@@ -261,6 +261,7 @@ describe("scripts/schema-drift-view.sh", () => {
         "excludes",
         "expected",
         "matched",
+        "requiredArtifacts",
       ] as const;
 
       const assertShape = (m: Record<string, unknown>) => {
