@@ -274,7 +274,7 @@ describe("scripts/schema-drift-view.sh", () => {
         expect(["auto", "diff-y", "delta", "bat", "cat"]).toContain(m.viewer as string);
         expect(typeof m.resolvedViewerCommand).toBe("string");
         expect((m.resolvedViewerCommand as string).length).toBeGreaterThan(0);
-        for (const arrKey of ["matches", "excludes", "expected", "matched"] as const) {
+        for (const arrKey of ["matches", "excludes", "expected", "matched", "requiredArtifacts"] as const) {
           expect(Array.isArray(m[arrKey])).toBe(true);
           for (const v of m[arrKey] as unknown[]) expect(typeof v).toBe("string");
         }
