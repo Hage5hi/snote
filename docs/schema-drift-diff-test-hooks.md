@@ -308,3 +308,38 @@ jobs use these flags on failure in this order:
 
 Regression coverage for these flags lives in
 `scripts/__tests__/replay-schema-drift-diff-fuzz.test.ts`.
+
+### `--verbose` / `-v` and `--json-summary`
+
+`--verbose` prints exactly which manifest entries map to which required
+files and, on a checksum/file failure, explains which entry failed:
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh \
+  --from ./replay-download/20260705T111030Z-seed-777 \
+  --dry-run --verbose
+# verbose: required files:
+# verbose:   [OK]      .../manifest.txt (386 bytes)
+# verbose:   [MISSING] .../env.sh
+# --from: FAIL checksum mismatch in ...
+# verbose: failing checksum entries:
+# verbose:   manifest.txt: FAILED
+```
+
+`--json-summary` writes a machine-readable `replay-summary.json` next to
+`replay-summary.txt` with `exit_code`, `duration_seconds`, `seed`,
+`reader_ms`, `checksum_verified`, `missing_files`, and `fail_reason`:
+
+```bash
+scripts/replay-schema-drift-diff-fuzz.sh 42 100 "pat" --dry-run --json-summary
+cat artifacts/schema-drift-diff-replay/*/replay-summary.json
+```
+
+Both jobs (`atomic-crossos`, `stress-nightly`) now run the CI dry-run
+verify step with `--verbose --json-summary`, `tee`-ing to
+`artifacts/schema-drift-diff-replay-verify/dry-run-verify.log`, and
+upload that log + `replay-command.sh` (the labeled copy-paste command)
++ every `replay-summary.json` as a **separate** artifact
+(`schema-drift-diff-replay-verify-<os>` / `schema-drift-diff-stress-replay-verify-<os>`)
+so you can `gh run download` just those files without pulling the full
+debug bundle.
