@@ -419,6 +419,7 @@ pretty-index-help:
 .PHONY: pretty-index-mismatch-show pretty-index-mismatch-merge \
         pretty-index-mismatch-validate pretty-index-mismatch-summary \
         pretty-index-mismatch-summary-json \
+        pretty-index-mismatch-summary-json-merge \
         pretty-index-mismatch-csv pretty-index-mismatch-diff
 
 # Print a human-friendly per-file table (file, expected, actual, status)
