@@ -798,10 +798,58 @@ skip it automatically.
 Overrides:
 
 ```sh
-PRETTY_INDEX_HOOK_SKIP=1 git commit ...   # force-skip even when relevant files staged
-PRETTY_INDEX_HOOK_FORCE=1 git commit ...  # force-run even for docs-only commits
-git commit --no-verify                    # skip every pre-commit hook (emergency)
+PRETTY_INDEX_HOOK_SKIP=1 git commit ...            # force-skip even when relevant files staged
+PRETTY_INDEX_HOOK_FORCE=1 git commit ...           # force-run even for docs-only commits
+PRETTY_INDEX_HOOK_MATRIX=stress git commit ...     # reproduce nightly-stress artifact naming
+PRETTY_INDEX_HOOK_MATRIX=atomic git commit ...     # (default) atomic-crossos naming
+git commit --no-verify                             # skip every pre-commit hook (emergency)
 ```
+
+An unknown `PRETTY_INDEX_HOOK_MATRIX` value aborts the hook with exit
+code **2** and prints `PRETTY_INDEX_HOOK_MATRIX must be atomic|stress`.
+
+### Exit codes reference
+
+`scripts/reproduce-ci-pretty-index-check.sh` / `.ps1` / `make
+pretty-index-check` all share the same exit code contract:
+
+| Exit | Meaning                                                              |
+| ---- | -------------------------------------------------------------------- |
+| 0    | OK — pretty-index.json passes the CI check                           |
+| 1    | Schema drift (generator self-check found a `schema_version` mismatch)|
+| 2    | Usage error (unknown/missing flag, bogus `--matrix` / `MATRIX` value)|
+| 3    | Schema validation failed (`validate-pretty-index.py --require-version`) |
+| 4    | Input file not found                                                 |
+
+Bogus `MATRIX` value — expected output (stderr, exit **2**, no
+misleading validator or artifact-prefix diagnostics):
+
+```text
+$ make pretty-index-check MATRIX=bogus
+reproduce-ci-pretty-index-check: --matrix must be atomic|stress (got: bogus)
+```
+
+Pretty-index validation failure — expected step-summary block (stderr,
+exit **1** or **3** depending on which check tripped):
+
+```text
+################################################################################
+# ❌ pretty-index.json check failed (exit 3)
+#
+# In CI this would upload the following artifact and append a link block
+# to $GITHUB_STEP_SUMMARY:
+#
+#   artifact: schema-drift-diff-replay-pretty-index-failure-<os>   (matrix: atomic)
+#     - artifacts/.../pretty-index.json
+#     - artifacts/.../pretty-index.pre-check.json   (raw generator output BEFORE --auto-migrate)
+#     - artifacts/.../pretty-index.report.json      (validator --report machine-readable errors)
+#
+# Exit code legend: 1=schema drift, 3=schema validation, 4=missing file
+# Re-run with --clean to discard prior diagnostics, or --keep (default)
+# to preserve them for debugging.
+################################################################################
+```
+
 
 ## License
 
