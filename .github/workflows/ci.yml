@@ -622,9 +622,32 @@ print(json.dumps({
         if: failure()
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           DIR="artifacts/schema-drift-diff-replay-verify/pretty"
-          ( cd "$DIR" && sha256sum -c pretty-index.checksums.sha256 )
+          if ! ( cd "$DIR" && sha256sum -c pretty-index.checksums.sha256 ) > /tmp/pi-verify.log 2>&1; then
+            echo "::group::pretty-index checksum MISMATCH (MATRIX=atomic)"
+            cat /tmp/pi-verify.log
+            echo ""
+            echo "── expected (from pretty-index.checksums.sha256) ──"
+            cat "$DIR/pretty-index.checksums.sha256"
+            echo "── actual (recomputed now) ──"
+            ( cd "$DIR" && sha256sum pretty-index.json pretty-index.pre-check.json pretty-index.report.json 2>/dev/null || true )
+            echo "── per-file diff ──"
+            while IFS= read -r line; do
+              f="${line##*: }"; status="${line##*: }"
+              name="${line%%:*}"
+              if [[ "$line" == *"FAILED"* || "$line" == *"OK"* ]]; then
+                fname="${line%%:*}"
+                exp=$(grep " $fname\$" "$DIR/pretty-index.checksums.sha256" | awk '{print $1}')
+                act=$( ( cd "$DIR" && sha256sum "$fname" 2>/dev/null ) | awk '{print $1}')
+                echo "  $fname  expected=${exp:-<none>}  actual=${act:-<missing>}  [$([[ "$exp" == "$act" && -n "$exp" ]] && echo OK || echo MISMATCH)]"
+              fi
+            done < /tmp/pi-verify.log
+            echo "::endgroup::"
+            echo "::error title=pretty-index checksum mismatch (MATRIX=atomic)::one or more files under $DIR do not match their recorded sha256; see the group above"
+            exit 1
+          fi
+          cat /tmp/pi-verify.log
           echo "::notice title=pretty-index checksums verified (MATRIX=atomic)::sha256sum -c passed for $DIR/pretty-index.checksums.sha256"
 
       - name: assert pretty-index failure artifact was uploaded (MATRIX=atomic)
@@ -1100,9 +1123,30 @@ print(json.dumps({
         if: failure()
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
           DIR="artifacts/schema-drift-diff-replay-verify/pretty"
-          ( cd "$DIR" && sha256sum -c pretty-index.checksums.sha256 )
+          if ! ( cd "$DIR" && sha256sum -c pretty-index.checksums.sha256 ) > /tmp/pi-verify-stress.log 2>&1; then
+            echo "::group::pretty-index checksum MISMATCH (MATRIX=stress)"
+            cat /tmp/pi-verify-stress.log
+            echo ""
+            echo "── expected (from pretty-index.checksums.sha256) ──"
+            cat "$DIR/pretty-index.checksums.sha256"
+            echo "── actual (recomputed now) ──"
+            ( cd "$DIR" && sha256sum pretty-index.json pretty-index.pre-check.json pretty-index.report.json 2>/dev/null || true )
+            echo "── per-file diff ──"
+            while IFS= read -r line; do
+              if [[ "$line" == *"FAILED"* || "$line" == *"OK"* ]]; then
+                fname="${line%%:*}"
+                exp=$(grep " $fname\$" "$DIR/pretty-index.checksums.sha256" | awk '{print $1}')
+                act=$( ( cd "$DIR" && sha256sum "$fname" 2>/dev/null ) | awk '{print $1}')
+                echo "  $fname  expected=${exp:-<none>}  actual=${act:-<missing>}  [$([[ "$exp" == "$act" && -n "$exp" ]] && echo OK || echo MISMATCH)]"
+              fi
+            done < /tmp/pi-verify-stress.log
+            echo "::endgroup::"
+            echo "::error title=pretty-index checksum mismatch (MATRIX=stress)::one or more files under $DIR do not match their recorded sha256; see the group above"
+            exit 1
+          fi
+          cat /tmp/pi-verify-stress.log
           echo "::notice title=pretty-index checksums verified (MATRIX=stress)::sha256sum -c passed for $DIR/pretty-index.checksums.sha256"
 
       - name: assert pretty-index failure artifact was uploaded (MATRIX=stress)

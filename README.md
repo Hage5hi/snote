@@ -722,6 +722,44 @@ gh run download <run-id> \
 Or from the GitHub UI: open the failed run → scroll to the **Artifacts**
 panel → click the artifact whose name matches the table above.
 
+### Reproducing the failure locally against the downloaded artifacts
+
+Once both `./_pretty-index-atomic/` and `./_pretty-index-stress/` are
+populated, run the pre-commit hook in **validation mode** against them.
+The single-command reproduction verifies sha256 checksums first, then
+invokes the hook for both matrices in sequence:
+
+```sh
+# one-command reproduction (recommended)
+make pretty-index-reproduce-downloaded
+
+# or step-by-step:
+make pretty-index-artifacts-verify              # sha256sum -c both dirs
+make pretty-index-hook-validate-downloaded      # runs the hook for atomic, then stress
+```
+
+**Interpreting failures:**
+
+`make` normalizes any failing recipe to exit code `2` — distinguish the
+cases by the printed stdout signature, not by the numeric exit alone:
+
+| stdout signature | Meaning | Fix |
+| --- | --- | --- |
+| `<file> expected=<hash> actual=<hash> [MISMATCH]` (also `<file>: FAILED` from `sha256sum`) | Corrupted / mutated bytes | Re-download the artifact (`make pretty-index-artifacts-download RUN_ID=...`) |
+| `<file>: FAILED open or read` | A listed file is missing from the downloaded dir | Re-download; the upload was incomplete |
+| `❌ ./_pretty-index-<matrix> missing` | The whole download directory is absent | Run `make pretty-index-artifacts-download RUN_ID=<id>` first |
+| `❌ ./_pretty-index-<matrix>/pretty-index.checksums.sha256 missing` | Artifact was uploaded before CI computed checksums | Re-run the CI job on a commit that includes the checksum step |
+| `❌ pre-commit: pretty-index CI check FAILED.` (from the hook) | Schema drift reproduced — see the printed `.report.json` for details | Fix the drift (regenerate + commit `pretty-index.json`) |
+| `PRETTY_INDEX_HOOK_MATRIX must be atomic\|stress` | Invalid matrix env var | Only `atomic` or `stress` are accepted |
+
+If verify fails, the hook step is **skipped entirely** — you will never
+be asked to validate corrupted bytes. Run
+`.githooks/pre-commit --help` for the full documented hook exit-code
+table (0/1/2/3/4).
+
+
+
+
 
 **Where the diagnostic files are written on disk** (both matrices write
 to the same directory — only the uploaded artifact *name* differs):
