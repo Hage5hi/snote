@@ -510,8 +510,24 @@ print(json.dumps({
           # Validate pretty-index.json against the documented schema.
           # Failure here fails the job with a clear message instead of
           # only surfacing later through the uploaded artifact.
-          if ! python3 scripts/validate-pretty-index.py "$index"; then
-            echo "::error::pretty-index.json failed schema validation — see log above. Job failed to protect downstream triage tooling." >&2
+          # Capture the validator's stderr so the exact failure path +
+          # message ends up in both the ::error:: annotation and the
+          # rendered step summary — no need to dig through raw logs.
+          if ! val_err=$(python3 scripts/validate-pretty-index.py "$index" 2>&1 1>/dev/null); then
+            # First line goes into the ::error:: annotation (single-line);
+            # full breakdown is preserved in the step summary below.
+            first_line=$(printf '%s\n' "$val_err" | head -n1)
+            echo "::error file=${index}::pretty-index.json failed schema validation at ${index}: ${first_line}" >&2
+            {
+              echo ''
+              echo "### ❌ pretty-index.json schema validation failed"
+              echo ''
+              echo "- Path: \`${index}\`"
+              echo ''
+              echo '```'
+              printf '%s\n' "$val_err"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           if [[ "$hard_fail" -ne 0 ]]; then
@@ -867,8 +883,19 @@ print(json.dumps({
             } >> "$GITHUB_STEP_SUMMARY"
           done
           echo ']' >> "$index"
-          if ! python3 scripts/validate-pretty-index.py "$index"; then
-            echo "::error::pretty-index.json failed schema validation — see log above. Job failed to protect downstream triage tooling." >&2
+          if ! val_err=$(python3 scripts/validate-pretty-index.py "$index" 2>&1 1>/dev/null); then
+            first_line=$(printf '%s\n' "$val_err" | head -n1)
+            echo "::error file=${index}::pretty-index.json failed schema validation at ${index}: ${first_line}" >&2
+            {
+              echo ''
+              echo "### ❌ pretty-index.json schema validation failed"
+              echo ''
+              echo "- Path: \`${index}\`"
+              echo ''
+              echo '```'
+              printf '%s\n' "$val_err"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
           if [[ "$hard_fail" -ne 0 ]]; then

@@ -782,6 +782,29 @@ describe("pretty-replay-summary.py --markdown is locale/env-independent", () => 
     );
   }
 
+  // Build an env that inherits from process.env but *explicitly* strips
+  // every common terminal/locale variable, so we can prove the pretty
+  // printer never leaks host defaults into its output. `spawnSync`
+  // treats keys with value `undefined` as unset.
+  function runWithClearedTerminalEnv(extra: NodeJS.ProcessEnv = {}) {
+    const cleared: NodeJS.ProcessEnv = {
+      TERM: undefined,
+      COLORTERM: undefined,
+      LANG: undefined,
+      LC_ALL: undefined,
+      LC_CTYPE: undefined,
+      LC_MESSAGES: undefined,
+      COLUMNS: undefined,
+      LINES: undefined,
+      FORCE_COLOR: undefined,
+      CLICOLOR: undefined,
+      CLICOLOR_FORCE: undefined,
+      NO_COLOR: undefined,
+      ...extra,
+    };
+    return runWithEnv(cleared);
+  }
+
   it("produces byte-identical output across locale + terminal env combos", () => {
     const envs: NodeJS.ProcessEnv[] = [
       { LC_ALL: "C",           LANG: "C",           TERM: "dumb",   COLUMNS: "80"  },
@@ -798,6 +821,38 @@ describe("pretty-replay-summary.py --markdown is locale/env-independent", () => 
     for (let i = 1; i < outputs.length; i++) {
       expect(outputs[i].stdout, `env#${i} diverged`).toBe(first);
     }
+  });
+
+  it("output is byte-identical after clearing TERM/COLORTERM/LANG/LC_ALL", () => {
+    // Baseline: rich terminal env with colors + UTF-8 locale.
+    const rich = runWithEnv({
+      TERM: "xterm-256color",
+      COLORTERM: "truecolor",
+      LANG: "en_US.UTF-8",
+      LC_ALL: "en_US.UTF-8",
+      FORCE_COLOR: "3",
+      CLICOLOR: "1",
+    });
+    // Stripped: every terminal/locale hint unset.
+    const bare = runWithClearedTerminalEnv();
+    // Stripped + a hostile TERM re-added to prove even that doesn't leak.
+    const bareThenHostile = runWithClearedTerminalEnv({ TERM: "dumb", COLORTERM: "" });
+
+    for (const [name, r] of [
+      ["rich", rich], ["bare", bare], ["bareThenHostile", bareThenHostile],
+    ] as const) {
+      expect(r.status, `${name} stderr=${r.stderr}`).toBe(0);
+    }
+    // Exact byte equality, not just structural equality.
+    expect(Buffer.byteLength(bare.stdout, "utf8"))
+      .toBe(Buffer.byteLength(rich.stdout, "utf8"));
+    expect(bare.stdout).toBe(rich.stdout);
+    expect(bareThenHostile.stdout).toBe(rich.stdout);
+    // No ANSI escape leaked in either direction.
+    // eslint-disable-next-line no-control-regex
+    expect(rich.stdout).not.toMatch(/\x1b\[/);
+    // eslint-disable-next-line no-control-regex
+    expect(bare.stdout).not.toMatch(/\x1b\[/);
   });
 
   it("--markdown snapshot is byte-stable under C locale", () => {
