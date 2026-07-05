@@ -106,7 +106,7 @@ function main() {
   if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
     console.error(
       "Usage: bun scripts/schema-drift-summary.ts <report.json> " +
-        "[--browser <name>] [--path <substr>] [--kind ...] [--max <n>]",
+        "[--browser <name>] [--path <substr>] [--kind ...] [--max <n>] [--group-by-browser]",
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
