@@ -153,5 +153,45 @@ describe("reproduce-ci-pretty-index-check.sh — exit + diagnostics harness", ()
       expect(fs.readFileSync(bystander, "utf8")).toBe("{}");
     },
   );
+
+  it.each(["atomic", "stress"] as const)(
+    "--clean is idempotent and touches only pretty-index sibling diagnostics for MATRIX=%s",
+    (matrix) => {
+      const { file } = seed(BAD);
+      const pre = file.replace(/\.json$/, ".pre-check.json");
+      const report = file.replace(/\.json$/, ".report.json");
+      const fs = require("node:fs") as typeof import("node:fs");
+      // Unrelated siblings that must survive every --clean invocation.
+      const bystanders = {
+        [join(file, "..", "unrelated.json")]: '{"keep":true}',
+        [join(file, "..", "other.pre-check.json")]: "not-mine",
+        [join(file, "..", "notes.report.json")]: "not-mine-either",
+      };
+      for (const [p, body] of Object.entries(bystanders)) writeFileSync(p, body);
+
+      const run = () =>
+        spawnSync("bash", [REPRO, "--clean", "--matrix", matrix, file], {
+          encoding: "utf8",
+        });
+
+      // First --clean: no prior diagnostics — must not error on missing files.
+      const r1 = run();
+      expect(r1.status).not.toBe(0); // BAD input still fails validation
+      expect(r1.stderr).not.toMatch(/no such file|cannot remove/i);
+
+      // Second --clean: prior diagnostics exist — must remove them cleanly.
+      const r2 = run();
+      expect(r2.status).toBe(r1.status); // idempotent exit code
+
+      // Bystanders untouched after both runs.
+      for (const [p, body] of Object.entries(bystanders)) {
+        expect(fs.readFileSync(p, "utf8")).toBe(body);
+      }
+      // Fresh diagnostics were re-written (not stale, not missing).
+      expect(fs.existsSync(pre)).toBe(true);
+      expect(fs.readFileSync(pre, "utf8").length).toBeGreaterThan(0);
+    },
+  );
 });
+
 

@@ -569,6 +569,13 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt
             artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.md
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+      - name: pretty-index-check diagnostics (MATRIX=atomic)
+        if: failure()
+        shell: bash
+        run: |
+          # Mirror `make pretty-index-check MATRIX=atomic` so the job log
+          # names the exact artifact prefix that will be uploaded below.
+          make -s pretty-index-diagnostics MATRIX=atomic || true
       - name: upload pretty-index failure diagnostics
         id: upload-pretty-failure
         if: failure()
@@ -989,6 +996,13 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.txt
             artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.md
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
+      - name: pretty-index-check diagnostics (MATRIX=stress)
+        if: failure()
+        shell: bash
+        run: |
+          # Mirror `make pretty-index-check MATRIX=stress` so the job log
+          # names the exact stress-artifact prefix uploaded below.
+          make -s pretty-index-diagnostics MATRIX=stress || true
       - name: upload pretty-index failure diagnostics (stress)
         id: upload-pretty-failure-stress
         if: failure()

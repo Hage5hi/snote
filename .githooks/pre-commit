@@ -21,6 +21,18 @@ set -euo pipefail
 # Files staged for this commit (added/copied/modified/renamed).
 STAGED=$(git diff --cached --name-only --diff-filter=ACMR || true)
 
+# Fail-fast: validate PRETTY_INDEX_HOOK_MATRIX before ANY early-return
+# so a typo (e.g. `PRETTY_INDEX_HOOK_MATRIX=bogus git commit ...`) aborts
+# the commit even when the staged set wouldn't otherwise trigger the
+# pretty-index gate. Documented exit code: 2 (usage error).
+HOOK_MATRIX="${PRETTY_INDEX_HOOK_MATRIX:-atomic}"
+case "$HOOK_MATRIX" in
+  atomic|stress) ;;
+  *)
+    echo "❌ pre-commit: PRETTY_INDEX_HOOK_MATRIX must be atomic|stress (got: $HOOK_MATRIX)" >&2
+    exit 2 ;;
+esac
+
 needs_check() {
   if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
   if [ -z "$STAGED" ]; then return 1; fi
@@ -79,6 +91,11 @@ fi
 # Non-impacting changes (docs/**, README.md, src/**, unrelated configs)
 # are automatically skipped — the grep pattern below is the allowlist of
 # paths that DO trigger the check.
+# NOTE: PRETTY_INDEX_HOOK_MATRIX is validated up-front near the top of
+# this hook (fail-fast). HOOK_MATRIX is already set here.
+
+
+
 pretty_index_needs_check() {
   if [ "${PRETTY_INDEX_HOOK_SKIP:-0}" = "1" ]; then return 1; fi
   if [ "${PRETTY_INDEX_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
@@ -90,22 +107,15 @@ pretty_index_needs_check() {
     -e '(^|/)pretty-index\.json$'
 }
 
+
 if pretty_index_needs_check; then
   echo "▶ pre-commit: pretty-index schema-drift check"
   # Only run when the default CI input file actually exists; otherwise
   # there is nothing to validate (contributors without generator output
   # should not be blocked).
   INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-  # PRETTY_INDEX_HOOK_MATRIX=atomic|stress lets developers reproduce
-  # atomic vs stress artifact naming locally before committing. Defaults
-  # to atomic (matches the primary CI matrix).
-  HOOK_MATRIX="${PRETTY_INDEX_HOOK_MATRIX:-atomic}"
-  case "$HOOK_MATRIX" in
-    atomic|stress) ;;
-    *)
-      echo "❌ pre-commit: PRETTY_INDEX_HOOK_MATRIX must be atomic|stress (got: $HOOK_MATRIX)" >&2
-      exit 2 ;;
-  esac
+  # HOOK_MATRIX was validated up-front (fail-fast) — safe to use as-is.
+
   if [ -f "$INDEX" ]; then
     if ! scripts/reproduce-ci-pretty-index-check.sh --clean --matrix "$HOOK_MATRIX" "$INDEX"; then
       echo ""
