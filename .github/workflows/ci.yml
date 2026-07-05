@@ -990,6 +990,7 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/*.pretty.md
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
       - name: upload pretty-index failure diagnostics (stress)
+        id: upload-pretty-failure-stress
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -1000,6 +1001,22 @@ print(json.dumps({
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.pre-check.json
             artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.report.json
+      - name: append pretty-index failure artifact links to step summary (stress)
+        if: failure() && steps.upload-pretty-failure-stress.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          URL="${{ steps.upload-pretty-failure-stress.outputs.artifact-url }}"
+          NAME="schema-drift-diff-stress-replay-pretty-index-failure-${{ matrix.os }}"
+          {
+            echo ''
+            echo "#### 📎 pretty-index.json failure diagnostics (stress)"
+            echo ''
+            echo "- Artifact: [$NAME]($URL) (retention 14 days)"
+            echo "  - \`pretty-index.json\` — post-migration index seen by the validator"
+            echo "  - \`pretty-index.pre-check.json\` — raw generator output BEFORE --auto-migrate"
+            echo "  - \`pretty-index.report.json\` — validator --report machine-readable errors"
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: append pretty artifact link to step summary
         if: always() && steps.upload-pretty-stress.outputs.artifact-url != ''
         shell: bash
