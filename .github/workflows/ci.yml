@@ -401,7 +401,14 @@ jobs:
       # Separate, easy-to-find artifact holding ONLY the dry-run verification
       # log + labeled copy-paste replay command + replay-summary.json so
       # debuggers can `gh run download` this one artifact without pulling
-      # the full debug bundle. Uploaded on success and failure alike.
+      # the full debug bundle. Uploaded on success AND failure.
+      #
+      # Retention: 14 days (GitHub Actions default is 90; we cap to 14 to
+      # keep the artifact list scannable). Successful-run copies exist so
+      # you can compare a green run's replay-summary.json against a red
+      # run's without re-running the workflow. Find them under
+      # Actions → the workflow run → the "Artifacts" section at the top
+      # of the run page (or `gh run view <id>` + `gh run download`).
       - name: upload dry-run verify + replay-command artifacts
         id: upload-verify
         if: always() && steps.prepare-replay.outputs.folder != ''
@@ -409,6 +416,7 @@ jobs:
         with:
           name: schema-drift-diff-replay-verify-${{ matrix.os }}
           if-no-files-found: ignore
+          retention-days: 14
           path: |
             artifacts/schema-drift-diff-replay-verify/dry-run-verify.log
             artifacts/schema-drift-diff-replay-verify/dry-run-verify.exit_code
@@ -424,7 +432,9 @@ jobs:
             echo ''
             echo "- [schema-drift-diff-replay-verify-${{ matrix.os }}](${{ steps.upload-verify.outputs.artifact-url }}) — contains \`dry-run-verify.log\`, \`replay-command.sh\`, and every \`replay-summary.json\`"
             echo "  - CLI: \`gh run download ${GITHUB_RUN_ID} -n schema-drift-diff-replay-verify-${{ matrix.os }}\`"
+            echo "  - Retention: 14 days from this run. Uploaded on both success and failure so you can diff summaries across runs."
           } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
