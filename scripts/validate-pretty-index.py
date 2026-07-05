@@ -160,6 +160,10 @@ def main(argv: list[str]) -> int:
         if flag in args:
             report = True
             args.remove(flag)
+    auto_migrate = False
+    if "--auto-migrate" in args:
+        auto_migrate = True
+        args.remove("--auto-migrate")
     require_version: int | None = None
     if "--require-version" in args:
         idx = args.index("--require-version")
@@ -167,15 +171,20 @@ def main(argv: list[str]) -> int:
             require_version = int(args[idx + 1])
         except (IndexError, ValueError):
             sys.stderr.write(
-                "usage: validate-pretty-index.py [--report] "
+                "usage: validate-pretty-index.py [--report] [--auto-migrate] "
                 "[--require-version N] <pretty-index.json>\n"
             )
             return 2
         del args[idx : idx + 2]
     if len(args) != 1:
         sys.stderr.write(
-            "usage: validate-pretty-index.py [--report] "
+            "usage: validate-pretty-index.py [--report] [--auto-migrate] "
             "[--require-version N] <pretty-index.json>\n"
+        )
+        return 2
+    if auto_migrate and require_version is None:
+        sys.stderr.write(
+            "validate-pretty-index: --auto-migrate requires --require-version N\n"
         )
         return 2
     p = Path(args[0])
