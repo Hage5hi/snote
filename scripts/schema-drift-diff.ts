@@ -348,29 +348,67 @@ function parseArgs(argv: string[]): {
   return { before: positional[0], after: positional[1], out, jsonOut, markdown, json, dryRun, validateJson, opts };
 }
 
+function validateJsonPayload(payload: unknown, schemaPath: string): { ok: true } | { ok: false; errors: unknown } {
+  const AjvMod = require("ajv");
+  const Ajv = AjvMod.default ?? AjvMod;
+  const schema = JSON.parse(readFileSync(schemaPath, "utf8"));
+  const ajv = new Ajv({ allErrors: true });
+  const validate = ajv.compile(schema);
+  const ok = validate(payload) as boolean;
+  return ok ? { ok: true } : { ok: false, errors: validate.errors };
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.length === 0 || args.includes("-h") || args.includes("--help")) {
     console.error(
       "Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> " +
-        "[--browser <name>] [--path <substr>] [--kind ...] [--max <n>] " +
-        "[--out <path>] [--markdown] [--json] [--dry-run]",
+        "[--browser <name>] [--path <substr>] [--kind <pat>] [--fail-slug <pat>] " +
+        "[--max <n>] [--out <path>] [--json-out <path>] [--markdown] [--json] " +
+        "[--validate-json] [--dry-run]\n" +
+        "\n" +
+        "  --kind / --fail-slug accept exact values, `*`/`?` globs, or `/regex/`.\n" +
+        "  --json-out writes the --json payload to <path> (implies --json).\n" +
+        "  --validate-json checks the JSON output against schemas/schema-drift-diff.schema.json.",
     );
     process.exit(args.length === 0 ? 2 : 0);
   }
-  const { before, after, out, markdown, json, dryRun, opts } = parseArgs(args);
-  const b = loadReport(before, "before");
-  const a = loadReport(after, "after");
+  const { before, after, out, jsonOut, markdown, json, dryRun, validateJson, opts } = parseArgs(args);
+  const b = loadReport(before, "before", json);
+  const a = loadReport(after, "after", json);
   const wantMd = markdown || (out && out.endsWith(".md"));
+  const payload = json ? computeDiff(b, a, opts) : null;
   const body = json
-    ? JSON.stringify(computeDiff(b, a, opts), null, 2) + "\n"
+    ? JSON.stringify(payload, null, 2) + "\n"
     : wantMd ? renderDiffMarkdown(b, a, opts) : renderDiff(b, a, opts);
+
+  if (validateJson) {
+    if (!json) {
+      console.error("error: --validate-json requires --json (or --json-out)");
+      process.exit(2);
+    }
+    const schemaPath = resolve(__dirname, "../schemas/schema-drift-diff.schema.json");
+    const result = validateJsonPayload(payload, schemaPath);
+    if (!result.ok) {
+      console.error(
+        `error: --json output does not match ${schemaPath}:\n` +
+          JSON.stringify(result.errors, null, 2),
+      );
+      process.exit(6);
+    }
+    process.stderr.write(`validate-json: OK (${schemaPath})\n`);
+  }
+
   if (dryRun) {
-    process.stderr.write(`dry-run: would write ${out || "<stdout>"} (${body.length} bytes)\n`);
+    process.stderr.write(`dry-run: would write ${out || jsonOut || "<stdout>"} (${body.length} bytes)\n`);
     process.stdout.write(body);
     return;
   }
-  if (out) {
+  if (jsonOut) {
+    mkdirSync(dirname(resolve(jsonOut)), { recursive: true });
+    writeFileSync(jsonOut, body);
+    console.error(`schema-drift diff (json): ${jsonOut}`);
+  } else if (out) {
     mkdirSync(dirname(resolve(out)), { recursive: true });
     writeFileSync(out, body);
     console.error(`schema-drift diff: ${out}`);
