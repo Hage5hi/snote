@@ -9,7 +9,14 @@
 #      exact files CI would upload as failure diagnostics
 #
 # Usage:
-#   scripts/reproduce-ci-pretty-index-check.sh [path/to/pretty-index.json]
+#   scripts/reproduce-ci-pretty-index-check.sh \
+#     [--clean|--keep] [path/to/pretty-index.json]
+#
+# Flags:
+#   --clean   Remove any pre-existing sibling .pre-check.json / .report.json
+#             BEFORE running (fresh diagnostic state).
+#   --keep    (default) Leave existing diagnostic artifacts in place so
+#             successive runs preserve history for debugging.
 #
 # Defaults to
 #   artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json
@@ -22,7 +29,23 @@
 set -euo pipefail
 
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-INDEX="${1:-artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json}"
+CLEAN=0
+INDEX=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --clean) CLEAN=1; shift ;;
+    --keep)  CLEAN=0; shift ;;
+    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
+    --*) echo "reproduce-ci-pretty-index-check: unknown flag: $1" >&2; exit 2 ;;
+    *)
+      if [ -n "$INDEX" ]; then
+        echo "reproduce-ci-pretty-index-check: unexpected extra argument: $1" >&2
+        exit 2
+      fi
+      INDEX="$1"; shift ;;
+  esac
+done
+INDEX="${INDEX:-artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json}"
 
 if [ ! -f "$INDEX" ]; then
   echo "reproduce-ci-pretty-index-check: file not found: $INDEX" >&2
@@ -32,6 +55,11 @@ fi
 
 PRE="${INDEX%.json}.pre-check.json"
 REPORT="${INDEX%.json}.report.json"
+
+if [ "$CLEAN" -eq 1 ]; then
+  echo "==> --clean: removing prior diagnostics ($PRE, $REPORT)"
+  rm -f -- "$PRE" "$REPORT"
+fi
 
 echo "==> [0/2] snapshot generator output -> $PRE"
 cp -- "$INDEX" "$PRE"
@@ -57,6 +85,8 @@ if [ "$rc" -ne 0 ]; then
 #     - $REPORT (validator --report machine-readable errors)
 #
 # Exit code legend: 1=schema drift, 3=schema validation, 4=missing file
+# Re-run with --clean to discard prior diagnostics, or --keep (default)
+# to preserve them for debugging.
 ################################################################################
 EOF
   exit "$rc"
