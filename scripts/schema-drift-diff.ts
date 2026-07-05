@@ -327,15 +327,33 @@ function parseArgs(argv: string[]): {
     else if (a.startsWith("--")) { console.error(`error: unknown arg: ${a}`); process.exit(2); }
     else positional.push(a);
   }
+  const validatePatterns = (patterns: string[], flag: string) => {
+    for (const p of patterns) {
+      try { compileMatcher(p); }
+      catch (e: any) {
+        console.error(
+          `error: invalid ${flag} pattern ${JSON.stringify(p)}: ${e?.message ?? e}\n` +
+          `  fix: use an exact string, a glob (\`*\`/\`?\`), or \`/regex/flags\``,
+        );
+        process.exit(2);
+      }
+    }
+  };
   if (kindPatterns.length) {
-    const expanded = expandKindPatterns(kindPatterns.map((p) => p.trim()).filter(Boolean));
+    const cleaned = kindPatterns.map((p) => p.trim()).filter(Boolean);
+    validatePatterns(cleaned, "--kind");
+    const expanded = expandKindPatterns(cleaned);
     if (!expanded.length) {
       console.error(`error: --kind pattern(s) matched no known kinds (${ALL_KINDS.join("|")}): ${kindPatterns.join(", ")}`);
       process.exit(2);
     }
     opts.kind = expanded;
   }
-  if (failSlugs.length) opts.failSlugs = failSlugs.map((s) => s.trim().replace(/^#/, "")).filter(Boolean);
+  if (failSlugs.length) {
+    const cleaned = failSlugs.map((s) => s.trim().replace(/^#/, "")).filter(Boolean);
+    validatePatterns(cleaned, "--fail-slug");
+    opts.failSlugs = cleaned;
+  }
   if (positional.length !== 2) {
     console.error("Usage: bun scripts/schema-drift-diff.ts <before.json> <after.json> [flags]");
     process.exit(2);
