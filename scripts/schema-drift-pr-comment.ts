@@ -108,6 +108,31 @@ export function selectFailures(r: Report, opts: FilterOpts = {}): FileEntry[] {
   return out;
 }
 
+/**
+ * Stable HTML anchor id for a failure row. Deterministic in (path,
+ * browser) — safe to reference from GitHub Actions annotations and from
+ * external tools that link into pr-comment.md.
+ */
+export function anchorFor(f: FileEntry): string {
+  const base = (f.path.split("/").pop() ?? f.path).replace(/\.[^.]+$/, "");
+  const scope = f.combined ? "combined" : (f.browser ?? "unknown");
+  const slug = `${scope}-${base}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return `fail-${slug}`;
+}
+
+/** Which failure kinds a given entry exhibits, in stable order. */
+function kindsOf(f: FileEntry): Kind[] {
+  const out: Kind[] = [];
+  if (f.parseError) out.push("parseError");
+  if (f.missing?.length) out.push("missing");
+  if (f.mistyped?.length) out.push("mistyped");
+  if (f.extra?.length) out.push("extra");
+  return out;
+}
+
 export function renderPrComment(r: Report, opts: RenderOpts = {}): string {
   const MAX = opts.max ?? intEnv("SCHEMA_DRIFT_ANNOTATION_MAX", 10);
   const MISS = opts.missingCap ?? intEnv("SCHEMA_DRIFT_MISSING_CAP", 20);
@@ -137,7 +162,8 @@ export function renderPrComment(r: Report, opts: RenderOpts = {}): string {
       );
     if (f.extra?.length)
       parts.push(`extra: \`${cap(f.extra, EXTRA).join(", ")}\``);
-    lines.push(`| \`${f.path}\` | ${label} | ${parts.join("<br>")} |`);
+    const anchor = `<a id="${anchorFor(f)}"></a>`;
+    lines.push(`| ${anchor}\`${f.path}\` | ${label} | ${parts.join("<br>")} |`);
   }
   if (bad.length > MAX)
     lines.push(
