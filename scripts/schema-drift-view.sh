@@ -59,6 +59,7 @@ EOF
 OUT="${OUT:-_schema_drift}"
 FILTER="all"
 FILE_MATCHES=()     # each entry is one substring
+BROWSERS=()         # each entry is one playwright project name
 VIEWER="auto"
 DRY_RUN=0
 
@@ -69,17 +70,25 @@ add_matches() {
   local parts=($1)
   for p in "${parts[@]}"; do [ -n "$p" ] && FILE_MATCHES+=("$p"); done
 }
+add_browsers() {
+  local IFS=,
+  # shellcheck disable=SC2206
+  local parts=($1)
+  for p in "${parts[@]}"; do [ -n "$p" ] && BROWSERS+=("$p"); done
+}
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --file)     add_matches "${2:-}"; shift 2 ;;
-    --file=*)   add_matches "${1#*=}"; shift ;;
-    --type)     FILTER="${2:-all}"; shift 2 ;;
-    --type=*)   FILTER="${1#*=}"; shift ;;
-    --viewer)   VIEWER="${2:-auto}"; shift 2 ;;
-    --viewer=*) VIEWER="${1#*=}"; shift ;;
-    --dry-run)  DRY_RUN=1; shift ;;
-    -h|--help)  usage; exit 0 ;;
+    --file)       add_matches "${2:-}"; shift 2 ;;
+    --file=*)     add_matches "${1#*=}"; shift ;;
+    --browsers)   add_browsers "${2:-}"; shift 2 ;;
+    --browsers=*) add_browsers "${1#*=}"; shift ;;
+    --type)       FILTER="${2:-all}"; shift 2 ;;
+    --type=*)     FILTER="${1#*=}"; shift ;;
+    --viewer)     VIEWER="${2:-auto}"; shift 2 ;;
+    --viewer=*)   VIEWER="${1#*=}"; shift ;;
+    --dry-run)    DRY_RUN=1; shift ;;
+    -h|--help)    usage; exit 0 ;;
     all|types|schemas) FILTER="$1"; shift ;;
     *) echo "unknown arg: $1" >&2; echo "" >&2; usage >&2; exit 2 ;;
   esac
