@@ -589,16 +589,25 @@ pretty-index-mismatch-ci-bundle-recheck:
 	 fi; \
 	 vr=$$(find "$$out" -maxdepth 3 -type f -name validate-report.json | head -n1); \
 	 vsa=$$(find "$$out" -maxdepth 3 -type f -name validate-schema-assertion.txt | head -n1); \
+	 gha=$${GITHUB_ACTIONS:-}; \
 	 fail=0; \
 	 if [ -z "$$vr" ]; then \
-	   echo "ERROR: preflight: validate-report.json MISSING under $$out" >&2; fail=1; \
+	   echo "ERROR: preflight: validate-report.json MISSING under $$out" >&2; \
+	   [ "$$gha" = "true" ] && echo "::error file=$$out/validate-report.json::preflight: validate-report.json MISSING (expected under $$out)"; \
+	   fail=1; \
 	 elif [ ! -s "$$vr" ]; then \
-	   echo "ERROR: preflight: validate-report.json EMPTY at $$vr" >&2; fail=1; \
+	   echo "ERROR: preflight: validate-report.json EMPTY at $$vr" >&2; \
+	   [ "$$gha" = "true" ] && echo "::error file=$$vr::preflight: validate-report.json EMPTY"; \
+	   fail=1; \
 	 fi; \
 	 if [ -z "$$vsa" ]; then \
-	   echo "ERROR: preflight: validate-schema-assertion.txt MISSING under $$out" >&2; fail=1; \
+	   echo "ERROR: preflight: validate-schema-assertion.txt MISSING under $$out" >&2; \
+	   [ "$$gha" = "true" ] && echo "::error file=$$out/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt MISSING (expected under $$out)"; \
+	   fail=1; \
 	 elif [ ! -s "$$vsa" ]; then \
-	   echo "ERROR: preflight: validate-schema-assertion.txt EMPTY at $$vsa" >&2; fail=1; \
+	   echo "ERROR: preflight: validate-schema-assertion.txt EMPTY at $$vsa" >&2; \
+	   [ "$$gha" = "true" ] && echo "::error file=$$vsa::preflight: validate-schema-assertion.txt EMPTY"; \
+	   fail=1; \
 	 fi; \
 	 if [ "$$fail" -ne 0 ]; then \
 	   echo "  hint: re-run 'make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=$(PI_CI_SCOPE)'" >&2; \
