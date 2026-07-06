@@ -26,7 +26,11 @@ d("README CI-download walkthrough", () => {
     expect(readme).toContain("gh run download <run-id>");
     expect(readme).toContain("scripts/ci/pi-ci-reproduce-jq-failure.sh");
 
-    // Build the "server-side" artifact that CI would upload.
+    // Build the "server-side" artifact that CI would upload. Paths inside
+    // the summary reference the *downloaded* location (`dest`) — the CI job
+    // records exactly what a re-runner will see on disk after `gh run
+    // download`, which is what the README repro line consumes.
+    const dest = join(work, "pi-ci-repro");
     const artifactDir = join(work, "artifact");
     mkdirSync(artifactDir, { recursive: true });
     const sidecarBase = "report-schema-jq-extracted-tree-json.stderr.txt";
@@ -34,16 +38,16 @@ d("README CI-download walkthrough", () => {
     writeFileSync(join(artifactDir, "extracted-tree.json"), "not-json");
     const summary = {
       schema: "pi-ci/report-schema-validation-summary/v1",
-      expected_schema_version: "1", out_dir: artifactDir,
+      expected_schema_version: "1", out_dir: dest,
       terminated_by: null, exit: 5,
       pi_ci_jq_bin: "", jq_bin: "jq", jq_version: "jq-1.7", jq_cmdline: "jq .", jq_timeout_secs: "10",
       files: [{
         label: "extracted-tree.json",
-        path: join(artifactDir, "extracted-tree.json"),
+        path: join(dest, "extracted-tree.json"),
         expected_schema_version: "1", actual_schema_version: "",
         status: "FAIL", exit: 5, reason: "jq-parse-failed",
         diff: null, jq_stderr_excerpt: "jq: parse error at line 1",
-        jq_stderr_path: join(artifactDir, sidecarBase),
+        jq_stderr_path: join(dest, sidecarBase),
       }],
     };
     writeFileSync(
@@ -73,7 +77,6 @@ mkdir -p "$dir"; cp -R "${artifactDir}"/. "$dir"/
     chmodSync(ghShim, 0o755);
 
     // Run the exact README download line.
-    const dest = join(work, "pi-ci-repro");
     const dl = spawnSync("bash", ["-c",
       `gh run download 999 --name pretty-index-mismatch-ci-schema-validator-io-atomic-linux --dir "${dest}"`
     ], { encoding: "utf8", env: { ...process.env, PATH: `${shimDir}:${process.env.PATH}` } });
