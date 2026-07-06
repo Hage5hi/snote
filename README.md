@@ -1155,6 +1155,7 @@ machine-readable and takes one of these values:
 | `jq-parse-failed`           | `jq` could not parse the sidecar JSON (`actual_schema_version="<unreadable>"`) |
 | `jq-timeout`                | `jq` was wrapped in `timeout(1)` (via `PI_CI_JQ_TIMEOUT_SECS`) and exited `124` (`actual_schema_version="<timeout>"`) |
 | `schema_version-missing`    | JSON parsed but has no `schema_version` key (`actual_schema_version="<missing>"`) |
+| `schema_version-empty`      | JSON parsed and `schema_version` is present as an empty string (`actual_schema_version=""`) |
 | `schema_version-malformed`  | `schema_version` present but non-numeric (`actual_schema_version` preserves the exact received value, e.g. `"v2"`, `"1.0"`) |
 | `schema-drift`              | Parsed value differs from `expected_schema_version` |
 
@@ -1164,14 +1165,18 @@ empty `files` — the exact received value is preserved in
 `expected_schema_version`) or `"terminated"` (`SIGTERM/INT/HUP`,
 `terminated_by` records the signal, `exit: null`).
 
-The summary also includes top-level `jq_bin`, `jq_version`,
-`jq_cmdline` (the full command with any `timeout(1)` prefix), and
-`jq_timeout_secs` — populated from `PI_CI_JQ_BIN` /
+For `jq-parse-failed`, the failing file row also includes
+`jq_stderr_excerpt` and `jq_stderr_path` when stderr was captured.
+
+The summary also includes top-level `pi_ci_jq_bin`, `jq_bin`,
+`jq_version`, `jq_cmdline` (the full command with any `timeout(1)`
+prefix), and `jq_timeout_secs` — populated from `PI_CI_JQ_BIN` /
 `PI_CI_JQ_TIMEOUT_SECS`. These are echoed into
 `report-schema-validation-log.txt` as
-`pi-ci-validate-report-schemas: jq_bin=…` / `jq_version=…` /
-`jq_cmdline=…` / `jq_timeout_secs=…` so a `jq-timeout` incident can
-be reproduced locally with the same binary and wrapper.
+`pi-ci-validate-report-schemas: PI_CI_JQ_BIN=…` / `jq_bin=…` /
+`jq_version=…` / `jq_cmdline=…` / `jq_timeout_secs=…` so a
+`jq-timeout` incident can be reproduced locally with the same binary
+and wrapper.
 
 Example — `schema-drift` diff context (per-file `diff` block +
 inline `── <label> drift diff ──` echoed to the log):
