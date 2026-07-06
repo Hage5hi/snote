@@ -134,7 +134,7 @@ run_check() {
   # Determine a machine-readable reason alongside the human-readable
   # actual_sv token. Kept in sync so the summary JSON always carries
   # both a value and an explanation, even when jq fails outright.
-  local actual_sv="<unknown>" reason="ok" diff_json="null"
+  local actual_sv="<unknown>" reason="ok" diff_json="null" jq_stderr_file="" jq_excerpt=""
   if [ ! -e "$target" ]; then
     actual_sv="<missing-file>"; reason="missing-file"
   elif [ ! -s "$target" ]; then
@@ -142,16 +142,21 @@ run_check() {
   elif ! command -v "$JQ_BIN" >/dev/null 2>&1; then
     actual_sv="<unknown>";      reason="jq-missing"
   else
-    local jq_out jq_rc
-    jq_out="$(${JQ_WRAP}"$JQ_BIN" -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null)"; jq_rc=$?
+    local jq_out jq_rc slug
+    slug="$(printf '%s' "$label" | sed 's/[^A-Za-z0-9]/-/g')"
+    jq_stderr_file="$out/report-schema-jq-${slug}.stderr.txt"
+    jq_out="$(${JQ_WRAP}"$JQ_BIN" -r "$JQ_SCHEMA_VERSION_FILTER" -- "$target" 2>"$jq_stderr_file")"; jq_rc=$?
     if [ "$jq_rc" -eq 124 ]; then
       actual_sv="<timeout>"; reason="jq-timeout"
     elif [ "$jq_rc" -ne 0 ]; then
       actual_sv="<unreadable>"; reason="jq-parse-failed"
+      jq_excerpt="$(stderr_excerpt "$jq_stderr_file")"
     else
       actual_sv="$jq_out"
       if [ "$actual_sv" = "<missing>" ]; then
         reason="schema_version-missing"
+      elif [ "$actual_sv" = "" ]; then
+        reason="schema_version-empty"
       elif ! printf '%s' "$actual_sv" | grep -Eq '^[0-9]+$'; then
         # Present but non-numeric — e.g. "v2", "1.0", "abc". Keep the
         # exact received value in actual_sv so triagers see the drift.
