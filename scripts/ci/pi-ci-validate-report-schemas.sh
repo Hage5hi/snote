@@ -77,6 +77,8 @@ statuses=()
 exits=()
 reasons=()
 diffs=()
+jq_stderr_excerpts=()
+jq_stderr_paths=()
 
 rc=0
 # jq binary + optional timeout override. `PI_CI_JQ_BIN` lets tests
@@ -89,16 +91,41 @@ JQ_WRAP=""
 if [ -n "${PI_CI_JQ_TIMEOUT_SECS:-}" ] && command -v timeout >/dev/null 2>&1; then
   JQ_WRAP="timeout ${PI_CI_JQ_TIMEOUT_SECS} "
 fi
+JQ_SCHEMA_VERSION_FILTER='if has("schema_version") then (.schema_version | tostring) else "<missing>" end'
 # jq diagnostics — echoed into report-schema-validation-log.txt AND
 # embedded in the summary JSON so triagers can reproduce jq-timeout
 # or jq-parse-failed runs without guessing which jq was used or
 # whether a timeout(1) wrapper was applied.
 JQ_VERSION="$("$JQ_BIN" --version 2>/dev/null || echo '<unavailable>')"
-JQ_CMDLINE="${JQ_WRAP}${JQ_BIN}"
+JQ_CMDLINE="${JQ_WRAP}${JQ_BIN} -r '${JQ_SCHEMA_VERSION_FILTER}' -- <file>"
+echo "pi-ci-validate-report-schemas: PI_CI_JQ_BIN=${PI_CI_JQ_BIN:-<unset>}"
 echo "pi-ci-validate-report-schemas: jq_bin=${JQ_BIN}"
 echo "pi-ci-validate-report-schemas: jq_version=${JQ_VERSION}"
 echo "pi-ci-validate-report-schemas: jq_cmdline=${JQ_CMDLINE}"
 echo "pi-ci-validate-report-schemas: jq_timeout_secs=${PI_CI_JQ_TIMEOUT_SECS:-<unset>}"
+
+json_escape() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\r'/}
+  s=${s//$'\n'/\\n}
+  printf '%s' "$s"
+}
+
+stderr_excerpt() {
+  local file="$1"
+  [ -s "$file" ] || return 0
+  awk 'NF {print; seen++; if (seen >= 3) exit}' "$file" | tr '\n' ' ' | cut -c 1-500
+}
+
+schema_probe_exit_for_reason() {
+  case "$1" in
+    jq-missing|jq-parse-failed|jq-timeout|missing-file|empty-file) echo 2 ;;
+    schema_version-missing|schema_version-empty|schema_version-malformed|schema-drift) echo 5 ;;
+    *) echo 5 ;;
+  esac
+}
 
 run_check() {
   local label="$1" script="$2" target="$3"
@@ -107,7 +134,7 @@ run_check() {
   # Determine a machine-readable reason alongside the human-readable
   # actual_sv token. Kept in sync so the summary JSON always carries
   # both a value and an explanation, even when jq fails outright.
-  local actual_sv="<unknown>" reason="ok" diff_json="null"
+  local actual_sv="<unknown>" reason="ok" diff_json="null" jq_stderr_file="" jq_excerpt=""
   if [ ! -e "$target" ]; then
     actual_sv="<missing-file>"; reason="missing-file"
   elif [ ! -s "$target" ]; then
@@ -115,16 +142,21 @@ run_check() {
   elif ! command -v "$JQ_BIN" >/dev/null 2>&1; then
     actual_sv="<unknown>";      reason="jq-missing"
   else
-    local jq_out jq_rc
-    jq_out="$(${JQ_WRAP}"$JQ_BIN" -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null)"; jq_rc=$?
+    local jq_out jq_rc slug
+    slug="$(printf '%s' "$label" | sed 's/[^A-Za-z0-9]/-/g')"
+    jq_stderr_file="$out/report-schema-jq-${slug}.stderr.txt"
+    jq_out="$(${JQ_WRAP}"$JQ_BIN" -r "$JQ_SCHEMA_VERSION_FILTER" -- "$target" 2>"$jq_stderr_file")"; jq_rc=$?
     if [ "$jq_rc" -eq 124 ]; then
       actual_sv="<timeout>"; reason="jq-timeout"
     elif [ "$jq_rc" -ne 0 ]; then
       actual_sv="<unreadable>"; reason="jq-parse-failed"
+      jq_excerpt="$(stderr_excerpt "$jq_stderr_file")"
     else
       actual_sv="$jq_out"
       if [ "$actual_sv" = "<missing>" ]; then
         reason="schema_version-missing"
+      elif [ "$actual_sv" = "" ]; then
+        reason="schema_version-empty"
       elif ! printf '%s' "$actual_sv" | grep -Eq '^[0-9]+$'; then
         # Present but non-numeric — e.g. "v2", "1.0", "abc". Keep the
         # exact received value in actual_sv so triagers see the drift.
@@ -133,7 +165,7 @@ run_check() {
     fi
   fi
 
-  local status sub=0
+  local status sub=0 out_txt=""
   if out_txt="$(bash "$script" "$target" 2>&1)"; then
     echo "$out_txt" >> "$errfile"
     status="OK"
@@ -142,6 +174,17 @@ run_check() {
     rc=$sub
     status="FAIL"
     echo "$out_txt" >> "$errfile"
+  fi
+
+  if [ "$status" = "OK" ] && [ "$reason" != "ok" ]; then
+    sub="$(schema_probe_exit_for_reason "$reason")"
+    rc=$sub
+    status="FAIL"
+    out_txt="ERROR: ${label} schema_version probe failed before schema check (path=${target}, reason=${reason}, actual=${actual_sv})"
+    echo "$out_txt" >> "$errfile"
+  fi
+
+  if [ "$status" = "FAIL" ]; then
     local excerpt
     excerpt="$(printf '%s\n' "$out_txt" \
       | awk 'NF' \
@@ -154,12 +197,18 @@ run_check() {
     # Diff context for drift-family reasons — surfaces expected vs
     # actual field values inline so triagers don't need the JSON.
     case "$reason" in
-      schema-drift|schema_version-malformed|schema_version-missing)
-        diff_json="{\"schema_version\":{\"expected\":\"${expected_sv}\",\"actual\":\"${actual_sv}\"}}"
+      schema-drift|schema_version-malformed|schema_version-missing|schema_version-empty)
+        diff_json="{\"schema_version\":{\"expected\":\"$(json_escape "$expected_sv")\",\"actual\":\"$(json_escape "$actual_sv")\"}}"
         echo "── ${label} drift diff ──"
         echo "  schema_version: expected=${expected_sv}  actual=${actual_sv}"
         ;;
     esac
+    if [ "$reason" = "jq-parse-failed" ] && [ -n "$jq_excerpt" ]; then
+      echo "── ${label} jq stderr excerpt ──"
+      echo "  ${jq_excerpt}"
+      echo "  jq_stderr_path=${jq_stderr_file}"
+      echo "jq stderr excerpt: ${jq_excerpt} (path=${jq_stderr_file})" >> "$errfile"
+    fi
     echo "::error file=${target}::${label} schema check failed (exit=${sub}) — expected schema_version=${expected_sv}, actual=${actual_sv} — reason=${reason} — see ${errfile} — excerpt: ${excerpt}"
     echo "report-schema-errors: ${errfile}"
   fi
@@ -172,6 +221,8 @@ run_check() {
   exits+=("$sub")
   reasons+=("$reason")
   diffs+=("$diff_json")
+  jq_stderr_excerpts+=("$jq_excerpt")
+  jq_stderr_paths+=("$jq_stderr_file")
 }
 
 run_check "extracted-tree.json"  "$here/pi-ci-manifest-schema-check.sh"          "$mf"
@@ -182,8 +233,9 @@ echo "report-schema-errors: $errfile"
 # Emit machine-readable summary. Consumed by CI parsers and follow-up
 # tooling — keep schema stable ("pi-ci/report-schema-validation-summary/v1").
 # Per-file `reason` values: "ok" | "missing-file" | "empty-file" |
-# "jq-missing" | "jq-parse-failed" | "schema_version-missing" |
-# "schema-drift". The top-level `terminated_by` captures timeouts
+# "jq-missing" | "jq-parse-failed" | "jq-timeout" |
+# "schema_version-missing" | "schema_version-empty" |
+# "schema_version-malformed" | "schema-drift". The top-level `terminated_by` captures timeouts
 # (SIGTERM/INT/HUP) written by the trap handler.
 {
   printf '{"schema":"pi-ci/report-schema-validation-summary/v1"'
@@ -193,14 +245,22 @@ echo "report-schema-errors: $errfile"
   printf ',"files":['
   for i in "${!labels[@]}"; do
     [ "$i" -gt 0 ] && printf ','
-    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s,"reason":"%s","diff":%s}' \
-      "${labels[$i]}" "${paths[$i]}" "$EXPECTED_SV" "${actuals[$i]}" "${statuses[$i]}" "${exits[$i]}" "${reasons[$i]}" "${diffs[$i]}"
+    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s,"reason":"%s","diff":%s' \
+      "$(json_escape "${labels[$i]}")" "$(json_escape "${paths[$i]}")" "$(json_escape "$EXPECTED_SV")" "$(json_escape "${actuals[$i]}")" "$(json_escape "${statuses[$i]}")" "${exits[$i]}" "$(json_escape "${reasons[$i]}")" "${diffs[$i]}"
+    if [ -n "${jq_stderr_excerpts[$i]}" ]; then
+      printf ',"jq_stderr_excerpt":"%s","jq_stderr_path":"%s"' \
+        "$(json_escape "${jq_stderr_excerpts[$i]}")" "$(json_escape "${jq_stderr_paths[$i]}")"
+    else
+      printf ',"jq_stderr_excerpt":null,"jq_stderr_path":null'
+    fi
+    printf '}'
   done
   printf ']'
-  printf ',"jq_bin":"%s"' "$JQ_BIN"
-  printf ',"jq_version":"%s"' "${JQ_VERSION//\"/\\\"}"
-  printf ',"jq_cmdline":"%s"' "${JQ_CMDLINE//\"/\\\"}"
-  printf ',"jq_timeout_secs":"%s"' "${PI_CI_JQ_TIMEOUT_SECS:-}"
+  printf ',"pi_ci_jq_bin":"%s"' "$(json_escape "${PI_CI_JQ_BIN:-}")"
+  printf ',"jq_bin":"%s"' "$(json_escape "$JQ_BIN")"
+  printf ',"jq_version":"%s"' "$(json_escape "$JQ_VERSION")"
+  printf ',"jq_cmdline":"%s"' "$(json_escape "$JQ_CMDLINE")"
+  printf ',"jq_timeout_secs":"%s"' "$(json_escape "${PI_CI_JQ_TIMEOUT_SECS:-}")"
   printf ',"exit":%s' "$rc"
   printf '}\n'
 } > "$summary"
