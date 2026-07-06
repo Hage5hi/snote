@@ -11,6 +11,7 @@
 # under <out-dir>/extracted-tree.txt so the failure-run artifact upload
 # never becomes inconsistent between runs.
 set -u
+set -o pipefail
 
 out="${1:?usage: $0 <out-dir>}"
 mf="$out/extracted-tree.txt"
