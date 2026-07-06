@@ -178,7 +178,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         ydocState: data?.ydoc_state ?? null,
         rowExists: !!data,
       };
-      setEncMeta(meta);
+      setEncMeta((prev) => {
+        // Encryption mode flipped since last fetch — force a provider rebuild.
+        if (prev.isEncrypted !== meta.isEncrypted) {
+          setProviderEpoch((n) => n + 1);
+        }
+        return meta;
+      });
+
 
       if (!meta.isEncrypted) {
         setEncryption(null);
