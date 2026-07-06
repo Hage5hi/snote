@@ -14,7 +14,7 @@
 //      selection stays live (does not get stuck) and the scroller keeps
 //      moving.
 import { expect, test } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const LINES = 1_000;
