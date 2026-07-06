@@ -1227,7 +1227,70 @@ make pretty-index-mismatch-ci-bundle-list                  # atomic
 make pretty-index-mismatch-ci-bundle-list PI_CI_SCOPE=stress
 ```
 
+#### One-command local report (`pretty-index-mismatch-ci-bundle-report`)
+
+Download the bundle **and** print both the preflight status table and
+the extracted-tree manifest paths in a single command:
+
+```sh
+make pretty-index-mismatch-ci-bundle-report RUN_ID=1234567890
+make pretty-index-mismatch-ci-bundle-report RUN_ID=1234567890 PI_CI_SCOPE=stress
+```
+
+Already downloaded? Re-print the reports without hitting the network
+(regenerates `preflight-status.md` + `extracted-tree.txt`/`.json`):
+
+```sh
+make pretty-index-mismatch-ci-bundle-report-show                   # atomic
+make pretty-index-mismatch-ci-bundle-report-show PI_CI_SCOPE=stress
+```
+
+Schema/format-check the JSON manifest (the same check the E2E tests run):
+
+```sh
+make pretty-index-mismatch-ci-bundle-manifest-check                # atomic
+```
+
+Both `preflight-status.json` and `extracted-tree.json` include a
+`content_hash` field so CI (and you) can diff runs that share the same
+inputs and detect when artifacts silently changed.
+
+#### Troubleshooting preflight failures — MISSING vs EMPTY decision tree
+
+The preflight and reporting layers emit two distinct annotations for
+each of `validate-report.json` and `validate-schema-assertion.txt`.
+Interpret them with:
+
+```
+preflight annotation
+├── MISSING  → file was never written by the CI producer
+│       Look at: the *producing* job's logs BEFORE the artifact upload
+│       step. Extracted-tree manifest (`extracted-tree.txt`) will list
+│       every file that DID land — the missing one confirms it.
+│       Fix locally: reproduce the producing step
+│         (`make pretty-index-mismatch-ci`) and confirm it writes the
+│         file into `$PI_CI_OUT_DIR`.
+│
+└── EMPTY    → file was written but is zero-bytes
+        Look at: the producing step's stderr for a truncated write /
+        early crash. `extracted-tree.txt` will show the file with
+        `SIZE(B)=0`. `preflight-status.json.content_hash` will differ
+        from a healthy run even though filenames match.
+        Fix locally: re-run the producing step with
+          `PI_FAIL_FAST=0` and inspect stderr for the failing writer.
+```
+
+Where to look in the uploaded artifacts:
+
+| Annotation                         | Artifact file to open first                                    | What to check                                                          |
+|-----------------------------------|----------------------------------------------------------------|------------------------------------------------------------------------|
+| `MISSING validate-report.json`    | `extracted-tree.txt` / `.json`                                 | file absent from `entries[]` → producer never wrote it                 |
+| `EMPTY   validate-report.json`    | `extracted-tree.txt` / `.json`                                 | entry present with `size: 0` → producer crashed mid-write              |
+| `MISSING validate-schema-assertion.txt` | `preflight-status.md`                                    | table row shows `MISSING`; producer job log is the source of truth     |
+| `EMPTY   validate-schema-assertion.txt` | `preflight-status.json` (`content_hash` diff vs healthy run) | zero-byte write; usually a swallowed non-zero exit in the assert step  |
+
 #### Troubleshooting preflight failures
+
 
 The preflight in `pretty-index-mismatch-ci-bundle-recheck` prints one
 line per problem to stderr and exits `2`. Common cases:
