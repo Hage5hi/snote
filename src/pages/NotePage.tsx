@@ -147,6 +147,15 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   });
   const [encryption, setEncryption] = useState<Encryption | null>(null);
 
+  // Bumped by the hashchange listener so the meta-fetch effect re-runs when
+  // the encryption key in the URL fragment changes (lock/unlock flows).
+  const [metaVersion, setMetaVersion] = useState(0);
+  useEffect(() => {
+    const onHash = () => setMetaVersion((n) => n + 1);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   // Single combined fetch: enc-meta + ydoc_state in one round-trip.
   useEffect(() => {
     if (!validSlug) return;
