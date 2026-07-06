@@ -119,6 +119,27 @@ echo "── schema_version (expected=$EXPECTED_SV) ──"
 printf "  %-24s  actual=%-10s  status=%-8s  file=%s\n" "extracted-tree.json"  "$tree_sv" "$(sv_status "$tree_sv")" "$manifest_json"
 printf "  %-24s  actual=%-10s  status=%-8s  file=%s\n" "preflight-status.json" "$pre_sv"  "$(sv_status "$pre_sv")"  "$status_json"
 
+# Explicit missing/unreadable sidecar block — always emitted so the
+# consolidated summary makes it obvious which files are absent (vs.
+# just schema-invalid) without opening the artifacts.
+echo
+echo "── missing/unreadable sidecars ──"
+missing_any=0
+for pair in "extracted-tree.json:$manifest_json" "preflight-status.json:$status_json"; do
+  label="${pair%%:*}"; f="${pair#*:}"
+  if [ ! -e "$f" ]; then
+    printf "  MISSING     %-24s  file=%s\n" "$label" "$f"
+    missing_any=1
+  elif [ ! -s "$f" ]; then
+    printf "  EMPTY       %-24s  file=%s\n" "$label" "$f"
+    missing_any=1
+  elif [ ! -r "$f" ]; then
+    printf "  UNREADABLE  %-24s  file=%s\n" "$label" "$f"
+    missing_any=1
+  fi
+done
+[ "$missing_any" = 0 ] && echo "  (none — both sidecars present and readable)"
+
 if [ "$download_rc" -ne 0 ]; then
   echo "note: download/extract step exited $download_rc; reports above were still generated" >&2
 fi
