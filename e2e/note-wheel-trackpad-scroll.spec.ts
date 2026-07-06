@@ -34,6 +34,8 @@ type SelectionDragSample = {
   i: number;
   x: number;
   y: number;
+  dx: number;
+  dy: number;
   beforeScrollTop: number;
   afterScrollTop: number;
   maxScrollTop: number;
@@ -311,8 +313,11 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
       await page.waitForTimeout(30);
       const afterScrollTop = await scroller.evaluate((el) => el.scrollTop);
       const afterRange = await getSelectionRangeFrame(page);
+      const targetX = box.x + 40 + i * 4;
+      const targetY = box.y + box.height - 8;
       recordSelectionDrag(page, {
         i, x: Math.round(box.x + 40 + i * 4), y: Math.round(box.y + box.height - 8),
+        dx: i === 0 ? 0 : 4, dy: i === 0 ? Math.round(box.height - 48) : 0,
         beforeScrollTop, afterScrollTop, maxScrollTop, beforeRange, afterRange, t: Date.now(),
       }, testInfo);
     }
