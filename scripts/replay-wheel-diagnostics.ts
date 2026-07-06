@@ -74,7 +74,7 @@ const browserType = browserTypes[args.project];
 if (!browserType) throw new Error(`unsupported project: ${args.project}`);
 
 const browser = await browserType.launch({ headless: !args.headed });
-const context = await browser.new_context?.({} as never).catch?.(() => undefined) ?? await browser.newContext({
+const context = await browser.newContext({
   baseURL: args.baseUrl,
   viewport: { width: 1280, height: 900 },
   deviceScaleFactor: 1,
