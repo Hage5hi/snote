@@ -525,6 +525,9 @@ export class SupabaseYjsProvider {
           content: storedContent,
           char_count: storedCount,
           tags: storedTags,
+          // Keep the row flag in lockstep with the bytes we just wrote so a
+          // stale `is_encrypted` can never disagree with `ydoc_state`.
+          is_encrypted: !!this.encryption,
         },
         { onConflict: "slug" }
       );
@@ -572,6 +575,9 @@ export class SupabaseYjsProvider {
           content: text,
           char_count: text.length,
           tags: extractTags(text),
+          // Beacon path is plaintext-only (guarded above); pin the flag so
+          // the row can never end up with encrypted bytes + is_encrypted=false.
+          is_encrypted: false,
         },
       ]);
       const headers = {
