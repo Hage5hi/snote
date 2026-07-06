@@ -1,0 +1,9 @@
+# extracted-tree for ./_pi-ci-bundle-atomic/extracted/pi-ci-atomic (generated on assertion/step failure)
+# generated-at: 2026-07-06T17:22:57Z
+# format: <size-bytes>\t<path-relative-to-./_pi-ci-bundle-atomic/extracted/pi-ci-atomic>
+0	./extracted-tree.json
+255	./extracted-tree.txt
+405	./preflight-status.json
+343	./preflight-status.md
+8	./validate-report.json
+3	./validate-schema-assertion.txt
