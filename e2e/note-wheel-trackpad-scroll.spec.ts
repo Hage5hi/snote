@@ -79,14 +79,14 @@ function recordSelectionDrag(
   arr.push(s); if (arr.length > 200) arr.shift();
   selectionDragLog.set(page, arr);
 
-  const scrollDidNotAdvance = s.afterScrollTop === s.beforeScrollTop && s.beforeScrollTop < s.maxScrollTop - 1;
   const selectionDidNotAdvance = s.afterRange.rangeCount > 0 && s.afterRange.textLength > 0
     && s.afterRange.signature === s.beforeRange.signature;
-  if (scrollDidNotAdvance && selectionDidNotAdvance && !selectionStuckFrame.has(page)) {
+  const pointerMoved = s.dx !== 0 || s.dy !== 0;
+  if (pointerMoved && selectionDidNotAdvance && !selectionStuckFrame.has(page)) {
     selectionStuckFrame.set(page, s);
     testInfo?.annotations.push({
       type: "selection-stuck-frame",
-      description: `drag frame #${s.i} selection range stuck (${s.afterRange.signature}) and scrollTop stayed at ${s.beforeScrollTop}`,
+      description: `drag frame #${s.i} selection range stuck (${s.afterRange.signature}); scrollTop ${s.beforeScrollTop}->${s.afterScrollTop}`,
     });
   }
 }
