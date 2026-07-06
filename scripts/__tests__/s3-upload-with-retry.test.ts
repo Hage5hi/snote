@@ -42,6 +42,7 @@ describe("putObjectWithRetry", () => {
       baseDelayMs: 100,
       random: () => 1, // pin jitter to upper bound (100%)
       sleep: async (ms) => { delays.push(ms); },
+      logRetries: false,
     });
     expect(put).toHaveBeenCalledTimes(3);
     // 100ms then 200ms — monotonically increasing.
