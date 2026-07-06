@@ -1078,8 +1078,9 @@ without the `gh` CLI:
      `pi-ci-<scope>.tar.gz` (the full bundle)
    - `pretty-index-mismatch-ci-validator-files-<scope>-<os>.zip` —
      contains `validate-report.json`, `validate-schema-assertion.txt`,
-     and `extracted-tree.txt` (the last is always present, even when
-     extraction crashed before writing the two validator files)
+      `extracted-tree.txt`, and `preflight-status.md` (the last two are
+      always present, even when extraction crashed before writing the two
+      validator files)
 5. Unzip both, then reproduce locally:
 
    ```sh
@@ -1148,6 +1149,31 @@ The target downloads artifact
 After extraction it re-verifies the two required files exist and prints a
 `make pretty-index-ci-tarball-verify …` command tailored to the download
 so you can immediately re-run the strict schema check locally.
+
+#### One-shot local report (`pretty-index-mismatch-ci-bundle-report.sh`)
+
+When you want the same two debug files CI uploads without manually
+running separate Make targets, use:
+
+```sh
+# Download atomic/ubuntu-latest, then write preflight-status.md + extracted-tree.txt
+scripts/pretty-index-mismatch-ci-bundle-report.sh 1234567890
+
+# Stress or another runner OS:
+scripts/pretty-index-mismatch-ci-bundle-report.sh 1234567890 stress
+scripts/pretty-index-mismatch-ci-bundle-report.sh 1234567890 atomic macos-latest
+```
+
+It downloads and extracts `pretty-index-mismatch-ci-bundle-<scope>-<os>`
+to `./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>/`, then writes:
+
+- `preflight-status.md` — the same OK / MISSING / EMPTY Markdown table
+  appended to the GitHub Actions job summary.
+- `extracted-tree.txt` — the same size/path manifest uploaded by CI.
+
+If the download or extraction step fails, the script still writes both
+report files against the expected local directory before returning the
+original download exit code.
 
 #### Re-check locally without re-downloading (`pretty-index-mismatch-ci-bundle-recheck`)
 
@@ -1280,7 +1306,9 @@ table when triaging a failed run:
 | Artifact name (GitHub Actions)                                                | Contents (uploaded on any job failure)                                                                                                                                | On-runner path (before upload)                                                                                                          |
 |-------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
 | `pretty-index-mismatch-ci-bundle-<scope>-<os>`                                | Full `pi-ci-<scope>.tar.gz` bundle (validator files + inputs).                                                                                                        | `/tmp/pi-ci-<scope>.tar.gz`                                                                                                             |
-| `pretty-index-mismatch-ci-validator-files-<scope>-<os>`                       | `validate-report.json`, `validate-schema-assertion.txt`, `extracted-tree.txt` (manifest is always present — hardened to write even if the tree walk crashes).         | `/tmp/pi-ci-<scope>/validate-report.json` <br> `/tmp/pi-ci-<scope>/validate-schema-assertion.txt` <br> `/tmp/pi-ci-<scope>/extracted-tree.txt` |
+| `pretty-index-mismatch-ci-validator-files-<scope>-<os>`                       | Failure bundle with `validate-report.json`, `validate-schema-assertion.txt`, `extracted-tree.txt`, `preflight-status.md`.                                               | `/tmp/pi-ci-<scope>/validate-report.json` <br> `/tmp/pi-ci-<scope>/validate-schema-assertion.txt` <br> `/tmp/pi-ci-<scope>/extracted-tree.txt` <br> `/tmp/pi-ci-<scope>/preflight-status.md` |
+| `pretty-index-mismatch-ci-extracted-tree-<scope>-<os>`                        | Standalone extracted-tree manifest, uploaded on every run.                                                                                                             | `/tmp/pi-ci-<scope>/extracted-tree.txt`                                                                                                 |
+| `pretty-index-mismatch-ci-preflight-status-<scope>-<os>`                      | Standalone preflight status Markdown table, uploaded on every run.                                                                                                    | `/tmp/pi-ci-<scope>/preflight-status.md`                                                                                                |
 
 The `extracted-tree.txt` manifest is a plain `<size-bytes>\t<path>`
 listing (one file per line, sorted, paths relative to
@@ -1289,6 +1317,9 @@ source directory, the generation timestamp (UTC) and the row format.
 Its presence is invariant: even when the pre-flight walk fails or the
 directory itself does not exist, the file is created (possibly empty
 after the header) so the upload payload never varies by OS or matrix.
+`preflight-status.md` uses the same Markdown table as the job summary and
+is also invariant; under `GITHUB_ACTIONS=true`, each non-OK row is echoed
+as a `::error file=<path>::preflight: …` annotation in the step log.
 
 
 

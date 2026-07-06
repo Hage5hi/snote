@@ -63,4 +63,22 @@ d("pi-ci-extracted-tree-manifest.sh — early-extraction-failure resilience", ()
     // header block still lands.
     expect(statSync(mf).size).toBeGreaterThan(0);
   });
+
+  it("creates an empty touched manifest if the first write crashes", () => {
+    const out = join(workdir, "write-crash");
+    const fakeBin = join(workdir, "bin");
+    require("node:fs").mkdirSync(fakeBin, { recursive: true });
+    writeFileSync(join(fakeBin, "echo"), "#!/usr/bin/env bash\nexit 88\n");
+    require("node:fs").chmodSync(join(fakeBin, "echo"), 0o755);
+
+    const res = spawnSync("bash", [SCRIPT, out], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH ?? ""}` },
+    });
+    expect(res.status).toBe(0);
+
+    const mf = join(out, "extracted-tree.txt");
+    expect(existsSync(mf)).toBe(true);
+    expect(statSync(mf).size).toBe(0);
+  });
 });
