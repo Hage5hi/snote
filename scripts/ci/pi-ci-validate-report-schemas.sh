@@ -78,6 +78,17 @@ exits=()
 reasons=()
 
 rc=0
+# jq binary + optional timeout override. `PI_CI_JQ_BIN` lets tests
+# substitute a fake jq (e.g. one that exits 124 to simulate timeout).
+# `PI_CI_JQ_TIMEOUT_SECS`, when set and `timeout(1)` is available,
+# wraps every jq invocation so a hung jq is caught + reported as
+# reason="jq-timeout" instead of hanging the whole CI step.
+JQ_BIN="${PI_CI_JQ_BIN:-jq}"
+JQ_WRAP=""
+if [ -n "${PI_CI_JQ_TIMEOUT_SECS:-}" ] && command -v timeout >/dev/null 2>&1; then
+  JQ_WRAP="timeout ${PI_CI_JQ_TIMEOUT_SECS} "
+fi
+
 run_check() {
   local label="$1" script="$2" target="$3"
   echo "── $label ($target) ──" >> "$errfile"
@@ -85,21 +96,29 @@ run_check() {
   # Determine a machine-readable reason alongside the human-readable
   # actual_sv token. Kept in sync so the summary JSON always carries
   # both a value and an explanation, even when jq fails outright.
-  local actual_sv="<unknown>" reason="ok"
+  local actual_sv="<unknown>" reason="ok" diff_json="null"
   if [ ! -e "$target" ]; then
     actual_sv="<missing-file>"; reason="missing-file"
   elif [ ! -s "$target" ]; then
     actual_sv="<empty-file>";   reason="empty-file"
-  elif ! command -v jq >/dev/null 2>&1; then
+  elif ! command -v "$JQ_BIN" >/dev/null 2>&1; then
     actual_sv="<unknown>";      reason="jq-missing"
   else
     local jq_out jq_rc
-    jq_out="$(jq -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null)"; jq_rc=$?
-    if [ "$jq_rc" -ne 0 ]; then
+    jq_out="$(${JQ_WRAP}"$JQ_BIN" -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null)"; jq_rc=$?
+    if [ "$jq_rc" -eq 124 ]; then
+      actual_sv="<timeout>"; reason="jq-timeout"
+    elif [ "$jq_rc" -ne 0 ]; then
       actual_sv="<unreadable>"; reason="jq-parse-failed"
     else
       actual_sv="$jq_out"
-      if [ "$actual_sv" = "<missing>" ]; then reason="schema_version-missing"; fi
+      if [ "$actual_sv" = "<missing>" ]; then
+        reason="schema_version-missing"
+      elif ! printf '%s' "$actual_sv" | grep -Eq '^[0-9]+$'; then
+        # Present but non-numeric — e.g. "v2", "1.0", "abc". Keep the
+        # exact received value in actual_sv so triagers see the drift.
+        reason="schema_version-malformed"
+      fi
     fi
   fi
 
@@ -118,8 +137,18 @@ run_check() {
       | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); gsub(/\n/,""); print (NR>1 ? "%0A" $0 : $0)}')"
     local expected_sv="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
     # If the schema checker failed but we couldn't attribute a specific
-    # reason above (file exists, jq parsed), it's a schema mismatch.
+    # reason above (file exists, jq parsed as valid integer), it's a
+    # schema mismatch.
     if [ "$reason" = "ok" ]; then reason="schema-drift"; fi
+    # Diff context for drift-family reasons — surfaces expected vs
+    # actual field values inline so triagers don't need the JSON.
+    case "$reason" in
+      schema-drift|schema_version-malformed|schema_version-missing)
+        diff_json="{\"schema_version\":{\"expected\":\"${expected_sv}\",\"actual\":\"${actual_sv}\"}}"
+        echo "── ${label} drift diff ──"
+        echo "  schema_version: expected=${expected_sv}  actual=${actual_sv}"
+        ;;
+    esac
     echo "::error file=${target}::${label} schema check failed (exit=${sub}) — expected schema_version=${expected_sv}, actual=${actual_sv} — reason=${reason} — see ${errfile} — excerpt: ${excerpt}"
     echo "report-schema-errors: ${errfile}"
   fi
@@ -131,6 +160,7 @@ run_check() {
   statuses+=("$status")
   exits+=("$sub")
   reasons+=("$reason")
+  diffs+=("$diff_json")
 }
 
 run_check "extracted-tree.json"  "$here/pi-ci-manifest-schema-check.sh"          "$mf"
