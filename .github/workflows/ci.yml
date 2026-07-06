@@ -892,7 +892,10 @@ print(json.dumps({
         if: always()
         continue-on-error: true
         shell: bash
-        run: scripts/ci/pi-ci-validate-report-schemas.sh /tmp/pi-ci-atomic
+        run: |
+          set -o pipefail
+          scripts/ci/pi-ci-validate-report-schemas.sh /tmp/pi-ci-atomic \
+            2>&1 | tee /tmp/pi-ci-atomic/report-schema-validation-log.txt
 
       - name: annotate + upload report-schema failure artifacts (MATRIX=atomic)
         if: always() && steps.pi-ci-report-schemas-atomic.outcome == 'failure'
@@ -903,6 +906,7 @@ print(json.dumps({
             /tmp/pi-ci-atomic/extracted-tree.json
             /tmp/pi-ci-atomic/preflight-status.json
             /tmp/pi-ci-atomic/report-schema-errors.txt
+            /tmp/pi-ci-atomic/report-schema-validation-log.txt
           if-no-files-found: warn
           retention-days: 14
 
