@@ -912,6 +912,25 @@ print(json.dumps({
           if-no-files-found: warn
           retention-days: 14
 
+      - name: validate report-schema-validation-summary.json shape (MATRIX=atomic)
+        # Catches missing/renamed fields (reason, jq_stderr_excerpt, etc.)
+        # in the summary artifact BEFORE downstream tooling silently
+        # breaks on a schema bump.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          summary=/tmp/pi-ci-atomic/report-schema-validation-summary.json
+          schema=schemas/report-schema-validation-summary.schema.json
+          if [ ! -s "$summary" ]; then
+            echo "::warning::summary artifact missing at $summary — skipping schema validation"
+            exit 0
+          fi
+          bunx ajv-cli@5 validate -s "$schema" -d "$summary" --spec=draft7 \
+            || { echo "::error title=summary-schema-invalid::$summary does not conform to $schema"; exit 1; }
+
+
       - name: annotate + upload report-schema failure artifacts (MATRIX=atomic)
         if: always() && steps.pi-ci-report-schemas-atomic.outcome == 'failure'
         uses: actions/upload-artifact@v4
