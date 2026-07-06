@@ -843,7 +843,11 @@ print(json.dumps({
         run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY" atomic
 
       - name: generate extracted-tree manifest for validator upload (MATRIX=atomic)
+        # Runs on ANY job failure — including when tarball extraction
+        # itself failed before the preflight could execute — so the
+        # downstream upload always has a manifest to attach.
         if: always() && failure()
+        continue-on-error: true
         shell: bash
         run: |
           set -u
@@ -1571,7 +1575,11 @@ print(json.dumps({
         run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY" stress
 
       - name: generate extracted-tree manifest for validator upload (MATRIX=stress)
+        # Runs on ANY job failure — including when tarball extraction
+        # itself failed before the preflight could execute — so the
+        # downstream upload always has a manifest to attach.
         if: always() && failure()
+        continue-on-error: true
         shell: bash
         run: |
           set -u

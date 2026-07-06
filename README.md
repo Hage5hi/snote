@@ -1173,7 +1173,61 @@ line per problem to stderr and exits `2`. Common cases:
 | `ERROR: preflight: validate-schema-assertion.txt EMPTY at …/validate-schema-assertion.txt`| Schema-assertion file present but zero-length.                | Clean and re-download; if it repeats, the CI step short-circuited before writing the jq output. |
 
 All five cases exit `2`; the last line printed to stderr is always the
-`hint:` re-download command.
+`hint:` re-download command. When running under `GITHUB_ACTIONS=true`,
+each error is also emitted as a `::error file=<path>::` annotation so
+it renders as a red inline annotation on the Actions job page.
+
+#### Reproducing each preflight failure locally
+
+Every failure mode can be reproduced against a hand-staged extracted
+directory (no `gh` CLI / network needed). All paths assume
+`PI_CI_SCOPE=atomic` (swap in `stress` and `pi-ci-stress` for the
+stress matrix); the recheck command is the same every time:
+
+```sh
+EX=./_pi-ci-bundle-atomic/extracted/pi-ci-atomic
+
+# reset
+make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=atomic
+mkdir -p "$EX"
+
+# 1) validate-report.json MISSING
+printf 'noop\n' > "$EX/validate-schema-assertion.txt"
+make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=atomic  # exit 2
+
+# 2) validate-report.json EMPTY
+: > "$EX/validate-report.json"
+make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=atomic  # exit 2
+
+# 3) validate-schema-assertion.txt MISSING
+rm -f "$EX/validate-schema-assertion.txt"
+printf '{}\n' > "$EX/validate-report.json"
+make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=atomic  # exit 2
+
+# 4) validate-schema-assertion.txt EMPTY
+: > "$EX/validate-schema-assertion.txt"
+make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=atomic  # exit 2
+
+# 5) no extracted directory at all
+make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=atomic
+make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=atomic  # exit 2
+```
+
+Each command prints the exact stderr messages listed in the
+troubleshooting table above (also covered by
+`scripts/__tests__/pretty-index-mismatch-ci-bundle-recheck-preflight.test.ts`).
+
+#### One-shot download → list → recheck
+
+For the common triage flow, `scripts/pretty-index-mismatch-ci-bundle-oneshot.sh`
+chains all three targets:
+
+```sh
+scripts/pretty-index-mismatch-ci-bundle-oneshot.sh 1234567890                  # atomic
+scripts/pretty-index-mismatch-ci-bundle-oneshot.sh 1234567890 stress           # stress
+scripts/pretty-index-mismatch-ci-bundle-oneshot.sh 1234567890 atomic macos-latest
+```
+
 
 
 
