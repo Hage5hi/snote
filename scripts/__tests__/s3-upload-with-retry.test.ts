@@ -5,6 +5,7 @@
 //   • never exceeds the configured concurrency ceiling across many uploads.
 import { describe, expect, it, vi } from "vitest";
 import {
+  classifyS3Error,
   isTransientS3Error,
   putObjectWithRetry,
   uploadAllWithRetry,
