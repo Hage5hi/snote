@@ -88,12 +88,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // back so re-opens are essentially free.
   const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
 
-  // Provider is bound to (slug, doc). Recreated whenever either changes —
-  // critical so navigating to a new slug (e.g. after rename) gets a fresh
-  // provider instead of dereferencing a destroyed one.
+  // Provider is bound to (slug, doc, encryption mode). Bumping `providerEpoch`
+  // on any encryption-mode flip forces a full teardown + rebuild — no stale
+  // instance can survive a lock/unlock and write in the wrong mode.
+  const [providerEpoch, setProviderEpoch] = useState(0);
   const provider = useMemo(
     () => (validSlug && doc ? new SupabaseYjsProvider(slug, doc) : null),
-    [slug, validSlug, doc],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slug, validSlug, doc, providerEpoch],
   );
 
   // Celebrate when crossing the goal threshold (once per goal value).
