@@ -1066,6 +1066,48 @@ Retrieving artifacts from a failing GitHub Actions run:
    Exits `0` if both required files are present and the report matches the
    v1 schema, `2` for missing entries, `5` for schema-assertion failures.
 
+#### One-shot download + extract (`pretty-index-mismatch-ci-bundle-download`)
+
+Prefer this over clicking through the Actions UI when you just want the
+extracted `validate-report.json` + `validate-schema-assertion.txt` on
+disk. Requires an authenticated [`gh`](https://cli.github.com) CLI.
+
+```sh
+# Minimum (atomic on ubuntu-latest — the two defaults):
+make pretty-index-mismatch-ci-bundle-download RUN_ID=1234567890
+
+# Stress matrix:
+make pretty-index-mismatch-ci-bundle-download RUN_ID=1234567890 PI_CI_SCOPE=stress
+
+# Windows or macOS runner:
+make pretty-index-mismatch-ci-bundle-download RUN_ID=1234567890 \
+  PI_CI_SCOPE=atomic OS=windows-latest
+```
+
+| Variable        | Required | Default          | Notes                                    |
+|-----------------|----------|------------------|------------------------------------------|
+| `RUN_ID`        | yes      | —                | GitHub Actions run id                    |
+| `PI_CI_SCOPE`   | no       | `atomic`         | `atomic` or `stress`                     |
+| `OS`            | no       | `ubuntu-latest`  | matches the matrix `os` value            |
+
+The target downloads artifact
+`pretty-index-mismatch-ci-bundle-<scope>-<os>` and lands files under:
+
+```
+./_pi-ci-bundle-<scope>/
+  pi-ci-<scope>.tar.gz            # the uploaded tarball
+  extracted/
+    pi-ci-<scope>/
+      validate-report.json        # verified to exist — fails hard otherwise
+      validate-schema-assertion.txt
+      summary.json  summary.md  …
+```
+
+After extraction it re-verifies the two required files exist and prints a
+`make pretty-index-ci-tarball-verify …` command tailored to the download
+so you can immediately re-run the strict schema check locally.
+
+
 
 
 ### Machine-readable validator report (`--report-json`)
