@@ -6,6 +6,10 @@ import { test, expect } from "@playwright/test";
 import { deleteNote, seedPlaintextNote } from "./helpers/seed-note";
 import { trackNoteWrites, uniqueSlug } from "./helpers/note-writes";
 
+// Always retain traces/videos/screenshots for lock specs so flake triage
+// never requires a re-run. Stable per-attempt artifact naming lives in CI.
+test.use({ trace: "on", video: "on", screenshot: "only-on-failure" });
+
 const PASSPHRASE = "correct-horse-battery-staple";
 const TEXT = "Stress-toggle content — must stay decryptable.";
 
