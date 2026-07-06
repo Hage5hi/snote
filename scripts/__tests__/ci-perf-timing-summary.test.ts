@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import {
   parsePlaywright, parsePlaywrightFailedArtifacts, parseVitest,
-  renderFailedArtifactLinks, renderMarkdown, renderS3Markdown,
+  renderFailedArtifactLinks, renderMarkdown, renderS3Markdown, renderWheelLocalReproCommand,
   type S3RetrySample,
 } from "../ci-perf-timing-summary";
 
@@ -142,6 +142,7 @@ describe("failed-test artifact links", () => {
         title: "discrete wheel ticks all register", projectName: "chromium",
         results: [{
           status: "failed",
+          retry: 1,
           attachments: [
             { name: "trace", path: "test-results/note-wheel/trace.zip" },
             { name: "wheel-diagnostics.json", path: "test-results/note-wheel/wheel-diagnostics.json" },
@@ -158,17 +159,37 @@ describe("failed-test artifact links", () => {
     expect(failed).toHaveLength(1);
     expect(failed[0].attachments.map((a) => a.label).sort())
       .toEqual(["scroller.png", "trace", "wheel-diagnostics.json"]);
+    expect(failed[0].retry).toBe(1);
   });
 
   it("renders clickable per-attachment links plus a run-artifacts URL", () => {
     const md = renderFailedArtifactLinks(parsePlaywrightFailedArtifacts(pwReport), {
       serverUrl: "https://github.com", repository: "acme/notes",
-      runId: "42", runAttempt: "2",
+      runId: "42", runAttempt: "2", playwrightRetries: "2",
     });
     expect(md).toContain("[workflow run's Artifacts panel](https://github.com/acme/notes/actions/runs/42/attempts/2#artifacts)");
     expect(md).toContain("[trace](test-results/note-wheel/trace.zip)");
     expect(md).toContain("[wheel-diagnostics.json](test-results/note-wheel/wheel-diagnostics.json)");
     expect(md).toContain("[scroller.png](test-results/note-wheel/scroller.png)");
+    expect(md).toContain("Local repro: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 ./scripts/run-wheel-e2e.sh`");
+  });
+
+  it("renders the wheel local repro command with project + retries", () => {
+    expect(renderWheelLocalReproCommand(parsePlaywrightFailedArtifacts(pwReport)[0], "3"))
+      .toBe("PLAYWRIGHT_PROJECT=chromium RETRIES=3 ./scripts/run-wheel-e2e.sh");
+  });
+
+  it("keeps wheel-diagnostics links schema-version agnostic", () => {
+    const failed = parsePlaywrightFailedArtifacts({ suites: [{ specs: [{
+      title: "s", file: "e2e/note-wheel-trackpad-scroll.spec.ts",
+      tests: [{ title: "new schema", projectName: "webkit", results: [{
+        status: "failed",
+        attachments: [{ name: "wheel-diagnostics.json", path: "test-results/wheel-latest/new-schema/wheel-diagnostics.json" }],
+      }] }],
+    }] }] });
+    const md = renderFailedArtifactLinks(failed, { playwrightRetries: "2" });
+    expect(md).toContain("[wheel-diagnostics.json](test-results/wheel-latest/new-schema/wheel-diagnostics.json)");
+    expect(md).toContain("PLAYWRIGHT_PROJECT=webkit RETRIES=2 ./scripts/run-wheel-e2e.sh");
   });
 
   it("returns empty string when there are no failed tests", () => {

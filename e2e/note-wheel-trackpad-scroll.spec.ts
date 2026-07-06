@@ -18,16 +18,37 @@ import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const LINES = 1_000;
+const WHEEL_DIAGNOSTICS_SCHEMA_VERSION = 1;
 
 // Ring-buffer of wheel deltas so failure diagnostics show exactly which
 // tick got swallowed and where scrollTop was at the time.
 type WheelSample = { i: number; dx: number; dy: number; before: number; after: number; t: number };
+type SelectionRangeFrame = {
+  rangeCount: number;
+  textLength: number;
+  anchorOffset: number | null;
+  focusOffset: number | null;
+  signature: string;
+};
+type SelectionDragSample = {
+  i: number;
+  x: number;
+  y: number;
+  beforeScrollTop: number;
+  afterScrollTop: number;
+  maxScrollTop: number;
+  beforeRange: SelectionRangeFrame;
+  afterRange: SelectionRangeFrame;
+  t: number;
+};
 const wheelLog = new WeakMap<import("@playwright/test").Page, WheelSample[]>();
+const selectionDragLog = new WeakMap<import("@playwright/test").Page, SelectionDragSample[]>();
 // First "stuck frame" per page — the sample where an incoming delta failed
 // to move `scrollTop`. Captured live during the test and attached to the
 // Playwright trace via `testInfo.annotations` so it's visible in the trace
 // viewer next to the failing action.
 const stuckFrame = new WeakMap<import("@playwright/test").Page, WheelSample>();
+const selectionStuckFrame = new WeakMap<import("@playwright/test").Page, SelectionDragSample>();
 function recordWheel(
   page: import("@playwright/test").Page,
   s: WheelSample,
@@ -45,6 +66,45 @@ function recordWheel(
       description: `wheel tick #${s.i} dy=${s.dy} scrollTop stuck at ${s.before} (t=${s.t})`,
     });
   }
+}
+
+function recordSelectionDrag(
+  page: import("@playwright/test").Page,
+  s: SelectionDragSample,
+  testInfo?: import("@playwright/test").TestInfo,
+) {
+  const arr = selectionDragLog.get(page) ?? [];
+  arr.push(s); if (arr.length > 200) arr.shift();
+  selectionDragLog.set(page, arr);
+
+  const scrollDidNotAdvance = s.afterScrollTop === s.beforeScrollTop && s.beforeScrollTop < s.maxScrollTop - 1;
+  const selectionDidNotAdvance = s.afterRange.signature === s.beforeRange.signature;
+  if (scrollDidNotAdvance && selectionDidNotAdvance && !selectionStuckFrame.has(page)) {
+    selectionStuckFrame.set(page, s);
+    testInfo?.annotations.push({
+      type: "selection-stuck-frame",
+      description: `drag frame #${s.i} selection range stuck (${s.afterRange.signature}) and scrollTop stayed at ${s.beforeScrollTop}`,
+    });
+  }
+}
+
+async function getSelectionRangeFrame(page: import("@playwright/test").Page): Promise<SelectionRangeFrame> {
+  return page.evaluate(() => {
+    const sel = window.getSelection();
+    const textLength = sel?.toString().length ?? 0;
+    const rangeCount = sel?.rangeCount ?? 0;
+    const anchorOffset = sel?.anchorOffset ?? null;
+    const focusOffset = sel?.focusOffset ?? null;
+    const rangeParts: string[] = [];
+    for (let i = 0; sel && i < sel.rangeCount; i++) {
+      const r = sel.getRangeAt(i);
+      rangeParts.push(`${r.startOffset}:${r.endOffset}:${r.collapsed ? 1 : 0}`);
+    }
+    return {
+      rangeCount, textLength, anchorOffset, focusOffset,
+      signature: `${rangeCount}|${textLength}|${anchorOffset ?? "n"}|${focusOffset ?? "n"}|${rangeParts.join(",")}`,
+    };
+  });
 }
 
 // Force a consistent scroll environment across engines so the wheel/
@@ -127,16 +187,20 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
         pointerEvents: getComputedStyle(el).pointerEvents,
       })).catch((e) => ({ error: String(e) }));
       const samples = wheelLog.get(page) ?? [];
+      const selectionSamples = selectionDragLog.get(page) ?? [];
       const stuck = stuckFrame.get(page) ?? null;
+      const selectionStuck = selectionStuckFrame.get(page) ?? null;
       // `replay` = the exact synthesized delta stream (no scrollTop noise)
       // so a re-runner can feed it back through `page.mouse.wheel` and
       // reproduce the failing sequence step-for-step.
       const replay = samples.map(({ i, dx, dy, t }) => ({ i, dx, dy, t }));
       const payload = {
+        schemaVersion: WHEEL_DIAGNOSTICS_SCHEMA_VERSION,
         test: testInfo.title, project: testInfo.project.name,
         retry: testInfo.retry, status: testInfo.status,
-        scroller: state, stuckFrame: stuck,
-        wheelSamples: samples, replay,
+        note: { lineCount: LINES, generator: "line {i} lorem ipsum dolor sit amet consectetur adipiscing" },
+        scroller: state, stuckFrame: stuck, selectionStuckFrame: selectionStuck,
+        wheelSamples: samples, selectionDragSamples: selectionSamples, replay,
       };
       // Standardized artifact names inside outputDir. Playwright uploads
       // `test-results/**` — these names stay identical across retries.
@@ -228,7 +292,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     expect(end, "scroller must reach the bottom").toBeGreaterThanOrEqual(max - 4);
   });
 
-  test("drag-select across many lines stays live while scrolling", async ({ page }) => {
+  test("drag-select across many lines stays live while scrolling", async ({ page }, testInfo) => {
     const scroller = await seedLongNote(page);
     await scroller.evaluate((el) => { el.scrollTop = 0; });
     const box = await scroller.boundingBox();
@@ -239,8 +303,17 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     await page.mouse.move(box.x + 40, box.y + 40);
     await page.mouse.down();
     for (let i = 0; i < 20; i++) {
+      const beforeScrollTop = await scroller.evaluate((el) => el.scrollTop);
+      const maxScrollTop = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
+      const beforeRange = await getSelectionRangeFrame(page);
       await page.mouse.move(box.x + 40 + i * 4, box.y + box.height - 8, { steps: 2 });
       await page.waitForTimeout(30);
+      const afterScrollTop = await scroller.evaluate((el) => el.scrollTop);
+      const afterRange = await getSelectionRangeFrame(page);
+      recordSelectionDrag(page, {
+        i, x: Math.round(box.x + 40 + i * 4), y: Math.round(box.y + box.height - 8),
+        beforeScrollTop, afterScrollTop, maxScrollTop, beforeRange, afterRange, t: Date.now(),
+      }, testInfo);
     }
     const midScroll = await scroller.evaluate((el) => el.scrollTop);
     await page.mouse.up();
@@ -260,6 +333,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     await page.mouse.wheel(0, 200);
     await page.waitForTimeout(80);
     const after = await scroller.evaluate((el) => el.scrollTop);
+    recordWheel(page, { i: 0, dx: 0, dy: 200, before, after, t: Date.now() }, testInfo);
     expect(after, "wheel is stuck after drag-select — selection layer regressed").not.toBe(before);
   });
 });
