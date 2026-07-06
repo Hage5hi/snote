@@ -2043,6 +2043,69 @@ exit **1** or **3** depending on which check tripped):
 ```
 
 
+### `pi-ci-fetch-and-reproduce.sh` — exit codes & stderr messages
+
+`scripts/ci/pi-ci-fetch-and-reproduce.sh` uses distinct exit codes so
+CI logs and wrapper scripts can react precisely. Every non-zero exit
+prints a matching `ERROR:` line on stderr.
+
+| Exit | Meaning                                | stderr message (prefix)                                              |
+| ---- | -------------------------------------- | -------------------------------------------------------------------- |
+| 0    | Success — repro script invoked         | *(none)*                                                             |
+| 2    | Usage error / missing dep (`gh`, `jq`) | `ERROR: missing <run-id>` / `ERROR: gh CLI required` / `ERROR: jq required` / `ERROR: unknown flag: …` |
+| 3    | No matching CI failure artifact found  | `ERROR: no matching CI failure artifact found for run <id>` + `tried: …` |
+| 4    | Summary JSON missing or empty          | `ERROR: report-schema-validation-summary.json not found (or empty) under <dir>` |
+| 5    | Summary references sidecars missing from the artifact | `ERROR: summary references sidecars that are missing from the artifact:` + `- <basename>` per missing file |
+
+### Downloading CI failure artifacts & reproducing locally
+
+Every schema-validation failure uploads two related artifacts you can
+grab from the failed run's page (or via `gh run download`):
+
+- `pretty-index-mismatch-ci-schema-validator-io-<matrix>-<os>` — includes
+  `report-schema-validation-summary.json` **plus** every stderr sidecar
+  referenced by the summary. **Prefer this one.**
+- `pretty-index-mismatch-ci-report-schema-failure-<matrix>-<os>` — fallback
+  bundle used when the I/O artifact wasn't produced.
+
+Per-file `reason` → sidecar required for a full reproduction:
+
+| `reason`                     | Sidecar file (basename)                        | Summary field pointing at it |
+| ---------------------------- | ---------------------------------------------- | ---------------------------- |
+| `jq-parse-failed`            | `report-schema-jq-<slug>.stderr.txt`           | `files[].jq_stderr_path`     |
+| `jq-timeout`                 | `report-schema-jq-<slug>.stderr.txt`           | `files[].jq_stderr_path`     |
+| `schema-drift`               | *(none — see `files[].diff` in summary)*       | `files[].diff`               |
+| `schema_version-missing`     | *(none — value is `files[].actual_schema_version`)* | `files[].actual_schema_version` |
+| `schema_version-empty`       | *(none — value is `files[].actual_schema_version`)* | `files[].actual_schema_version` |
+| `schema_version-malformed`   | *(none — value is `files[].actual_schema_version`)* | `files[].actual_schema_version` |
+| `missing-file` / `empty-file`| *(none — path is `files[].path`)*              | `files[].path`               |
+
+`<slug>` is the per-file `label` with `.`, `/`, spaces replaced by `-`
+(e.g. `extracted-tree.json` → `extracted-tree-json`).
+
+End-to-end reproduction, using the exact same dump paths CI recorded:
+
+```sh
+# 1. Fetch the failure artifact + auto-invoke the repro script (dry run):
+scripts/ci/pi-ci-fetch-and-reproduce.sh <run-id> --scope atomic --os linux
+
+# 2. Or fetch manually, then feed the summary through by hand — the
+#    script keeps input/expected/actual paths *identical* to CI:
+gh run download <run-id> \
+  --name pretty-index-mismatch-ci-schema-validator-io-atomic-linux \
+  --dir /tmp/pi-ci-repro
+scripts/ci/pi-ci-reproduce-jq-failure.sh \
+  /tmp/pi-ci-repro/report-schema-validation-summary.json \
+  --input /tmp/pi-ci-repro/extracted-tree.json \
+  --jq-timeout-secs 10
+#   add --run to actually execute the recorded jq_cmdline.
+```
+
+The printed `input_path=` / `stderr_path=` / `expected=` / `actual=`
+lines match the summary byte-for-byte, so the local rerun operates on
+the same bytes the CI job saw.
+
+
 ## License
 
 Private.
