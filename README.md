@@ -1228,6 +1228,28 @@ scripts/pretty-index-mismatch-ci-bundle-oneshot.sh 1234567890 stress           #
 scripts/pretty-index-mismatch-ci-bundle-oneshot.sh 1234567890 atomic macos-latest
 ```
 
+#### CI artifact & manifest paths (canonical reference)
+
+The failure-upload paths are identical across every OS and both
+matrices — only `<scope>` (`atomic` \| `stress`) and `<os>`
+(`ubuntu-latest` \| `macos-latest` \| `windows-latest`) vary. Use this
+table when triaging a failed run:
+
+| Artifact name (GitHub Actions)                                                | Contents (uploaded on any job failure)                                                                                                                                | On-runner path (before upload)                                                                                                          |
+|-------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
+| `pretty-index-mismatch-ci-bundle-<scope>-<os>`                                | Full `pi-ci-<scope>.tar.gz` bundle (validator files + inputs).                                                                                                        | `/tmp/pi-ci-<scope>.tar.gz`                                                                                                             |
+| `pretty-index-mismatch-ci-validator-files-<scope>-<os>`                       | `validate-report.json`, `validate-schema-assertion.txt`, `extracted-tree.txt` (manifest is always present — hardened to write even if the tree walk crashes).         | `/tmp/pi-ci-<scope>/validate-report.json` <br> `/tmp/pi-ci-<scope>/validate-schema-assertion.txt` <br> `/tmp/pi-ci-<scope>/extracted-tree.txt` |
+
+The `extracted-tree.txt` manifest is a plain `<size-bytes>\t<path>`
+listing (one file per line, sorted, paths relative to
+`/tmp/pi-ci-<scope>`) prefixed with three `#`-comment lines giving the
+source directory, the generation timestamp (UTC) and the row format.
+Its presence is invariant: even when the pre-flight walk fails or the
+directory itself does not exist, the file is created (possibly empty
+after the header) so the upload payload never varies by OS or matrix.
+
+
+
 
 
 
