@@ -24,7 +24,7 @@ command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
 # Configurable expected schema_version. Defaults to "1"; override with
 # PI_CI_EXPECTED_SCHEMA_VERSION when validating a bumped format. Empty
 # or non-integer values fail fast (exit 2) with a clear error.
-EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
 if ! printf '%s' "$EXPECTED_SV" | grep -Eq '^[0-9]+$'; then
   echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${EXPECTED_SV}')" >&2
   exit 2

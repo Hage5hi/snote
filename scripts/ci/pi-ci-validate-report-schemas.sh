@@ -21,7 +21,7 @@ errfile="$out/report-schema-errors.txt"
 # Validate configurable expected schema_version. Non-integer or empty
 # values fail fast with a clear error — CI + local users get a real
 # signal instead of every check silently reporting "expected=<garbage>".
-EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
 if ! printf '%s' "$EXPECTED_SV" | grep -Eq '^[0-9]+$'; then
   echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${EXPECTED_SV}')" >&2
   exit 2
@@ -58,7 +58,7 @@ run_check() {
     # the version drift inline. Expected is configurable via
     # PI_CI_EXPECTED_SCHEMA_VERSION (default "1") and shared with the
     # per-file schema checkers.
-    local expected_sv="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+    local expected_sv="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
     local actual_sv="<unknown>"
     if command -v jq >/dev/null 2>&1 && [ -s "$target" ]; then
       actual_sv="$(jq -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null || echo "<unreadable>")"
