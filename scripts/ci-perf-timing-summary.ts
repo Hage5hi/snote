@@ -107,7 +107,8 @@ export function renderFailedArtifactLinks(
   if (runUrl) out.push(`Browse the full artifact bundle from the [workflow run's Artifacts panel](${runUrl}).\n`);
   for (const f of failed) {
     const repro = renderWheelLocalReproCommand(f, env.playwrightRetries ?? "0");
-    out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""} — ${
+    const attempt = f.retry == null ? "" : ` retry #${f.retry}`;
+    out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""}${attempt} — ${
       f.attachments.map((a) => `[${a.label}](${a.path})`).join(" · ")
     }${repro ? `\n  - Local repro: \`${repro}\`` : ""}`);
   }

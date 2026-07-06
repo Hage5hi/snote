@@ -78,7 +78,8 @@ function recordSelectionDrag(
   selectionDragLog.set(page, arr);
 
   const scrollDidNotAdvance = s.afterScrollTop === s.beforeScrollTop && s.beforeScrollTop < s.maxScrollTop - 1;
-  const selectionDidNotAdvance = s.afterRange.signature === s.beforeRange.signature;
+  const selectionDidNotAdvance = s.afterRange.rangeCount > 0 && s.afterRange.textLength > 0
+    && s.afterRange.signature === s.beforeRange.signature;
   if (scrollDidNotAdvance && selectionDidNotAdvance && !selectionStuckFrame.has(page)) {
     selectionStuckFrame.set(page, s);
     testInfo?.annotations.push({

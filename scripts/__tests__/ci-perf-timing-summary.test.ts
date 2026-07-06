@@ -171,6 +171,7 @@ describe("failed-test artifact links", () => {
     expect(md).toContain("[trace](test-results/note-wheel/trace.zip)");
     expect(md).toContain("[wheel-diagnostics.json](test-results/note-wheel/wheel-diagnostics.json)");
     expect(md).toContain("[scroller.png](test-results/note-wheel/scroller.png)");
+    expect(md).toContain("retry #1");
     expect(md).toContain("Local repro: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 ./scripts/run-wheel-e2e.sh`");
   });
 

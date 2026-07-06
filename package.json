@@ -22,6 +22,7 @@
     "test:e2e:debug:install": "PWDEBUG=${PWDEBUG:-0} DEBUG=${DEBUG:-pw:api} PWTEST_SLOW_MO=${SLOWMO:-150} ./scripts/debug-install-prompt-focus.sh",
     "test:e2e:inspect:focus-trap": "bun run scripts/inspect-focus-trap.ts",
     "test:e2e:replay:focus-trap": "./scripts/replay-focus-trap.sh",
+    "test:e2e:replay:wheel": "bun run scripts/replay-wheel-diagnostics.ts",
     "schema:types": "bun run scripts/generate-focus-trap-schema-types.ts",
     "schema:types:check": "bun run scripts/generate-focus-trap-schema-types.ts && git diff --exit-code -- scripts/_helpers/focus-trap-inspect-schema.types.gen.ts",
     "schema-guard": "./scripts/schema-guard.sh",
