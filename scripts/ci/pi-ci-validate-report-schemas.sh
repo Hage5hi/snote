@@ -165,7 +165,7 @@ run_check() {
     fi
   fi
 
-  local status sub=0
+  local status sub=0 out_txt=""
   if out_txt="$(bash "$script" "$target" 2>&1)"; then
     echo "$out_txt" >> "$errfile"
     status="OK"
@@ -174,6 +174,17 @@ run_check() {
     rc=$sub
     status="FAIL"
     echo "$out_txt" >> "$errfile"
+  fi
+
+  if [ "$status" = "OK" ] && [ "$reason" != "ok" ]; then
+    sub="$(schema_probe_exit_for_reason "$reason")"
+    rc=$sub
+    status="FAIL"
+    out_txt="ERROR: ${label} schema_version probe failed before schema check (path=${target}, reason=${reason}, actual=${actual_sv})"
+    echo "$out_txt" >> "$errfile"
+  fi
+
+  if [ "$status" = "FAIL" ]; then
     local excerpt
     excerpt="$(printf '%s\n' "$out_txt" \
       | awk 'NF' \
@@ -186,12 +197,18 @@ run_check() {
     # Diff context for drift-family reasons — surfaces expected vs
     # actual field values inline so triagers don't need the JSON.
     case "$reason" in
-      schema-drift|schema_version-malformed|schema_version-missing)
-        diff_json="{\"schema_version\":{\"expected\":\"${expected_sv}\",\"actual\":\"${actual_sv}\"}}"
+      schema-drift|schema_version-malformed|schema_version-missing|schema_version-empty)
+        diff_json="{\"schema_version\":{\"expected\":\"$(json_escape "$expected_sv")\",\"actual\":\"$(json_escape "$actual_sv")\"}}"
         echo "── ${label} drift diff ──"
         echo "  schema_version: expected=${expected_sv}  actual=${actual_sv}"
         ;;
     esac
+    if [ "$reason" = "jq-parse-failed" ] && [ -n "$jq_excerpt" ]; then
+      echo "── ${label} jq stderr excerpt ──"
+      echo "  ${jq_excerpt}"
+      echo "  jq_stderr_path=${jq_stderr_file}"
+      echo "jq stderr excerpt: ${jq_excerpt} (path=${jq_stderr_file})" >> "$errfile"
+    fi
     echo "::error file=${target}::${label} schema check failed (exit=${sub}) — expected schema_version=${expected_sv}, actual=${actual_sv} — reason=${reason} — see ${errfile} — excerpt: ${excerpt}"
     echo "report-schema-errors: ${errfile}"
   fi
@@ -204,6 +221,8 @@ run_check() {
   exits+=("$sub")
   reasons+=("$reason")
   diffs+=("$diff_json")
+  jq_stderr_excerpts+=("$jq_excerpt")
+  jq_stderr_paths+=("$jq_stderr_file")
 }
 
 run_check "extracted-tree.json"  "$here/pi-ci-manifest-schema-check.sh"          "$mf"
