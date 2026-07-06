@@ -64,6 +64,13 @@ export class SupabaseYjsProvider {
   channel: RealtimeChannel | null = null;
   connected = false;
   encryption: Encryption | null = null;
+  /**
+   * Expected encryption mode of the persisted note row, as most recently
+   * observed via the enc-meta fetch. When set, any write path (saveSnapshot,
+   * flushBeacon) that would upsert bytes in the WRONG mode is skipped to
+   * avoid corrupting the row after a lock/unlock. `null` = unknown; no guard.
+   */
+  private expectedEncrypted: boolean | null = null;
 
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
