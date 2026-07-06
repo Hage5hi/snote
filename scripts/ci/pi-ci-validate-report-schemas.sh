@@ -148,9 +148,12 @@ run_check() {
     jq_out="$(${JQ_WRAP}"$JQ_BIN" -r "$JQ_SCHEMA_VERSION_FILTER" -- "$target" 2>"$jq_stderr_file")"; jq_rc=$?
     if [ "$jq_rc" -eq 124 ]; then
       actual_sv="<timeout>"; reason="jq-timeout"
+      jq_excerpt="$(stderr_excerpt "$jq_stderr_file")"
+      [ -z "$jq_excerpt" ] && jq_excerpt="jq timed out after ${PI_CI_JQ_TIMEOUT_SECS:-<unset>}s (exit 124)"
     elif [ "$jq_rc" -ne 0 ]; then
       actual_sv="<unreadable>"; reason="jq-parse-failed"
       jq_excerpt="$(stderr_excerpt "$jq_stderr_file")"
+
     else
       actual_sv="$jq_out"
       if [ "$actual_sv" = "<missing>" ]; then
