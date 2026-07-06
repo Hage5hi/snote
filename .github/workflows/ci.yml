@@ -1483,6 +1483,31 @@ print(json.dumps({
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: upload pretty-index-mismatch-ci validator files (MATRIX=stress)
+        id: upload-pi-ci-validator-stress
+        if: always() && hashFiles('/tmp/pi-ci-stress/validate-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-validator-stress-${{ matrix.os }}
+          path: |
+            /tmp/pi-ci-stress/validate-report.json
+            /tmp/pi-ci-stress/validate-schema-assertion.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: link pretty-index-mismatch-ci validator files in step summary (MATRIX=stress)
+        if: always() && steps.upload-pi-ci-validator-stress.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          URL="${{ steps.upload-pi-ci-validator-stress.outputs.artifact-url }}"
+          {
+            echo ''
+            echo "##### 🔎 pretty-index-mismatch-ci validator files (MATRIX=stress, ${{ matrix.os }})"
+            echo ''
+            echo "- [\`validate-report.json\` + \`validate-schema-assertion.txt\`]($URL) — direct artifact (no tarball extract required)"
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
       - name: merge pretty-index mismatch summaries (atomic + stress)
         id: merge-pi-summaries
