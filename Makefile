@@ -434,7 +434,8 @@ pretty-index-help:
          pretty-index-mismatch-ci-bundle-manifest-check \
          pretty-index-mismatch-ci-bundle-validate-reports \
          pretty-index-mismatch-ci-bundle-zip \
-         pretty-index-mismatch-ci-bundle-zip-verify
+         pretty-index-mismatch-ci-bundle-zip-verify \
+         pretty-index-mismatch-ci-bundle-validate-reports-dir
 
 
 
