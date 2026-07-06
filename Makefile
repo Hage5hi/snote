@@ -749,7 +749,23 @@ pretty-index-mismatch-ci:
 	   PI_VALIDATE_REPORT_JSON="$(PI_CI_OUT_DIR)/validate-report.json" \
 	   2> "$(PI_CI_OUT_DIR)/validate-annotations.txt"; \
 	 vrc=$$?; cat "$(PI_CI_OUT_DIR)/validate-annotations.txt" >&2; \
-	 if [ "$$vrc" -ne 0 ]; then echo "validate failed (exit=$$vrc)" >&2; exit "$$vrc"; fi
+	 # Shape-check validate-report.json: must contain the documented v1 keys \
+	 # so downstream debugging tools can rely on them unconditionally. \
+	 if [ -s "$(PI_CI_OUT_DIR)/validate-report.json" ]; then \
+	   missing=$$(jq -r '["schema","status","exit_code","file","summary_schema","note","errors"] - (keys) | join(",")' -- "$(PI_CI_OUT_DIR)/validate-report.json" 2>/dev/null); \
+	   if [ -n "$$missing" ]; then \
+	     echo "ERROR: validate-report.json missing required key(s): $$missing" >&2; \
+	     exit 5; \
+	   fi; \
+	 else \
+	   echo "ERROR: validate-report.json was not written by summary-validate" >&2; \
+	   exit 5; \
+	 fi; \
+	 if [ "$$vrc" -ne 0 ]; then \
+	   echo "validate failed (exit=$$vrc); packaging partial bundle -> $(PI_CI_BUNDLE_PATH)" >&2; \
+	   tar -czf "$(PI_CI_BUNDLE_PATH)" -C "$$(dirname -- "$(PI_CI_OUT_DIR)")" "$$(basename -- "$(PI_CI_OUT_DIR)")"; \
+	   exit "$$vrc"; \
+	 fi
 	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-md \
 	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
 	  PI_SUMMARY_MD_PATH="$(PI_CI_OUT_DIR)/summary.md"
