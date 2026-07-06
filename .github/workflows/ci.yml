@@ -1502,7 +1502,7 @@ print(json.dumps({
           retention-days: 14
 
       - name: link pretty-index-mismatch-ci validator files in step summary (MATRIX=stress)
-        if: always() && steps.upload-pi-ci-validator-stress.outputs.artifact-url != ''
+        if: always()
         shell: bash
         run: |
           URL="${{ steps.upload-pi-ci-validator-stress.outputs.artifact-url }}"
@@ -1510,7 +1510,11 @@ print(json.dumps({
             echo ''
             echo "##### 🔎 pretty-index-mismatch-ci validator files (MATRIX=stress, ${{ matrix.os }})"
             echo ''
-            echo "- [\`validate-report.json\` + \`validate-schema-assertion.txt\`]($URL) — direct artifact (no tarball extract required)"
+            if [ -n "$URL" ]; then
+              echo "- [\`validate-report.json\` + \`validate-schema-assertion.txt\`]($URL) — direct artifact (no tarball extract required)"
+            else
+              echo "- _validator files not uploaded for this run (pretty-index-mismatch-ci failed before producing \`/tmp/pi-ci-stress/validate-report.json\`)_"
+            fi
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
 
