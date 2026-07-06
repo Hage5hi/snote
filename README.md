@@ -1055,6 +1055,48 @@ Retrieving artifacts from a failing GitHub Actions run:
    - `pretty-index-mismatch-ci-validator-<scope>-<os>` — just
      `validate-report.json` + `validate-schema-assertion.txt` (fastest
      path for triaging schema failures; no `tar -xzf` needed)
+
+##### Exact click-path from the GitHub Actions UI (per matrix run)
+
+Use this when you want to reproduce a specific matrix cell locally
+without the `gh` CLI:
+
+1. Open the failing PR/commit → **Checks** tab → click the **CI** run.
+2. In the left-hand job list, click the job whose name ends with the
+   matrix cell you care about, e.g.
+   `pretty-index-mismatch-ci (atomic, ubuntu-latest)` or
+   `pretty-index-mismatch-ci (stress, ubuntu-latest)`.
+3. In that job's **Summary** page, scroll to the
+   **pretty-index-mismatch-ci preflight status — `<scope>`** table to
+   see the OK / MISSING / EMPTY status and absolute path for each of
+   `validate-report.json` and `validate-schema-assertion.txt` without
+   downloading anything.
+4. Scroll to the top of the run page and open the **Artifacts** panel
+   (right-hand column on the run summary, or the paperclip icon on
+   mobile). Download the two entries for the failing cell:
+   - `pretty-index-mismatch-ci-bundle-<scope>-<os>.zip` — contains
+     `pi-ci-<scope>.tar.gz` (the full bundle)
+   - `pretty-index-mismatch-ci-validator-files-<scope>-<os>.zip` —
+     contains `validate-report.json`, `validate-schema-assertion.txt`,
+     and `extracted-tree.txt` (the last is always present, even when
+     extraction crashed before writing the two validator files)
+5. Unzip both, then reproduce locally:
+
+   ```sh
+   # Point the recheck target at the tarball (recommended path):
+   make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=<scope>
+   mkdir -p ./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>
+   tar -xzf pi-ci-<scope>.tar.gz \
+     -C ./_pi-ci-bundle-<scope>/extracted \
+     --strip-components=0
+   make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=<scope>
+   ```
+
+   Or, when you only downloaded the validator-files zip, drop the two
+   files straight into
+   `./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>/` and run the same
+   `make pretty-index-mismatch-ci-bundle-recheck` command.
+
 2. Download the tarball (`pi-ci-<scope>.tar.gz`) and verify locally:
 
    ```sh
