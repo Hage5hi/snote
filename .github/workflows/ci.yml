@@ -896,10 +896,8 @@ print(json.dumps({
           set -o pipefail
           mkdir -p /tmp/pi-ci-atomic
           : > /tmp/pi-ci-atomic/report-schema-validation-log.txt
-            /tmp/pi-ci-atomic/report-schema-validation-summary.json
           scripts/ci/pi-ci-validate-report-schemas.sh /tmp/pi-ci-atomic \
             2>&1 | tee /tmp/pi-ci-atomic/report-schema-validation-log.txt
-            /tmp/pi-ci-atomic/report-schema-validation-summary.json
 
       - name: upload schema-validation log (MATRIX=atomic, always)
         # Uploaded on EVERY outcome — including unexpected exits or
@@ -908,7 +906,8 @@ print(json.dumps({
         uses: actions/upload-artifact@v4
         with:
           name: pretty-index-mismatch-ci-report-schema-validation-log-atomic-${{ matrix.os }}
-          path: /tmp/pi-ci-atomic/report-schema-validation-log.txt
+          path: |
+            /tmp/pi-ci-atomic/report-schema-validation-log.txt
             /tmp/pi-ci-atomic/report-schema-validation-summary.json
           if-no-files-found: warn
           retention-days: 14
