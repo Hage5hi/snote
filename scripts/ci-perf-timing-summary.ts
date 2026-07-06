@@ -241,10 +241,21 @@ function main(argv: string[]): void {
     else { console.error(`unknown arg: ${a}`); process.exit(2); }
   }
   const rows: TimingRow[] = [];
-  if (pw && existsSync(pw)) { const r = readJson<PwReport>(pw); if (r) rows.push(...parsePlaywright(r)); }
+  let failedArtifacts: FailedTestArtifacts[] = [];
+  if (pw && existsSync(pw)) {
+    const r = readJson<PwReport>(pw);
+    if (r) { rows.push(...parsePlaywright(r)); failedArtifacts = parsePlaywrightFailedArtifacts(r); }
+  }
   if (vt && existsSync(vt)) { const r = readJson<VtReport>(vt); if (r) rows.push(...parseVitest(r)); }
   const s3Samples = s3 && existsSync(s3) ? readS3Jsonl(s3) : [];
-  const md = renderMarkdown(rows) + (s3Samples.length ? "\n" + renderS3Markdown(s3Samples) : "");
+  const md = [
+    renderMarkdown(rows),
+    s3Samples.length ? renderS3Markdown(s3Samples) : "",
+    renderFailedArtifactLinks(failedArtifacts, {
+      serverUrl: process.env.GITHUB_SERVER_URL, repository: process.env.GITHUB_REPOSITORY,
+      runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+    }),
+  ].filter(Boolean).join("\n");
   const dest = out ?? process.env.GITHUB_STEP_SUMMARY;
   if (dest) {
     if (out) writeFileSync(dest, md);
