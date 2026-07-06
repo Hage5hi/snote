@@ -103,7 +103,7 @@ cp ${JSON.stringify(tarball)} "$out/"
         - MISSING file: expected at ./_pi-ci-bundle-atomic/extracted/pi-ci-atomic/validate-report.json
         extracted tree:
           ./pi-ci-atomic/validate-schema-assertion.txt
-      make: *** [Makefile:513: pretty-index-mismatch-ci-bundle-download] Error 2
+      make: *** [Makefile:520: pretty-index-mismatch-ci-bundle-download] Error 2
       "
     `);
   });
