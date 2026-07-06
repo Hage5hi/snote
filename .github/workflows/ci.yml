@@ -1765,8 +1765,19 @@ print(json.dumps({
             echo "::warning::summary artifact missing at $summary — skipping schema validation"
             exit 0
           fi
-          bunx ajv-cli@5 validate -s "$schema" -d "$summary" --spec=draft7 \
-            || { echo "::error title=summary-schema-invalid::$summary does not conform to $schema"; exit 1; }
+          err=/tmp/pi-ci-stress/summary-ajv-errors.txt
+          if ! bunx ajv-cli@5 validate -s "$schema" -d "$summary" --spec=draft7 --all-errors --errors=text 2>"$err"; then
+            echo "::error title=summary-schema-invalid::$summary does not conform to $schema — see errors below"
+            echo "── ajv errors ──"
+            cat "$err" || true
+            if grep -qE "files\[[0-9]+\].*required property" "$err"; then
+              while IFS= read -r line; do
+                echo "::error title=summary-perfile-field-missing::$line"
+              done < <(grep -E "files\[[0-9]+\].*required property" "$err")
+            fi
+            exit 1
+          fi
+
 
 
 
