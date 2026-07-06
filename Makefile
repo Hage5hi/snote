@@ -817,7 +817,20 @@ pretty-index-mismatch-ci-bundle-zip-verify:
 	 echo "extracted-tree.json    zip=$$hz_tree  disk=$$hd_tree"; \
 	 echo "preflight-status.json  zip=$$hz_pre   disk=$$hd_pre"; \
 	 if [ "$$hz_tree" != "$$hd_tree" ] || [ "$$hz_pre" != "$$hd_pre" ]; then \
-	   echo "ERROR: content_hash mismatch between zipped sidecars and on-disk sidecars" >&2; exit 3; \
+	   echo "ERROR: content_hash mismatch between zipped sidecars and on-disk sidecars" >&2; \
+	   echo "── field diff (zip → disk) ──" >&2; \
+	   for name in extracted-tree.json preflight-status.json; do \
+	     zf="$$tmp/$$name"; df="$$out/$$name"; \
+	     zf="$$(find "$$tmp" -type f -name "$$name" | head -n1)"; \
+	     echo "  $$name:" >&2; \
+	     for key in schema schema_version content_hash; do \
+	       zv="$$(jq -r --arg k "$$key" '.[$$k] // "<missing>"' -- "$$zf" 2>/dev/null)"; \
+	       dv="$$(jq -r --arg k "$$key" '.[$$k] // "<missing>"' -- "$$df" 2>/dev/null)"; \
+	       if [ "$$zv" != "$$dv" ]; then echo "    .$$key  zip=$$zv  →  disk=$$dv" >&2; \
+	       else echo "    .$$key  = $$zv" >&2; fi; \
+	     done; \
+	   done; \
+	   exit 3; \
 	 fi; \
 	 echo "OK: $$zipfile contains extracted-tree.json + preflight-status.json with matching content_hash"
 
