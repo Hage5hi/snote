@@ -170,7 +170,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     }
   });
 
-  test("trackpad-style continuous small deltas advance smoothly and reach the bottom", async ({ page }) => {
+  test("trackpad-style continuous small deltas advance smoothly and reach the bottom", async ({ page }, testInfo) => {
     const scroller = await seedLongNote(page);
     await scroller.evaluate((el) => { el.scrollTop = 0; });
     const box = await scroller.boundingBox();
