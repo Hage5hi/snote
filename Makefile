@@ -424,7 +424,8 @@ pretty-index-help:
         pretty-index-mismatch-summary-md \
         pretty-index-mismatch-csv pretty-index-mismatch-diff \
          pretty-index-mismatch-ci pretty-index-validate-report-check \
-         pretty-index-ci-tarball-verify
+         pretty-index-ci-tarball-verify \
+         pretty-index-mismatch-ci-bundle-download
 
 # Standalone strict schema check for an arbitrary validate-report.json —
 # same jq assertion invoked by `pretty-index-mismatch-ci`. Usable in
