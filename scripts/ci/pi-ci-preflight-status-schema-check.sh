@@ -19,7 +19,7 @@ f="${1:?usage: $0 <preflight-status.json>}"
 command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
 [ -s "$f" ] || { echo "ERROR: preflight-status.json not present or empty: $f" >&2; exit 2; }
 
-EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
 if ! printf '%s' "$EXPECTED_SV" | grep -Eq '^[0-9]+$'; then
   echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${EXPECTED_SV}')" >&2
   exit 2
