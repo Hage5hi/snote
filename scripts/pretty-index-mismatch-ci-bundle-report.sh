@@ -95,7 +95,7 @@ sv_of() {
   fi
 }
 
-EXPECTED_SV="1"
+EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
 sv_status() {
   local actual="$1"
   if [ "$actual" = "$EXPECTED_SV" ]; then echo "OK"; else echo "MISMATCH"; fi

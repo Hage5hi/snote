@@ -1108,11 +1108,19 @@ with these exact names:
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pretty-index-mismatch-ci-bundle-<scope>-<os>`                            | `pi-ci-<scope>.tar.gz` — the full bundle CI produced                                                                                                                       |
 | `pretty-index-mismatch-ci-validator-files-<scope>-<os>`                   | `validate-report.json`, `validate-schema-assertion.txt`, `extracted-tree.txt`, `extracted-tree.json`, `preflight-status.md`, `preflight-status.json`                       |
-| `pretty-index-mismatch-ci-report-schemas-<scope>-<os>` (schema-drift only)| `report-schema-errors.txt` (jq/schema log) + the offending `extracted-tree.json` / `preflight-status.json` — uploaded when `scripts/ci/pi-ci-validate-report-schemas.sh` exits non-zero |
+| `pretty-index-mismatch-ci-report-schema-failure-<scope>-<os>` (schema-drift only) | `extracted-tree.json`, `preflight-status.json`, `report-schema-errors.txt` (jq/schema log), `report-schema-validation-log.txt` (full stdout+stderr of the validator, incl. `::error` line with expected/actual `schema_version`) — uploaded only when the schema validator exits non-zero |
+| `pretty-index-mismatch-ci-report-schema-validation-log-<scope>-<os>` (always) | `report-schema-validation-log.txt` — full stdout+stderr from `scripts/ci/pi-ci-validate-report-schemas.sh`, uploaded on **every** run (`if: always()`) so jq errors are captured even when the step exits unexpectedly or times out |
 
 The schema-drift annotation on the failing step points at both the bad
-JSON file and `report-schema-errors.txt`, e.g.
-`::error file=<abs>/extracted-tree.json::extracted-tree.json schema check failed (exit=5) — see <abs>/report-schema-errors.txt — excerpt: …`.
+JSON file and `report-schema-errors.txt`, and now includes expected +
+actual `schema_version`, e.g.
+`::error file=<abs>/extracted-tree.json::extracted-tree.json schema check failed (exit=5) — expected schema_version=1, actual=99 — see <abs>/report-schema-errors.txt — excerpt: …`.
+
+The expected `schema_version` is configurable via the
+`PI_CI_EXPECTED_SCHEMA_VERSION` environment variable (default `"1"`);
+it is honored by both per-file schema checkers and reflected in the
+annotation.
+
 
 After you download & unpack a `bundle-<scope>-<os>` artifact into
 `./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>/`, the local zip step

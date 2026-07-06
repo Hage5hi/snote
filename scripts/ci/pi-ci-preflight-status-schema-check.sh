@@ -19,11 +19,13 @@ f="${1:?usage: $0 <preflight-status.json>}"
 command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
 [ -s "$f" ] || { echo "ERROR: preflight-status.json not present or empty: $f" >&2; exit 2; }
 
-problems="$(jq -r '
+EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+
+problems="$(jq -r --arg expected "$EXPECTED_SV" '
   . as $p |
   [
     (if ($p.schema // "") != "pi-ci/preflight-status/v1" then "  - schema: expected \"pi-ci/preflight-status/v1\", got \($p.schema|tostring)" else empty end),
-    (if (($p.schema_version // "") | tostring) != "1" then "  - schema_version: expected \"1\", got \($p.schema_version|tostring)" else empty end),
+    (if (($p.schema_version // "") | tostring) != $expected then "  - schema_version: expected \"\($expected)\", got \($p.schema_version|tostring)" else empty end),
     (if (($p.scope // "") | type) != "string" or (($p.scope // "") | length) == 0 then "  - scope: missing/empty string" else empty end),
     (if (($p.content_hash // "") | type) != "string" or (($p.content_hash // "") | test("^[A-Za-z0-9_-]+:.+$") | not) then "  - content_hash: missing or not \"<algo>:<value>\"" else empty end),
     (["validate_report","validate_schema_assertion"][] as $k

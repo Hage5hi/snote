@@ -39,8 +39,10 @@ run_check() {
       | awk 'NF' \
       | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); gsub(/\n/,""); print (NR>1 ? "%0A" $0 : $0)}')"
     # Extract expected/actual schema_version so the annotation shows
-    # the version drift inline (in addition to the full excerpt).
-    local expected_sv="1"
+    # the version drift inline. Expected is configurable via
+    # PI_CI_EXPECTED_SCHEMA_VERSION (default "1") and shared with the
+    # per-file schema checkers.
+    local expected_sv="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
     local actual_sv="<unknown>"
     if command -v jq >/dev/null 2>&1 && [ -s "$target" ]; then
       actual_sv="$(jq -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null || echo "<unreadable>")"

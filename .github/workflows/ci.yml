@@ -894,8 +894,21 @@ print(json.dumps({
         shell: bash
         run: |
           set -o pipefail
+          mkdir -p /tmp/pi-ci-atomic
+          : > /tmp/pi-ci-atomic/report-schema-validation-log.txt
           scripts/ci/pi-ci-validate-report-schemas.sh /tmp/pi-ci-atomic \
             2>&1 | tee /tmp/pi-ci-atomic/report-schema-validation-log.txt
+
+      - name: upload schema-validation log (MATRIX=atomic, always)
+        # Uploaded on EVERY outcome — including unexpected exits or
+        # timeouts — so jq/stderr is always available for triage.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-report-schema-validation-log-atomic-${{ matrix.os }}
+          path: /tmp/pi-ci-atomic/report-schema-validation-log.txt
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: annotate + upload report-schema failure artifacts (MATRIX=atomic)
         if: always() && steps.pi-ci-report-schemas-atomic.outcome == 'failure'
@@ -1673,8 +1686,19 @@ print(json.dumps({
         shell: bash
         run: |
           set -o pipefail
+          mkdir -p /tmp/pi-ci-stress
+          : > /tmp/pi-ci-stress/report-schema-validation-log.txt
           scripts/ci/pi-ci-validate-report-schemas.sh /tmp/pi-ci-stress \
             2>&1 | tee /tmp/pi-ci-stress/report-schema-validation-log.txt
+
+      - name: upload schema-validation log (MATRIX=stress, always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-report-schema-validation-log-stress-${{ matrix.os }}
+          path: /tmp/pi-ci-stress/report-schema-validation-log.txt
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: annotate + upload report-schema failure artifacts (MATRIX=stress)
         if: always() && steps.pi-ci-report-schemas-stress.outcome == 'failure'
@@ -1686,8 +1710,6 @@ print(json.dumps({
             /tmp/pi-ci-stress/preflight-status.json
             /tmp/pi-ci-stress/report-schema-errors.txt
             /tmp/pi-ci-stress/report-schema-validation-log.txt
-          if-no-files-found: warn
-          retention-days: 14
           if-no-files-found: warn
           retention-days: 14
 
