@@ -23,8 +23,13 @@ export interface RetryOptions {
   random?: () => number;
   /** Sleep — inject in tests to avoid real waits. */
   sleep?: (ms: number) => Promise<void>;
-  /** Called before each retry — useful for structured logging in CI. */
-  onRetry?: (info: { key: string; attempt: number; delayMs: number; error: unknown }) => void;
+  /** Called before each retry. Defaults to a structured stderr logger. */
+  onRetry?: (info: {
+    key: string; attempt: number; delayMs: number;
+    category: TransientCategory; error: unknown;
+  }) => void;
+  /** Set false to silence the default stderr retry log. */
+  logRetries?: boolean;
 }
 
 export interface UploadOptions extends RetryOptions {
