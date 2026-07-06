@@ -1108,8 +1108,8 @@ with these exact names:
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `pretty-index-mismatch-ci-bundle-<scope>-<os>`                            | `pi-ci-<scope>.tar.gz` — the full bundle CI produced                                                                                                                       |
 | `pretty-index-mismatch-ci-validator-files-<scope>-<os>`                   | `validate-report.json`, `validate-schema-assertion.txt`, `extracted-tree.txt`, `extracted-tree.json`, `preflight-status.md`, `preflight-status.json`                       |
-| `pretty-index-mismatch-ci-report-schema-failure-<scope>-<os>` (schema-drift only) | `extracted-tree.json`, `preflight-status.json`, `report-schema-errors.txt` (jq/schema log), `report-schema-validation-log.txt` (full stdout+stderr of the validator, incl. `::error` line with expected/actual `schema_version`) — uploaded only when the schema validator exits non-zero |
-| `pretty-index-mismatch-ci-report-schema-validation-log-<scope>-<os>` (always) | `report-schema-validation-log.txt` — full stdout+stderr from `scripts/ci/pi-ci-validate-report-schemas.sh`, uploaded on **every** run (`if: always()`) so jq errors are captured even when the step exits unexpectedly or times out |
+| `pretty-index-mismatch-ci-report-schema-failure-<scope>-<os>` (schema-drift only) | `extracted-tree.json`, `preflight-status.json`, `report-schema-errors.txt` (jq/schema log), `report-schema-validation-log.txt` (full stdout+stderr of the validator, incl. `::error` line with expected/actual `schema_version`), `report-schema-validation-summary.json` (machine-readable per-file expected/actual + status + paths) — uploaded only when the schema validator exits non-zero |
+| `pretty-index-mismatch-ci-report-schema-validation-log-<scope>-<os>` (always) | `report-schema-validation-log.txt` + `report-schema-validation-summary.json` — uploaded on **every** run (`if: always()`) so jq errors and per-file expected/actual `schema_version` are captured even when the step exits unexpectedly or times out. The log always starts with `pi-ci-validate-report-schemas: expected schema_version=<N>` and, on abnormal termination, adds a `terminated by <SIGNAL>` line. |
 
 The schema-drift annotation on the failing step points at both the bad
 JSON file and `report-schema-errors.txt`, and now includes expected +
@@ -1119,8 +1119,34 @@ actual `schema_version`, e.g.
 The expected `schema_version` is configurable via the
 `PI_CI_EXPECTED_SCHEMA_VERSION` environment variable (default `"1"`);
 it is honored by both per-file schema checkers and reflected in the
-annotation. Non-integer or empty values fail fast with
-`ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer`.
+annotation. Non-integer, empty, or whitespace-only values fail fast
+with `ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer`.
+
+##### report-schema-validation-summary.json
+
+Written by `scripts/ci/pi-ci-validate-report-schemas.sh` on every run
+(schema `pi-ci/report-schema-validation-summary/v1`):
+
+```json
+{
+  "schema": "pi-ci/report-schema-validation-summary/v1",
+  "expected_schema_version": "1",
+  "out_dir": "/tmp/pi-ci-atomic",
+  "terminated_by": null,
+  "files": [
+    { "label": "extracted-tree.json",   "path": "…/extracted-tree.json",   "expected_schema_version": "1", "actual_schema_version": "99", "status": "FAIL", "exit": 5 },
+    { "label": "preflight-status.json", "path": "…/preflight-status.json", "expected_schema_version": "1", "actual_schema_version": "1",  "status": "OK",   "exit": 0 }
+  ],
+  "exit": 5
+}
+```
+
+Interpretation: match `files[].label` to the sidecar, compare
+`expected_schema_version` vs `actual_schema_version` for drift, and
+open `files[].path` for the failing file. `status="FAIL"` with
+`actual_schema_version="<missing-file>"` / `"<empty-file>"` /
+`"<unreadable>"` distinguishes "file gone" from "schema drift".
+
 
 ##### schema-validate exit codes
 
