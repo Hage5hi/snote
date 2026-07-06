@@ -535,11 +535,20 @@ pretty-index-mismatch-ci-bundle-download:
 	 vr="$$out/extracted/$$root/validate-report.json"; \
 	 va="$$out/extracted/$$root/validate-schema-assertion.txt"; \
 	 miss=""; \
-	 [ -f "$$vr" ] || miss="$$miss $$root/validate-report.json"; \
-	 [ -f "$$va" ] || miss="$$miss $$root/validate-schema-assertion.txt"; \
+	 [ -f "$$vr" ]  || miss="$$miss $$root/validate-report.json(missing)"; \
+	 [ -f "$$va" ]  || miss="$$miss $$root/validate-schema-assertion.txt(missing)"; \
+	 [ -f "$$va" ] && [ ! -s "$$va" ] && \
+	   miss="$$miss $$root/validate-schema-assertion.txt(empty)"; \
 	 if [ -n "$$miss" ]; then \
-	   echo "ERROR: extracted tarball $$tb is missing expected files:" >&2; \
-	   for m in $$miss; do echo "  - $$m" >&2; done; \
+	   echo "ERROR: extracted tarball $$tb failed content checks:" >&2; \
+	   for m in $$miss; do \
+	     case "$$m" in \
+	       *"(missing)") p=$${m%\(missing\)}; \
+	         echo "  - MISSING file: expected at $$out/extracted/$$p" >&2 ;; \
+	       *"(empty)")   p=$${m%\(empty\)};   \
+	         echo "  - EMPTY   file: expected non-empty at $$out/extracted/$$p" >&2 ;; \
+	     esac; \
+	   done; \
 	   echo "  extracted tree:" >&2; \
 	   (cd "$$out/extracted" && find . -maxdepth 3 -type f | sed 's/^/    /') >&2; \
 	   exit 2; \
@@ -548,7 +557,8 @@ pretty-index-mismatch-ci-bundle-download:
 	 echo "artifact          : $$name"; \
 	 echo "tarball           : $$tb"; \
 	 echo "validate-report   : $$vr (present)"; \
-	 echo "schema-assertion  : $$va $$( [ -s "$$va" ] && echo '(populated — assertion failed)' || echo '(empty — assertion passed)')"; \
+	 echo "schema-assertion  : $$va (present, $$(wc -c < "$$va") bytes)"; \
+
 	 echo ""; \
 	 echo "inspect with:"; \
 	 echo "  jq . '$$vr'"; \
