@@ -77,6 +77,8 @@ statuses=()
 exits=()
 reasons=()
 diffs=()
+jq_stderr_excerpts=()
+jq_stderr_paths=()
 
 rc=0
 # jq binary + optional timeout override. `PI_CI_JQ_BIN` lets tests
@@ -89,16 +91,41 @@ JQ_WRAP=""
 if [ -n "${PI_CI_JQ_TIMEOUT_SECS:-}" ] && command -v timeout >/dev/null 2>&1; then
   JQ_WRAP="timeout ${PI_CI_JQ_TIMEOUT_SECS} "
 fi
+JQ_SCHEMA_VERSION_FILTER='if has("schema_version") then (.schema_version | tostring) else "<missing>" end'
 # jq diagnostics — echoed into report-schema-validation-log.txt AND
 # embedded in the summary JSON so triagers can reproduce jq-timeout
 # or jq-parse-failed runs without guessing which jq was used or
 # whether a timeout(1) wrapper was applied.
 JQ_VERSION="$("$JQ_BIN" --version 2>/dev/null || echo '<unavailable>')"
-JQ_CMDLINE="${JQ_WRAP}${JQ_BIN}"
+JQ_CMDLINE="${JQ_WRAP}${JQ_BIN} -r '${JQ_SCHEMA_VERSION_FILTER}' -- <file>"
+echo "pi-ci-validate-report-schemas: PI_CI_JQ_BIN=${PI_CI_JQ_BIN:-<unset>}"
 echo "pi-ci-validate-report-schemas: jq_bin=${JQ_BIN}"
 echo "pi-ci-validate-report-schemas: jq_version=${JQ_VERSION}"
 echo "pi-ci-validate-report-schemas: jq_cmdline=${JQ_CMDLINE}"
 echo "pi-ci-validate-report-schemas: jq_timeout_secs=${PI_CI_JQ_TIMEOUT_SECS:-<unset>}"
+
+json_escape() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//"/\\"}
+  s=${s//$'\r'/}
+  s=${s//$'\n'/\\n}
+  printf '%s' "$s"
+}
+
+stderr_excerpt() {
+  local file="$1"
+  [ -s "$file" ] || return 0
+  awk 'NF {print; seen++; if (seen >= 3) exit}' "$file" | tr '\n' ' ' | cut -c 1-500
+}
+
+schema_probe_exit_for_reason() {
+  case "$1" in
+    jq-missing|jq-parse-failed|jq-timeout|missing-file|empty-file) echo 2 ;;
+    schema_version-missing|schema_version-empty|schema_version-malformed|schema-drift) echo 5 ;;
+    *) echo 5 ;;
+  esac
+}
 
 run_check() {
   local label="$1" script="$2" target="$3"
