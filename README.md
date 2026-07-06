@@ -1119,7 +1119,26 @@ actual `schema_version`, e.g.
 The expected `schema_version` is configurable via the
 `PI_CI_EXPECTED_SCHEMA_VERSION` environment variable (default `"1"`);
 it is honored by both per-file schema checkers and reflected in the
-annotation.
+annotation. Non-integer or empty values fail fast with
+`ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer`.
+
+##### schema-validate exit codes
+
+`scripts/ci/pi-ci-validate-report-schemas.sh` prints an
+`── schema-validate exit codes ──` block at the tail of its output
+(mirrored into `report-schema-validation-log.txt`) with the same table:
+
+| Exit | Meaning |
+|------|---------|
+| `0`  | Both `extracted-tree.json` and `preflight-status.json` match the schema |
+| `2`  | Tooling missing (`jq`), invalid `PI_CI_EXPECTED_SCHEMA_VERSION`, or a required JSON sidecar is missing/empty |
+| `5`  | Schema violation — includes `schema_version` mismatch against the configured expected value |
+
+`content_hash` drift between the shareable zip and on-disk sidecars is
+reported separately by `make pretty-index-mismatch-ci-bundle-zip-verify`
+with exit `3` (make wraps this as its own `Error 3`).
+
+
 
 
 After you download & unpack a `bundle-<scope>-<os>` artifact into

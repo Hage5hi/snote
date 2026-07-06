@@ -18,8 +18,24 @@ mf="$out/extracted-tree.json"
 pf="$out/preflight-status.json"
 errfile="$out/report-schema-errors.txt"
 
+# Validate configurable expected schema_version. Non-integer or empty
+# values fail fast with a clear error — CI + local users get a real
+# signal instead of every check silently reporting "expected=<garbage>".
+EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+if ! printf '%s' "$EXPECTED_SV" | grep -Eq '^[0-9]+$'; then
+  echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${EXPECTED_SV}')" >&2
+  exit 2
+fi
+export PI_CI_EXPECTED_SCHEMA_VERSION="$EXPECTED_SV"
+
 mkdir -p "$out" 2>/dev/null || true
 : > "$errfile"
+
+# Always print the configured expected schema_version FIRST so it lands
+# at the top of report-schema-validation-log.txt (CI tees stdout into
+# it), even when jq/schema parsing fails or the process is killed.
+echo "pi-ci-validate-report-schemas: expected schema_version=${EXPECTED_SV}"
+echo "pi-ci-validate-report-schemas: out-dir=${out}"
 
 rc=0
 run_check() {
@@ -57,6 +73,16 @@ run_check "extracted-tree.json"  "$here/pi-ci-manifest-schema-check.sh"         
 run_check "preflight-status.json" "$here/pi-ci-preflight-status-schema-check.sh" "$pf"
 
 echo "report-schema-errors: $errfile"
+
+# Exit-code summary. Keep synchronized with README §"schema-validate
+# exit codes". Both the log tail (via `tee`) and the CI job summary
+# link to this block so triagers can decode rc without opening a shell.
+echo "── schema-validate exit codes ──"
+echo "  0 = all schemas OK"
+echo "  2 = tooling missing (jq) OR bad PI_CI_EXPECTED_SCHEMA_VERSION OR missing/empty JSON input"
+echo "  5 = schema violation (includes schema_version mismatch)"
+echo "  note: content_hash mismatch is reported by the zip-verify target with exit=3, not by this script"
+echo "  exit-code-final: ${rc}"
 
 if [ "$rc" -ne 0 ]; then
   echo "report schema check FAILED — details in $errfile" >&2

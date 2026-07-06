@@ -22,8 +22,13 @@ command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
 [ -s "$f" ] || { echo "ERROR: manifest not present or empty: $f" >&2; exit 2; }
 
 # Configurable expected schema_version. Defaults to "1"; override with
-# PI_CI_EXPECTED_SCHEMA_VERSION when validating a bumped format.
+# PI_CI_EXPECTED_SCHEMA_VERSION when validating a bumped format. Empty
+# or non-integer values fail fast (exit 2) with a clear error.
 EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+if ! printf '%s' "$EXPECTED_SV" | grep -Eq '^[0-9]+$'; then
+  echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${EXPECTED_SV}')" >&2
+  exit 2
+fi
 
 problems="$(EXPECTED_SV="$EXPECTED_SV" jq -r --arg expected "$EXPECTED_SV" '
   . as $m |
