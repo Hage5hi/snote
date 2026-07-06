@@ -678,13 +678,32 @@ print(json.dumps({
           echo "── summary (MATRIX=atomic) ──"
           cat /tmp/pi-mismatch-summary-atomic.json
 
+      - name: validate pretty-index mismatch summary JSON (MATRIX=atomic)
+        if: failure() && hashFiles('/tmp/pi-mismatch-summary-atomic.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -s pretty-index-mismatch-summary-validate \
+            PI_SUMMARY_JSON_PATH=/tmp/pi-mismatch-summary-atomic.json
+
+      - name: render pretty-index mismatch summary markdown (MATRIX=atomic)
+        if: failure() && hashFiles('/tmp/pi-mismatch-summary-atomic.json') != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -s pretty-index-mismatch-summary-md \
+            PI_SUMMARY_JSON_PATH=/tmp/pi-mismatch-summary-atomic.json \
+            PI_SUMMARY_MD_PATH=/tmp/pi-mismatch-summary-atomic.md
+
       - name: upload pretty-index mismatch summary JSON (MATRIX=atomic)
         id: upload-pi-summary-atomic
         if: failure() && hashFiles('/tmp/pi-mismatch-summary-atomic.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: pretty-index-mismatch-summary-atomic-${{ matrix.os }}
-          path: /tmp/pi-mismatch-summary-atomic.json
+          path: |
+            /tmp/pi-mismatch-summary-atomic.json
+            /tmp/pi-mismatch-summary-atomic.md
           if-no-files-found: error
           retention-days: 14
 
