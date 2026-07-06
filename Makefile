@@ -433,7 +433,8 @@ pretty-index-help:
          pretty-index-mismatch-ci-bundle-report-show \
          pretty-index-mismatch-ci-bundle-manifest-check \
          pretty-index-mismatch-ci-bundle-validate-reports \
-         pretty-index-mismatch-ci-bundle-zip
+         pretty-index-mismatch-ci-bundle-zip \
+         pretty-index-mismatch-ci-bundle-zip-verify
 
 
 
@@ -748,6 +749,50 @@ pretty-index-mismatch-ci-bundle-zip:
 	   $$(ls | grep -v -x "$$(basename "$$zipfile")")) ; \
 	 echo "wrote $$zipfile"; \
 	 echo "  includes: bundle files + extracted-tree.{txt,json} + preflight-status.{md,json}"
+
+# Verify a shareable zip produced by pretty-index-mismatch-ci-bundle-zip:
+#   - contains extracted-tree.json AND preflight-status.json
+#   - the content_hash inside each zipped JSON matches the on-disk sidecar
+#     regenerated from the same bundle (so the zip is a faithful snapshot,
+#     safe to upload/share).
+# Exit 0 on match, 3 on hash mismatch, 2 on missing files/tools.
+#   make pretty-index-mismatch-ci-bundle-zip-verify                 # atomic
+#   make pretty-index-mismatch-ci-bundle-zip-verify PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-zip-verify:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@command -v unzip >/dev/null || { echo "ERROR: 'unzip' required" >&2; exit 2; }
+	@command -v jq    >/dev/null || { echo "ERROR: 'jq' required"    >&2; exit 2; }
+	@bundle="./_pi-ci-bundle-$(PI_CI_SCOPE)"; \
+	 out="$$bundle/extracted/pi-ci-$(PI_CI_SCOPE)"; \
+	 zipfile="$$bundle/pretty-index-mismatch-ci-bundle-$(PI_CI_SCOPE)-share.zip"; \
+	 if [ ! -f "$$zipfile" ]; then \
+	   echo "ERROR: $$zipfile not found — run 'make pretty-index-mismatch-ci-bundle-zip PI_CI_SCOPE=$(PI_CI_SCOPE)' first" >&2; exit 2; \
+	 fi; \
+	 tmp="$$(mktemp -d)"; trap 'rm -rf -- "$$tmp"' EXIT; \
+	 unzip -q -o "$$zipfile" -d "$$tmp"; \
+	 zj="$$(find "$$tmp" -type f -name extracted-tree.json   | head -n1)"; \
+	 zp="$$(find "$$tmp" -type f -name preflight-status.json | head -n1)"; \
+	 if [ -z "$$zj" ] || [ -z "$$zp" ]; then \
+	   echo "ERROR: $$zipfile missing extracted-tree.json or preflight-status.json" >&2; \
+	   echo "  extracted-tree.json:   $${zj:-<absent>}"   >&2; \
+	   echo "  preflight-status.json: $${zp:-<absent>}"   >&2; \
+	   exit 2; \
+	 fi; \
+	 dj="$$out/extracted-tree.json"; dp="$$out/preflight-status.json"; \
+	 if [ ! -s "$$dj" ] || [ ! -s "$$dp" ]; then \
+	   echo "ERROR: on-disk sidecars missing under $$out (regenerate with 'make pretty-index-mismatch-ci-bundle-zip PI_CI_SCOPE=$(PI_CI_SCOPE)')" >&2; exit 2; \
+	 fi; \
+	 hz_tree="$$(jq -r '.content_hash' -- "$$zj")"; \
+	 hd_tree="$$(jq -r '.content_hash' -- "$$dj")"; \
+	 hz_pre="$$(jq -r '.content_hash' -- "$$zp")"; \
+	 hd_pre="$$(jq -r '.content_hash' -- "$$dp")"; \
+	 echo "extracted-tree.json    zip=$$hz_tree  disk=$$hd_tree"; \
+	 echo "preflight-status.json  zip=$$hz_pre   disk=$$hd_pre"; \
+	 if [ "$$hz_tree" != "$$hd_tree" ] || [ "$$hz_pre" != "$$hd_pre" ]; then \
+	   echo "ERROR: content_hash mismatch between zipped sidecars and on-disk sidecars" >&2; exit 3; \
+	 fi; \
+	 echo "OK: $$zipfile contains extracted-tree.json + preflight-status.json with matching content_hash"
 
 
 
