@@ -1,12 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as Y from "yjs";
-import { SupabaseYjsProvider } from "../provider";
+import { SupabaseYjsProvider, type Encryption } from "../provider";
 
-// Mock Supabase client — provider only touches it inside connect()/saveSnapshot,
-// neither of which we exercise here. The import must not throw.
+// Capture upsert calls so saveSnapshot tests can assert payloads.
+const upsertCalls: Array<Record<string, unknown>> = [];
+
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
-    from: () => ({ upsert: () => ({ then: () => {} }), select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }) }),
+    from: () => ({
+      upsert: (payload: Record<string, unknown>) => {
+        upsertCalls.push(payload);
+        return Promise.resolve({ error: null });
+      },
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+    }),
     channel: () => ({ on: () => ({ on: () => ({ on: () => ({ subscribe: () => Promise.resolve("SUBSCRIBED") }) }) }) }),
     removeChannel: () => {},
   },
