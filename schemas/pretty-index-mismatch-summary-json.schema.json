@@ -10,6 +10,7 @@
     "schema": {
       "type": "string",
       "enum": [
+        "pretty-index-mismatch-summary/v0",
         "pretty-index-mismatch-summary/v1",
         "pretty-index-mismatch-summary-merged/v1"
       ]

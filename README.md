@@ -939,10 +939,11 @@ make pretty-index-mismatch-diff PI_BASELINE=baseline.json
 | --- | --- | --- |
 | `pretty-index-mismatch-summary` | no mismatches AND no missing artifacts | `3` mismatches/missing present, `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-summary-json` | wrote summary JSON | `2` report file absent or `jq` missing |
-| `pretty-index-mismatch-summary-validate` | summary matches schema | `5` schema/shape violation, `2` file or tooling missing |
+| `pretty-index-mismatch-summary-validate` | summary matches schema (also `0` with deprecation warning when `schema` is `pretty-index-mismatch-summary/v0`) | `5` schema/shape violation, `2` file or tooling missing |
+| `pretty-index-mismatch-summary-json-merge` | wrote merged summary (missing inputs are tolerated and recorded under `sources[].missing:true`) | `2` when `PI_SUMMARY_INPUTS` is empty or `jq` missing |
 | `pretty-index-mismatch-csv` | wrote CSV file | `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-show` (± `PI_PATH_GLOB`) | printed table (may be empty after glob filter) | `2` report file absent or `jq` missing |
-| `pretty-index-mismatch-diff` | current report matches baseline | `4` NEW/CHANGED entries found, `2` either report absent or `jq` missing |
+| `pretty-index-mismatch-diff` (± `PI_DIFF_OUT_PATH`) | current report matches baseline | `4` NEW/CHANGED entries found (diff report written to `PI_DIFF_OUT_PATH` when set), `2` either report absent or `jq` missing |
 
 Recipes emit `exit 3` / `exit 4` / `exit 5` intentionally; GNU make wraps any
 failing recipe as its own exit status `2` and prints `make: *** [target]
@@ -964,6 +965,44 @@ make pretty-index-mismatch-summary-validate \
 
 The target uses `ajv` when available and falls back to a `jq`-based
 structural check on `schema`, `matrices.{atomic,stress}`, and `totals`.
+Under GitHub Actions (`GITHUB_ACTIONS=true`), every failing path is also
+emitted as a `::error file=<summary>::` annotation so the failing field
+is highlighted in the run's "Annotations" panel before the recipe exits
+with status `5`.
+
+**Multi-version support.** `pretty-index-mismatch-summary/v0` (the
+legacy shape) is still accepted for backward compatibility; the
+validator exits `0` but prints a `warn:` line (and a `::warning::` GHA
+annotation) instructing you to regenerate the summary so it upgrades to
+`pretty-index-mismatch-summary/v1`.
+
+### Diff report artifact
+
+Set `PI_DIFF_OUT_PATH` when running `pretty-index-mismatch-diff` to
+write the NEW/CHANGED entries into a machine-readable JSON
+(`pretty-index-mismatch-diff/v1`) alongside the human-readable stdout.
+In CI, upload that file and link its `artifact-url` in
+`$GITHUB_STEP_SUMMARY` whenever the recipe exits `4`:
+
+```yaml
+- name: pretty-index diff vs baseline
+  id: pi-diff
+  continue-on-error: true
+  run: |
+    make -s pretty-index-mismatch-diff \
+      PI_BASELINE=baseline.json \
+      PI_REPORT_PATH=_pretty-index-checksum-mismatch.json \
+      PI_DIFF_OUT_PATH=/tmp/pi-mismatch-diff.json
+- name: upload diff report
+  if: hashFiles('/tmp/pi-mismatch-diff.json') != ''
+  id: upload-pi-diff
+  uses: actions/upload-artifact@v4
+  with: { name: pretty-index-mismatch-diff, path: /tmp/pi-mismatch-diff.json }
+- name: link diff report in step summary
+  if: steps.pi-diff.outcome == 'failure'
+  run: |
+    echo "- [download pretty-index-mismatch-diff.json](${{ steps.upload-pi-diff.outputs.artifact-url }})" >> "$GITHUB_STEP_SUMMARY"
+```
 
 ### Merging per-matrix summary JSONs across CI jobs
 
