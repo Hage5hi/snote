@@ -1354,6 +1354,46 @@ print(json.dumps({
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: build pretty-index-mismatch-ci bundle (MATRIX=stress)
+        if: failure() && hashFiles('/tmp/pi-mismatch-stress.json') != ''
+        shell: bash
+        run: |
+          set +e
+          make -s pretty-index-mismatch-ci \
+            PI_REPORT_PATH=/tmp/pi-mismatch-stress.json \
+            PI_CI_OUT_DIR=/tmp/pi-ci-stress \
+            PI_CI_BUNDLE_PATH=/tmp/pi-ci-stress.tar.gz
+          rc=$?
+          if [[ "$rc" -ne 0 && "$rc" -ne 3 ]]; then exit "$rc"; fi
+
+      - name: upload pretty-index-mismatch-ci bundle (MATRIX=stress)
+        id: upload-pi-ci-bundle-stress
+        if: failure() && hashFiles('/tmp/pi-ci-stress.tar.gz') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-bundle-stress-${{ matrix.os }}
+          path: /tmp/pi-ci-stress.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: link pretty-index-mismatch-ci bundle in step summary (MATRIX=stress)
+        if: failure() && steps.upload-pi-ci-bundle-stress.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          URL="${{ steps.upload-pi-ci-bundle-stress.outputs.artifact-url }}"
+          {
+            echo ''
+            echo "#### 📦 pretty-index-mismatch-ci bundle (MATRIX=stress, ${{ matrix.os }})"
+            echo ''
+            echo "- [download \`pretty-index-mismatch-ci-bundle-stress-${{ matrix.os }}.tar.gz\`]($URL)"
+            echo "  - \`summary.json\` / \`summary.md\` — aggregate mismatch summary"
+            echo "  - \`validate-report.json\` — validator machine-readable report (always present, even when empty)"
+            echo "  - \`validate-annotations.txt\` — validator stderr annotations (always present, even when empty)"
+            echo "  - \`diff.json\` — baseline diff (when \`PI_BASELINE\` was provided)"
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+
+
       - name: merge pretty-index mismatch summaries (atomic + stress)
         id: merge-pi-summaries
         if: failure() && (hashFiles('/tmp/pi-mismatch-summary-atomic.json') != '' || hashFiles('/tmp/pi-mismatch-summary-stress.json') != '')
