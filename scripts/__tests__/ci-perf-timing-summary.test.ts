@@ -163,6 +163,23 @@ describe("failed-test artifact links", () => {
     expect(failed[0].retry).toBe(1);
   });
 
+  it("keeps failed retry-attempt artifacts even when a later retry passes", () => {
+    const failed = parsePlaywrightFailedArtifacts({ suites: [{ specs: [{
+      title: "s", file: "e2e/note-wheel-trackpad-scroll.spec.ts",
+      tests: [{ title: "flaky scroll", projectName: "firefox", results: [
+        { status: "failed", retry: 0, attachments: [{ name: "wheel-diagnostics.json", path: "test-results/wheel/flaky/wheel-diagnostics.json" }] },
+        { status: "passed", retry: 1, attachments: [{ name: "trace", path: "test-results/wheel/flaky-retry/trace.zip" }] },
+      ] }],
+    }] }] });
+    expect(failed).toEqual([{
+      suite: "e2e/note-wheel-trackpad-scroll.spec.ts",
+      name: "flaky scroll",
+      project: "firefox",
+      retry: 0,
+      attachments: [{ label: "wheel-diagnostics.json", path: "test-results/wheel/flaky/wheel-diagnostics.json" }],
+    }]);
+  });
+
   it("renders clickable per-attachment links plus a run-artifacts URL", () => {
     const md = renderFailedArtifactLinks(parsePlaywrightFailedArtifacts(pwReport), {
       serverUrl: "https://github.com", repository: "acme/notes",

@@ -78,12 +78,13 @@ export function parsePlaywrightFailedArtifacts(report: PwReport): FailedTestArti
   const out: FailedTestArtifacts[] = [];
   for (const spec of walk(report.suites)) {
     for (const t of spec.tests) {
-      const last = t.results?.[t.results.length - 1] as { status?: string; retry?: number; attachments?: Array<{ name?: string; path?: string }> } | undefined;
-      if (!last || last.status === "passed" || last.status === "skipped") continue;
-      const attachments = (last.attachments ?? [])
-        .filter((a) => a.path && (/trace\.zip$/.test(a.path) || /\.(png|json)$/.test(a.path)))
-        .map((a) => ({ label: a.name ?? a.path!.split("/").pop() ?? "artifact", path: a.path! }));
-      if (attachments.length) out.push({ suite: spec.file, name: t.title, project: t.projectName, retry: last.retry, attachments });
+      for (const result of (t.results ?? []) as Array<{ status?: string; retry?: number; attachments?: Array<{ name?: string; path?: string }> }>) {
+        if (result.status === "passed" || result.status === "skipped") continue;
+        const attachments = (result.attachments ?? [])
+          .filter((a) => a.path && (/trace\.zip$/.test(a.path) || /\.(png|json)$/.test(a.path)))
+          .map((a) => ({ label: a.name ?? a.path!.split("/").pop() ?? "artifact", path: a.path! }));
+        if (attachments.length) out.push({ suite: spec.file, name: t.title, project: t.projectName, retry: result.retry, attachments });
+      }
     }
   }
   return out;
