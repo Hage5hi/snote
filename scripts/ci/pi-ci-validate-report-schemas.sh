@@ -68,19 +68,32 @@ paths=()
 actuals=()
 statuses=()
 exits=()
+reasons=()
 
 rc=0
 run_check() {
   local label="$1" script="$2" target="$3"
   echo "── $label ($target) ──" >> "$errfile"
 
-  local actual_sv="<unknown>"
-  if command -v jq >/dev/null 2>&1 && [ -s "$target" ]; then
-    actual_sv="$(jq -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null || echo "<unreadable>")"
-  elif [ ! -e "$target" ]; then
-    actual_sv="<missing-file>"
+  # Determine a machine-readable reason alongside the human-readable
+  # actual_sv token. Kept in sync so the summary JSON always carries
+  # both a value and an explanation, even when jq fails outright.
+  local actual_sv="<unknown>" reason="ok"
+  if [ ! -e "$target" ]; then
+    actual_sv="<missing-file>"; reason="missing-file"
   elif [ ! -s "$target" ]; then
-    actual_sv="<empty-file>"
+    actual_sv="<empty-file>";   reason="empty-file"
+  elif ! command -v jq >/dev/null 2>&1; then
+    actual_sv="<unknown>";      reason="jq-missing"
+  else
+    local jq_out jq_rc
+    jq_out="$(jq -r '(.schema_version // "<missing>") | tostring' -- "$target" 2>/dev/null)"; jq_rc=$?
+    if [ "$jq_rc" -ne 0 ]; then
+      actual_sv="<unreadable>"; reason="jq-parse-failed"
+    else
+      actual_sv="$jq_out"
+      if [ "$actual_sv" = "<missing>" ]; then reason="schema_version-missing"; fi
+    fi
   fi
 
   local status sub=0
@@ -97,7 +110,10 @@ run_check() {
       | awk 'NF' \
       | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); gsub(/\n/,""); print (NR>1 ? "%0A" $0 : $0)}')"
     local expected_sv="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
-    echo "::error file=${target}::${label} schema check failed (exit=${sub}) — expected schema_version=${expected_sv}, actual=${actual_sv} — see ${errfile} — excerpt: ${excerpt}"
+    # If the schema checker failed but we couldn't attribute a specific
+    # reason above (file exists, jq parsed), it's a schema mismatch.
+    if [ "$reason" = "ok" ]; then reason="schema-drift"; fi
+    echo "::error file=${target}::${label} schema check failed (exit=${sub}) — expected schema_version=${expected_sv}, actual=${actual_sv} — reason=${reason} — see ${errfile} — excerpt: ${excerpt}"
     echo "report-schema-errors: ${errfile}"
   fi
   echo "" >> "$errfile"
@@ -107,6 +123,7 @@ run_check() {
   actuals+=("$actual_sv")
   statuses+=("$status")
   exits+=("$sub")
+  reasons+=("$reason")
 }
 
 run_check "extracted-tree.json"  "$here/pi-ci-manifest-schema-check.sh"          "$mf"
@@ -116,6 +133,10 @@ echo "report-schema-errors: $errfile"
 
 # Emit machine-readable summary. Consumed by CI parsers and follow-up
 # tooling — keep schema stable ("pi-ci/report-schema-validation-summary/v1").
+# Per-file `reason` values: "ok" | "missing-file" | "empty-file" |
+# "jq-missing" | "jq-parse-failed" | "schema_version-missing" |
+# "schema-drift". The top-level `terminated_by` captures timeouts
+# (SIGTERM/INT/HUP) written by the trap handler.
 {
   printf '{"schema":"pi-ci/report-schema-validation-summary/v1"'
   printf ',"expected_schema_version":"%s"' "$EXPECTED_SV"
@@ -124,8 +145,8 @@ echo "report-schema-errors: $errfile"
   printf ',"files":['
   for i in "${!labels[@]}"; do
     [ "$i" -gt 0 ] && printf ','
-    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s}' \
-      "${labels[$i]}" "${paths[$i]}" "$EXPECTED_SV" "${actuals[$i]}" "${statuses[$i]}" "${exits[$i]}"
+    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s,"reason":"%s"}' \
+      "${labels[$i]}" "${paths[$i]}" "$EXPECTED_SV" "${actuals[$i]}" "${statuses[$i]}" "${exits[$i]}" "${reasons[$i]}"
   done
   printf ']'
   printf ',"exit":%s' "$rc"
