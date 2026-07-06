@@ -14,7 +14,7 @@
 //      selection stays live (does not get stuck) and the scroller keeps
 //      moving.
 import { expect, test } from "@playwright/test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const LINES = 1_000;
@@ -23,10 +23,28 @@ const LINES = 1_000;
 // tick got swallowed and where scrollTop was at the time.
 type WheelSample = { i: number; dx: number; dy: number; before: number; after: number; t: number };
 const wheelLog = new WeakMap<import("@playwright/test").Page, WheelSample[]>();
-function recordWheel(page: import("@playwright/test").Page, s: WheelSample) {
+// First "stuck frame" per page — the sample where an incoming delta failed
+// to move `scrollTop`. Captured live during the test and attached to the
+// Playwright trace via `testInfo.annotations` so it's visible in the trace
+// viewer next to the failing action.
+const stuckFrame = new WeakMap<import("@playwright/test").Page, WheelSample>();
+function recordWheel(
+  page: import("@playwright/test").Page,
+  s: WheelSample,
+  testInfo?: import("@playwright/test").TestInfo,
+) {
   const arr = wheelLog.get(page) ?? [];
   arr.push(s); if (arr.length > 200) arr.shift();
   wheelLog.set(page, arr);
+  // Auto stuck-frame detection: first non-advancing tick after a real
+  // delta was requested. Recorded once per page so retries don't flood.
+  if (s.dy !== 0 && s.after === s.before && !stuckFrame.has(page)) {
+    stuckFrame.set(page, s);
+    testInfo?.annotations.push({
+      type: "stuck-frame",
+      description: `wheel tick #${s.i} dy=${s.dy} scrollTop stuck at ${s.before} (t=${s.t})`,
+    });
+  }
 }
 
 // Force a consistent scroll environment across engines so the wheel/
@@ -108,18 +126,40 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
         overflowY: getComputedStyle(el).overflowY,
         pointerEvents: getComputedStyle(el).pointerEvents,
       })).catch((e) => ({ error: String(e) }));
-      const payload = { scroller: state, wheelSamples: wheelLog.get(page) ?? [] };
+      const samples = wheelLog.get(page) ?? [];
+      const stuck = stuckFrame.get(page) ?? null;
+      // `replay` = the exact synthesized delta stream (no scrollTop noise)
+      // so a re-runner can feed it back through `page.mouse.wheel` and
+      // reproduce the failing sequence step-for-step.
+      const replay = samples.map(({ i, dx, dy, t }) => ({ i, dx, dy, t }));
+      const payload = {
+        test: testInfo.title, project: testInfo.project.name,
+        retry: testInfo.retry, status: testInfo.status,
+        scroller: state, stuckFrame: stuck,
+        wheelSamples: samples, replay,
+      };
+      // Standardized artifact names inside outputDir. Playwright uploads
+      // `test-results/**` — these names stay identical across retries.
       const jsonPath = join(dir, "wheel-diagnostics.json");
+      const shotPath = join(dir, "scroller.png");
       writeFileSync(jsonPath, JSON.stringify(payload, null, 2));
       await testInfo.attach("wheel-diagnostics.json", { path: jsonPath, contentType: "application/json" });
-      const shot = join(dir, "scroller.png");
-      await scroller.screenshot({ path: shot }).then(
-        () => testInfo.attach("scroller.png", { path: shot, contentType: "image/png" }),
+      await scroller.screenshot({ path: shotPath }).then(
+        () => testInfo.attach("scroller.png", { path: shotPath, contentType: "image/png" }),
       ).catch(() => {});
+
+      // Mirror to a stable, retry-agnostic path so CI's summary/uploader
+      // always finds the latest failure at the same location:
+      //   test-results/wheel-latest/<safe-title>/{wheel-diagnostics.json,scroller.png}
+      const slug = testInfo.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const stable = join(process.cwd(), "test-results", "wheel-latest", slug);
+      mkdirSync(stable, { recursive: true });
+      writeFileSync(join(stable, "wheel-diagnostics.json"), JSON.stringify(payload, null, 2));
+      try { cpSync(shotPath, join(stable, "scroller.png")); } catch { /* screenshot may be missing */ }
     } catch { /* best-effort */ }
   });
 
-  test("discrete wheel ticks all register — no missed deltas", async ({ page }) => {
+  test("discrete wheel ticks all register — no missed deltas", async ({ page }, testInfo) => {
     const scroller = await seedLongNote(page);
     await scroller.evaluate((el) => { el.scrollTop = 0; });
     const box = await scroller.boundingBox();
@@ -139,7 +179,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
       await page.mouse.wheel(0, 120);
       await page.waitForTimeout(40);
       const after = await scroller.evaluate((el) => el.scrollTop);
-      recordWheel(page, { i, dx: 0, dy: 120, before, after, t: Date.now() });
+      recordWheel(page, { i, dx: 0, dy: 120, before, after, t: Date.now() }, testInfo);
       positions.push(after);
       expect(
         after,
@@ -152,7 +192,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     }
   });
 
-  test("trackpad-style continuous small deltas advance smoothly and reach the bottom", async ({ page }) => {
+  test("trackpad-style continuous small deltas advance smoothly and reach the bottom", async ({ page }, testInfo) => {
     const scroller = await seedLongNote(page);
     await scroller.evaluate((el) => { el.scrollTop = 0; });
     const box = await scroller.boundingBox();
@@ -167,7 +207,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
       await page.mouse.wheel(0, 24);
       await page.waitForTimeout(16);
       const now = await scroller.evaluate((el) => el.scrollTop);
-      recordWheel(page, { i, dx: 0, dy: 24, before, after: now, t: Date.now() });
+      recordWheel(page, { i, dx: 0, dy: 24, before, after: now, t: Date.now() }, testInfo);
       if (now > last) advancingTicks++;
       last = now;
     }
