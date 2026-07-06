@@ -89,6 +89,16 @@ JQ_WRAP=""
 if [ -n "${PI_CI_JQ_TIMEOUT_SECS:-}" ] && command -v timeout >/dev/null 2>&1; then
   JQ_WRAP="timeout ${PI_CI_JQ_TIMEOUT_SECS} "
 fi
+# jq diagnostics — echoed into report-schema-validation-log.txt AND
+# embedded in the summary JSON so triagers can reproduce jq-timeout
+# or jq-parse-failed runs without guessing which jq was used or
+# whether a timeout(1) wrapper was applied.
+JQ_VERSION="$("$JQ_BIN" --version 2>/dev/null || echo '<unavailable>')"
+JQ_CMDLINE="${JQ_WRAP}${JQ_BIN}"
+echo "pi-ci-validate-report-schemas: jq_bin=${JQ_BIN}"
+echo "pi-ci-validate-report-schemas: jq_version=${JQ_VERSION}"
+echo "pi-ci-validate-report-schemas: jq_cmdline=${JQ_CMDLINE}"
+echo "pi-ci-validate-report-schemas: jq_timeout_secs=${PI_CI_JQ_TIMEOUT_SECS:-<unset>}"
 
 run_check() {
   local label="$1" script="$2" target="$3"
