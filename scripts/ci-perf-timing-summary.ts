@@ -63,6 +63,50 @@ export function parsePlaywright(report: PwReport): TimingRow[] {
   return rows;
 }
 
+// ---------- Failed-test artifact links ----------
+// Playwright writes attachments (trace.zip, screenshots, videos) into
+// per-test folders under `test-results/`. The full-run artifact bundle
+// uploaded by CI is browsable from the workflow run's Artifacts panel;
+// we deep-link to it so a failing summary is one click from evidence.
+export interface FailedTestArtifacts {
+  suite: string; name: string; project?: string;
+  attachments: Array<{ label: string; path: string }>;
+}
+
+export function parsePlaywrightFailedArtifacts(report: PwReport): FailedTestArtifacts[] {
+  const out: FailedTestArtifacts[] = [];
+  for (const spec of walk(report.suites)) {
+    for (const t of spec.tests) {
+      const last = t.results?.[t.results.length - 1] as { status?: string; attachments?: Array<{ name?: string; path?: string }> } | undefined;
+      if (!last || last.status === "passed" || last.status === "skipped") continue;
+      const attachments = (last.attachments ?? [])
+        .filter((a) => a.path && (/trace\.zip$/.test(a.path) || /\.(png|json)$/.test(a.path)))
+        .map((a) => ({ label: a.name ?? a.path!.split("/").pop() ?? "artifact", path: a.path! }));
+      if (attachments.length) out.push({ suite: spec.file, name: t.title, project: t.projectName, attachments });
+    }
+  }
+  return out;
+}
+
+export function renderFailedArtifactLinks(
+  failed: FailedTestArtifacts[],
+  env: { serverUrl?: string; repository?: string; runId?: string; runAttempt?: string } = {},
+): string {
+  if (failed.length === 0) return "";
+  const runUrl = env.serverUrl && env.repository && env.runId
+    ? `${env.serverUrl}/${env.repository}/actions/runs/${env.runId}${env.runAttempt ? `/attempts/${env.runAttempt}` : ""}#artifacts`
+    : null;
+  const out: string[] = ["### 🔗 Failed-test artifacts\n"];
+  if (runUrl) out.push(`Browse the full artifact bundle from the [workflow run's Artifacts panel](${runUrl}).\n`);
+  for (const f of failed) {
+    out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""} — ${
+      f.attachments.map((a) => `[${a.label}](${a.path})`).join(" · ")
+    }`);
+  }
+  out.push("");
+  return out.join("\n");
+}
+
 type VtTask = { name: string; result?: { duration?: number; state?: string }; tasks?: VtTask[] };
 type VtFile = { name?: string; filepath?: string; tasks?: VtTask[] };
 type VtReport = { testResults?: VtFile[] } | { files?: VtFile[] };
