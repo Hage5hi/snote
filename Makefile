@@ -541,16 +541,29 @@ pretty-index-mismatch-summary-json-merge:
 #   PI_SUMMARY_JSON_PATH=<file>  (defaults to $(PI_REPORT_PATH).summary.json)
 pretty-index-mismatch-summary-validate:
 	@f="$(PI_SUMMARY_JSON_PATH)"; \
-	 if [ ! -f "$$f" ]; then echo "ERROR: no summary at path='$$f'" >&2; exit 2; fi; \
+	 gha_err() { if [ "$${GITHUB_ACTIONS:-}" = "true" ]; then while IFS= read -r line; do [ -n "$$line" ] && printf '::error file=%s::%s\n' "$$f" "$$line" >&2; done; fi; }; \
+	 if [ ! -f "$$f" ]; then echo "ERROR: no summary at path='$$f'" >&2; printf '%s\n' "no summary at path='$$f'" | gha_err; exit 2; fi; \
 	 schema=schemas/pretty-index-mismatch-summary-json.schema.json; \
 	 if [ ! -f "$$schema" ]; then echo "ERROR: missing schema at path='$$schema'" >&2; exit 2; fi; \
+	 command -v jq >/dev/null 2>&1 && sv=$$(jq -r '.schema // ""' -- "$$f" 2>/dev/null) || sv=""; \
+	 case "$$sv" in \
+	   pretty-index-mismatch-summary/v0) \
+	     msg="DEPRECATED: schema 'pretty-index-mismatch-summary/v0' is accepted for backward compatibility; regenerate with the current tool to produce 'pretty-index-mismatch-summary/v1'"; \
+	     echo "warn: $$msg" >&2; \
+	     if [ "$${GITHUB_ACTIONS:-}" = "true" ]; then printf '::warning file=%s::%s\n' "$$f" "$$msg" >&2; fi; \
+	     echo "OK (deprecated v0) $$f"; exit 0;; \
+	 esac; \
 	 if command -v npx >/dev/null 2>&1 && npx --no-install ajv --help >/dev/null 2>&1; then \
-	   npx --no-install ajv validate -s "$$schema" -d "$$f" --strict=false --errors=text || { \
-	     echo "ERROR: ajv validation failed for '$$f' (see errors above)" >&2; exit 5; }; \
+	   ajv_out=$$(npx --no-install ajv validate -s "$$schema" -d "$$f" --strict=false --errors=text 2>&1) || { \
+	     echo "$$ajv_out" >&2; \
+	     printf '%s\n' "$$ajv_out" | gha_err; \
+	     echo "ERROR: ajv validation failed for '$$f'" >&2; exit 5; }; \
 	 else \
 	   command -v jq >/dev/null || { echo "ERROR: jq required (ajv not found)" >&2; exit 2; }; \
 	   if ! jq -e . -- "$$f" >/dev/null 2>&1; then \
-	     echo "ERROR: '$$f' is not valid JSON" >&2; exit 5; \
+	     echo "ERROR: '$$f' is not valid JSON" >&2; \
+	     printf '%s\n' "'$$f' is not valid JSON" | gha_err; \
+	     exit 5; \
 	   fi; \
 	   errs=$$(jq -r '\
 	     def isnn(x): (x|type)=="number" and (x|floor)==x and x>=0; \
@@ -559,7 +572,7 @@ pretty-index-mismatch-summary-validate:
 	       chk("\(p).total";      (c|type)=="object" and isnn(c.total);      (c.total // "<missing>")), \
 	       chk("\(p).mismatched"; (c|type)=="object" and isnn(c.mismatched); (c.mismatched // "<missing>")), \
 	       chk("\(p).missing";    (c|type)=="object" and isnn(c.missing);    (c.missing // "<missing>")); \
-	     [ chk(".schema"; (.schema=="pretty-index-mismatch-summary/v1" or .schema=="pretty-index-mismatch-summary-merged/v1"); (.schema // "<missing>")), \
+	     [ chk(".schema"; (.schema=="pretty-index-mismatch-summary/v1" or .schema=="pretty-index-mismatch-summary-merged/v1" or .schema=="pretty-index-mismatch-summary/v0"); (.schema // "<missing>")), \
 	       chk(".matrices"; (.matrices|type)=="object"; (.matrices // "<missing>")), \
 	       cntErrs(".matrices.atomic"; (.matrices.atomic // {})), \
 	       cntErrs(".matrices.stress"; (.matrices.stress // {})), \
@@ -568,6 +581,7 @@ pretty-index-mismatch-summary-validate:
 	   if [ -n "$$errs" ]; then \
 	     echo "ERROR: invalid summary '$$f':" >&2; \
 	     echo "$$errs" >&2; \
+	     printf '%s\n' "$$errs" | gha_err; \
 	     exit 5; \
 	   fi; \
 	 fi; \
