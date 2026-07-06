@@ -23,8 +23,13 @@ export interface RetryOptions {
   random?: () => number;
   /** Sleep — inject in tests to avoid real waits. */
   sleep?: (ms: number) => Promise<void>;
-  /** Called before each retry — useful for structured logging in CI. */
-  onRetry?: (info: { key: string; attempt: number; delayMs: number; error: unknown }) => void;
+  /** Called before each retry. Defaults to a structured stderr logger. */
+  onRetry?: (info: {
+    key: string; attempt: number; delayMs: number;
+    category: TransientCategory; error: unknown;
+  }) => void;
+  /** Set false to silence the default stderr retry log. */
+  logRetries?: boolean;
 }
 
 export interface UploadOptions extends RetryOptions {
@@ -32,23 +37,40 @@ export interface UploadOptions extends RetryOptions {
   concurrency?: number;
 }
 
-const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+const TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
 const TRANSIENT_CODES = new Set([
-  "ServiceUnavailable",
-  "SlowDown",
-  "InternalError",
-  "RequestTimeout",
-  "ThrottlingException",
-  "ProvisionedThroughputExceededException",
+  "ServiceUnavailable", "SlowDown", "InternalError",
+  "RequestTimeout", "RequestTimeoutException",
+  "ThrottlingException", "Throttling", "TooManyRequestsException",
+  "ProvisionedThroughputExceededException", "PriorRequestNotComplete",
+]);
+const TRANSIENT_NETWORK = new Set([
+  "ECONNRESET", "ECONNREFUSED", "ETIMEDOUT", "EAI_AGAIN",
+  "ENOTFOUND", "EPIPE", "EHOSTUNREACH", "ENETUNREACH",
+  "EPROTO", "UND_ERR_SOCKET", "UND_ERR_CONNECT_TIMEOUT",
 ]);
 
-export function isTransientS3Error(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { name?: string; code?: string; $metadata?: { httpStatusCode?: number }; status?: number };
+export type TransientCategory =
+  | "http-throttle" | "http-5xx" | "network" | "timeout" | "none";
+
+export function classifyS3Error(err: unknown): TransientCategory {
+  if (!err || typeof err !== "object") return "none";
+  const e = err as {
+    name?: string; code?: string;
+    $metadata?: { httpStatusCode?: number }; status?: number; cause?: unknown;
+  };
   const status = e.$metadata?.httpStatusCode ?? e.status;
-  if (typeof status === "number" && TRANSIENT_STATUSES.has(status)) return true;
-  const code = e.code ?? e.name;
-  return typeof code === "string" && TRANSIENT_CODES.has(code);
+  const code = e.code ?? e.name ?? "";
+  const causeCode = typeof (e.cause as any)?.code === "string" ? (e.cause as any).code : "";
+  if (TRANSIENT_NETWORK.has(code) || TRANSIENT_NETWORK.has(causeCode)) return "network";
+  if (status === 408 || code === "RequestTimeout" || code === "RequestTimeoutException" || code === "ETIMEDOUT") return "timeout";
+  if (status === 429 || code === "SlowDown" || code === "Throttling" || code === "ThrottlingException" || code === "TooManyRequestsException" || code === "ProvisionedThroughputExceededException") return "http-throttle";
+  if ((typeof status === "number" && TRANSIENT_STATUSES.has(status)) || TRANSIENT_CODES.has(code)) return "http-5xx";
+  return "none";
+}
+
+export function isTransientS3Error(err: unknown): boolean {
+  return classifyS3Error(err) !== "none";
 }
 
 export async function putObjectWithRetry(
@@ -70,10 +92,20 @@ export async function putObjectWithRetry(
       return;
     } catch (err) {
       lastErr = err;
-      if (attempt === maxAttempts || !isTransientS3Error(err)) throw err;
+      const category = classifyS3Error(err);
+      if (attempt === maxAttempts || category === "none") throw err;
       const exp = Math.min(maxDelay, baseDelay * 2 ** (attempt - 1));
       const delayMs = Math.floor(exp * (0.5 + rand() * 0.5)); // 50–100% jitter
-      opts.onRetry?.({ key, attempt, delayMs, error: err });
+      const info = { key, attempt, delayMs, category, error: err };
+      if (opts.onRetry) opts.onRetry(info);
+      else if (opts.logRetries !== false) {
+        const msg = (err as { message?: string })?.message ?? String(err);
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[s3-retry] key=${key} attempt=${attempt}/${maxAttempts} ` +
+          `category=${category} delayMs=${delayMs} error=${msg}`,
+        );
+      }
       await sleep(delayMs);
     }
   }

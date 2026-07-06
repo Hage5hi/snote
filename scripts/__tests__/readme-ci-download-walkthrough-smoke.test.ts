@@ -7,7 +7,8 @@
 // well under a second — the deep coverage lives in
 // `readme-ci-download-walkthrough.test.ts`.
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -77,6 +78,23 @@ mkdir -p "$dir"; cp -R "${artifactDir}"/. "$dir"/
         `Update README's "Downloading CI failure artifacts" section or the artifact bundler ` +
         `so every documented sidecar is uploaded.`,
       );
+    }
+
+    // Checksum + size parity: every downloaded sidecar must byte-for-byte
+    // match the "server-side" artifact — catches truncated/corrupt uploads
+    // in addition to plain missing files.
+    const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
+    for (const f of REQUIRED_SIDECARS) {
+      const src = join(artifactDir, f), dl = join(dest, f);
+      const srcSize = statSync(src).size, dlSize = statSync(dl).size;
+      if (srcSize !== dlSize || sha(src) !== sha(dl)) {
+        throw new Error(
+          `README CI-download walkthrough drift: sidecar '${f}' mismatch — ` +
+          `expected size=${srcSize} sha256=${sha(src)}, got size=${dlSize} sha256=${sha(dl)}. ` +
+          `The artifact upload/download pipeline is truncating or altering files.`,
+        );
+      }
+      expect(dlSize).toBeGreaterThan(0);
     }
   }, 30_000);
 });
