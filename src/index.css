@@ -266,9 +266,29 @@
     will-change: scroll-position;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+    /* Promote the scroller to its own compositor layer up-front so the
+       first drag-scroll doesn't pay a one-off layer-creation cost that
+       shows up as a visible stutter on very long notes. */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    /* Hint the browser that scrollTop changes rapidly during selection
+       drag-scroll — keeps sub-pixel scroll on the compositor thread. */
+    scroll-behavior: auto;
   }
   .cm-editor .cm-line {
     contain: content;
+    /* Prevent per-line reflow from rippling into siblings while the
+       selection extends across many lines during drag-scroll. */
+    contain-intrinsic-size: auto 1.5em;
+  }
+  /* The selection overlay is repainted on every mouse move during a
+     drag. Isolating its paint layer stops the repaint from invalidating
+     the whole scroller. Keep the visual identical — only paint scope
+     changes. */
+  .cm-editor .cm-selectionLayer,
+  .cm-editor .cm-selectionBackground {
+    contain: strict;
+    will-change: transform;
   }
   .cm-content,
   .cm-content ::selection {
