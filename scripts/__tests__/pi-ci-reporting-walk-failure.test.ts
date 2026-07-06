@@ -70,6 +70,7 @@ d("pretty-index-mismatch-ci reporting — extracted-tree walk failure", () => {
 
       _Non-OK entries above indicate the preflight would fail locally. Re-run \`make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=atomic\` to reproduce._
 
+      _content_hash: MISSING:MISSING_
       "
     `);
   });

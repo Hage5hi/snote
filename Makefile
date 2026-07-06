@@ -428,7 +428,11 @@ pretty-index-help:
          pretty-index-mismatch-ci-bundle-download \
          pretty-index-mismatch-ci-bundle-recheck \
          pretty-index-mismatch-ci-bundle-clean \
-         pretty-index-mismatch-ci-bundle-list
+         pretty-index-mismatch-ci-bundle-list \
+         pretty-index-mismatch-ci-bundle-report \
+         pretty-index-mismatch-ci-bundle-report-show \
+         pretty-index-mismatch-ci-bundle-manifest-check
+
 
 
 # Standalone strict schema check for an arbitrary validate-report.json —
@@ -659,6 +663,52 @@ pretty-index-mismatch-ci-bundle-clean:
 	 else \
 	   echo "nothing to clean (no such dir: $$out)"; \
 	 fi
+
+
+# One-command local reporting: download the CI bundle for RUN_ID, then
+# print the preflight status table + extracted-tree manifest path (same
+# files CI uploads). Delegates to scripts/pretty-index-mismatch-ci-bundle-report.sh.
+#   make pretty-index-mismatch-ci-bundle-report RUN_ID=<id> [PI_CI_SCOPE=atomic|stress] [OS=ubuntu-latest]
+pretty-index-mismatch-ci-bundle-report:
+	@if [ -z "$(RUN_ID)" ]; then \
+	   echo "usage: make pretty-index-mismatch-ci-bundle-report RUN_ID=<id> [PI_CI_SCOPE=atomic|stress] [OS=ubuntu-latest]" >&2; \
+	   exit 2; \
+	 fi
+	@scripts/pretty-index-mismatch-ci-bundle-report.sh "$(RUN_ID)" "$(PI_CI_SCOPE)" "$(OS)"
+
+# Regenerate + print the preflight status table and extracted-tree
+# manifest against an ALREADY-DOWNLOADED bundle (no network). Useful
+# after `…-bundle-download` when you want the reports without re-hitting
+# the gh CLI. Prints both file paths at the end for easy copy/paste.
+#   make pretty-index-mismatch-ci-bundle-report-show                 # atomic
+#   make pretty-index-mismatch-ci-bundle-report-show PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-report-show:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@out="./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted/pi-ci-$(PI_CI_SCOPE)"; \
+	 mkdir -p "$$out"; \
+	 GITHUB_STEP_SUMMARY="$$out/preflight-status.md" \
+	 PI_CI_PREFLIGHT_STATUS_PATH="$$out/preflight-status.md" \
+	   scripts/ci/pi-ci-preflight-status-summary.sh "$$out" "$(PI_CI_SCOPE)"; \
+	 echo ""; cat "$$out/preflight-status.md" 2>/dev/null || true; \
+	 echo ""; \
+	 scripts/ci/pi-ci-extracted-tree-manifest.sh "$$out" >/dev/null; \
+	 echo ""; \
+	 echo "preflight status (md)  : $$out/preflight-status.md"; \
+	 echo "preflight status (json): $$out/preflight-status.json"; \
+	 echo "extracted tree   (txt) : $$out/extracted-tree.txt"; \
+	 echo "extracted tree   (json): $$out/extracted-tree.json"
+
+# Schema/format-check the extracted-tree.json manifest for a scope.
+#   make pretty-index-mismatch-ci-bundle-manifest-check                 # atomic
+#   make pretty-index-mismatch-ci-bundle-manifest-check PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-manifest-check:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@scripts/ci/pi-ci-manifest-schema-check.sh \
+	   "./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted/pi-ci-$(PI_CI_SCOPE)/extracted-tree.json"
+
+
 
 
 
