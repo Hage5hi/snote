@@ -135,9 +135,11 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     let last = 0;
     let advancingTicks = 0;
     for (let i = 0; i < 60; i++) {
+      const before = last;
       await page.mouse.wheel(0, 24);
       await page.waitForTimeout(16);
       const now = await scroller.evaluate((el) => el.scrollTop);
+      recordWheel(page, { i, dx: 0, dy: 24, before, after: now, t: Date.now() });
       if (now > last) advancingTicks++;
       last = now;
     }
