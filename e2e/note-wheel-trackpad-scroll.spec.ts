@@ -309,14 +309,14 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
       const beforeScrollTop = await scroller.evaluate((el) => el.scrollTop);
       const maxScrollTop = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
       const beforeRange = await getSelectionRangeFrame(page);
-      await page.mouse.move(box.x + 40 + i * 4, box.y + box.height - 8, { steps: 2 });
+      const targetX = box.x + 40 + i * 4;
+      const targetY = box.y + box.height - 8;
+      await page.mouse.move(targetX, targetY, { steps: 2 });
       await page.waitForTimeout(30);
       const afterScrollTop = await scroller.evaluate((el) => el.scrollTop);
       const afterRange = await getSelectionRangeFrame(page);
-      const targetX = box.x + 40 + i * 4;
-      const targetY = box.y + box.height - 8;
       recordSelectionDrag(page, {
-        i, x: Math.round(box.x + 40 + i * 4), y: Math.round(box.y + box.height - 8),
+        i, x: Math.round(targetX), y: Math.round(targetY),
         dx: i === 0 ? 0 : 4, dy: i === 0 ? Math.round(box.height - 48) : 0,
         beforeScrollTop, afterScrollTop, maxScrollTop, beforeRange, afterRange, t: Date.now(),
       }, testInfo);
