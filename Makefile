@@ -717,3 +717,56 @@ pretty-index-mismatch-validate:
 	if [ -n "$$err" ]; then echo "$$err" >&2; echo "invalid: $(PI_REPORT_PATH)" >&2; exit 1; fi; \
 	echo "✅ $(PI_REPORT_PATH) validates against pretty-index-checksum-mismatch/v1"
 
+# End-to-end CI-parity pipeline that runs summary-json, summary-validate
+# (with --report-json), summary-md, and diff-report on a local mismatch
+# report. When mismatches are present (recipe exits 3) and PI_CI_BUNDLE_PATH
+# is set, all generated artifacts are bundled into a single .tar.gz
+# tarball for easy upload as a CI artifact.
+#
+#   PI_REPORT_PATH=<in>           mismatch report to process
+#   PI_BASELINE=<path>            optional baseline for diff (skipped if absent)
+#   PI_CI_OUT_DIR=<dir>           where to write generated files (default: ./_pretty-index-ci)
+#   PI_CI_BUNDLE_PATH=<file.tgz>  tarball path (default: <PI_CI_OUT_DIR>.tar.gz)
+PI_CI_OUT_DIR     ?= _pretty-index-ci
+PI_CI_BUNDLE_PATH ?= $(PI_CI_OUT_DIR).tar.gz
+pretty-index-mismatch-ci:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
+	  echo "no mismatch report at $(PI_REPORT_PATH) — run verify first" >&2; exit 2; \
+	fi
+	@rm -rf -- "$(PI_CI_OUT_DIR)"; mkdir -p -- "$(PI_CI_OUT_DIR)"
+	@echo "── pretty-index CI pipeline → $(PI_CI_OUT_DIR) ──"
+	@$(MAKE) --no-print-directory pretty-index-mismatch-summary-json \
+	  PI_REPORT_PATH="$(PI_REPORT_PATH)" \
+	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json"
+	@set +e; \
+	 $(MAKE) --no-print-directory pretty-index-mismatch-summary-validate \
+	   PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
+	   PI_VALIDATE_REPORT_JSON="$(PI_CI_OUT_DIR)/validate-report.json" \
+	   2> "$(PI_CI_OUT_DIR)/validate-annotations.txt"; \
+	 vrc=$$?; cat "$(PI_CI_OUT_DIR)/validate-annotations.txt" >&2; \
+	 if [ "$$vrc" -ne 0 ]; then echo "validate failed (exit=$$vrc)" >&2; exit "$$vrc"; fi
+	@$(MAKE) --no-print-directory pretty-index-mismatch-summary-md \
+	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
+	  PI_SUMMARY_MD_PATH="$(PI_CI_OUT_DIR)/summary.md"
+	@if [ -n "$(PI_BASELINE)" ] && [ -f "$(PI_BASELINE)" ]; then \
+	   set +e; \
+	   $(MAKE) --no-print-directory pretty-index-mismatch-diff \
+	     PI_BASELINE="$(PI_BASELINE)" \
+	     PI_REPORT_PATH="$(PI_REPORT_PATH)" \
+	     PI_DIFF_OUT_PATH="$(PI_CI_OUT_DIR)/diff.json"; \
+	   drc=$$?; \
+	   if [ "$$drc" -ne 0 ] && [ "$$drc" -ne 2 ]; then :; fi; \
+	 else \
+	   echo "skip diff: PI_BASELINE unset or missing"; \
+	 fi
+	@mm=$$(jq -r '.totals.mismatched + .totals.missing' -- "$(PI_CI_OUT_DIR)/summary.json"); \
+	 echo "pipeline artifacts:"; ls -1 "$(PI_CI_OUT_DIR)"; \
+	 if [ "$$mm" -gt 0 ]; then \
+	   tar -czf "$(PI_CI_BUNDLE_PATH)" -C "$$(dirname -- "$(PI_CI_OUT_DIR)")" "$$(basename -- "$(PI_CI_OUT_DIR)")"; \
+	   echo "bundled mismatched artifacts -> $(PI_CI_BUNDLE_PATH)"; \
+	   exit 3; \
+	 else \
+	   echo "no mismatches; skipping bundle"; \
+	 fi
+
