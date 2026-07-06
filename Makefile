@@ -736,6 +736,10 @@ pretty-index-mismatch-ci:
 	fi
 	@rm -rf -- "$(PI_CI_OUT_DIR)"; mkdir -p -- "$(PI_CI_OUT_DIR)"
 	@echo "── pretty-index CI pipeline → $(PI_CI_OUT_DIR) ──"
+	@# Pre-create validate report + annotations so the tarball ALWAYS contains
+	@# them (even when empty), keeping failure debugging consistent.
+	@: > "$(PI_CI_OUT_DIR)/validate-report.json"
+	@: > "$(PI_CI_OUT_DIR)/validate-annotations.txt"
 	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-json \
 	  PI_REPORT_PATH="$(PI_REPORT_PATH)" \
 	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json"
@@ -765,8 +769,46 @@ pretty-index-mismatch-ci:
 	 if [ "$$mm" -gt 0 ]; then \
 	   tar -czf "$(PI_CI_BUNDLE_PATH)" -C "$$(dirname -- "$(PI_CI_OUT_DIR)")" "$$(basename -- "$(PI_CI_OUT_DIR)")"; \
 	   echo "bundled mismatched artifacts -> $(PI_CI_BUNDLE_PATH)"; \
+	   echo "bundle contents:"; tar -tzf "$(PI_CI_BUNDLE_PATH)"; \
 	   exit 3; \
 	 else \
 	   echo "no mismatches; skipping bundle"; \
 	 fi
+
+# Self-test that generates a minimal synthetic mismatch fixture and runs
+# `pretty-index-mismatch-ci` against it end-to-end. Used to verify CI
+# parity on fresh checkouts without needing a real replay run.
+#
+#   PI_CI_SELFTEST_DIR=<dir>   scratch dir (default: ./_pi-ci-selftest)
+PI_CI_SELFTEST_DIR ?= _pi-ci-selftest
+.PHONY: pretty-index-mismatch-ci-selftest
+pretty-index-mismatch-ci-selftest:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@rm -rf -- "$(PI_CI_SELFTEST_DIR)"; mkdir -p -- "$(PI_CI_SELFTEST_DIR)"
+	@echo "── synthesizing minimal mismatch fixture → $(PI_CI_SELFTEST_DIR) ──"
+	@printf '%s\n' '{ \
+	  "schema":"pretty-index-checksum-mismatch/v1", \
+	  "scope":"atomic","matrix":"atomic","fail_fast":false, \
+	  "results":[ \
+	    {"status":"MISMATCH","dir":"synthetic/atomic","file":"pretty-index.json", \
+	     "expected":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", \
+	     "actual":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, \
+	    {"status":"OK","dir":"synthetic/atomic","file":"other.json", \
+	     "expected":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", \
+	     "actual":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"} \
+	  ]}' | jq . > "$(PI_CI_SELFTEST_DIR)/report.json"
+	@set +e; \
+	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-ci \
+	   PI_REPORT_PATH="$(PI_CI_SELFTEST_DIR)/report.json" \
+	   PI_CI_OUT_DIR="$(PI_CI_SELFTEST_DIR)/out" \
+	   PI_CI_BUNDLE_PATH="$(PI_CI_SELFTEST_DIR)/bundle.tar.gz"; \
+	 rc=$$?; \
+	 if [ "$$rc" -ne 3 ]; then \
+	   echo "selftest FAILED: expected exit=3 (mismatches present), got $$rc" >&2; exit 1; \
+	 fi; \
+	 for f in validate-report.json validate-annotations.txt summary.json summary.md; do \
+	   [ -f "$(PI_CI_SELFTEST_DIR)/out/$$f" ] || { echo "selftest FAILED: missing $$f" >&2; exit 1; }; \
+	 done; \
+	 [ -f "$(PI_CI_SELFTEST_DIR)/bundle.tar.gz" ] || { echo "selftest FAILED: bundle not produced" >&2; exit 1; }; \
+	 echo "✅ pretty-index-mismatch-ci selftest passed (bundle: $(PI_CI_SELFTEST_DIR)/bundle.tar.gz)"
 
