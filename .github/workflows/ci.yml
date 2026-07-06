@@ -926,6 +926,21 @@ print(json.dumps({
           if-no-files-found: warn
           retention-days: 14
 
+      - name: upload validator I/O artifact on failure (MATRIX=atomic)
+        # Dedicated debugging artifact: the exact stdout/stderr the
+        # validator emitted, alongside the matching log tail, so
+        # triagers get both files in one download.
+        if: always() && steps.pi-ci-report-schemas-atomic.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-schema-validator-io-atomic-${{ matrix.os }}
+          path: |
+            /tmp/pi-ci-atomic/report-schema-validation-log.txt
+            /tmp/pi-ci-atomic/report-schema-errors.txt
+            /tmp/pi-ci-atomic/report-schema-validation-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: fail job on report schema drift (MATRIX=atomic)
         if: always() && steps.pi-ci-report-schemas-atomic.outcome == 'failure'
         shell: bash
