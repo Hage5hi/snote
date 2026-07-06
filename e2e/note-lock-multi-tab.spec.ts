@@ -8,6 +8,9 @@ import { test, expect } from "@playwright/test";
 import { deleteNote, seedPlaintextNote } from "./helpers/seed-note";
 import { trackNoteWrites, uniqueSlug } from "./helpers/note-writes";
 
+// Always retain traces/videos for these multi-context lock specs.
+test.use({ trace: "on", video: "on", screenshot: "only-on-failure" });
+
 const PASSPHRASE = "correct-horse-battery-staple";
 const TEXT = "Multi-tab lock coordination test.";
 
