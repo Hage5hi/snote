@@ -1149,7 +1149,32 @@ scope-specific directory rooted at the repo root:
 `pretty-index-mismatch-ci-bundle-recheck` reads from the exact same
 paths, and its preflight fails fast if either
 `validate-report.json` or `validate-schema-assertion.txt` is missing or
-empty in the extracted directory above.
+empty in the extracted directory above. It also prints the extracted
+bundle listing (file name + byte size) via
+`pretty-index-mismatch-ci-bundle-list` before running the check so you
+can see exactly what it will consume:
+
+```sh
+make pretty-index-mismatch-ci-bundle-list                  # atomic
+make pretty-index-mismatch-ci-bundle-list PI_CI_SCOPE=stress
+```
+
+#### Troubleshooting preflight failures
+
+The preflight in `pretty-index-mismatch-ci-bundle-recheck` prints one
+line per problem to stderr and exits `2`. Common cases:
+
+| Message                                                                                   | Meaning                                                       | Fix                                                                                       |
+|-------------------------------------------------------------------------------------------|---------------------------------------------------------------|-------------------------------------------------------------------------------------------|
+| `ERROR: no extracted bundle at ./_pi-ci-bundle-<scope>/extracted`                         | You never ran the downloader (or ran `…-bundle-clean` after). | `make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=<scope>`           |
+| `ERROR: preflight: validate-report.json MISSING under …/extracted`                        | Tarball produced by CI did not contain `validate-report.json`.| Re-download the bundle; if it is still missing, the CI job aborted before writing it — inspect the `pretty-index-mismatch-ci-validator-files-<scope>-<os>` artifact's `extracted-tree.txt` for what actually got uploaded. |
+| `ERROR: preflight: validate-report.json EMPTY at …/validate-report.json`                  | File exists but is zero-length.                               | Delete the local bundle (`make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=<scope>`) and re-download; if it repeats, the CI validator crashed before writing content. |
+| `ERROR: preflight: validate-schema-assertion.txt MISSING under …/extracted`               | Tarball did not include the schema-assertion companion file.  | Same as above — re-download; consult the CI artifact's `extracted-tree.txt` if it stays missing. |
+| `ERROR: preflight: validate-schema-assertion.txt EMPTY at …/validate-schema-assertion.txt`| Schema-assertion file present but zero-length.                | Clean and re-download; if it repeats, the CI step short-circuited before writing the jq output. |
+
+All five cases exit `2`; the last line printed to stderr is always the
+`hint:` re-download command.
+
 
 
 
