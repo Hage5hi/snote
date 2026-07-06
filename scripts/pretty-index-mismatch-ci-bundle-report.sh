@@ -85,6 +85,23 @@ hash_of() {
     grep -o '"content_hash":"[^"]*"' "$f" | head -1 | sed 's/.*:"\(.*\)"/\1/'
   fi
 }
+sv_of() {
+  local f="$1"
+  [ -s "$f" ] || { echo "MISSING"; return; }
+  if command -v jq >/dev/null 2>&1; then
+    jq -r '(.schema_version // "<missing>") | tostring' -- "$f" 2>/dev/null || echo "n/a"
+  else
+    echo "n/a"
+  fi
+}
+
+EXPECTED_SV="1"
+sv_status() {
+  local actual="$1"
+  if [ "$actual" = "$EXPECTED_SV" ]; then echo "OK"; else echo "MISMATCH"; fi
+}
+tree_sv="$(sv_of "$manifest_json")"
+pre_sv="$(sv_of "$status_json")"
 
 echo
 echo "── pretty-index-mismatch-ci consolidated report ──"
@@ -97,6 +114,10 @@ echo "  preflight status (json) : $status_json"
 echo "  extracted tree   (txt)  : $manifest_txt"
 echo "  extracted tree   (json) : $manifest_json"
 echo "  schema check exit       : $schema_rc"
+echo
+echo "── schema_version (expected=$EXPECTED_SV) ──"
+printf "  %-24s  actual=%-10s  status=%-8s  file=%s\n" "extracted-tree.json"  "$tree_sv" "$(sv_status "$tree_sv")" "$manifest_json"
+printf "  %-24s  actual=%-10s  status=%-8s  file=%s\n" "preflight-status.json" "$pre_sv"  "$(sv_status "$pre_sv")"  "$status_json"
 
 if [ "$download_rc" -ne 0 ]; then
   echo "note: download/extract step exited $download_rc; reports above were still generated" >&2
