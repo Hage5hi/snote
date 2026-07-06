@@ -1134,18 +1134,63 @@ Written by `scripts/ci/pi-ci-validate-report-schemas.sh` on every run
   "out_dir": "/tmp/pi-ci-atomic",
   "terminated_by": null,
   "files": [
-    { "label": "extracted-tree.json",   "path": "…/extracted-tree.json",   "expected_schema_version": "1", "actual_schema_version": "99", "status": "FAIL", "exit": 5 },
-    { "label": "preflight-status.json", "path": "…/preflight-status.json", "expected_schema_version": "1", "actual_schema_version": "1",  "status": "OK",   "exit": 0 }
+    { "label": "extracted-tree.json",   "path": "…/extracted-tree.json",   "expected_schema_version": "1", "actual_schema_version": "99",              "status": "FAIL", "exit": 5, "reason": "schema-drift" },
+    { "label": "preflight-status.json", "path": "…/preflight-status.json", "expected_schema_version": "1", "actual_schema_version": "1",               "status": "OK",   "exit": 0, "reason": "ok" }
   ],
   "exit": 5
 }
 ```
 
 Interpretation: match `files[].label` to the sidecar, compare
-`expected_schema_version` vs `actual_schema_version` for drift, and
-open `files[].path` for the failing file. `status="FAIL"` with
-`actual_schema_version="<missing-file>"` / `"<empty-file>"` /
-`"<unreadable>"` distinguishes "file gone" from "schema drift".
+`expected_schema_version` vs `actual_schema_version`, and open
+`files[].path` for the failing file. The `files[].reason` field is
+machine-readable and takes one of these values:
+
+| `reason`                    | Meaning |
+|-----------------------------|---------|
+| `ok`                        | File parsed and matched the expected schema |
+| `missing-file`              | Sidecar path does not exist on disk (`actual_schema_version="<missing-file>"`) |
+| `empty-file`                | Sidecar exists but is zero bytes (`actual_schema_version="<empty-file>"`) |
+| `jq-missing`                | `jq` binary not available on this runner |
+| `jq-parse-failed`           | `jq` could not parse the sidecar JSON (`actual_schema_version="<unreadable>"`) |
+| `schema_version-missing`    | JSON parsed but has no `schema_version` key |
+| `schema-drift`              | Parsed value differs from `expected_schema_version` |
+
+Top-level `reason` values only appear on early-exit paths:
+`"bad-env-var"` (invalid `PI_CI_EXPECTED_SCHEMA_VERSION`, `exit: 2`,
+empty `files`) or `"terminated"` (`SIGTERM/INT/HUP`, `terminated_by`
+records the signal, `exit: null`).
+
+Example — jq parse failure on both sidecars:
+
+```json
+{
+  "schema": "pi-ci/report-schema-validation-summary/v1",
+  "expected_schema_version": "1", "out_dir": "…", "terminated_by": null,
+  "files": [
+    { "label": "extracted-tree.json",   "path": "…/extracted-tree.json",   "actual_schema_version": "<unreadable>", "status": "FAIL", "reason": "jq-parse-failed", "exit": 0, "expected_schema_version": "1" },
+    { "label": "preflight-status.json", "path": "…/preflight-status.json", "actual_schema_version": "<unreadable>", "status": "FAIL", "reason": "jq-parse-failed", "exit": 0, "expected_schema_version": "1" }
+  ],
+  "exit": 0
+}
+```
+
+Example — both sidecars missing on disk:
+
+```json
+{
+  "files": [
+    { "label": "extracted-tree.json",   "path": "…/extracted-tree.json",   "actual_schema_version": "<missing-file>", "status": "FAIL", "reason": "missing-file", "exit": 2, "expected_schema_version": "1" },
+    { "label": "preflight-status.json", "path": "…/preflight-status.json", "actual_schema_version": "<missing-file>", "status": "FAIL", "reason": "missing-file", "exit": 2, "expected_schema_version": "1" }
+  ]
+}
+```
+
+The same `reason` values are echoed in the validator's `── per-file
+reasons ──` block in `report-schema-validation-log.txt` and inline in
+each `::error` annotation (`reason=<value>`) so triagers can spot
+parse/timeout/missing causes without opening the JSON.
+
 
 
 ##### schema-validate exit codes
