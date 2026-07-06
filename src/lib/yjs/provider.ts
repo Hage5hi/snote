@@ -575,6 +575,9 @@ export class SupabaseYjsProvider {
           content: text,
           char_count: text.length,
           tags: extractTags(text),
+          // Beacon path is plaintext-only (guarded above); pin the flag so
+          // the row can never end up with encrypted bytes + is_encrypted=false.
+          is_encrypted: false,
         },
       ]);
       const headers = {
