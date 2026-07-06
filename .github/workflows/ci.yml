@@ -1656,9 +1656,37 @@ print(json.dumps({
         uses: actions/upload-artifact@v4
         with:
           name: pretty-index-mismatch-ci-preflight-status-stress-${{ matrix.os }}
-          path: /tmp/pi-ci-stress/preflight-status.md
+          path: |
+            /tmp/pi-ci-stress/preflight-status.md
+            /tmp/pi-ci-stress/preflight-status.json
           if-no-files-found: error
           retention-days: 14
+
+      - name: schema-validate report sidecars (MATRIX=stress)
+        id: pi-ci-report-schemas-stress
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: scripts/ci/pi-ci-validate-report-schemas.sh /tmp/pi-ci-stress
+
+      - name: annotate + upload report-schema failure artifacts (MATRIX=stress)
+        if: always() && steps.pi-ci-report-schemas-stress.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-report-schema-failure-stress-${{ matrix.os }}
+          path: |
+            /tmp/pi-ci-stress/extracted-tree.json
+            /tmp/pi-ci-stress/preflight-status.json
+            /tmp/pi-ci-stress/report-schema-errors.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: fail job on report schema drift (MATRIX=stress)
+        if: always() && steps.pi-ci-report-schemas-stress.outcome == 'failure'
+        shell: bash
+        run: |
+          echo "::error title=pi-ci report schema drift (stress)::extracted-tree.json or preflight-status.json failed schema check — see 'pretty-index-mismatch-ci-report-schema-failure-stress-${{ matrix.os }}' artifact"
+          exit 1
 
       - name: upload validator files on any summary/assertion failure (MATRIX=stress)
         # Fire on ANY prior step failure in this job (not just the specific
