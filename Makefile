@@ -421,6 +421,7 @@ pretty-index-help:
         pretty-index-mismatch-summary-json \
         pretty-index-mismatch-summary-json-merge \
         pretty-index-mismatch-summary-validate \
+        pretty-index-mismatch-summary-md \
         pretty-index-mismatch-csv pretty-index-mismatch-diff
 
 # Print a human-friendly per-file table (file, expected, actual, status)
@@ -540,17 +541,73 @@ pretty-index-mismatch-summary-json-merge:
 #   PI_SUMMARY_JSON_PATH=<file>  (defaults to $(PI_REPORT_PATH).summary.json)
 pretty-index-mismatch-summary-validate:
 	@f="$(PI_SUMMARY_JSON_PATH)"; \
-	 if [ ! -f "$$f" ]; then echo "no summary at $$f" >&2; exit 2; fi; \
+	 if [ ! -f "$$f" ]; then echo "ERROR: no summary at path='$$f'" >&2; exit 2; fi; \
 	 schema=schemas/pretty-index-mismatch-summary-json.schema.json; \
-	 if [ ! -f "$$schema" ]; then echo "missing schema: $$schema" >&2; exit 2; fi; \
+	 if [ ! -f "$$schema" ]; then echo "ERROR: missing schema at path='$$schema'" >&2; exit 2; fi; \
 	 if command -v npx >/dev/null 2>&1 && npx --no-install ajv --help >/dev/null 2>&1; then \
-	   npx --no-install ajv validate -s "$$schema" -d "$$f" --strict=false || exit 5; \
+	   npx --no-install ajv validate -s "$$schema" -d "$$f" --strict=false --errors=text || { \
+	     echo "ERROR: ajv validation failed for '$$f' (see errors above)" >&2; exit 5; }; \
 	 else \
-	   command -v jq >/dev/null || { echo "jq required (ajv not found)" >&2; exit 2; }; \
-	   err=$$(jq -r 'def need(p; msg): if (p) then empty else "missing: " + msg end; def isint(x): (x|type)=="number" and (x|floor)==x; def okcnt(c): (c|type)=="object" and isint(c.total) and isint(c.mismatched) and isint(c.missing); [ need(.schema=="pretty-index-mismatch-summary/v1" or .schema=="pretty-index-mismatch-summary-merged/v1"; ".schema"), need(.matrices|type=="object"; ".matrices"), need(okcnt(.matrices.atomic); ".matrices.atomic{total,mismatched,missing}"), need(okcnt(.matrices.stress); ".matrices.stress{total,mismatched,missing}"), need(okcnt(.totals); ".totals{total,mismatched,missing}") ] | join("; ")' -- "$$f"); \
-	   if [ -n "$$err" ]; then echo "invalid summary ($$f): $$err" >&2; exit 5; fi; \
+	   command -v jq >/dev/null || { echo "ERROR: jq required (ajv not found)" >&2; exit 2; }; \
+	   if ! jq -e . -- "$$f" >/dev/null 2>&1; then \
+	     echo "ERROR: '$$f' is not valid JSON" >&2; exit 5; \
+	   fi; \
+	   errs=$$(jq -r '\
+	     def isnn(x): (x|type)=="number" and (x|floor)==x and x>=0; \
+	     def chk(path; ok; val): if ok then empty else "  - path=\(path)  problem=invalid_or_missing  value=\(val|tostring)" end; \
+	     def cntErrs(p; c): \
+	       chk("\(p).total";      (c|type)=="object" and isnn(c.total);      (c.total // "<missing>")), \
+	       chk("\(p).mismatched"; (c|type)=="object" and isnn(c.mismatched); (c.mismatched // "<missing>")), \
+	       chk("\(p).missing";    (c|type)=="object" and isnn(c.missing);    (c.missing // "<missing>")); \
+	     [ chk(".schema"; (.schema=="pretty-index-mismatch-summary/v1" or .schema=="pretty-index-mismatch-summary-merged/v1"); (.schema // "<missing>")), \
+	       chk(".matrices"; (.matrices|type)=="object"; (.matrices // "<missing>")), \
+	       cntErrs(".matrices.atomic"; (.matrices.atomic // {})), \
+	       cntErrs(".matrices.stress"; (.matrices.stress // {})), \
+	       cntErrs(".totals";          (.totals // {})) \
+	     ] | map(select(. != null)) | .[]' -- "$$f"); \
+	   if [ -n "$$errs" ]; then \
+	     echo "ERROR: invalid summary '$$f':" >&2; \
+	     echo "$$errs" >&2; \
+	     exit 5; \
+	   fi; \
 	 fi; \
 	 echo "OK $$f"
+
+# Render a small human-readable markdown report from a summary JSON
+# (single or merged). Writes to $(PI_SUMMARY_MD_PATH) which defaults to
+# alongside the summary file with a `.md` suffix.
+#   PI_SUMMARY_JSON_PATH=<in>   PI_SUMMARY_MD_PATH=<out>
+PI_SUMMARY_MD_PATH ?= $(PI_SUMMARY_JSON_PATH).md
+pretty-index-mismatch-summary-md:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@f="$(PI_SUMMARY_JSON_PATH)"; \
+	 if [ ! -f "$$f" ]; then echo "no summary at $$f" >&2; exit 2; fi; \
+	 mkdir -p -- "$$(dirname -- "$(PI_SUMMARY_MD_PATH)")" 2>/dev/null || true; \
+	 { \
+	   echo "# pretty-index mismatch summary"; \
+	   echo ""; \
+	   echo "- source: \`$$f\`"; \
+	   echo "- schema: \`$$(jq -r '.schema // "unknown"' -- "$$f")\`"; \
+	   scope=$$(jq -r '.scope // empty' -- "$$f"); \
+	   if [ -n "$$scope" ]; then echo "- scope: \`$$scope\`"; fi; \
+	   echo ""; \
+	   echo "| matrix | total | mismatched | missing |"; \
+	   echo "| --- | ---: | ---: | ---: |"; \
+	   jq -r '.matrices | to_entries[] | "| \(.key) | \(.value.total) | \(.value.mismatched) | \(.value.missing) |"' -- "$$f"; \
+	   jq -r '.totals   | "| **total** | \(.total) | \(.mismatched) | \(.missing) |"' -- "$$f"; \
+	   srcs=$$(jq -r '(.merged_from // []) | length' -- "$$f"); \
+	   if [ "$$srcs" -gt 0 ]; then \
+	     echo ""; \
+	     echo "## merged sources"; \
+	     echo ""; \
+	     echo "| path | scope | missing | total | mismatched | missing_files |"; \
+	     echo "| --- | --- | :---: | ---: | ---: | ---: |"; \
+	     jq -r '.sources[]? | "| \(.path) | \(.scope // "-") | \(.missing // false) | \(.totals.total) | \(.totals.mismatched) | \(.totals.missing) |"' -- "$$f"; \
+	   fi; \
+	 } > "$(PI_SUMMARY_MD_PATH)"
+	@echo "wrote $(PI_SUMMARY_MD_PATH)"
+
+
 
 # Export the mismatch JSON report into a CSV file with columns:
 # matrix, artifact_dir, path, expected_hash, actual_hash
