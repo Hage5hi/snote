@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import * as Y from "yjs";
@@ -88,12 +89,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // back so re-opens are essentially free.
   const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
 
-  // Provider is bound to (slug, doc). Recreated whenever either changes —
-  // critical so navigating to a new slug (e.g. after rename) gets a fresh
-  // provider instead of dereferencing a destroyed one.
+  // Provider is bound to (slug, doc, encryption mode). Bumping `providerEpoch`
+  // on any encryption-mode flip forces a full teardown + rebuild — no stale
+  // instance can survive a lock/unlock and write in the wrong mode.
+  const [providerEpoch, setProviderEpoch] = useState(0);
   const provider = useMemo(
     () => (validSlug && doc ? new SupabaseYjsProvider(slug, doc) : null),
-    [slug, validSlug, doc],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [slug, validSlug, doc, providerEpoch],
   );
 
   // Celebrate when crossing the goal threshold (once per goal value).
@@ -176,7 +179,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         ydocState: data?.ydoc_state ?? null,
         rowExists: !!data,
       };
-      setEncMeta(meta);
+      setEncMeta((prev) => {
+        // Encryption mode flipped since last fetch — force a provider rebuild.
+        if (prev.isEncrypted !== meta.isEncrypted) {
+          setProviderEpoch((n) => n + 1);
+        }
+        return meta;
+      });
+
 
       if (!meta.isEncrypted) {
         setEncryption(null);
@@ -535,6 +545,18 @@ export default function NotePage({ embedSlug }: NotePageProps) {
                 setEncPhase("ready");
               }}
             />
+          </div>
+        )}
+
+        {encPhase === "loading" && (
+          <div
+            className="absolute inset-0 z-40 flex items-center justify-center bg-background/70 backdrop-blur-sm"
+            aria-busy="true"
+            aria-live="polite"
+            // Swallow pointer events so no keystrokes/clicks reach the editor
+            // while the provider is being (re)built after a lock/unlock.
+          >
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         )}
       </main>
