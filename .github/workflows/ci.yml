@@ -933,10 +933,10 @@ print(json.dumps({
             echo "── ajv errors ──"
             cat "$err" || true
             # Extract missing per-file fields for a laser-focused annotation.
-            if grep -qE "files\[[0-9]+\].*required property" "$err"; then
+            if grep -qE "files(/|\[)[0-9]+.*required property" "$err"; then
               while IFS= read -r line; do
                 echo "::error title=summary-perfile-field-missing::$line"
-              done < <(grep -E "files\[[0-9]+\].*required property" "$err")
+              done < <(grep -E "files(/|\[)[0-9]+.*required property" "$err")
             fi
             exit 1
           fi
@@ -1770,10 +1770,10 @@ print(json.dumps({
             echo "::error title=summary-schema-invalid::$summary does not conform to $schema — see errors below"
             echo "── ajv errors ──"
             cat "$err" || true
-            if grep -qE "files\[[0-9]+\].*required property" "$err"; then
+            if grep -qE "files(/|\[)[0-9]+.*required property" "$err"; then
               while IFS= read -r line; do
                 echo "::error title=summary-perfile-field-missing::$line"
-              done < <(grep -E "files\[[0-9]+\].*required property" "$err")
+              done < <(grep -E "files(/|\[)[0-9]+.*required property" "$err")
             fi
             exit 1
           fi
