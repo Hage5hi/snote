@@ -426,7 +426,8 @@ pretty-index-help:
          pretty-index-mismatch-ci pretty-index-validate-report-check \
          pretty-index-ci-tarball-verify \
          pretty-index-mismatch-ci-bundle-download \
-         pretty-index-mismatch-ci-bundle-recheck
+         pretty-index-mismatch-ci-bundle-recheck \
+         pretty-index-mismatch-ci-bundle-clean
 
 
 # Standalone strict schema check for an arbitrary validate-report.json —
@@ -590,6 +591,23 @@ pretty-index-mismatch-ci-bundle-recheck:
 	 echo "==> re-checking $$vr"; \
 	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
 	   pretty-index-validate-report-check VALIDATE_REPORT_JSON="$$vr"
+
+
+# Remove the locally-extracted bundle directory so
+# `pretty-index-mismatch-ci-bundle-recheck` (or a fresh
+# `…-bundle-download`) starts from a clean slate. No-op when the
+# directory doesn't exist.
+#   make pretty-index-mismatch-ci-bundle-clean                # PI_CI_SCOPE=atomic
+#   make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-clean:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@out="./_pi-ci-bundle-$(PI_CI_SCOPE)"; \
+	 if [ -e "$$out" ]; then \
+	   rm -rf -- "$$out"; echo "removed $$out"; \
+	 else \
+	   echo "nothing to clean (no such dir: $$out)"; \
+	 fi
 
 
 
