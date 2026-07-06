@@ -23,17 +23,24 @@ pf="$out/preflight-status.json"
 errfile="$out/report-schema-errors.txt"
 summary="$out/report-schema-validation-summary.json"
 
+# Ensure the summary artifact directory exists FIRST so we can always
+# emit a minimal summary — even on the early-exit bad-env-var path.
+mkdir -p "$out" 2>/dev/null || true
+
 # Validate configurable expected schema_version. Non-integer or empty
 # values fail fast with a clear error — CI + local users get a real
 # signal instead of every check silently reporting "expected=<garbage>".
 EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
 if ! printf '%s' "$EXPECTED_SV" | grep -Eq '^[0-9]+$'; then
   echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${EXPECTED_SV}')" >&2
+  # Minimal summary so CI's always-upload step still has something to
+  # attach — downstream parsers can key off reason="bad-env-var".
+  printf '{"schema":"pi-ci/report-schema-validation-summary/v1","expected_schema_version":"%s","out_dir":"%s","terminated_by":null,"files":[],"exit":2,"reason":"bad-env-var"}\n' \
+    "$EXPECTED_SV" "$out" > "$summary" 2>/dev/null || true
   exit 2
 fi
 export PI_CI_EXPECTED_SCHEMA_VERSION="$EXPECTED_SV"
 
-mkdir -p "$out" 2>/dev/null || true
 : > "$errfile"
 
 # Always print the configured expected schema_version FIRST so it lands
