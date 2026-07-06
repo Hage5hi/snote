@@ -233,8 +233,9 @@ echo "report-schema-errors: $errfile"
 # Emit machine-readable summary. Consumed by CI parsers and follow-up
 # tooling — keep schema stable ("pi-ci/report-schema-validation-summary/v1").
 # Per-file `reason` values: "ok" | "missing-file" | "empty-file" |
-# "jq-missing" | "jq-parse-failed" | "schema_version-missing" |
-# "schema-drift". The top-level `terminated_by` captures timeouts
+# "jq-missing" | "jq-parse-failed" | "jq-timeout" |
+# "schema_version-missing" | "schema_version-empty" |
+# "schema_version-malformed" | "schema-drift". The top-level `terminated_by` captures timeouts
 # (SIGTERM/INT/HUP) written by the trap handler.
 {
   printf '{"schema":"pi-ci/report-schema-validation-summary/v1"'
