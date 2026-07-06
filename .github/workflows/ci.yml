@@ -933,13 +933,18 @@ print(json.dumps({
             echo "── ajv errors ──"
             cat "$err" || true
             # Extract missing per-file fields for a laser-focused annotation.
+            # Emit strict format: `files/<index> missing required field: <name>`
             if grep -qE "files(/|\[)[0-9]+.*required property" "$err"; then
               while IFS= read -r line; do
-                echo "::error title=summary-perfile-field-missing::$line"
+                idx="$(printf '%s' "$line" | sed -nE "s/.*(files(\/|\[)[0-9]+).*/\1/p" | head -1 | tr '[' '/' | tr -d ']')"
+                field="$(printf '%s' "$line" | sed -nE "s/.*required property[[:space:]]+[\"']?([A-Za-z0-9_]+)[\"']?.*/\1/p" | head -1)"
+                echo "::error title=summary-perfile-field-missing::${idx} missing required field: ${field}"
               done < <(grep -E "files(/|\[)[0-9]+.*required property" "$err")
             fi
             exit 1
           fi
+
+
 
 
 
@@ -1772,11 +1777,15 @@ print(json.dumps({
             cat "$err" || true
             if grep -qE "files(/|\[)[0-9]+.*required property" "$err"; then
               while IFS= read -r line; do
-                echo "::error title=summary-perfile-field-missing::$line"
+                idx="$(printf '%s' "$line" | sed -nE "s/.*(files(\/|\[)[0-9]+).*/\1/p" | head -1 | tr '[' '/' | tr -d ']')"
+                field="$(printf '%s' "$line" | sed -nE "s/.*required property[[:space:]]+[\"']?([A-Za-z0-9_]+)[\"']?.*/\1/p" | head -1)"
+                echo "::error title=summary-perfile-field-missing::${idx} missing required field: ${field}"
               done < <(grep -E "files(/|\[)[0-9]+.*required property" "$err")
             fi
             exit 1
           fi
+
+
 
 
 

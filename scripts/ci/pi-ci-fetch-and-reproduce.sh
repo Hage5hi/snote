@@ -73,17 +73,42 @@ for a in "${artifact_candidates[@]}"; do
   fi
 done
 rm -f /tmp/gh-err.$$
-[ -n "$fetched" ] || { echo "ERROR: no matching artifact found for run $run_id" >&2; exit 2; }
+if [ -z "$fetched" ]; then
+  echo "ERROR: no matching CI failure artifact found for run $run_id" >&2
+  echo "       tried: ${artifact_candidates[*]}" >&2
+  exit 3
+fi
 
 echo "fetched artifact: $fetched"
 echo "extracted to:     $dest"
 
 summary="$(find "$dest" -maxdepth 3 -name 'report-schema-validation-summary.json' -print -quit)"
-[ -n "$summary" ] || { echo "ERROR: summary JSON not found under $dest" >&2; exit 2; }
+if [ -z "$summary" ] || [ ! -s "$summary" ]; then
+  echo "ERROR: report-schema-validation-summary.json not found (or empty) under $dest" >&2
+  echo "       artifact '$fetched' appears incomplete — re-run the CI job or pick a newer run" >&2
+  exit 4
+fi
 echo "summary:          $summary"
+
+# Verify each recorded jq_stderr_path sidecar actually landed in the download.
+# A missing sidecar defeats the purpose of the reproduction, so fail loudly.
+missing_sidecars=()
+while IFS= read -r rel; do
+  [ -z "$rel" ] && continue
+  base="$(basename "$rel")"
+  hit="$(find "$dest" -maxdepth 4 -name "$base" -print -quit)"
+  [ -n "$hit" ] || missing_sidecars+=("$base")
+done < <(jq -r '.files[]?.jq_stderr_path // empty' "$summary")
+if [ ${#missing_sidecars[@]} -gt 0 ]; then
+  echo "ERROR: summary references sidecars that are missing from the artifact:" >&2
+  for m in "${missing_sidecars[@]}"; do echo "         - $m" >&2; done
+  echo "       download the '…-schema-validator-io-…' artifact for this run and retry" >&2
+  exit 5
+fi
 
 # Pull jq_timeout_secs from the summary so the rerun uses the same value.
 tsecs="$(jq -r '.jq_timeout_secs // empty' "$summary")"
+
 
 repro_flags=()
 [ -n "$tsecs" ] && repro_flags+=(--jq-timeout-secs "$tsecs")
