@@ -837,9 +837,21 @@ print(json.dumps({
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: assert pretty-index-mismatch-ci summary links (MATRIX=atomic)
+        id: assert-pi-ci-summary-links-atomic
         if: always()
         shell: bash
         run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY" atomic
+
+      - name: upload validator files on summary-link assertion failure (MATRIX=atomic)
+        if: always() && steps.assert-pi-ci-summary-links-atomic.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-validator-files-atomic-${{ matrix.os }}
+          path: |
+            /tmp/pi-ci-atomic/validate-report.json
+            /tmp/pi-ci-atomic/validate-schema-assertion.txt
+          if-no-files-found: warn
+          retention-days: 14
 
 
 
