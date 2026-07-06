@@ -541,29 +541,41 @@ pretty-index-mismatch-summary-json-merge:
 # exit 5 on validation failure, exit 0 on success.
 #   PI_SUMMARY_JSON_PATH=<file>  (defaults to $(PI_REPORT_PATH).summary.json)
 pretty-index-mismatch-summary-validate:
-	@f="$(PI_SUMMARY_JSON_PATH)"; \
+	@f="$(PI_SUMMARY_JSON_PATH)"; rj="$(PI_VALIDATE_REPORT_JSON)"; \
+	 write_report() { \
+	   status="$$1"; code="$$2"; errs_text="$$3"; schema_val="$$4"; note="$$5"; \
+	   [ -n "$$rj" ] || return 0; \
+	   mkdir -p -- "$$(dirname -- "$$rj")" 2>/dev/null || true; \
+	   printf '%s\n' "$$errs_text" | jq -R -s --arg status "$$status" --arg file "$$f" \
+	     --argjson code "$$code" --arg schema "$$schema_val" --arg note "$$note" \
+	     '{schema:"pretty-index-mismatch-summary-validate/v1", status:$$status, exit_code:$$code, file:$$file, summary_schema:$$schema, note:$$note, errors: ((. | split("\n")) | map(select(length>0)))}' \
+	     > "$$rj" 2>/dev/null || true; \
+	 }; \
 	 gha_err() { if [ "$${GITHUB_ACTIONS:-}" = "true" ]; then while IFS= read -r line; do [ -n "$$line" ] && printf '::error file=%s::%s\n' "$$f" "$$line" >&2; done; fi; }; \
-	 if [ ! -f "$$f" ]; then echo "ERROR: no summary at path='$$f'" >&2; printf '%s\n' "no summary at path='$$f'" | gha_err; exit 2; fi; \
+	 if [ ! -f "$$f" ]; then echo "ERROR: no summary at path='$$f'" >&2; printf '%s\n' "no summary at path='$$f'" | gha_err; write_report "missing" 2 "no summary at path='$$f'" "" ""; exit 2; fi; \
 	 schema=schemas/pretty-index-mismatch-summary-json.schema.json; \
-	 if [ ! -f "$$schema" ]; then echo "ERROR: missing schema at path='$$schema'" >&2; exit 2; fi; \
+	 if [ ! -f "$$schema" ]; then echo "ERROR: missing schema at path='$$schema'" >&2; write_report "tooling" 2 "missing schema at path='$$schema'" "" ""; exit 2; fi; \
 	 command -v jq >/dev/null 2>&1 && sv=$$(jq -r '.schema // ""' -- "$$f" 2>/dev/null) || sv=""; \
 	 case "$$sv" in \
 	   pretty-index-mismatch-summary/v0) \
 	     msg="DEPRECATED: schema 'pretty-index-mismatch-summary/v0' is accepted for backward compatibility; regenerate with the current tool to produce 'pretty-index-mismatch-summary/v1'"; \
 	     echo "warn: $$msg" >&2; \
 	     if [ "$${GITHUB_ACTIONS:-}" = "true" ]; then printf '::warning file=%s::%s\n' "$$f" "$$msg" >&2; fi; \
+	     write_report "deprecated" 0 "" "$$sv" "$$msg"; \
 	     echo "OK (deprecated v0) $$f"; exit 0;; \
 	 esac; \
 	 if command -v npx >/dev/null 2>&1 && npx --no-install ajv --help >/dev/null 2>&1; then \
 	   ajv_out=$$(npx --no-install ajv validate -s "$$schema" -d "$$f" --strict=false --errors=text 2>&1) || { \
 	     echo "$$ajv_out" >&2; \
 	     printf '%s\n' "$$ajv_out" | gha_err; \
+	     write_report "invalid" 5 "$$ajv_out" "$$sv" "ajv validation failed"; \
 	     echo "ERROR: ajv validation failed for '$$f'" >&2; exit 5; }; \
 	 else \
-	   command -v jq >/dev/null || { echo "ERROR: jq required (ajv not found)" >&2; exit 2; }; \
+	   command -v jq >/dev/null || { echo "ERROR: jq required (ajv not found)" >&2; write_report "tooling" 2 "jq required (ajv not found)" "" ""; exit 2; }; \
 	   if ! jq -e . -- "$$f" >/dev/null 2>&1; then \
 	     echo "ERROR: '$$f' is not valid JSON" >&2; \
 	     printf '%s\n' "'$$f' is not valid JSON" | gha_err; \
+	     write_report "invalid" 5 "'$$f' is not valid JSON" "$$sv" "parse error"; \
 	     exit 5; \
 	   fi; \
 	   errs=$$(jq -r '\
@@ -583,9 +595,11 @@ pretty-index-mismatch-summary-validate:
 	     echo "ERROR: invalid summary '$$f':" >&2; \
 	     echo "$$errs" >&2; \
 	     printf '%s\n' "$$errs" | gha_err; \
+	     write_report "invalid" 5 "$$errs" "$$sv" "shape validation failed"; \
 	     exit 5; \
 	   fi; \
 	 fi; \
+	 write_report "ok" 0 "" "$$sv" ""; \
 	 echo "OK $$f"
 
 # Render a small human-readable markdown report from a summary JSON
