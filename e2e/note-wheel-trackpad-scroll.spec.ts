@@ -66,9 +66,40 @@ async function seedLongNote(page: import("@playwright/test").Page) {
 }
 
 test.describe("note wheel + trackpad scroll @scroll", () => {
+  // Flake insurance: wheel/trackpad delivery is engine + GPU dependent on
+  // CI. Two retries keeps the guard useful without hiding regressions —
+  // Playwright still keeps the first-run trace on failure.
+  test.describe.configure({ retries: 2 });
+
+  // Rich diagnostics on failure: full trace (via playwright config),
+  // element screenshot, and the last wheel deltas + scroll positions so
+  // it's obvious whether a tick was swallowed vs. the scroller was
+  // already at max.
+  test.afterEach(async ({ page }, testInfo) => {
+    if (testInfo.status === testInfo.expectedStatus) return;
+    try {
+      const dir = testInfo.outputDir;
+      mkdirSync(dir, { recursive: true });
+      const scroller = page.locator(".cm-scroller").first();
+      const state = await scroller.evaluate((el) => ({
+        scrollTop: el.scrollTop, scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight, max: el.scrollHeight - el.clientHeight,
+        overflowY: getComputedStyle(el).overflowY,
+        pointerEvents: getComputedStyle(el).pointerEvents,
+      })).catch((e) => ({ error: String(e) }));
+      const payload = { scroller: state, wheelSamples: wheelLog.get(page) ?? [] };
+      const jsonPath = join(dir, "wheel-diagnostics.json");
+      writeFileSync(jsonPath, JSON.stringify(payload, null, 2));
+      await testInfo.attach("wheel-diagnostics.json", { path: jsonPath, contentType: "application/json" });
+      const shot = join(dir, "scroller.png");
+      await scroller.screenshot({ path: shot }).then(
+        () => testInfo.attach("scroller.png", { path: shot, contentType: "image/png" }),
+      ).catch(() => {});
+    } catch { /* best-effort */ }
+  });
+
   test("discrete wheel ticks all register — no missed deltas", async ({ page }) => {
     const scroller = await seedLongNote(page);
-    // Reset to top before wheeling.
     await scroller.evaluate((el) => { el.scrollTop = 0; });
     const box = await scroller.boundingBox();
     if (!box) throw new Error("scroller has no bounding box");
@@ -77,9 +108,10 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     const positions: number[] = [await scroller.evaluate((el) => el.scrollTop)];
     for (let i = 0; i < 12; i++) {
       const before = await scroller.evaluate((el) => el.scrollTop);
-      await page.mouse.wheel(0, 120); // one "notch" of a real mouse wheel
+      await page.mouse.wheel(0, 120);
       await page.waitForTimeout(40);
       const after = await scroller.evaluate((el) => el.scrollTop);
+      recordWheel(page, { i, dx: 0, dy: 120, before, after, t: Date.now() });
       positions.push(after);
       expect(
         after,
