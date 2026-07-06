@@ -60,7 +60,7 @@ finalize_signal() {
   echo "pi-ci-validate-report-schemas: terminated by ${sig} — expected schema_version=${EXPECTED_SV}"
   # Best-effort minimal summary if we didn't reach the normal writer.
   if [ ! -s "$summary" ]; then
-    printf '{"schema":"pi-ci/report-schema-validation-summary/v1","expected_schema_version":"%s","out_dir":"%s","terminated_by":"%s","exit":null,"files":[]}\n' \
+    printf '{"schema":"pi-ci/report-schema-validation-summary/v1","expected_schema_version":"%s","out_dir":"%s","terminated_by":"%s","exit":null,"files":[],"reason":"terminated"}\n' \
       "$EXPECTED_SV" "$out" "$sig" > "$summary" 2>/dev/null || true
   fi
 }
