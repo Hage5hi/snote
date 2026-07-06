@@ -1,8 +1,9 @@
 name: E2E (Playwright)
 
-# Runs the top-level /e2e Playwright suite on PRs. Uploads video / screenshot
-# / trace artifacts on failure so regressions can be inspected without a
-# local repro.
+# Runs the lock/unlock Playwright suites across Chromium, Firefox, and WebKit
+# to confirm behavior is consistent across engines. Uploads report + traces +
+# videos + screenshots on BOTH success and failure with stable per-browser
+# artifact names so flaky-test debugging is easy.
 
 on:
   push:
@@ -26,13 +27,16 @@ on:
 
 jobs:
   e2e:
-    name: playwright e2e
+    name: playwright e2e (${{ matrix.browser }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
     env:
-      # Stable retries: config default is 0; bump for CI only.
       PLAYWRIGHT_RETRIES: "2"
-      # Only the lock/unlock specs need Supabase env; other specs are UI-only.
+      PLAYWRIGHT_PROJECT: ${{ matrix.browser }}
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
     steps:
@@ -41,28 +45,32 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - name: Install Playwright browsers (Chromium only)
-        run: bunx playwright install --with-deps chromium
+      - name: Install Playwright browser (${{ matrix.browser }})
+        run: bunx playwright install --with-deps ${{ matrix.browser }}
       - name: Run lock/unlock e2e specs
         run: |
           bunx playwright test \
             --retries=${PLAYWRIGHT_RETRIES} \
             e2e/note-lock-unlock.spec.ts \
             e2e/note-lock-unlock-modes.spec.ts \
-            e2e/note-lock-unlock-rapid.spec.ts
-      - name: Upload Playwright HTML report (on failure)
-        if: failure()
+            e2e/note-lock-unlock-rapid.spec.ts \
+            e2e/note-lock-unlock-history.spec.ts
+      # Upload on BOTH success and failure so flaky-test triage doesn't need a
+      # re-run. Names are stable per browser + run + attempt so artifacts from
+      # parallel matrix jobs never collide.
+      - name: Upload Playwright HTML report
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-html-report-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          name: e2e-html-report-${{ matrix.browser }}-run${{ github.run_number }}-attempt${{ github.run_attempt }}
           path: playwright-report/
           retention-days: 14
           if-no-files-found: ignore
-      - name: Upload Playwright traces, screenshots & videos (on failure)
-        if: failure()
+      - name: Upload Playwright traces, screenshots & videos
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-test-results-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          name: e2e-test-results-${{ matrix.browser }}-run${{ github.run_number }}-attempt${{ github.run_attempt }}
           path: test-results/
           retention-days: 14
           if-no-files-found: ignore

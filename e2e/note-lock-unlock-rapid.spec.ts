@@ -34,32 +34,47 @@ test.describe("rapid lock/unlock toggle via URL hash", () => {
   test("no stale writes fire during remount; content stays decryptable", async ({
     page,
   }) => {
-    // Track every write to the notes row and every sendBeacon fallback.
-    const writes: { method: string; url: string; body: string | null }[] = [];
-    const beacons: string[] = [];
+    // Track every mutating call to the notes endpoint — from BOTH the fetch
+    // path (Supabase-js) and the sendBeacon fallback (unload flush). Any
+    // background create/update fired mid-transition is considered a stale
+    // write and fails the test.
+    const writes: { source: string; method: string; url: string }[] = [];
 
-    const isNoteWrite = (req: Request) => {
-      const url = req.url();
+    const isNoteWrite = (method: string, url: string) => {
       if (!/\/rest\/v1\/notes\b/.test(url)) return false;
-      const m = req.method();
-      return m === "PATCH" || m === "POST";
+      return method === "PATCH" || method === "POST" || method === "PUT";
     };
 
-    page.on("request", (req) => {
-      if (isNoteWrite(req)) {
-        writes.push({ method: req.method(), url: req.url(), body: req.postData() });
+    page.on("request", (req: Request) => {
+      if (isNoteWrite(req.method(), req.url())) {
+        writes.push({ source: "fetch", method: req.method(), url: req.url() });
       }
     });
 
+    // Wrap sendBeacon in-page and mirror to console so we capture even
+    // synchronous unload-time writes. Also wrap fetch as a belt-and-braces
+    // check in case a request bypasses Playwright's request event.
     await page.addInitScript(() => {
-      const orig = navigator.sendBeacon?.bind(navigator);
-      (window as unknown as { __beacons: string[] }).__beacons = [];
-      if (orig) {
+      const w = window as unknown as { __noteWrites: { source: string; method: string; url: string }[] };
+      w.__noteWrites = [];
+      const isNote = (u: string) => /\/rest\/v1\/notes\b/.test(u);
+      const origBeacon = navigator.sendBeacon?.bind(navigator);
+      if (origBeacon) {
         navigator.sendBeacon = (url: string | URL, data?: BodyInit | null) => {
-          (window as unknown as { __beacons: string[] }).__beacons.push(String(url));
-          return orig(url, data);
+          const u = String(url);
+          if (isNote(u)) w.__noteWrites.push({ source: "beacon", method: "POST", url: u });
+          return origBeacon(url, data);
         };
       }
+      const origFetch = window.fetch.bind(window);
+      window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+        const method = (init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase();
+        if (isNote(url) && (method === "PATCH" || method === "POST" || method === "PUT")) {
+          w.__noteWrites.push({ source: "fetch-wrap", method, url });
+        }
+        return origFetch(input as RequestInfo, init);
+      };
     });
 
     await page.goto(`/${slug}`);
@@ -96,19 +111,17 @@ test.describe("rapid lock/unlock toggle via URL hash", () => {
     }
     const toggleWindow = Date.now() - before;
 
-    // No writes should have fired mid-toggle; guarded providers must swallow
-    // pending saveSnapshot / flushBeacon calls when the mode no longer matches.
-    expect(
-      writes,
-      `Unexpected notes writes during ${toggleWindow}ms rapid toggle window:\n` +
-        JSON.stringify(writes, null, 2),
-    ).toEqual([]);
-
-    const beaconList = await page.evaluate(
-      () => (window as unknown as { __beacons: string[] }).__beacons,
+    // Collect in-page (fetch-wrap + beacon) captures and merge with the
+    // Playwright network-level captures. No source may report any write.
+    const inPage = await page.evaluate(
+      () => (window as unknown as { __noteWrites: { source: string; method: string; url: string }[] }).__noteWrites,
     );
-    beacons.push(...beaconList.filter((u) => /\/rest\/v1\/notes\b/.test(u)));
-    expect(beacons, "Unexpected sendBeacon writes during rapid toggle").toEqual([]);
+    const allWrites = [...writes, ...inPage];
+    expect(
+      allWrites,
+      `Unexpected notes writes during ${toggleWindow}ms rapid toggle window:\n` +
+        JSON.stringify(allWrites, null, 2),
+    ).toEqual([]);
 
     // Land on the encrypted hash and confirm content still decrypts cleanly.
     await page.evaluate(
