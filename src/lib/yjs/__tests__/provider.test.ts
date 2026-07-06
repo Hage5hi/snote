@@ -159,3 +159,54 @@ describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
     expect(beacon).not.toHaveBeenCalled();
   });
 });
+
+describe("SupabaseYjsProvider — rapid lock/unlock toggle regression", () => {
+  beforeEach(() => {
+    upsertCalls.length = 0;
+  });
+
+  it("stale plaintext provider cannot write after row flips to encrypted", async () => {
+    // Simulates: user locks note via URL hash → enc-meta refetch marks the
+    // still-mounted plaintext provider as expected=encrypted BEFORE the new
+    // provider mounts. The stale instance must be blocked from writing.
+    const { provider: stale, doc } = makeProvider();
+    doc.getText("content").insert(0, "typed after lock");
+    stale.setExpectedEncrypted(true);
+    await stale.saveSnapshot();
+    stale.flushBeacon();
+    expect(upsertCalls).toHaveLength(0);
+  });
+
+  it("stale encrypted provider cannot write after row flips to plaintext", async () => {
+    const { provider: stale, doc } = makeProvider();
+    stale.setEncryption({ encrypt: async (b) => b, decrypt: async (b) => b });
+    doc.getText("content").insert(0, "still encrypting");
+    stale.setExpectedEncrypted(false);
+    await stale.saveSnapshot();
+    expect(upsertCalls).toHaveLength(0);
+  });
+
+  it("rapid toggles: only the provider matching current mode persists", async () => {
+    const a = makeProvider(); // was plaintext, row is now encrypted
+    a.doc.getText("content").insert(0, "a");
+    a.provider.setExpectedEncrypted(true);
+
+    const b = makeProvider(); // was encrypted, row is now plaintext
+    b.provider.setEncryption({ encrypt: async (x) => x, decrypt: async (x) => x });
+    b.doc.getText("content").insert(0, "b");
+    b.provider.setExpectedEncrypted(false);
+
+    const c = makeProvider(); // current mode = plaintext, matches
+    c.doc.getText("content").insert(0, "c");
+    c.provider.setExpectedEncrypted(false);
+
+    await Promise.all([
+      a.provider.saveSnapshot(),
+      b.provider.saveSnapshot(),
+      c.provider.saveSnapshot(),
+    ]);
+    expect(upsertCalls).toHaveLength(1);
+    expect(upsertCalls[0].content).toBe("c");
+    expect(upsertCalls[0].is_encrypted).toBe(false);
+  });
+});
