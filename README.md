@@ -1142,6 +1142,29 @@ The sidecar filename pattern is `report-schema-jq-<slug>.stderr.txt` where
 `<slug>` is the file label with any non-alphanumeric character replaced by
 `-` (e.g. `extracted-tree.json` → `extracted-tree-json`).
 
+###### Per-file reason → sidecar mapping
+
+Each row of `files[]` in `report-schema-validation-summary.json` has a
+`reason` field. Use the table below to jump from a reason directly to
+the sidecar file uploaded in the CI failure artifact
+(`pretty-index-mismatch-ci-report-schema-failure-<scope>-<os>` or
+`pretty-index-mismatch-ci-schema-validator-io-<scope>-<os>`):
+
+| `files[].reason`                                                                                 | Sidecar filename inside the artifact                                                                  | Summary field that points at it                    |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `jq-parse-failed`                                                                                | `report-schema-jq-<slug>.stderr.txt`                                                                   | `files[].jq_stderr_path` + `files[].jq_stderr_excerpt` |
+| `jq-timeout`                                                                                     | `report-schema-jq-<slug>.stderr.txt` (may be empty; excerpt then reads `jq timed out after Ns …`)      | `files[].jq_stderr_path` + `files[].jq_stderr_excerpt` |
+| `jq-missing`                                                                                     | *(no sidecar — `jq` binary not resolvable)*                                                            | `jq_bin` / `pi_ci_jq_bin` at the top of the summary |
+| `schema-drift`, `schema_version-missing`, `schema_version-empty`, `schema_version-malformed`     | `report-schema-errors.txt` (per-check stderr) + drift diff block in `report-schema-validation-log.txt` | `files[].diff.schema_version.{expected,actual}`    |
+| `missing-file`, `empty-file`                                                                     | *(none — `files[].path` never existed / was zero-length)*                                              | `files[].path`                                     |
+| `bad-env-var`                                                                                    | *(none — script exited before any per-file work)*                                                      | top-level `reason` = `"bad-env-var"`               |
+| `terminated`                                                                                     | `report-schema-validation-log.txt` `terminated by <SIGNAL>` line                                       | top-level `terminated_by`                          |
+
+`<slug>` is the row's `label` with any non-alphanumeric char replaced by
+`-` (so `preflight-status.json` → `preflight-status-json` →
+`report-schema-jq-preflight-status-json.stderr.txt`).
+
+
 To reproduce a `jq-parse-failed` or `jq-timeout` case locally after
 downloading the artifact, run:
 
