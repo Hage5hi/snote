@@ -425,7 +425,9 @@ pretty-index-help:
         pretty-index-mismatch-csv pretty-index-mismatch-diff \
          pretty-index-mismatch-ci pretty-index-validate-report-check \
          pretty-index-ci-tarball-verify \
-         pretty-index-mismatch-ci-bundle-download
+         pretty-index-mismatch-ci-bundle-download \
+         pretty-index-mismatch-ci-bundle-recheck
+
 
 # Standalone strict schema check for an arbitrary validate-report.json —
 # same jq assertion invoked by `pretty-index-mismatch-ci`. Usable in
@@ -535,11 +537,20 @@ pretty-index-mismatch-ci-bundle-download:
 	 vr="$$out/extracted/$$root/validate-report.json"; \
 	 va="$$out/extracted/$$root/validate-schema-assertion.txt"; \
 	 miss=""; \
-	 [ -f "$$vr" ] || miss="$$miss $$root/validate-report.json"; \
-	 [ -f "$$va" ] || miss="$$miss $$root/validate-schema-assertion.txt"; \
+	 [ -f "$$vr" ]  || miss="$$miss $$root/validate-report.json(missing)"; \
+	 [ -f "$$va" ]  || miss="$$miss $$root/validate-schema-assertion.txt(missing)"; \
+	 [ -f "$$va" ] && [ ! -s "$$va" ] && \
+	   miss="$$miss $$root/validate-schema-assertion.txt(empty)"; \
 	 if [ -n "$$miss" ]; then \
-	   echo "ERROR: extracted tarball $$tb is missing expected files:" >&2; \
-	   for m in $$miss; do echo "  - $$m" >&2; done; \
+	   echo "ERROR: extracted tarball $$tb failed content checks:" >&2; \
+	   for m in $$miss; do \
+	     case "$$m" in \
+	       *"(missing)") p=$${m%\(missing\)}; \
+	         echo "  - MISSING file: expected at $$out/extracted/$$p" >&2 ;; \
+	       *"(empty)")   p=$${m%\(empty\)};   \
+	         echo "  - EMPTY   file: expected non-empty at $$out/extracted/$$p" >&2 ;; \
+	     esac; \
+	   done; \
 	   echo "  extracted tree:" >&2; \
 	   (cd "$$out/extracted" && find . -maxdepth 3 -type f | sed 's/^/    /') >&2; \
 	   exit 2; \
@@ -548,12 +559,38 @@ pretty-index-mismatch-ci-bundle-download:
 	 echo "artifact          : $$name"; \
 	 echo "tarball           : $$tb"; \
 	 echo "validate-report   : $$vr (present)"; \
-	 echo "schema-assertion  : $$va $$( [ -s "$$va" ] && echo '(populated — assertion failed)' || echo '(empty — assertion passed)')"; \
+	 echo "schema-assertion  : $$va (present, $$(wc -c < "$$va") bytes)"; \
 	 echo ""; \
 	 echo "inspect with:"; \
 	 echo "  jq . '$$vr'"; \
 	 echo "  cat '$$va'"; \
-	 echo "  make pretty-index-ci-tarball-verify PI_CI_TARBALL='$$tb' PI_CI_TARBALL_ROOT='$$root'"
+	 echo "  make pretty-index-ci-tarball-verify PI_CI_TARBALL='$$tb' PI_CI_TARBALL_ROOT='$$root'"; \
+	 echo "  make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE='$(PI_CI_SCOPE)'"
+
+
+# Re-run the strict schema check against the ALREADY-EXTRACTED
+# validate-report.json from `pretty-index-mismatch-ci-bundle-download`.
+# Cheap local loop for iterating on validator failures without hitting
+# the `gh` CLI / network again.
+#   make pretty-index-mismatch-ci-bundle-recheck                  # defaults: PI_CI_SCOPE=atomic
+#   make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-recheck:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@out="./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted"; \
+	 if [ ! -d "$$out" ]; then \
+	   echo "ERROR: no extracted bundle at $$out" >&2; \
+	   echo "  run: make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=$(PI_CI_SCOPE)" >&2; \
+	   exit 2; \
+	 fi; \
+	 vr=$$(find "$$out" -maxdepth 3 -type f -name validate-report.json | head -n1); \
+	 if [ -z "$$vr" ] || [ ! -s "$$vr" ]; then \
+	   echo "ERROR: validate-report.json not found (or empty) under $$out" >&2; exit 2; \
+	 fi; \
+	 echo "==> re-checking $$vr"; \
+	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
+	   pretty-index-validate-report-check VALIDATE_REPORT_JSON="$$vr"
+
 
 
 

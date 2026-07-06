@@ -31,7 +31,10 @@ function runCheck(reportJson: unknown): { status: number; stderr: string } {
       { cwd: REPO_ROOT, encoding: "utf8" },
     );
     // Redact the tmp path so the snapshot is stable across machines.
-    const stderr = (res.stderr ?? "").replaceAll(path, "<REPORT>");
+    const stderr = (res.stderr ?? "")
+      .replaceAll(path, "<REPORT>")
+      .replace(/Makefile:\d+:/g, "Makefile:<LINE>:");
+
     return { status: res.status ?? -1, stderr };
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -81,7 +84,7 @@ d("pretty-index-validate-report-check — ERROR block snapshot", () => {
         - note: wrong type (detected: object, expected string)
         - errors: wrong type (detected: string, expected array)
         expected keys: schema(string) status(string) exit_code(number) file(string) summary_schema(string) note(string) errors(array)
-      make: *** [Makefile:437: pretty-index-validate-report-check] Error 5
+      make: *** [Makefile:<LINE>: pretty-index-validate-report-check] Error 5
       "
     `);
   });
