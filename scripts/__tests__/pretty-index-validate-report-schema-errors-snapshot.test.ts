@@ -31,7 +31,10 @@ function runCheck(reportJson: unknown): { status: number; stderr: string } {
       { cwd: REPO_ROOT, encoding: "utf8" },
     );
     // Redact the tmp path so the snapshot is stable across machines.
-    const stderr = (res.stderr ?? "").replaceAll(path, "<REPORT>");
+    const stderr = (res.stderr ?? "")
+      .replaceAll(path, "<REPORT>")
+      .replace(/Makefile:\d+:/g, "Makefile:<LINE>:");
+
     return { status: res.status ?? -1, stderr };
   } finally {
     rmSync(dir, { recursive: true, force: true });
