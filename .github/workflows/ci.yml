@@ -1388,23 +1388,33 @@ print(json.dumps({
         continue-on-error: true
         run: |
           set +e
+          TARBALL=/tmp/pi-ci-stress.tar.gz
+          echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
           make -s pretty-index-mismatch-ci \
             PI_REPORT_PATH=/tmp/pi-mismatch-stress.json \
             PI_CI_OUT_DIR=/tmp/pi-ci-stress \
-            PI_CI_BUNDLE_PATH=/tmp/pi-ci-stress.tar.gz
+            PI_CI_BUNDLE_PATH="$TARBALL"
           rc=$?
           echo "pi_ci_rc=$rc" >> "$GITHUB_OUTPUT"
+          if [[ -f "$TARBALL" ]]; then
+            sz=$(wc -c < "$TARBALL" | tr -d ' ')
+            echo "tarball_exists=true"  >> "$GITHUB_OUTPUT"
+            echo "tarball_bytes=$sz"    >> "$GITHUB_OUTPUT"
+          else
+            echo "tarball_exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=pretty-index-mismatch-ci (stress)::tarball $TARBALL was not produced"
+          fi
           if [[ "$rc" -ne 0 && "$rc" -ne 3 ]]; then
-            echo "::warning title=pretty-index-mismatch-ci (stress)::exited $rc; partial bundle will still be uploaded"
+            echo "::warning title=pretty-index-mismatch-ci (stress)::exited $rc; partial bundle will still be uploaded if present"
           fi
 
       - name: upload pretty-index-mismatch-ci bundle (MATRIX=stress)
         id: upload-pi-ci-bundle-stress
-        if: always() && hashFiles('/tmp/pi-ci-stress.tar.gz') != ''
+        if: always() && steps.build-pi-ci-bundle-stress.outputs.tarball_exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: pretty-index-mismatch-ci-bundle-stress-${{ matrix.os }}
-          path: /tmp/pi-ci-stress.tar.gz
+          path: ${{ steps.build-pi-ci-bundle-stress.outputs.tarball }}
           if-no-files-found: error
           retention-days: 14
 
@@ -1414,11 +1424,13 @@ print(json.dumps({
         run: |
           URL="${{ steps.upload-pi-ci-bundle-stress.outputs.artifact-url }}"
           RC="${{ steps.build-pi-ci-bundle-stress.outputs.pi_ci_rc }}"
+          SZ="${{ steps.build-pi-ci-bundle-stress.outputs.tarball_bytes }}"
+          TB="${{ steps.build-pi-ci-bundle-stress.outputs.tarball }}"
           {
             echo ''
-            echo "#### 📦 pretty-index-mismatch-ci bundle (MATRIX=stress, ${{ matrix.os }}, exit=${RC:-?})"
+            echo "#### 📦 pretty-index-mismatch-ci bundle (MATRIX=stress, ${{ matrix.os }}, exit=${RC:-?}, ${SZ:-?} bytes)"
             echo ''
-            echo "- [download \`pretty-index-mismatch-ci-bundle-stress-${{ matrix.os }}.tar.gz\`]($URL)"
+            echo "- [download \`$(basename "$TB")\`]($URL)"
             echo "  - \`summary.json\` / \`summary.md\` — aggregate mismatch summary"
             echo "  - \`validate-report.json\` — validator machine-readable report (always present, even when empty)"
             echo "  - \`validate-annotations.txt\` — validator stderr annotations (always present, even when empty)"
