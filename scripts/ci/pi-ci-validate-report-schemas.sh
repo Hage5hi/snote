@@ -161,6 +161,14 @@ echo "report-schema-errors: $errfile"
 } > "$summary"
 echo "report-schema-validation-summary: $summary"
 
+# Human-readable reasons recap — mirrors summary.json files[].reason so
+# developers spot parse/timeout/missing causes without opening the JSON.
+echo "── per-file reasons ──"
+for i in "${!labels[@]}"; do
+  printf "  %-24s status=%-4s reason=%-24s actual=%s\n" \
+    "${labels[$i]}" "${statuses[$i]}" "${reasons[$i]}" "${actuals[$i]}"
+done
+
 echo "── schema-validate exit codes ──"
 echo "  0 = all schemas OK"
 echo "  2 = tooling missing (jq) OR bad PI_CI_EXPECTED_SCHEMA_VERSION OR missing/empty JSON input"
