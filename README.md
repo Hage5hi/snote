@@ -1135,7 +1135,30 @@ The target unzips the archive to a scratch dir and confirms that
 `extracted-tree.json` and `preflight-status.json` are both present AND
 that their `content_hash` values match the on-disk sidecars under
 `./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>/`. Exit codes: `0` on
-match, `3` on hash drift, `2` on missing files/tools.
+match, `3` on hash drift (make wraps this as its own `Error 3`), `2` on
+missing files/tools. On drift, the target also prints a short diff of
+the `.schema`, `.schema_version`, and `.content_hash` fields between the
+zipped and on-disk sidecars so you can see what changed without
+unzipping.
+
+##### Local schema validation against an already-downloaded artifact
+
+Regenerate both sidecars and run the extracted-tree + preflight schema
+checkers in one command — no `gh` download required:
+
+```sh
+make pretty-index-mismatch-ci-bundle-validate-reports-dir \
+  DIR=./_pi-ci-bundle-atomic/extracted/pi-ci-atomic \
+  PI_CI_SCOPE=atomic
+```
+
+Prints the preflight status table, the paths to
+`extracted-tree.{txt,json}` and `preflight-status.{md,json}` under
+`DIR`, and finally runs
+`scripts/ci/pi-ci-validate-report-schemas.sh`. Exit codes match the
+validator: `0` OK, `2` tooling/missing input, `5` schema violation
+(e.g. wrong `schema_version`).
+
 
 
 
