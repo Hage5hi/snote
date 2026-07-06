@@ -15,7 +15,9 @@ const has = (bin: string) => {
 const ok = has("bash") && has("jq") && has("zip") && has("unzip") && has("make");
 const d = ok ? describe : describe.skip;
 
-const SCOPE = "atomic";
+// Use scope=stress so this test doesn't collide with the atomic-scope
+// zip-verify test when vitest runs test files in parallel.
+const SCOPE = "stress";
 const bundle = join(REPO_ROOT, `_pi-ci-bundle-${SCOPE}`);
 const extracted = join(bundle, "extracted", `pi-ci-${SCOPE}`);
 const VALIDATE = join(REPO_ROOT, "scripts/ci/pi-ci-validate-report-schemas.sh");
