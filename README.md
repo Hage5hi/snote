@@ -1153,13 +1153,44 @@ machine-readable and takes one of these values:
 | `empty-file`                | Sidecar exists but is zero bytes (`actual_schema_version="<empty-file>"`) |
 | `jq-missing`                | `jq` binary not available on this runner |
 | `jq-parse-failed`           | `jq` could not parse the sidecar JSON (`actual_schema_version="<unreadable>"`) |
-| `schema_version-missing`    | JSON parsed but has no `schema_version` key |
+| `jq-timeout`                | `jq` was wrapped in `timeout(1)` (via `PI_CI_JQ_TIMEOUT_SECS`) and exited `124` (`actual_schema_version="<timeout>"`) |
+| `schema_version-missing`    | JSON parsed but has no `schema_version` key (`actual_schema_version="<missing>"`) |
+| `schema_version-malformed`  | `schema_version` present but non-numeric (`actual_schema_version` preserves the exact received value, e.g. `"v2"`, `"1.0"`) |
 | `schema-drift`              | Parsed value differs from `expected_schema_version` |
 
 Top-level `reason` values only appear on early-exit paths:
 `"bad-env-var"` (invalid `PI_CI_EXPECTED_SCHEMA_VERSION`, `exit: 2`,
-empty `files`) or `"terminated"` (`SIGTERM/INT/HUP`, `terminated_by`
-records the signal, `exit: null`).
+empty `files` — the exact received value is preserved in
+`expected_schema_version`) or `"terminated"` (`SIGTERM/INT/HUP`,
+`terminated_by` records the signal, `exit: null`).
+
+The summary also includes top-level `jq_bin`, `jq_version`,
+`jq_cmdline` (the full command with any `timeout(1)` prefix), and
+`jq_timeout_secs` — populated from `PI_CI_JQ_BIN` /
+`PI_CI_JQ_TIMEOUT_SECS`. These are echoed into
+`report-schema-validation-log.txt` as
+`pi-ci-validate-report-schemas: jq_bin=…` / `jq_version=…` /
+`jq_cmdline=…` / `jq_timeout_secs=…` so a `jq-timeout` incident can
+be reproduced locally with the same binary and wrapper.
+
+Example — `schema-drift` diff context (per-file `diff` block +
+inline `── <label> drift diff ──` echoed to the log):
+
+```json
+{
+  "files": [
+    { "label": "extracted-tree.json", "path": "…/extracted-tree.json",
+      "expected_schema_version": "1", "actual_schema_version": "99",
+      "status": "FAIL", "exit": 5, "reason": "schema-drift",
+      "diff": { "schema_version": { "expected": "1", "actual": "99" } } }
+  ]
+}
+```
+
+```
+── extracted-tree.json drift diff ──
+  schema_version: expected=1  actual=99
+```
 
 Example — jq parse failure on both sidecars:
 
