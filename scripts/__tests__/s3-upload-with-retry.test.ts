@@ -121,7 +121,7 @@ describe("uploadAllWithRetry — concurrency ceiling", () => {
       await new Promise((r) => setTimeout(r, 5));
       inFlight--;
     });
-    await uploadAllWithRetry(entries, put, { concurrency: 3, sleep: async () => {} });
+    await uploadAllWithRetry(entries, put, { concurrency: 3, sleep: async () => {}, logRetries: false });
     expect(put).toHaveBeenCalledTimes(20);
     expect(peak).toBeLessThanOrEqual(3);
   });
