@@ -294,6 +294,7 @@
   .cm-content ::selection {
     -webkit-user-select: text;
     user-select: text;
+  }
 
   /* Reduced-motion fallback: users who opt out of motion also tend to
      dislike compositor-driven kinetic scrolling. Drop the layer-promotion
@@ -313,7 +314,6 @@
       contain: none;
     }
   }
-}
 }
 
 
