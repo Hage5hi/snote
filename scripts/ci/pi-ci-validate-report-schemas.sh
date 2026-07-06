@@ -197,6 +197,10 @@ echo "report-schema-errors: $errfile"
       "${labels[$i]}" "${paths[$i]}" "$EXPECTED_SV" "${actuals[$i]}" "${statuses[$i]}" "${exits[$i]}" "${reasons[$i]}" "${diffs[$i]}"
   done
   printf ']'
+  printf ',"jq_bin":"%s"' "$JQ_BIN"
+  printf ',"jq_version":"%s"' "${JQ_VERSION//\"/\\\"}"
+  printf ',"jq_cmdline":"%s"' "${JQ_CMDLINE//\"/\\\"}"
+  printf ',"jq_timeout_secs":"%s"' "${PI_CI_JQ_TIMEOUT_SECS:-}"
   printf ',"exit":%s' "$rc"
   printf '}\n'
 } > "$summary"
