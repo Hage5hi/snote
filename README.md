@@ -1028,6 +1028,46 @@ Expected artifacts under `$(PI_CI_SELFTEST_DIR)/`:
 - `bundle.tar.gz` — the exact tarball CI would upload
 
 
+#### Where to find CI artifacts (atomic + stress)
+
+Each `pretty-index-mismatch-ci` invocation writes artifacts to a scope-specific
+path. The same layout is used locally and on GitHub Actions — only the
+root differs.
+
+| Scope    | Local (default)                 | CI (`PI_CI_OUT_DIR`)      | Bundle tarball (`PI_CI_BUNDLE_PATH`) |
+|----------|---------------------------------|---------------------------|--------------------------------------|
+| `atomic` | `_pretty-index-ci/`             | `/tmp/pi-ci-atomic/`      | `/tmp/pi-ci-atomic.tar.gz`           |
+| `stress` | `_pretty-index-ci/`             | `/tmp/pi-ci-stress/`      | `/tmp/pi-ci-stress.tar.gz`           |
+
+Inside each output directory (always present, even on early failure):
+
+- `summary.json` / `summary.md` — aggregate mismatch summary
+- `validate-report.json` — machine-readable validator report
+- `validate-annotations.txt` — validator stderr annotations
+- `validate-schema-assertion.txt` — jq schema-assertion stderr (empty on pass)
+- `diff.json` — baseline diff (only when `PI_BASELINE` was set)
+
+Retrieving artifacts from a failing GitHub Actions run:
+
+1. Open the failing job's step summary. Two artifact links are rendered
+   per scope:
+   - `pretty-index-mismatch-ci-bundle-<scope>-<os>` — full tarball
+   - `pretty-index-mismatch-ci-validator-<scope>-<os>` — just
+     `validate-report.json` + `validate-schema-assertion.txt` (fastest
+     path for triaging schema failures; no `tar -xzf` needed)
+2. Download the tarball (`pi-ci-<scope>.tar.gz`) and verify locally:
+
+   ```sh
+   make pretty-index-ci-tarball-verify \
+     PI_CI_TARBALL=./pi-ci-atomic.tar.gz \
+     PI_CI_TARBALL_ROOT=pi-ci-atomic   # matches PI_CI_OUT_DIR basename
+   ```
+
+   Exits `0` if both required files are present and the report matches the
+   v1 schema, `2` for missing entries, `5` for schema-assertion failures.
+
+
+
 ### Machine-readable validator report (`--report-json`)
 
 Set `PI_VALIDATE_REPORT_JSON=<path>` on `pretty-index-mismatch-summary-validate`
