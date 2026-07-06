@@ -593,6 +593,23 @@ pretty-index-mismatch-ci-bundle-recheck:
 	   pretty-index-validate-report-check VALIDATE_REPORT_JSON="$$vr"
 
 
+# Remove the locally-extracted bundle directory so
+# `pretty-index-mismatch-ci-bundle-recheck` (or a fresh
+# `…-bundle-download`) starts from a clean slate. No-op when the
+# directory doesn't exist.
+#   make pretty-index-mismatch-ci-bundle-clean                # PI_CI_SCOPE=atomic
+#   make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-clean:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@out="./_pi-ci-bundle-$(PI_CI_SCOPE)"; \
+	 if [ -e "$$out" ]; then \
+	   rm -rf -- "$$out"; echo "removed $$out"; \
+	 else \
+	   echo "nothing to clean (no such dir: $$out)"; \
+	 fi
+
+
 
 
 # Print a human-friendly per-file table (file, expected, actual, status)
