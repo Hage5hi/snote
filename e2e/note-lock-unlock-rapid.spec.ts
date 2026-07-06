@@ -111,19 +111,17 @@ test.describe("rapid lock/unlock toggle via URL hash", () => {
     }
     const toggleWindow = Date.now() - before;
 
-    // No writes should have fired mid-toggle; guarded providers must swallow
-    // pending saveSnapshot / flushBeacon calls when the mode no longer matches.
-    expect(
-      writes,
-      `Unexpected notes writes during ${toggleWindow}ms rapid toggle window:\n` +
-        JSON.stringify(writes, null, 2),
-    ).toEqual([]);
-
-    const beaconList = await page.evaluate(
-      () => (window as unknown as { __beacons: string[] }).__beacons,
+    // Collect in-page (fetch-wrap + beacon) captures and merge with the
+    // Playwright network-level captures. No source may report any write.
+    const inPage = await page.evaluate(
+      () => (window as unknown as { __noteWrites: { source: string; method: string; url: string }[] }).__noteWrites,
     );
-    beacons.push(...beaconList.filter((u) => /\/rest\/v1\/notes\b/.test(u)));
-    expect(beacons, "Unexpected sendBeacon writes during rapid toggle").toEqual([]);
+    const allWrites = [...writes, ...inPage];
+    expect(
+      allWrites,
+      `Unexpected notes writes during ${toggleWindow}ms rapid toggle window:\n` +
+        JSON.stringify(allWrites, null, 2),
+    ).toEqual([]);
 
     // Land on the encrypted hash and confirm content still decrypts cleanly.
     await page.evaluate(
