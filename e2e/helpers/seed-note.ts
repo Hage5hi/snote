@@ -36,6 +36,42 @@ export async function deleteNote(slug: string): Promise<void> {
   await client().from("notes").delete().eq("slug", slug);
 }
 
+/**
+ * Deterministic-yet-unique slug per test run — includes a caller-supplied
+ * tag, worker index (parallel CI shards), a per-process counter, and a
+ * timestamp+random suffix. Prevents collisions across parallel jobs while
+ * keeping the slug readable in Playwright traces.
+ */
+let __seedCounter = 0;
+export function versionedSlug(tag: string, variant: "plain" | "enc" = "plain"): string {
+  __seedCounter += 1;
+  const worker = process.env.TEST_WORKER_INDEX ?? "0";
+  const ts = Date.now().toString(36);
+  const rand = Math.random().toString(36).slice(2, 8);
+  return `e2e-${tag}-${variant}-w${worker}-n${__seedCounter}-${ts}-${rand}`;
+}
+
+/** Seed a plaintext note under a freshly-versioned slug and return the slug. */
+export async function seedVersionedPlaintextNote(
+  tag: string,
+  text: string,
+): Promise<string> {
+  const slug = versionedSlug(tag, "plain");
+  await seedPlaintextNote(slug, text);
+  return slug;
+}
+
+/** Seed an encrypted note under a freshly-versioned slug and return the slug. */
+export async function seedVersionedEncryptedNote(
+  tag: string,
+  passphrase: string,
+  text: string,
+): Promise<string> {
+  const slug = versionedSlug(tag, "enc");
+  await seedEncryptedNote(slug, passphrase, text);
+  return slug;
+}
+
 export async function seedPlaintextNote(slug: string, text: string): Promise<void> {
   const doc = new Y.Doc();
   doc.getText("content").insert(0, text);
