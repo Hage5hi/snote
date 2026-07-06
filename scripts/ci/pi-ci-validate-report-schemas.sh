@@ -76,6 +76,7 @@ actuals=()
 statuses=()
 exits=()
 reasons=()
+diffs=()
 
 rc=0
 # jq binary + optional timeout override. `PI_CI_JQ_BIN` lets tests
