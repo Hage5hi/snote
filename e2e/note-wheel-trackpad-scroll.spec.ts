@@ -126,6 +126,13 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     if (!box) throw new Error("scroller has no bounding box");
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
 
+    // Warm-up: some engines drop the first wheel event after pointer move
+    // while they attach passive-wheel listeners. Fire and discard, then
+    // reset to top before the real assertions.
+    for (let i = 0; i < 3; i++) { await page.mouse.wheel(0, 120); await page.waitForTimeout(30); }
+    await scroller.evaluate((el) => { el.scrollTop = 0; });
+    await page.waitForTimeout(50);
+
     const positions: number[] = [await scroller.evaluate((el) => el.scrollTop)];
     for (let i = 0; i < 12; i++) {
       const before = await scroller.evaluate((el) => el.scrollTop);
