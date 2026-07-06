@@ -854,6 +854,11 @@ print(json.dumps({
           out=/tmp/pi-ci-atomic
           mf="$out/extracted-tree.txt"
           mkdir -p "$out"
+          # Touch first so the manifest file ALWAYS exists — even if the
+          # heredoc below crashes half-way, the upload step will find a
+          # (possibly empty) file at the expected path instead of a
+          # missing artifact. Keeps failure-run uploads consistent.
+          : > "$mf"
           {
             echo "# extracted-tree for $out (generated on assertion/step failure)"
             echo "# generated-at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -862,13 +867,13 @@ print(json.dumps({
               (cd "$out" && find . -type f 2>/dev/null | sort | while read -r f; do
                 sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
                 printf "%s\t%s\n" "$sz" "$f"
-              done)
+              done) || echo "# (find failed for $out)"
             else
               echo "# (directory $out does not exist)"
             fi
-          } > "$mf"
+          } >> "$mf" || true
           echo "wrote $mf"
-          cat "$mf"
+          cat "$mf" || true
 
       - name: upload validator files on any summary/assertion failure (MATRIX=atomic)
         # Fire on ANY prior step failure in this job (not just the specific
@@ -1586,6 +1591,11 @@ print(json.dumps({
           out=/tmp/pi-ci-stress
           mf="$out/extracted-tree.txt"
           mkdir -p "$out"
+          # Touch first so the manifest file ALWAYS exists — even if the
+          # heredoc below crashes half-way, the upload step will find a
+          # (possibly empty) file at the expected path instead of a
+          # missing artifact. Keeps failure-run uploads consistent.
+          : > "$mf"
           {
             echo "# extracted-tree for $out (generated on assertion/step failure)"
             echo "# generated-at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -1594,13 +1604,13 @@ print(json.dumps({
               (cd "$out" && find . -type f 2>/dev/null | sort | while read -r f; do
                 sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
                 printf "%s\t%s\n" "$sz" "$f"
-              done)
+              done) || echo "# (find failed for $out)"
             else
               echo "# (directory $out does not exist)"
             fi
-          } > "$mf"
+          } >> "$mf" || true
           echo "wrote $mf"
-          cat "$mf"
+          cat "$mf" || true
 
       - name: upload validator files on any summary/assertion failure (MATRIX=stress)
         # Fire on ANY prior step failure in this job (not just the specific
@@ -3595,4 +3605,44 @@ print(json.dumps({
       - name: skip note
         if: steps.filter.outputs.any != 'true'
         run: echo "no fixture-relevant changes; skipping pretty-index-mismatch-ci-selftest-all"
+
+  # End-to-end smoke of the local triage flow: download the bundle
+  # artifact produced earlier in THIS run, print the listing, then
+  # re-run the validator. Guards against regressions in
+  # scripts/pretty-index-mismatch-ci-bundle-oneshot.sh and the three
+  # Makefile targets it chains. Only runs when the upstream bundle
+  # artifacts actually exist (both matrices produced them).
+  pretty-index-mismatch-ci-bundle-oneshot-e2e:
+    name: pretty-index-mismatch-ci-bundle oneshot (${{ matrix.scope }})
+    needs: [schema-drift-diff-atomic-crossos, schema-drift-diff-stress-nightly]
+    if: always() && !cancelled()
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [atomic, stress]
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: probe for bundle artifact
+        id: probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          name="pretty-index-mismatch-ci-bundle-${{ matrix.scope }}-ubuntu-latest"
+          if gh run view "${{ github.run_id }}" --json name >/dev/null 2>&1 \
+             && gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" \
+                --jq '.artifacts[].name' | grep -Fxq "$name"; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "artifact $name not uploaded by upstream job; skipping oneshot e2e"
+          fi
+      - name: run oneshot download→list→recheck
+        if: steps.probe.outputs.present == 'true'
+        run: |
+          scripts/pretty-index-mismatch-ci-bundle-oneshot.sh \
+            "${{ github.run_id }}" "${{ matrix.scope }}" ubuntu-latest
+
 
