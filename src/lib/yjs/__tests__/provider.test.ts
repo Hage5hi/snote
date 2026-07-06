@@ -109,3 +109,53 @@ describe("SupabaseYjsProvider — SyncEvent lifecycle", () => {
     expect(events).toHaveLength(0);
   });
 });
+
+describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
+  beforeEach(() => {
+    upsertCalls.length = 0;
+  });
+
+  it("persists is_encrypted=false when provider has no encryption", async () => {
+    const { provider, doc } = makeProvider();
+    doc.getText("content").insert(0, "hello");
+    await provider.saveSnapshot();
+    expect(upsertCalls).toHaveLength(1);
+    expect(upsertCalls[0].is_encrypted).toBe(false);
+    expect(upsertCalls[0].content).toBe("hello");
+  });
+
+  it("persists is_encrypted=true and blanks content when encryption is set", async () => {
+    const { provider, doc } = makeProvider();
+    const enc: Encryption = {
+      encrypt: async (b) => b,
+      decrypt: async (b) => b,
+    };
+    provider.setEncryption(enc);
+    doc.getText("content").insert(0, "secret");
+    await provider.saveSnapshot();
+    expect(upsertCalls).toHaveLength(1);
+    expect(upsertCalls[0].is_encrypted).toBe(true);
+    expect(upsertCalls[0].content).toBe("");
+    expect(upsertCalls[0].char_count).toBe(0);
+    expect(upsertCalls[0].tags).toEqual([]);
+  });
+
+  it("skips write when local encryption mode disagrees with stored mode", async () => {
+    const { provider, doc } = makeProvider();
+    doc.getText("content").insert(0, "plaintext");
+    // Row is encrypted, but provider has no key — must NOT overwrite.
+    provider.setExpectedEncrypted(true);
+    await provider.saveSnapshot();
+    expect(upsertCalls).toHaveLength(0);
+  });
+
+  it("skips flushBeacon when encryption mode mismatches", () => {
+    const { provider, doc } = makeProvider();
+    doc.getText("content").insert(0, "plaintext");
+    provider.setExpectedEncrypted(true);
+    const beacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", { value: beacon, configurable: true });
+    provider.flushBeacon();
+    expect(beacon).not.toHaveBeenCalled();
+  });
+});
