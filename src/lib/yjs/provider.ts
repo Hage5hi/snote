@@ -525,6 +525,9 @@ export class SupabaseYjsProvider {
           content: storedContent,
           char_count: storedCount,
           tags: storedTags,
+          // Keep the row flag in lockstep with the bytes we just wrote so a
+          // stale `is_encrypted` can never disagree with `ydoc_state`.
+          is_encrypted: !!this.encryption,
         },
         { onConflict: "slug" }
       );
