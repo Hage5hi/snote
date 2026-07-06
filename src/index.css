@@ -249,72 +249,43 @@
 }
 
 /* ================== Editor scroll/selection smoothness ==================
-   Selection-drag auto-scroll used to feel "laggy" on long notes because
-   every line was a layout/paint dependency for the scroller. Two cheap
-   wins with no behavior change:
-
-   1) `contain: content` on `.cm-line` isolates each line's layout & paint
-      so the browser can skip work for off-screen lines during a drag.
-   2) `will-change: scroll-position` + `overscroll-behavior: contain` on
-      `.cm-scroller` promotes the scroller to its own compositor layer and
-      stops scroll from chaining to the page — the drag stays buttery.
-   3) `-webkit-user-select: text` keeps native selection acceleration on
-      WebKit/Blink (some parent rules were forcing `user-select: none`
-      during hover states, which forced a fallback selection path). */
+   Keep this deliberately minimal. Earlier attempts layered `contain: strict`,
+   `will-change: scroll-position`, and `transform: translateZ(0)` on the
+   scroller and selection overlays to "help" the compositor. In practice the
+   `transform`/`will-change` combo promoted the scroller to its own layer in
+   a way that swallowed wheel/trackpad delta on some setups — the user could
+   not scroll at all. Native `overflow: auto` on `.cm-scroller` is already
+   compositor-friendly; we only add non-invasive hints. */
 @layer utilities {
   .cm-scroller {
-    will-change: scroll-position;
+    /* Stop scroll chaining to the page without changing wheel behavior. */
     overscroll-behavior: contain;
+    /* iOS momentum scroll; harmless elsewhere. */
     -webkit-overflow-scrolling: touch;
-    /* Promote the scroller to its own compositor layer up-front so the
-       first drag-scroll doesn't pay a one-off layer-creation cost that
-       shows up as a visible stutter on very long notes. */
-    transform: translateZ(0);
-    backface-visibility: hidden;
-    /* Hint the browser that scrollTop changes rapidly during selection
-       drag-scroll — keeps sub-pixel scroll on the compositor thread. */
     scroll-behavior: auto;
   }
-  .cm-editor .cm-line {
-    contain: content;
-    /* Prevent per-line reflow from rippling into siblings while the
-       selection extends across many lines during drag-scroll. */
-    contain-intrinsic-size: auto 1.5em;
-  }
-  /* The selection overlay is repainted on every mouse move during a
-     drag. Isolating its paint layer stops the repaint from invalidating
-     the whole scroller. Keep the visual identical — only paint scope
-     changes. */
-  .cm-editor .cm-selectionLayer,
-  .cm-editor .cm-selectionBackground {
-    contain: strict;
-    will-change: transform;
-  }
+  /* Keep native text selection acceleration on — some parent hover rules
+     were forcing `user-select: none` which pushed selection onto a slow
+     fallback path during drag-scroll. */
   .cm-content,
   .cm-content ::selection {
     -webkit-user-select: text;
     user-select: text;
   }
+  /* Cheap paint isolation per line, no size/layout containment so wheel
+     hit-testing and intrinsic sizing behave exactly like the default. */
+  .cm-editor .cm-line {
+    contain: paint;
+  }
 
-  /* Reduced-motion fallback: users who opt out of motion also tend to
-     dislike compositor-driven kinetic scrolling. Drop the layer-promotion
-     hints and momentum scroll so selection + auto-scroll behaves in the
-     browser's default, stable path. Selection styling stays intact. */
   @media (prefers-reduced-motion: reduce) {
     .cm-scroller {
-      will-change: auto;
-      transform: none;
-      backface-visibility: visible;
       -webkit-overflow-scrolling: auto;
       scroll-behavior: auto;
     }
-    .cm-editor .cm-selectionLayer,
-    .cm-editor .cm-selectionBackground {
-      will-change: auto;
-      contain: none;
-    }
   }
 }
+
 
 
 /* ================== Typewriter mode ==================
