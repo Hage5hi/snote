@@ -736,22 +736,22 @@ pretty-index-mismatch-ci:
 	fi
 	@rm -rf -- "$(PI_CI_OUT_DIR)"; mkdir -p -- "$(PI_CI_OUT_DIR)"
 	@echo "── pretty-index CI pipeline → $(PI_CI_OUT_DIR) ──"
-	@$(MAKE) --no-print-directory pretty-index-mismatch-summary-json \
+	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-json \
 	  PI_REPORT_PATH="$(PI_REPORT_PATH)" \
 	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json"
 	@set +e; \
-	 $(MAKE) --no-print-directory pretty-index-mismatch-summary-validate \
+	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-validate \
 	   PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
 	   PI_VALIDATE_REPORT_JSON="$(PI_CI_OUT_DIR)/validate-report.json" \
 	   2> "$(PI_CI_OUT_DIR)/validate-annotations.txt"; \
 	 vrc=$$?; cat "$(PI_CI_OUT_DIR)/validate-annotations.txt" >&2; \
 	 if [ "$$vrc" -ne 0 ]; then echo "validate failed (exit=$$vrc)" >&2; exit "$$vrc"; fi
-	@$(MAKE) --no-print-directory pretty-index-mismatch-summary-md \
+	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-md \
 	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
 	  PI_SUMMARY_MD_PATH="$(PI_CI_OUT_DIR)/summary.md"
 	@if [ -n "$(PI_BASELINE)" ] && [ -f "$(PI_BASELINE)" ]; then \
 	   set +e; \
-	   $(MAKE) --no-print-directory pretty-index-mismatch-diff \
+	   $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-diff \
 	     PI_BASELINE="$(PI_BASELINE)" \
 	     PI_REPORT_PATH="$(PI_REPORT_PATH)" \
 	     PI_DIFF_OUT_PATH="$(PI_CI_OUT_DIR)/diff.json"; \
