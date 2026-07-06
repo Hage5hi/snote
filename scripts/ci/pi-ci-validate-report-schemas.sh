@@ -18,8 +18,24 @@ mf="$out/extracted-tree.json"
 pf="$out/preflight-status.json"
 errfile="$out/report-schema-errors.txt"
 
+# Validate configurable expected schema_version. Non-integer or empty
+# values fail fast with a clear error — CI + local users get a real
+# signal instead of every check silently reporting "expected=<garbage>".
+EXPECTED_SV="${PI_CI_EXPECTED_SCHEMA_VERSION:-1}"
+if ! printf '%s' "$EXPECTED_SV" | grep -Eq '^[0-9]+$'; then
+  echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${EXPECTED_SV}')" >&2
+  exit 2
+fi
+export PI_CI_EXPECTED_SCHEMA_VERSION="$EXPECTED_SV"
+
 mkdir -p "$out" 2>/dev/null || true
 : > "$errfile"
+
+# Always print the configured expected schema_version FIRST so it lands
+# at the top of report-schema-validation-log.txt (CI tees stdout into
+# it), even when jq/schema parsing fails or the process is killed.
+echo "pi-ci-validate-report-schemas: expected schema_version=${EXPECTED_SV}"
+echo "pi-ci-validate-report-schemas: out-dir=${out}"
 
 rc=0
 run_check() {
