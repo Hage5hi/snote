@@ -183,8 +183,8 @@ echo "report-schema-errors: $errfile"
   printf ',"files":['
   for i in "${!labels[@]}"; do
     [ "$i" -gt 0 ] && printf ','
-    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s,"reason":"%s"}' \
-      "${labels[$i]}" "${paths[$i]}" "$EXPECTED_SV" "${actuals[$i]}" "${statuses[$i]}" "${exits[$i]}" "${reasons[$i]}"
+    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s,"reason":"%s","diff":%s}' \
+      "${labels[$i]}" "${paths[$i]}" "$EXPECTED_SV" "${actuals[$i]}" "${statuses[$i]}" "${exits[$i]}" "${reasons[$i]}" "${diffs[$i]}"
   done
   printf ']'
   printf ',"exit":%s' "$rc"
