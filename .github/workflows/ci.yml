@@ -836,6 +836,12 @@ print(json.dumps({
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: assert pretty-index-mismatch-ci summary links (MATRIX=atomic)
+        if: always()
+        shell: bash
+        run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY"
+
+
 
 
 
