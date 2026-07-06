@@ -63,6 +63,6 @@ d("pi-ci schema validator — wrong schema_version in zipped extracted-tree.json
     expect(stdout).toContain("actual=99");
 
     const errBody = readFileSync(join(target, "report-schema-errors.txt"), "utf8");
-    expect(errBody).toContain('schema_version: expected "1", got "99"');
+    expect(errBody).toMatch(/schema_version: expected "1", got 99/);
   }, 60_000);
 });
