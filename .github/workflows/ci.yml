@@ -3421,8 +3421,69 @@ print(json.dumps({
             || { echo "generated schema types drifted — run: bun run schema:types  (then commit scripts/_helpers/focus-trap-inspect-schema.types.gen.ts)"; exit 1; }
 
 
-
-
-
-
+  # ────────────────────────────────────────────────────────────────────────
+  # pretty-index-mismatch-ci-selftest-all — fresh-checkout parity check.
+  # On push (main / schedule / manual) both scopes always run. On PRs, each
+  # scope only runs when its fixture-relevant paths changed, so unrelated
+  # PRs stay fast while touching Makefile / pi-ci fixtures still enforces
+  # parity.
+  # ────────────────────────────────────────────────────────────────────────
+  pretty-index-mismatch-ci-selftest:
+    name: pretty-index-mismatch-ci-selftest-all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: detect fixture-relevant changes
+        id: filter
+        shell: bash
+        run: |
+          set -e
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "atomic=true" >> "$GITHUB_OUTPUT"
+            echo "stress=true" >> "$GITHUB_OUTPUT"
+            echo "any=true"    >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base" "$head" || true)
+          echo "── changed files ──"; echo "$changed" | sed 's/^/  /'
+          atomic=false; stress=false
+          # A change to shared infra (Makefile / workflow) re-runs BOTH
+          # scopes; per-scope fixture directories only re-run their scope.
+          echo "$changed" | grep -Eq '^(Makefile|\.github/workflows/ci\.yml|tests/fixtures/pretty-index/atomic/)' && atomic=true
+          echo "$changed" | grep -Eq '^(Makefile|\.github/workflows/ci\.yml|tests/fixtures/pretty-index/stress/)' && stress=true
+          any=false; { $atomic || $stress; } && any=true
+          echo "atomic=$atomic" >> "$GITHUB_OUTPUT"
+          echo "stress=$stress" >> "$GITHUB_OUTPUT"
+          echo "any=$any"       >> "$GITHUB_OUTPUT"
+      - name: run selftest (atomic)
+        if: steps.filter.outputs.atomic == 'true'
+        run: |
+          make -s pretty-index-mismatch-ci-selftest \
+            PI_CI_SELFTEST_SCOPE=atomic \
+            PI_CI_SELFTEST_DIR=_pi-ci-selftest-atomic
+      - name: verify selftest tarball (atomic)
+        if: steps.filter.outputs.atomic == 'true'
+        run: |
+          make -s pretty-index-ci-tarball-verify \
+            PI_CI_TARBALL=_pi-ci-selftest-atomic/bundle.tar.gz \
+            PI_CI_TARBALL_ROOT=out
+      - name: run selftest (stress)
+        if: steps.filter.outputs.stress == 'true'
+        run: |
+          make -s pretty-index-mismatch-ci-selftest \
+            PI_CI_SELFTEST_SCOPE=stress \
+            PI_CI_SELFTEST_DIR=_pi-ci-selftest-stress
+      - name: verify selftest tarball (stress)
+        if: steps.filter.outputs.stress == 'true'
+        run: |
+          make -s pretty-index-ci-tarball-verify \
+            PI_CI_TARBALL=_pi-ci-selftest-stress/bundle.tar.gz \
+            PI_CI_TARBALL_ROOT=out
+      - name: skip note
+        if: steps.filter.outputs.any != 'true'
+        run: echo "no fixture-relevant changes; skipping pretty-index-mismatch-ci-selftest-all"
 
