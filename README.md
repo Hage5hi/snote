@@ -1135,6 +1135,23 @@ make pretty-index-mismatch-ci-bundle-clean                  # atomic
 make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=stress
 ```
 
+#### Where files land locally
+
+Both `pretty-index-mismatch-ci-bundle-download` and
+`pretty-index-mismatch-ci-bundle-clean` operate on the same
+scope-specific directory rooted at the repo root:
+
+| Scope    | Local extraction directory (removed by `…-clean`)                | Extracted validator files                                                                                       |
+|----------|------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------|
+| `atomic` | `./_pi-ci-bundle-atomic/` (tarball + `extracted/pi-ci-atomic/`)  | `./_pi-ci-bundle-atomic/extracted/pi-ci-atomic/validate-report.json` <br> `…/validate-schema-assertion.txt`     |
+| `stress` | `./_pi-ci-bundle-stress/` (tarball + `extracted/pi-ci-stress/`)  | `./_pi-ci-bundle-stress/extracted/pi-ci-stress/validate-report.json` <br> `…/validate-schema-assertion.txt`     |
+
+`pretty-index-mismatch-ci-bundle-recheck` reads from the exact same
+paths, and its preflight fails fast if either
+`validate-report.json` or `validate-schema-assertion.txt` is missing or
+empty in the extracted directory above.
+
+
 
 
 
