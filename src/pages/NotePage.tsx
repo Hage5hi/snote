@@ -207,7 +207,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     return () => {
       cancelled = true;
     };
-  }, [slug, validSlug]);
+  }, [slug, validSlug, metaVersion]);
 
   // When inside the Syrin Note Chrome extension side panel, tell the host
   // which slug we're on so it can remember the last-opened note. We retry
