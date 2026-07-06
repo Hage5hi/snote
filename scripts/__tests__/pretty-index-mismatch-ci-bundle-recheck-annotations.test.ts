@@ -69,7 +69,7 @@ d("pretty-index-mismatch-ci-bundle-recheck — GHA annotation snapshots", () => 
     const res = runRecheck();
     expect(res.status).toBe(2);
     expect(annotations(res.stdout ?? "")).toMatchInlineSnapshot(
-      `"::error file=./_pi-ci-bundle-atomic/extracted/validate-report.json::preflight: validate-report.json MISSING (expected under ./_pi-ci-bundle-atomic/extracted)"`,
+      `"::error file=./_pi-ci-bundle-stress/extracted/validate-report.json::preflight: validate-report.json MISSING (expected under ./_pi-ci-bundle-stress/extracted)"`,
     );
   });
 
@@ -81,7 +81,7 @@ d("pretty-index-mismatch-ci-bundle-recheck — GHA annotation snapshots", () => 
     const res = runRecheck();
     expect(res.status).toBe(2);
     expect(annotations(res.stdout ?? "")).toMatchInlineSnapshot(
-      `"::error file=./_pi-ci-bundle-atomic/extracted/pi-ci-atomic/validate-report.json::preflight: validate-report.json EMPTY"`,
+      `"::error file=./_pi-ci-bundle-stress/extracted/pi-ci-stress/validate-report.json::preflight: validate-report.json EMPTY"`,
     );
   });
 
@@ -93,7 +93,7 @@ d("pretty-index-mismatch-ci-bundle-recheck — GHA annotation snapshots", () => 
     const res = runRecheck();
     expect(res.status).toBe(2);
     expect(annotations(res.stdout ?? "")).toMatchInlineSnapshot(
-      `"::error file=./_pi-ci-bundle-atomic/extracted/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt MISSING (expected under ./_pi-ci-bundle-atomic/extracted)"`,
+      `"::error file=./_pi-ci-bundle-stress/extracted/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt MISSING (expected under ./_pi-ci-bundle-stress/extracted)"`,
     );
   });
 
@@ -105,7 +105,7 @@ d("pretty-index-mismatch-ci-bundle-recheck — GHA annotation snapshots", () => 
     const res = runRecheck();
     expect(res.status).toBe(2);
     expect(annotations(res.stdout ?? "")).toMatchInlineSnapshot(
-      `"::error file=./_pi-ci-bundle-atomic/extracted/pi-ci-atomic/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt EMPTY"`,
+      `"::error file=./_pi-ci-bundle-stress/extracted/pi-ci-stress/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt EMPTY"`,
     );
   });
 
@@ -117,8 +117,8 @@ d("pretty-index-mismatch-ci-bundle-recheck — GHA annotation snapshots", () => 
     const res = runRecheck();
     expect(res.status).toBe(2);
     expect(annotations(res.stdout ?? "")).toMatchInlineSnapshot(`
-      "::error file=./_pi-ci-bundle-atomic/extracted/validate-report.json::preflight: validate-report.json MISSING (expected under ./_pi-ci-bundle-atomic/extracted)
-      ::error file=./_pi-ci-bundle-atomic/extracted/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt MISSING (expected under ./_pi-ci-bundle-atomic/extracted)"
+      "::error file=./_pi-ci-bundle-stress/extracted/validate-report.json::preflight: validate-report.json MISSING (expected under ./_pi-ci-bundle-stress/extracted)
+      ::error file=./_pi-ci-bundle-stress/extracted/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt MISSING (expected under ./_pi-ci-bundle-stress/extracted)"
     `);
   });
 
@@ -130,8 +130,8 @@ d("pretty-index-mismatch-ci-bundle-recheck — GHA annotation snapshots", () => 
     const res = runRecheck();
     expect(res.status).toBe(2);
     expect(annotations(res.stdout ?? "")).toMatchInlineSnapshot(`
-      "::error file=./_pi-ci-bundle-atomic/extracted/pi-ci-atomic/validate-report.json::preflight: validate-report.json EMPTY
-      ::error file=./_pi-ci-bundle-atomic/extracted/pi-ci-atomic/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt EMPTY"
+      "::error file=./_pi-ci-bundle-stress/extracted/pi-ci-stress/validate-report.json::preflight: validate-report.json EMPTY
+      ::error file=./_pi-ci-bundle-stress/extracted/pi-ci-stress/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt EMPTY"
     `);
   });
 });
