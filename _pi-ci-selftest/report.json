@@ -1,0 +1,22 @@
+{
+  "schema": "pretty-index-checksum-mismatch/v1",
+  "scope": "atomic",
+  "matrix": "atomic",
+  "fail_fast": false,
+  "results": [
+    {
+      "status": "MISMATCH",
+      "dir": "synthetic/atomic",
+      "file": "pretty-index.json",
+      "expected": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "actual": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "status": "OK",
+      "dir": "synthetic/atomic",
+      "file": "other.json",
+      "expected": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "actual": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ]
+}
