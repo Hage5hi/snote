@@ -137,7 +137,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
     } catch { /* best-effort */ }
   });
 
-  test("discrete wheel ticks all register — no missed deltas", async ({ page }) => {
+  test("discrete wheel ticks all register — no missed deltas", async ({ page }, testInfo) => {
     const scroller = await seedLongNote(page);
     await scroller.evaluate((el) => { el.scrollTop = 0; });
     const box = await scroller.boundingBox();
