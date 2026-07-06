@@ -96,7 +96,10 @@ cp ${JSON.stringify(tarball)} "$out/"
 
     // Redact non-deterministic bits (tarball basename varies only if we
     // rename it; keep it stable but redact anyway for future-proofing).
-    const stderr = (res.stderr ?? "").replaceAll(tarball, "<TARBALL>");
+    const stderr = (res.stderr ?? "")
+      .replaceAll(tarball, "<TARBALL>")
+      .replace(/Makefile:\d+:/g, "Makefile:<LINE>:");
+
     expect(res.status).not.toBe(0);
     expect(stderr).toMatchInlineSnapshot(`
       "ERROR: extracted tarball ./_pi-ci-bundle-atomic/pi-ci-atomic.tar.gz failed content checks:
