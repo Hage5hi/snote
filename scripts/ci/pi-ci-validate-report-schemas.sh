@@ -74,6 +74,16 @@ run_check "preflight-status.json" "$here/pi-ci-preflight-status-schema-check.sh"
 
 echo "report-schema-errors: $errfile"
 
+# Exit-code summary. Keep synchronized with README §"schema-validate
+# exit codes". Both the log tail (via `tee`) and the CI job summary
+# link to this block so triagers can decode rc without opening a shell.
+echo "── schema-validate exit codes ──"
+echo "  0 = all schemas OK"
+echo "  2 = tooling missing (jq) OR bad PI_CI_EXPECTED_SCHEMA_VERSION OR missing/empty JSON input"
+echo "  5 = schema violation (includes schema_version mismatch)"
+echo "  note: content_hash mismatch is reported by the zip-verify target with exit=3, not by this script"
+echo "  exit-code-final: ${rc}"
+
 if [ "$rc" -ne 0 ]; then
   echo "report schema check FAILED — details in $errfile" >&2
   cat "$errfile" >&2 || true
