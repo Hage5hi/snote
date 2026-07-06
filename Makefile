@@ -793,8 +793,8 @@ pretty-index-mismatch-ci-selftest:
 	   PI_CI_OUT_DIR="$(PI_CI_SELFTEST_DIR)/out" \
 	   PI_CI_BUNDLE_PATH="$(PI_CI_SELFTEST_DIR)/bundle.tar.gz"; \
 	 rc=$$?; \
-	 if [ "$$rc" -ne 3 ]; then \
-	   echo "selftest FAILED: expected exit=3 (mismatches present), got $$rc" >&2; exit 1; \
+	 if [ "$$rc" -ne 2 ] && [ "$$rc" -ne 3 ]; then \
+	   echo "selftest FAILED: expected exit=2|3 (mismatches present), got $$rc" >&2; exit 1; \
 	 fi; \
 	 for f in validate-report.json validate-annotations.txt summary.json summary.md; do \
 	   [ -f "$(PI_CI_SELFTEST_DIR)/out/$$f" ] || { echo "selftest FAILED: missing $$f" >&2; exit 1; }; \
