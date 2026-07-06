@@ -921,6 +921,7 @@ print(json.dumps({
             /tmp/pi-ci-atomic/extracted-tree.json
             /tmp/pi-ci-atomic/preflight-status.json
             /tmp/pi-ci-atomic/report-schema-errors.txt
+            /tmp/pi-ci-atomic/report-schema-jq-*.stderr.txt
             /tmp/pi-ci-atomic/report-schema-validation-log.txt
             /tmp/pi-ci-atomic/report-schema-validation-summary.json
           if-no-files-found: warn
@@ -937,6 +938,7 @@ print(json.dumps({
           path: |
             /tmp/pi-ci-atomic/report-schema-validation-log.txt
             /tmp/pi-ci-atomic/report-schema-errors.txt
+            /tmp/pi-ci-atomic/report-schema-jq-*.stderr.txt
             /tmp/pi-ci-atomic/report-schema-validation-summary.json
           if-no-files-found: warn
           retention-days: 14
@@ -1729,6 +1731,7 @@ print(json.dumps({
             /tmp/pi-ci-stress/extracted-tree.json
             /tmp/pi-ci-stress/preflight-status.json
             /tmp/pi-ci-stress/report-schema-errors.txt
+            /tmp/pi-ci-stress/report-schema-jq-*.stderr.txt
             /tmp/pi-ci-stress/report-schema-validation-log.txt
             /tmp/pi-ci-stress/report-schema-validation-summary.json
           if-no-files-found: warn
@@ -1742,6 +1745,7 @@ print(json.dumps({
           path: |
             /tmp/pi-ci-stress/report-schema-validation-log.txt
             /tmp/pi-ci-stress/report-schema-errors.txt
+            /tmp/pi-ci-stress/report-schema-jq-*.stderr.txt
             /tmp/pi-ci-stress/report-schema-validation-summary.json
           if-no-files-found: warn
           retention-days: 14
