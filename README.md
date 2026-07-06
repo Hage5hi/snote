@@ -944,11 +944,68 @@ make pretty-index-mismatch-diff PI_BASELINE=baseline.json
 | `pretty-index-mismatch-csv` | wrote CSV file | `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-show` (± `PI_PATH_GLOB`) | printed table (may be empty after glob filter) | `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-diff` (± `PI_DIFF_OUT_PATH`) | current report matches baseline | `4` NEW/CHANGED entries found (diff report written to `PI_DIFF_OUT_PATH` when set), `2` either report absent or `jq` missing |
+| `pretty-index-mismatch-ci` (± `PI_CI_BUNDLE_PATH`) | pipeline succeeded and no mismatches | `3` mismatches present (artifacts bundled to `PI_CI_BUNDLE_PATH`), `5` validation failed, `2` report/tooling missing |
 
 Recipes emit `exit 3` / `exit 4` / `exit 5` intentionally; GNU make wraps any
 failing recipe as its own exit status `2` and prints `make: *** [target]
 Error N`, so scripts that need the granular code should parse `Error N`
 from stderr (or invoke the recipe directly via `bash -c`).
+
+### CI-parity pipeline (`pretty-index-mismatch-ci`)
+
+Runs summary-json → validate (with `--report-json`) → summary-md → diff
+end-to-end on a local mismatch report, mirroring what CI does. All
+generated files are written into `PI_CI_OUT_DIR` (default
+`./_pretty-index-ci/`): `summary.json`, `summary.md`, `validate-report.json`,
+`validate-annotations.txt`, and (when `PI_BASELINE` points at a real
+file) `diff.json`. If mismatches are present, everything is bundled into
+`PI_CI_BUNDLE_PATH` (default `./_pretty-index-ci.tar.gz`) as a single
+downloadable artifact and the target exits `3`.
+
+```sh
+make pretty-index-mismatch-ci \
+  PI_REPORT_PATH=_pretty-index-checksum-mismatch.json \
+  PI_BASELINE=baseline.json \
+  PI_CI_BUNDLE_PATH=/tmp/pi-ci-bundle.tar.gz
+```
+
+### Machine-readable validator report (`--report-json`)
+
+Set `PI_VALIDATE_REPORT_JSON=<path>` on `pretty-index-mismatch-summary-validate`
+to write a `pretty-index-mismatch-summary-validate/v1` report file
+alongside the human-readable stderr output. Useful for CI artifact
+upload and downstream tooling:
+
+```json
+{
+  "schema": "pretty-index-mismatch-summary-validate/v1",
+  "status": "invalid",
+  "exit_code": 5,
+  "file": "summary.json",
+  "summary_schema": "pretty-index-mismatch-summary/v1",
+  "note": "shape validation failed",
+  "errors": ["  - path=.matrices.atomic.total  problem=invalid_or_missing  value=-1"]
+}
+```
+
+`status` is one of `ok`, `deprecated`, `invalid`, `missing`, `tooling`.
+
+### Troubleshooting
+
+| Symptom | Likely cause | Fix |
+| --- | --- | --- |
+| `make: *** Error 3` from `pretty-index-mismatch-summary` / `-ci` | Mismatches or missing artifacts present in the report | Inspect with `pretty-index-mismatch-show`; download bundle written to `PI_CI_BUNDLE_PATH` |
+| `make: *** Error 4` from `pretty-index-mismatch-diff` | NEW/CHANGED entries vs baseline | Review `diff.json` (`PI_DIFF_OUT_PATH`); refresh baseline if intended |
+| `make: *** Error 5` from `pretty-index-mismatch-summary-validate` | Summary JSON doesn't match schema | Check `validate-report.json` (`PI_VALIDATE_REPORT_JSON`) `errors[]` for exact JSON paths; regenerate with `pretty-index-mismatch-summary-json` |
+| `make: *** Error 2` | Missing input file, missing `jq`/`ajv`, or empty `PI_SUMMARY_INPUTS` | Verify paths exist and required tools are installed |
+| `warn: DEPRECATED: schema 'pretty-index-mismatch-summary/v0'` (exit `0`) | Legacy `v0` summary consumed by validator | Regenerate with `make pretty-index-mismatch-summary-json` to produce `v1`; drop any hand-maintained `v0` fixtures |
+| `warn: missing input (treated as zero counts)` from merge | One of `PI_SUMMARY_INPUTS` doesn't exist (e.g. matrix job uploaded nothing) | Expected when a matrix had zero mismatches; the merged JSON records `sources[].missing:true` |
+
+**v0 → v1 upgrade.** The only difference required by the schema is
+`schema: "pretty-index-mismatch-summary/v1"` plus fully-populated
+`matrices.{atomic,stress}` and `totals` count blocks. Re-running
+`make pretty-index-mismatch-summary-json` against the current mismatch
+report always produces a valid `v1` document — do not hand-edit.
 
 ### Schema for `summary.json`
 

@@ -422,7 +422,8 @@ pretty-index-help:
         pretty-index-mismatch-summary-json-merge \
         pretty-index-mismatch-summary-validate \
         pretty-index-mismatch-summary-md \
-        pretty-index-mismatch-csv pretty-index-mismatch-diff
+        pretty-index-mismatch-csv pretty-index-mismatch-diff \
+        pretty-index-mismatch-ci
 
 # Print a human-friendly per-file table (file, expected, actual, status)
 # from the mismatch report. Use PI_REPORT_PATH=<path> to point elsewhere.
@@ -540,29 +541,41 @@ pretty-index-mismatch-summary-json-merge:
 # exit 5 on validation failure, exit 0 on success.
 #   PI_SUMMARY_JSON_PATH=<file>  (defaults to $(PI_REPORT_PATH).summary.json)
 pretty-index-mismatch-summary-validate:
-	@f="$(PI_SUMMARY_JSON_PATH)"; \
+	@f="$(PI_SUMMARY_JSON_PATH)"; rj="$(PI_VALIDATE_REPORT_JSON)"; \
+	 write_report() { \
+	   status="$$1"; code="$$2"; errs_text="$$3"; schema_val="$$4"; note="$$5"; \
+	   [ -n "$$rj" ] || return 0; \
+	   mkdir -p -- "$$(dirname -- "$$rj")" 2>/dev/null || true; \
+	   printf '%s\n' "$$errs_text" | jq -R -s --arg status "$$status" --arg file "$$f" \
+	     --argjson code "$$code" --arg schema "$$schema_val" --arg note "$$note" \
+	     '{schema:"pretty-index-mismatch-summary-validate/v1", status:$$status, exit_code:$$code, file:$$file, summary_schema:$$schema, note:$$note, errors: ((. | split("\n")) | map(select(length>0)))}' \
+	     > "$$rj" 2>/dev/null || true; \
+	 }; \
 	 gha_err() { if [ "$${GITHUB_ACTIONS:-}" = "true" ]; then while IFS= read -r line; do [ -n "$$line" ] && printf '::error file=%s::%s\n' "$$f" "$$line" >&2; done; fi; }; \
-	 if [ ! -f "$$f" ]; then echo "ERROR: no summary at path='$$f'" >&2; printf '%s\n' "no summary at path='$$f'" | gha_err; exit 2; fi; \
+	 if [ ! -f "$$f" ]; then echo "ERROR: no summary at path='$$f'" >&2; printf '%s\n' "no summary at path='$$f'" | gha_err; write_report "missing" 2 "no summary at path='$$f'" "" ""; exit 2; fi; \
 	 schema=schemas/pretty-index-mismatch-summary-json.schema.json; \
-	 if [ ! -f "$$schema" ]; then echo "ERROR: missing schema at path='$$schema'" >&2; exit 2; fi; \
+	 if [ ! -f "$$schema" ]; then echo "ERROR: missing schema at path='$$schema'" >&2; write_report "tooling" 2 "missing schema at path='$$schema'" "" ""; exit 2; fi; \
 	 command -v jq >/dev/null 2>&1 && sv=$$(jq -r '.schema // ""' -- "$$f" 2>/dev/null) || sv=""; \
 	 case "$$sv" in \
 	   pretty-index-mismatch-summary/v0) \
 	     msg="DEPRECATED: schema 'pretty-index-mismatch-summary/v0' is accepted for backward compatibility; regenerate with the current tool to produce 'pretty-index-mismatch-summary/v1'"; \
 	     echo "warn: $$msg" >&2; \
 	     if [ "$${GITHUB_ACTIONS:-}" = "true" ]; then printf '::warning file=%s::%s\n' "$$f" "$$msg" >&2; fi; \
+	     write_report "deprecated" 0 "" "$$sv" "$$msg"; \
 	     echo "OK (deprecated v0) $$f"; exit 0;; \
 	 esac; \
 	 if command -v npx >/dev/null 2>&1 && npx --no-install ajv --help >/dev/null 2>&1; then \
 	   ajv_out=$$(npx --no-install ajv validate -s "$$schema" -d "$$f" --strict=false --errors=text 2>&1) || { \
 	     echo "$$ajv_out" >&2; \
 	     printf '%s\n' "$$ajv_out" | gha_err; \
+	     write_report "invalid" 5 "$$ajv_out" "$$sv" "ajv validation failed"; \
 	     echo "ERROR: ajv validation failed for '$$f'" >&2; exit 5; }; \
 	 else \
-	   command -v jq >/dev/null || { echo "ERROR: jq required (ajv not found)" >&2; exit 2; }; \
+	   command -v jq >/dev/null || { echo "ERROR: jq required (ajv not found)" >&2; write_report "tooling" 2 "jq required (ajv not found)" "" ""; exit 2; }; \
 	   if ! jq -e . -- "$$f" >/dev/null 2>&1; then \
 	     echo "ERROR: '$$f' is not valid JSON" >&2; \
 	     printf '%s\n' "'$$f' is not valid JSON" | gha_err; \
+	     write_report "invalid" 5 "'$$f' is not valid JSON" "$$sv" "parse error"; \
 	     exit 5; \
 	   fi; \
 	   errs=$$(jq -r '\
@@ -582,9 +595,11 @@ pretty-index-mismatch-summary-validate:
 	     echo "ERROR: invalid summary '$$f':" >&2; \
 	     echo "$$errs" >&2; \
 	     printf '%s\n' "$$errs" | gha_err; \
+	     write_report "invalid" 5 "$$errs" "$$sv" "shape validation failed"; \
 	     exit 5; \
 	   fi; \
 	 fi; \
+	 write_report "ok" 0 "" "$$sv" ""; \
 	 echo "OK $$f"
 
 # Render a small human-readable markdown report from a summary JSON
@@ -701,4 +716,57 @@ pretty-index-mismatch-validate:
 	@err=$$(jq -r 'def bad(msg): "SCHEMA ERROR: " + msg; if type != "object" then bad("root must be an object") elif (.schema // "") != "pretty-index-checksum-mismatch/v1" then bad("schema must be pretty-index-checksum-mismatch/v1 (got: \(.schema // "<missing>"))") elif ([.scope] | inside(["atomic","stress","both"]) | not) then bad("scope must be atomic|stress|both (got: \(.scope // "<missing>"))") elif (.results | type) != "array" then bad(".results must be an array") elif (.fail_fast != null and (.fail_fast | type) != "boolean") then bad(".fail_fast must be boolean when present") else ([ .results | to_entries[] | . as $$e | ($$e.value // {}) as $$r | if ($$r | type) != "object" then "results[\($$e.key)] must be object" elif ([$$r.status] | inside(["OK","MISMATCH","dir_missing","checksums_missing"]) | not) then "results[\($$e.key)].status invalid: \($$r.status // "<missing>")" elif ($$r.status == "OK" or $$r.status == "MISMATCH") and (($$r.file // "") == "" or ($$r.expected == null) or ($$r.actual == null)) then "results[\($$e.key)] file-result must have file/expected/actual" elif (($$r.dir // "") == "") then "results[\($$e.key)].dir missing" else empty end ] | if length == 0 then "" else bad(.[0]) end) end' -- "$(PI_REPORT_PATH)" 2>&1); \
 	if [ -n "$$err" ]; then echo "$$err" >&2; echo "invalid: $(PI_REPORT_PATH)" >&2; exit 1; fi; \
 	echo "✅ $(PI_REPORT_PATH) validates against pretty-index-checksum-mismatch/v1"
+
+# End-to-end CI-parity pipeline that runs summary-json, summary-validate
+# (with --report-json), summary-md, and diff-report on a local mismatch
+# report. When mismatches are present (recipe exits 3) and PI_CI_BUNDLE_PATH
+# is set, all generated artifacts are bundled into a single .tar.gz
+# tarball for easy upload as a CI artifact.
+#
+#   PI_REPORT_PATH=<in>           mismatch report to process
+#   PI_BASELINE=<path>            optional baseline for diff (skipped if absent)
+#   PI_CI_OUT_DIR=<dir>           where to write generated files (default: ./_pretty-index-ci)
+#   PI_CI_BUNDLE_PATH=<file.tgz>  tarball path (default: <PI_CI_OUT_DIR>.tar.gz)
+PI_CI_OUT_DIR     ?= _pretty-index-ci
+PI_CI_BUNDLE_PATH ?= $(PI_CI_OUT_DIR).tar.gz
+pretty-index-mismatch-ci:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@if [ ! -f "$(PI_REPORT_PATH)" ]; then \
+	  echo "no mismatch report at $(PI_REPORT_PATH) — run verify first" >&2; exit 2; \
+	fi
+	@rm -rf -- "$(PI_CI_OUT_DIR)"; mkdir -p -- "$(PI_CI_OUT_DIR)"
+	@echo "── pretty-index CI pipeline → $(PI_CI_OUT_DIR) ──"
+	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-json \
+	  PI_REPORT_PATH="$(PI_REPORT_PATH)" \
+	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json"
+	@set +e; \
+	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-validate \
+	   PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
+	   PI_VALIDATE_REPORT_JSON="$(PI_CI_OUT_DIR)/validate-report.json" \
+	   2> "$(PI_CI_OUT_DIR)/validate-annotations.txt"; \
+	 vrc=$$?; cat "$(PI_CI_OUT_DIR)/validate-annotations.txt" >&2; \
+	 if [ "$$vrc" -ne 0 ]; then echo "validate failed (exit=$$vrc)" >&2; exit "$$vrc"; fi
+	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-md \
+	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
+	  PI_SUMMARY_MD_PATH="$(PI_CI_OUT_DIR)/summary.md"
+	@if [ -n "$(PI_BASELINE)" ] && [ -f "$(PI_BASELINE)" ]; then \
+	   set +e; \
+	   $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-diff \
+	     PI_BASELINE="$(PI_BASELINE)" \
+	     PI_REPORT_PATH="$(PI_REPORT_PATH)" \
+	     PI_DIFF_OUT_PATH="$(PI_CI_OUT_DIR)/diff.json"; \
+	   drc=$$?; \
+	   if [ "$$drc" -ne 0 ] && [ "$$drc" -ne 2 ]; then :; fi; \
+	 else \
+	   echo "skip diff: PI_BASELINE unset or missing"; \
+	 fi
+	@mm=$$(jq -r '.totals.mismatched + .totals.missing' -- "$(PI_CI_OUT_DIR)/summary.json"); \
+	 echo "pipeline artifacts:"; ls -1 "$(PI_CI_OUT_DIR)"; \
+	 if [ "$$mm" -gt 0 ]; then \
+	   tar -czf "$(PI_CI_BUNDLE_PATH)" -C "$$(dirname -- "$(PI_CI_OUT_DIR)")" "$$(basename -- "$(PI_CI_OUT_DIR)")"; \
+	   echo "bundled mismatched artifacts -> $(PI_CI_BUNDLE_PATH)"; \
+	   exit 3; \
+	 else \
+	   echo "no mismatches; skipping bundle"; \
+	 fi
 
