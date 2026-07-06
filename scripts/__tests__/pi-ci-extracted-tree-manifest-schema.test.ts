@@ -42,6 +42,7 @@ d("pretty-index-mismatch-ci extracted-tree manifest — schema + walk failures",
 
     const m = JSON.parse(readFileSync(join(out, "extracted-tree.json"), "utf8"));
     expect(m.schema).toBe("pi-ci/extracted-tree/v1");
+    expect(m.schema_version).toBe("1");
     expect(m.walk_ok).toBe(true);
     expect(m.content_hash).toMatch(/^[A-Za-z0-9_-]+:.+/);
     expect(Array.isArray(m.entries)).toBe(true);
