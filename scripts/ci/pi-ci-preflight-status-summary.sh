@@ -60,17 +60,32 @@ rm -f -- "$body"
   if [ "$vr_status" != "OK" ] || [ "$vsa_status" != "OK" ]; then
     echo "_Non-OK entries above indicate the preflight would fail locally. Re-run \`make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=${scope}\` to reproduce._"
     echo ""
-  fi
+  echo ""
+  echo "_content_hash: ${vr_status}:${vsa_status}_"
 } > "$body" 2>/dev/null || true
 
 emit_annotation "validate-report.json" "$vr_status" "$vr"
 emit_annotation "validate-schema-assertion.txt" "$vsa_status" "$vsa"
 
 cat "$body" > "$status_file" 2>/dev/null || true
-if [ "$sink" = "$status_file" ]; then
-  :
-else
+if [ "$sink" != "$status_file" ]; then
   cat "$body" >> "$sink" 2>/dev/null || true
 fi
 rm -f -- "$body" 2>/dev/null || true
+
+# JSON sidecar with content_hash for CI diffing across runs.
+json_file="${status_file%.md}.json"
+hash_input="vr=${vr_status}:$( [ -f "$vr" ] && wc -c < "$vr" | tr -d ' ' || echo 0 );vsa=${vsa_status}:$( [ -f "$vsa" ] && wc -c < "$vsa" | tr -d ' ' || echo 0 )"
+if command -v sha256sum >/dev/null 2>&1; then
+  content_hash="sha256:$(printf '%s' "$hash_input" | sha256sum | awk '{print $1}')"
+elif command -v shasum >/dev/null 2>&1; then
+  content_hash="sha256:$(printf '%s' "$hash_input" | shasum -a 256 | awk '{print $1}')"
+else
+  content_hash="none:unavailable"
+fi
+printf '{"schema":"pi-ci/preflight-status/v1","scope":"%s","validate_report":{"status":"%s","path":"%s"},"validate_schema_assertion":{"status":"%s","path":"%s"},"content_hash":"%s"}\n' \
+  "$scope" "$vr_status" "$vr" "$vsa_status" "$vsa" "$content_hash" \
+  > "$json_file" 2>/dev/null || true
+
 exit 0
+
