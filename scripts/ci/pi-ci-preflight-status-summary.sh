@@ -60,9 +60,10 @@ rm -f -- "$body"
   if [ "$vr_status" != "OK" ] || [ "$vsa_status" != "OK" ]; then
     echo "_Non-OK entries above indicate the preflight would fail locally. Re-run \`make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=${scope}\` to reproduce._"
     echo ""
-  echo ""
+  fi
   echo "_content_hash: ${vr_status}:${vsa_status}_"
 } > "$body" 2>/dev/null || true
+
 
 emit_annotation "validate-report.json" "$vr_status" "$vr"
 emit_annotation "validate-schema-assertion.txt" "$vsa_status" "$vsa"
