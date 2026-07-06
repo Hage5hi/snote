@@ -77,7 +77,6 @@ mkdir -p "$dir"; cp -R "${artifactDir}"/. "$dir"/
     chmodSync(ghShim, 0o755);
 
     // Run the exact README download line.
-    const dest = join(work, "pi-ci-repro");
     const dl = spawnSync("bash", ["-c",
       `gh run download 999 --name pretty-index-mismatch-ci-schema-validator-io-atomic-linux --dir "${dest}"`
     ], { encoding: "utf8", env: { ...process.env, PATH: `${shimDir}:${process.env.PATH}` } });
