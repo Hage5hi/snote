@@ -118,19 +118,89 @@ function readJson<T>(p: string): T | null {
   catch (e) { console.error(`[perf-timing] skipping ${p}: ${(e as Error).message}`); return null; }
 }
 
+// ---------- S3 retry log ----------
+// JSONL emitted by `s3-upload-with-retry.ts`'s `onRetry` hook: one
+// `{key,attempt,delayMs,category,error}` object per retry attempt.
+export interface S3RetrySample {
+  key: string; attempt: number; delayMs: number;
+  category: "http-throttle" | "http-5xx" | "network" | "timeout" | "none";
+  error?: string; suite?: string;
+}
+
+function pct(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+  return sorted[idx];
+}
+
+function histogramBuckets(values: number[]): Array<{ label: string; count: number }> {
+  // Log-ish buckets in ms — matches typical backoff shapes (200,400,800,…).
+  const edges = [0, 100, 250, 500, 1000, 2000, 5000, 10_000, Infinity];
+  const buckets = edges.slice(0, -1).map((lo, i) => ({
+    label: edges[i + 1] === Infinity ? `≥${lo}ms` : `${lo}–${edges[i + 1]}ms`,
+    count: 0,
+  }));
+  for (const v of values) {
+    for (let i = 0; i < edges.length - 1; i++) {
+      if (v >= edges[i] && v < edges[i + 1]) { buckets[i].count++; break; }
+    }
+  }
+  return buckets;
+}
+
+export function renderS3Markdown(samples: S3RetrySample[]): string {
+  if (samples.length === 0) return "";
+  const delays = samples.map((s) => s.delayMs).sort((a, b) => a - b);
+  const worst = delays[delays.length - 1];
+  const out: string[] = ["### ☁️ S3 retry stats\n"];
+  out.push(`**Total retries:** ${samples.length} · **p50:** ${pct(delays, 50)}ms · **p95:** ${pct(delays, 95)}ms · **worst:** ${worst}ms\n`);
+
+  out.push("#### Backoff delay histogram\n");
+  out.push("| bucket | count |", "|---|---:|");
+  for (const b of histogramBuckets(delays)) out.push(`| ${b.label} | ${b.count} |`);
+  out.push("");
+
+  // Per-category totals + worst delay in that category.
+  const byCat = new Map<string, S3RetrySample[]>();
+  for (const s of samples) {
+    const arr = byCat.get(s.category) ?? [];
+    arr.push(s); byCat.set(s.category, arr);
+  }
+  out.push("#### Transient error categories\n");
+  out.push("| category | retries | worst delay (ms) | example key |");
+  out.push("|---|---:|---:|---|");
+  const cats = [...byCat.entries()].sort((a, b) => b[1].length - a[1].length);
+  for (const [cat, list] of cats) {
+    const w = list.reduce((m, s) => (s.delayMs > m.delayMs ? s : m), list[0]);
+    out.push(`| ${cat} | ${list.length} | ${w.delayMs} | \`${w.key}\` |`);
+  }
+  out.push("");
+  return out.join("\n");
+}
+
+function readS3Jsonl(p: string): S3RetrySample[] {
+  try {
+    return readFileSync(p, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as S3RetrySample);
+  } catch (e) {
+    console.error(`[perf-timing] skipping ${p}: ${(e as Error).message}`); return [];
+  }
+}
+
 function main(argv: string[]): void {
-  let pw: string | undefined, vt: string | undefined, out: string | undefined;
+  let pw: string | undefined, vt: string | undefined, out: string | undefined, s3: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--pw") pw = argv[++i];
     else if (a === "--vt") vt = argv[++i];
+    else if (a === "--s3") s3 = argv[++i];
     else if (a === "--out") out = argv[++i];
     else { console.error(`unknown arg: ${a}`); process.exit(2); }
   }
   const rows: TimingRow[] = [];
   if (pw && existsSync(pw)) { const r = readJson<PwReport>(pw); if (r) rows.push(...parsePlaywright(r)); }
   if (vt && existsSync(vt)) { const r = readJson<VtReport>(vt); if (r) rows.push(...parseVitest(r)); }
-  const md = renderMarkdown(rows);
+  const s3Samples = s3 && existsSync(s3) ? readS3Jsonl(s3) : [];
+  const md = renderMarkdown(rows) + (s3Samples.length ? "\n" + renderS3Markdown(s3Samples) : "");
   const dest = out ?? process.env.GITHUB_STEP_SUMMARY;
   if (dest) {
     if (out) writeFileSync(dest, md);
