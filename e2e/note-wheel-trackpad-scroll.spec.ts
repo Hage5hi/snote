@@ -23,10 +23,28 @@ const LINES = 1_000;
 // tick got swallowed and where scrollTop was at the time.
 type WheelSample = { i: number; dx: number; dy: number; before: number; after: number; t: number };
 const wheelLog = new WeakMap<import("@playwright/test").Page, WheelSample[]>();
-function recordWheel(page: import("@playwright/test").Page, s: WheelSample) {
+// First "stuck frame" per page — the sample where an incoming delta failed
+// to move `scrollTop`. Captured live during the test and attached to the
+// Playwright trace via `testInfo.annotations` so it's visible in the trace
+// viewer next to the failing action.
+const stuckFrame = new WeakMap<import("@playwright/test").Page, WheelSample>();
+function recordWheel(
+  page: import("@playwright/test").Page,
+  s: WheelSample,
+  testInfo?: import("@playwright/test").TestInfo,
+) {
   const arr = wheelLog.get(page) ?? [];
   arr.push(s); if (arr.length > 200) arr.shift();
   wheelLog.set(page, arr);
+  // Auto stuck-frame detection: first non-advancing tick after a real
+  // delta was requested. Recorded once per page so retries don't flood.
+  if (s.dy !== 0 && s.after === s.before && !stuckFrame.has(page)) {
+    stuckFrame.set(page, s);
+    testInfo?.annotations.push({
+      type: "stuck-frame",
+      description: `wheel tick #${s.i} dy=${s.dy} scrollTop stuck at ${s.before} (t=${s.t})`,
+    });
+  }
 }
 
 // Force a consistent scroll environment across engines so the wheel/
