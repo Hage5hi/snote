@@ -67,7 +67,12 @@ d("pretty-index-mismatch-ci-bundle-zip-verify — content_hash mismatch", () => 
       "make", ["pretty-index-mismatch-ci-bundle-zip-verify", `PI_CI_SCOPE=${SCOPE}`],
       { cwd: REPO_ROOT, env, encoding: "utf8" },
     );
-    expect(mutated.status).toBe(3);
-    expect(mutated.stdout + mutated.stderr).toContain("content_hash mismatch");
+    // The Makefile recipe (a shell pipeline) exits 3 on content_hash
+    // mismatch; `make` re-wraps that as its own error code 2, but keeps
+    // the true child exit visible on stderr as "Error 3".
+    expect(mutated.status).not.toBe(0);
+    const combined = mutated.stdout + mutated.stderr;
+    expect(combined).toContain("content_hash mismatch");
+    expect(combined).toMatch(/Error 3\b/);
   }, 60_000);
 });
