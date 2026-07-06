@@ -57,10 +57,11 @@ d("CI AJV validation — required per-file field missing", () => {
         echo "::error title=summary-schema-invalid::${summary} does not conform to ${SCHEMA} — see errors below"
         echo "── ajv errors ──"
         cat "${err}" || true
-        if grep -qE "files\\[[0-9]+\\].*required property" "${err}"; then
+        if grep -qE "files(/|\\[)[0-9]+.*required property" "${err}"; then
           while IFS= read -r line; do
             echo "::error title=summary-perfile-field-missing::$line"
-          done < <(grep -E "files\\[[0-9]+\\].*required property" "${err}")
+          done < <(grep -E "files(/|\\[)[0-9]+.*required property" "${err}")
+
         fi
         exit 1
       fi
