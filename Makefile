@@ -423,7 +423,8 @@ pretty-index-help:
         pretty-index-mismatch-summary-validate \
         pretty-index-mismatch-summary-md \
         pretty-index-mismatch-csv pretty-index-mismatch-diff \
-        pretty-index-mismatch-ci pretty-index-validate-report-check
+         pretty-index-mismatch-ci pretty-index-validate-report-check \
+         pretty-index-ci-tarball-verify
 
 # Standalone strict schema check for an arbitrary validate-report.json —
 # same jq assertion invoked by `pretty-index-mismatch-ci`. Usable in
@@ -444,8 +445,8 @@ pretty-index-validate-report-check:
 	   { schema:"string", status:"string", exit_code:"number", file:"string", \
 	     summary_schema:"string", note:"string", errors:"array" } as $$want | \
 	   [ $$want | to_entries[] | .key as $$k | .value as $$t | \
-	     if ($$r | has($$k) | not) then "  - \($$k): missing (expected \($$t))" \
-	     elif (($$r[$$k] | type) != $$t) then "  - \($$k): got \($$r[$$k] | type) (expected \($$t))" \
+	     if ($$r | has($$k) | not) then "  - \($$k): missing (detected: null, expected \($$t))" \
+	     elif (($$r[$$k] | type) != $$t) then "  - \($$k): wrong type (detected: \($$r[$$k] | type), expected \($$t))" \
 	     else empty end ] | .[]' -- "$$rj" 2>/dev/null); \
 	 if [ -n "$$problems" ]; then \
 	   echo "ERROR: validate-report.json failed schema assertion (path=$$rj):" >&2; \
@@ -454,6 +455,43 @@ pretty-index-validate-report-check:
 	   exit 5; \
 	 fi; \
 	 echo "OK: $$rj matches pretty-index-mismatch-summary-validate/v1 shape"
+
+# Verify a produced PI_CI tarball contains the required debugging files at
+# the expected paths, then run the strict schema check on the extracted
+# validate-report.json. Usable in CI after `pretty-index-mismatch-ci` to
+# guarantee the uploaded artifact is triage-ready:
+#   make pretty-index-ci-tarball-verify PI_CI_TARBALL=/tmp/pi-ci-atomic.tar.gz
+# Optional: PI_CI_TARBALL_ROOT=<name>  (default: basename of $PI_CI_OUT_DIR)
+# Exits: 0 ok, 2 tooling/missing tarball/entries, 5 schema assertion failed.
+PI_CI_TARBALL_ROOT ?= $(notdir $(PI_CI_OUT_DIR))
+pretty-index-ci-tarball-verify:
+	@command -v jq  >/dev/null || { echo "jq required"  >&2; exit 2; }
+	@command -v tar >/dev/null || { echo "tar required" >&2; exit 2; }
+	@tb="$(PI_CI_TARBALL)"; \
+	 if [ -z "$$tb" ] || [ ! -s "$$tb" ]; then \
+	   echo "usage: make pretty-index-ci-tarball-verify PI_CI_TARBALL=<file.tgz> [PI_CI_TARBALL_ROOT=<dir>]" >&2; \
+	   echo "ERROR: tarball not present or empty (path=$$tb)" >&2; exit 2; \
+	 fi; \
+	 root="$(PI_CI_TARBALL_ROOT)"; \
+	 want1="$$root/validate-report.json"; \
+	 want2="$$root/validate-schema-assertion.txt"; \
+	 listing=$$(tar -tzf "$$tb"); \
+	 miss=""; \
+	 for w in "$$want1" "$$want2"; do \
+	   printf '%s\n' "$$listing" | grep -Fxq -- "$$w" || miss="$$miss $$w"; \
+	 done; \
+	 if [ -n "$$miss" ]; then \
+	   echo "ERROR: tarball $$tb missing expected entries:" >&2; \
+	   for m in $$miss; do echo "  - $$m" >&2; done; \
+	   echo "  tarball contents:" >&2; printf '%s\n' "$$listing" | sed 's/^/    /' >&2; \
+	   exit 2; \
+	 fi; \
+	 td=$$(mktemp -d); trap 'rm -rf -- "$$td"' EXIT; \
+	 tar -xzf "$$tb" -C "$$td" -- "$$want1" "$$want2"; \
+	 echo "OK: tarball contains $$want1 and $$want2"; \
+	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
+	   pretty-index-validate-report-check \
+	   VALIDATE_REPORT_JSON="$$td/$$want1"
 
 
 # Print a human-friendly per-file table (file, expected, actual, status)

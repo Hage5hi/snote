@@ -801,6 +801,35 @@ print(json.dumps({
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Also upload the two key debugging files as a standalone artifact so
+      # they can be linked DIRECTLY from the step summary (no tarball extract
+      # needed). The Makefile pre-creates both files as its first action, so
+      # this runs even when `pretty-index-mismatch-ci` fails very early.
+      - name: upload pretty-index-mismatch-ci validator files (MATRIX=atomic)
+        id: upload-pi-ci-validator-atomic
+        if: always() && hashFiles('/tmp/pi-ci-atomic/validate-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-validator-atomic-${{ matrix.os }}
+          path: |
+            /tmp/pi-ci-atomic/validate-report.json
+            /tmp/pi-ci-atomic/validate-schema-assertion.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: link pretty-index-mismatch-ci validator files in step summary (MATRIX=atomic)
+        if: always() && steps.upload-pi-ci-validator-atomic.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          URL="${{ steps.upload-pi-ci-validator-atomic.outputs.artifact-url }}"
+          {
+            echo ''
+            echo "##### 🔎 pretty-index-mismatch-ci validator files (MATRIX=atomic, ${{ matrix.os }})"
+            echo ''
+            echo "- [\`validate-report.json\` + \`validate-schema-assertion.txt\`]($URL) — direct artifact (no tarball extract required)"
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+
 
 
 
@@ -1451,6 +1480,31 @@ print(json.dumps({
             echo "  - \`validate-annotations.txt\` — validator stderr annotations (always present, even when empty)"
             echo "  - \`validate-schema-assertion.txt\` — jq schema-assertion stderr (empty on pass, populated on fail)"
             echo "  - \`diff.json\` — baseline diff (when \`PI_BASELINE\` was provided)"
+            echo ''
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: upload pretty-index-mismatch-ci validator files (MATRIX=stress)
+        id: upload-pi-ci-validator-stress
+        if: always() && hashFiles('/tmp/pi-ci-stress/validate-report.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-validator-stress-${{ matrix.os }}
+          path: |
+            /tmp/pi-ci-stress/validate-report.json
+            /tmp/pi-ci-stress/validate-schema-assertion.txt
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: link pretty-index-mismatch-ci validator files in step summary (MATRIX=stress)
+        if: always() && steps.upload-pi-ci-validator-stress.outputs.artifact-url != ''
+        shell: bash
+        run: |
+          URL="${{ steps.upload-pi-ci-validator-stress.outputs.artifact-url }}"
+          {
+            echo ''
+            echo "##### 🔎 pretty-index-mismatch-ci validator files (MATRIX=stress, ${{ matrix.os }})"
+            echo ''
+            echo "- [\`validate-report.json\` + \`validate-schema-assertion.txt\`]($URL) — direct artifact (no tarball extract required)"
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -3367,8 +3421,69 @@ print(json.dumps({
             || { echo "generated schema types drifted — run: bun run schema:types  (then commit scripts/_helpers/focus-trap-inspect-schema.types.gen.ts)"; exit 1; }
 
 
-
-
-
-
+  # ────────────────────────────────────────────────────────────────────────
+  # pretty-index-mismatch-ci-selftest-all — fresh-checkout parity check.
+  # On push (main / schedule / manual) both scopes always run. On PRs, each
+  # scope only runs when its fixture-relevant paths changed, so unrelated
+  # PRs stay fast while touching Makefile / pi-ci fixtures still enforces
+  # parity.
+  # ────────────────────────────────────────────────────────────────────────
+  pretty-index-mismatch-ci-selftest:
+    name: pretty-index-mismatch-ci-selftest-all
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: detect fixture-relevant changes
+        id: filter
+        shell: bash
+        run: |
+          set -e
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            echo "atomic=true" >> "$GITHUB_OUTPUT"
+            echo "stress=true" >> "$GITHUB_OUTPUT"
+            echo "any=true"    >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          changed=$(git diff --name-only "$base" "$head" || true)
+          echo "── changed files ──"; echo "$changed" | sed 's/^/  /'
+          atomic=false; stress=false
+          # A change to shared infra (Makefile / workflow) re-runs BOTH
+          # scopes; per-scope fixture directories only re-run their scope.
+          echo "$changed" | grep -Eq '^(Makefile|\.github/workflows/ci\.yml|tests/fixtures/pretty-index/atomic/)' && atomic=true
+          echo "$changed" | grep -Eq '^(Makefile|\.github/workflows/ci\.yml|tests/fixtures/pretty-index/stress/)' && stress=true
+          any=false; { $atomic || $stress; } && any=true
+          echo "atomic=$atomic" >> "$GITHUB_OUTPUT"
+          echo "stress=$stress" >> "$GITHUB_OUTPUT"
+          echo "any=$any"       >> "$GITHUB_OUTPUT"
+      - name: run selftest (atomic)
+        if: steps.filter.outputs.atomic == 'true'
+        run: |
+          make -s pretty-index-mismatch-ci-selftest \
+            PI_CI_SELFTEST_SCOPE=atomic \
+            PI_CI_SELFTEST_DIR=_pi-ci-selftest-atomic
+      - name: verify selftest tarball (atomic)
+        if: steps.filter.outputs.atomic == 'true'
+        run: |
+          make -s pretty-index-ci-tarball-verify \
+            PI_CI_TARBALL=_pi-ci-selftest-atomic/bundle.tar.gz \
+            PI_CI_TARBALL_ROOT=out
+      - name: run selftest (stress)
+        if: steps.filter.outputs.stress == 'true'
+        run: |
+          make -s pretty-index-mismatch-ci-selftest \
+            PI_CI_SELFTEST_SCOPE=stress \
+            PI_CI_SELFTEST_DIR=_pi-ci-selftest-stress
+      - name: verify selftest tarball (stress)
+        if: steps.filter.outputs.stress == 'true'
+        run: |
+          make -s pretty-index-ci-tarball-verify \
+            PI_CI_TARBALL=_pi-ci-selftest-stress/bundle.tar.gz \
+            PI_CI_TARBALL_ROOT=out
+      - name: skip note
+        if: steps.filter.outputs.any != 'true'
+        run: echo "no fixture-relevant changes; skipping pretty-index-mismatch-ci-selftest-all"
 
