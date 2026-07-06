@@ -11,7 +11,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const REPO_ROOT = process.cwd();
-const SCOPE = "atomic";
+// Use `stress` here so this file's OUT_DIR does not collide with the
+// sibling `…-recheck-preflight.test.ts` file (which uses `atomic`);
+// vitest runs test files in parallel and they both stage under
+// `./_pi-ci-bundle-<scope>/`.
+const SCOPE = "stress";
 const OUT_DIR = join(REPO_ROOT, `_pi-ci-bundle-${SCOPE}`);
 const EXTRACTED = join(OUT_DIR, "extracted", `pi-ci-${SCOPE}`);
 
