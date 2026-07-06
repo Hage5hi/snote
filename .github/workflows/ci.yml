@@ -845,20 +845,43 @@ print(json.dumps({
       - name: append pretty-index preflight status to job summary (MATRIX=atomic)
         # Writes a per-file OK/MISSING/EMPTY table with exact paths to
         # $GITHUB_STEP_SUMMARY so reviewers can debug the failing matrix
-        # run without downloading any artifact bundle.
+        # run without downloading any artifact bundle. Non-OK entries also
+        # emit ::error file=... annotations directly in the step log.
         if: always()
         continue-on-error: true
         shell: bash
-        run: scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-atomic atomic
+        run: |
+          if [ "${{ failure() }}" = "true" ]; then
+            export PI_CI_PREFLIGHT_ANNOTATIONS=true
+          fi
+          scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-atomic atomic
 
       - name: generate extracted-tree manifest for validator upload (MATRIX=atomic)
-        # Runs on ANY job failure — including when tarball extraction
-        # itself failed before the preflight could execute — so the
-        # downstream upload always has a manifest to attach.
-        if: always() && failure()
+        # Runs on every outcome — including when tarball extraction itself
+        # failed before the preflight could execute — so downstream uploads
+        # always have a manifest to attach.
+        if: always()
         continue-on-error: true
         shell: bash
         run: scripts/ci/pi-ci-extracted-tree-manifest.sh /tmp/pi-ci-atomic
+
+      - name: upload extracted-tree manifest (MATRIX=atomic)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-extracted-tree-atomic-${{ matrix.os }}
+          path: /tmp/pi-ci-atomic/extracted-tree.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: upload preflight status summary (MATRIX=atomic)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-preflight-status-atomic-${{ matrix.os }}
+          path: /tmp/pi-ci-atomic/preflight-status.md
+          if-no-files-found: error
+          retention-days: 14
 
       - name: upload validator files on any summary/assertion failure (MATRIX=atomic)
         # Fire on ANY prior step failure in this job (not just the specific
@@ -871,6 +894,7 @@ print(json.dumps({
             /tmp/pi-ci-atomic/validate-report.json
             /tmp/pi-ci-atomic/validate-schema-assertion.txt
             /tmp/pi-ci-atomic/extracted-tree.txt
+            /tmp/pi-ci-atomic/preflight-status.md
           if-no-files-found: warn
           retention-days: 14
 
@@ -1567,20 +1591,43 @@ print(json.dumps({
       - name: append pretty-index preflight status to job summary (MATRIX=stress)
         # Writes a per-file OK/MISSING/EMPTY table with exact paths to
         # $GITHUB_STEP_SUMMARY so reviewers can debug the failing matrix
-        # run without downloading any artifact bundle.
+        # run without downloading any artifact bundle. Non-OK entries also
+        # emit ::error file=... annotations directly in the step log.
         if: always()
         continue-on-error: true
         shell: bash
-        run: scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-stress stress
+        run: |
+          if [ "${{ failure() }}" = "true" ]; then
+            export PI_CI_PREFLIGHT_ANNOTATIONS=true
+          fi
+          scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-stress stress
 
       - name: generate extracted-tree manifest for validator upload (MATRIX=stress)
-        # Runs on ANY job failure — including when tarball extraction
-        # itself failed before the preflight could execute — so the
-        # downstream upload always has a manifest to attach.
-        if: always() && failure()
+        # Runs on every outcome — including when tarball extraction itself
+        # failed before the preflight could execute — so downstream uploads
+        # always have a manifest to attach.
+        if: always()
         continue-on-error: true
         shell: bash
         run: scripts/ci/pi-ci-extracted-tree-manifest.sh /tmp/pi-ci-stress
+
+      - name: upload extracted-tree manifest (MATRIX=stress)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-extracted-tree-stress-${{ matrix.os }}
+          path: /tmp/pi-ci-stress/extracted-tree.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: upload preflight status summary (MATRIX=stress)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-preflight-status-stress-${{ matrix.os }}
+          path: /tmp/pi-ci-stress/preflight-status.md
+          if-no-files-found: error
+          retention-days: 14
 
       - name: upload validator files on any summary/assertion failure (MATRIX=stress)
         # Fire on ANY prior step failure in this job (not just the specific
@@ -1593,6 +1640,7 @@ print(json.dumps({
             /tmp/pi-ci-stress/validate-report.json
             /tmp/pi-ci-stress/validate-schema-assertion.txt
             /tmp/pi-ci-stress/extracted-tree.txt
+            /tmp/pi-ci-stress/preflight-status.md
           if-no-files-found: warn
           retention-days: 14
 
