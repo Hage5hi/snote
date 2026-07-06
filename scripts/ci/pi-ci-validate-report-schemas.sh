@@ -38,7 +38,7 @@ run_check() {
     excerpt="$(printf '%s\n' "$out_txt" \
       | awk 'NF' \
       | head -n 3 \
-      | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); gsub(/\n/,""); print NR>1?"%0A"$0:$0}')"
+      | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); gsub(/\n/,""); print (NR>1 ? "%0A" $0 : $0)}')"
     echo "::error file=${target}::${label} schema check failed (exit=${sub}) — see ${errfile} — excerpt: ${excerpt}"
   fi
   echo "" >> "$errfile"
