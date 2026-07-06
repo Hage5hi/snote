@@ -95,6 +95,14 @@ export function renderWheelLocalReproCommand(f: FailedTestArtifacts, retries = "
   return `PLAYWRIGHT_PROJECT=${project} RETRIES=${retries} ./scripts/run-wheel-e2e.sh`;
 }
 
+export function renderWheelDiagnosticsReplayCommand(f: FailedTestArtifacts): string | null {
+  if (!f.suite.includes("note-wheel-trackpad-scroll.spec.ts")) return null;
+  const diagnostics = f.attachments.find((a) => a.path.endsWith("wheel-diagnostics.json"));
+  if (!diagnostics) return null;
+  const project = f.project ?? "chromium";
+  return `PLAYWRIGHT_PROJECT=${project} bun run scripts/replay-wheel-diagnostics.ts ${diagnostics.path}`;
+}
+
 export function renderFailedArtifactLinks(
   failed: FailedTestArtifacts[],
   env: { serverUrl?: string; repository?: string; runId?: string; runAttempt?: string; playwrightRetries?: string } = {},
@@ -107,10 +115,11 @@ export function renderFailedArtifactLinks(
   if (runUrl) out.push(`Browse the full artifact bundle from the [workflow run's Artifacts panel](${runUrl}).\n`);
   for (const f of failed) {
     const repro = renderWheelLocalReproCommand(f, env.playwrightRetries ?? "0");
+    const replay = renderWheelDiagnosticsReplayCommand(f);
     const attempt = f.retry == null ? "" : ` retry #${f.retry}`;
     out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""}${attempt} — ${
       f.attachments.map((a) => `[${a.label}](${a.path})`).join(" · ")
-    }${repro ? `\n  - Local repro: \`${repro}\`` : ""}`);
+    }${repro ? `\n  - Local repro: \`${repro}\`` : ""}${replay ? `\n  - Replay artifact: \`${replay}\`` : ""}`);
   }
   out.push("");
   return out.join("\n");
