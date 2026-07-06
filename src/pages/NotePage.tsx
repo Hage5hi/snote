@@ -276,6 +276,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   useEffect(() => {
     if (!validSlug || !doc || !provider || encPhase !== "ready") return;
     provider.setEncryption(encryption);
+    provider.setExpectedEncrypted(encMeta.isEncrypted);
 
     const identity = getIdentity();
     if (!embedSlug) touchRecent(slug);
