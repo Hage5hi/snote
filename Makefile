@@ -422,7 +422,8 @@ pretty-index-help:
         pretty-index-mismatch-summary-json-merge \
         pretty-index-mismatch-summary-validate \
         pretty-index-mismatch-summary-md \
-        pretty-index-mismatch-csv pretty-index-mismatch-diff
+        pretty-index-mismatch-csv pretty-index-mismatch-diff \
+        pretty-index-mismatch-ci
 
 # Print a human-friendly per-file table (file, expected, actual, status)
 # from the mismatch report. Use PI_REPORT_PATH=<path> to point elsewhere.
