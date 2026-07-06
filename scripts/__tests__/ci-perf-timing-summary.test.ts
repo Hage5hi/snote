@@ -3,7 +3,11 @@
 // durations from the README smoke both surface as timing rows in the
 // rendered markdown table.
 import { describe, expect, it } from "vitest";
-import { parsePlaywright, parseVitest, renderMarkdown } from "../ci-perf-timing-summary";
+import {
+  parsePlaywright, parsePlaywrightFailedArtifacts, parseVitest,
+  renderFailedArtifactLinks, renderMarkdown, renderS3Markdown,
+  type S3RetrySample,
+} from "../ci-perf-timing-summary";
 
 describe("parsePlaywright — reduced-motion timing", () => {
   it("extracts shape name + total ms from the `timing` annotation", () => {
