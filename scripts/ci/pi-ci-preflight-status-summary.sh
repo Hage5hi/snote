@@ -16,7 +16,7 @@ out="${1:?usage: $0 <out-dir> <scope>}"
 scope="${2:?usage: $0 <out-dir> <scope>}"
 sink="${GITHUB_STEP_SUMMARY:-/dev/stdout}"
 status_file="${PI_CI_PREFLIGHT_STATUS_PATH:-$out/preflight-status.md}"
-annotate="${PI_CI_PREFLIGHT_ANNOTATIONS:-${GITHUB_ACTIONS:-}}"
+annotate="${PI_CI_PREFLIGHT_ANNOTATIONS:-}"
 
 mkdir -p "$out" "$(dirname -- "$status_file")" 2>/dev/null || true
 

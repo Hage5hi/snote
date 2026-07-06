@@ -40,10 +40,13 @@ d("pretty-index-mismatch-ci reporting — extracted-tree walk failure", () => {
       ...process.env,
       PATH: `${fakeBin}:${process.env.PATH ?? ""}`,
       GITHUB_STEP_SUMMARY: statusPath,
+      PI_CI_PREFLIGHT_ANNOTATIONS: "true",
     };
 
     const status = spawnSync("bash", [STATUS_SCRIPT, out, "atomic"], { encoding: "utf8", env });
     expect(status.status).toBe(0);
+    expect(status.stdout).toContain(`::error file=${out}/validate-report.json::preflight: validate-report.json MISSING`);
+    expect(status.stdout).toContain(`::error file=${out}/validate-schema-assertion.txt::preflight: validate-schema-assertion.txt MISSING`);
 
     const manifest = spawnSync("bash", [MANIFEST_SCRIPT, out], { encoding: "utf8", env });
     expect(manifest.status).toBe(0);
@@ -55,15 +58,15 @@ d("pretty-index-mismatch-ci reporting — extracted-tree walk failure", () => {
     expect(manifestBody).toContain("# extracted-tree for");
     expect(manifestBody).toContain("# (find failed for");
 
-    const statusBody = readFileSync(statusPath, "utf8");
+    const statusBody = readFileSync(statusPath, "utf8").replaceAll(out, "<OUT>");
     expect(statusBody).toMatchInlineSnapshot(`
       "
       ### pretty-index-mismatch-ci preflight status — \`atomic\`
 
       | file | status | path |
       |---|---|---|
-      | validate-report.json | MISSING | \`${out}/validate-report.json\` |
-      | validate-schema-assertion.txt | MISSING | \`${out}/validate-schema-assertion.txt\` |
+      | validate-report.json | MISSING | \`<OUT>/validate-report.json\` |
+      | validate-schema-assertion.txt | MISSING | \`<OUT>/validate-schema-assertion.txt\` |
 
       _Non-OK entries above indicate the preflight would fail locally. Re-run \`make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=atomic\` to reproduce._
 

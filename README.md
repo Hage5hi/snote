@@ -1077,7 +1077,7 @@ without the `gh` CLI:
    - `pretty-index-mismatch-ci-bundle-<scope>-<os>.zip` — contains
      `pi-ci-<scope>.tar.gz` (the full bundle)
    - `pretty-index-mismatch-ci-validator-files-<scope>-<os>.zip` —
-     contains `validate-report.json`, `validate-schema-assertion.txt`,
+      contains `validate-report.json`, `validate-schema-assertion.txt`,
       `extracted-tree.txt`, and `preflight-status.md` (the last two are
       always present, even when extraction crashed before writing the two
       validator files)
@@ -1303,7 +1303,7 @@ matrices — only `<scope>` (`atomic` \| `stress`) and `<os>`
 (`ubuntu-latest` \| `macos-latest` \| `windows-latest`) vary. Use this
 table when triaging a failed run:
 
-| Artifact name (GitHub Actions)                                                | Contents (uploaded on any job failure)                                                                                                                                | On-runner path (before upload)                                                                                                          |
+| Artifact name (GitHub Actions)                                                | Contents / upload cadence                                                                                                                                             | On-runner path (before upload)                                                                                                          |
 |-------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------|
 | `pretty-index-mismatch-ci-bundle-<scope>-<os>`                                | Full `pi-ci-<scope>.tar.gz` bundle (validator files + inputs).                                                                                                        | `/tmp/pi-ci-<scope>.tar.gz`                                                                                                             |
 | `pretty-index-mismatch-ci-validator-files-<scope>-<os>`                       | Failure bundle with `validate-report.json`, `validate-schema-assertion.txt`, `extracted-tree.txt`, `preflight-status.md`.                                               | `/tmp/pi-ci-<scope>/validate-report.json` <br> `/tmp/pi-ci-<scope>/validate-schema-assertion.txt` <br> `/tmp/pi-ci-<scope>/extracted-tree.txt` <br> `/tmp/pi-ci-<scope>/preflight-status.md` |
