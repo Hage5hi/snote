@@ -749,16 +749,27 @@ pretty-index-mismatch-ci:
 	   PI_VALIDATE_REPORT_JSON="$(PI_CI_OUT_DIR)/validate-report.json" \
 	   2> "$(PI_CI_OUT_DIR)/validate-annotations.txt"; \
 	 vrc=$$?; cat "$(PI_CI_OUT_DIR)/validate-annotations.txt" >&2; \
-	 # Shape-check validate-report.json: must contain the documented v1 keys \
-	 # so downstream debugging tools can rely on them unconditionally. \
-	 if [ -s "$(PI_CI_OUT_DIR)/validate-report.json" ]; then \
-	   missing=$$(jq -r '["schema","status","exit_code","file","summary_schema","note","errors"] - (keys) | join(",")' -- "$(PI_CI_OUT_DIR)/validate-report.json" 2>/dev/null); \
-	   if [ -n "$$missing" ]; then \
-	     echo "ERROR: validate-report.json missing required key(s): $$missing" >&2; \
-	     exit 5; \
-	   fi; \
-	 else \
-	   echo "ERROR: validate-report.json was not written by summary-validate" >&2; \
+	 # Strict jq schema assertion on validate-report.json — every documented \
+	 # v1 key must be present AND have the expected type. On failure emit a \
+	 # single actionable ERROR line listing the offending keys with the \
+	 # observed vs expected type so CI logs are self-diagnosing. \
+	 rj="$(PI_CI_OUT_DIR)/validate-report.json"; \
+	 if [ ! -s "$$rj" ]; then \
+	   echo "ERROR: validate-report.json was not written by summary-validate (path=$$rj)" >&2; \
+	   exit 5; \
+	 fi; \
+	 problems=$$(jq -r ' \
+	   . as $$r | \
+	   { schema:"string", status:"string", exit_code:"number", file:"string", \
+	     summary_schema:"string", note:"string", errors:"array" } as $$want | \
+	   [ $$want | to_entries[] | .key as $$k | .value as $$t | \
+	     if ($$r | has($$k) | not) then "  - \($$k): missing (expected \($$t))" \
+	     elif (($$r[$$k] | type) != $$t) then "  - \($$k): got \($$r[$$k] | type) (expected \($$t))" \
+	     else empty end ] | .[]' -- "$$rj" 2>/dev/null); \
+	 if [ -n "$$problems" ]; then \
+	   echo "ERROR: validate-report.json failed schema assertion (path=$$rj):" >&2; \
+	   echo "$$problems" >&2; \
+	   echo "  expected keys: schema(string) status(string) exit_code(number) file(string) summary_schema(string) note(string) errors(array)" >&2; \
 	   exit 5; \
 	 fi; \
 	 if [ "$$vrc" -ne 0 ]; then \
