@@ -295,6 +295,25 @@
     -webkit-user-select: text;
     user-select: text;
   }
+
+  /* Reduced-motion fallback: users who opt out of motion also tend to
+     dislike compositor-driven kinetic scrolling. Drop the layer-promotion
+     hints and momentum scroll so selection + auto-scroll behaves in the
+     browser's default, stable path. Selection styling stays intact. */
+  @media (prefers-reduced-motion: reduce) {
+    .cm-scroller {
+      will-change: auto;
+      transform: none;
+      backface-visibility: visible;
+      -webkit-overflow-scrolling: auto;
+      scroll-behavior: auto;
+    }
+    .cm-editor .cm-selectionLayer,
+    .cm-editor .cm-selectionBackground {
+      will-change: auto;
+      contain: none;
+    }
+  }
 }
 
 
