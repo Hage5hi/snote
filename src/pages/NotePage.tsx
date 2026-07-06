@@ -546,6 +546,18 @@ export default function NotePage({ embedSlug }: NotePageProps) {
             />
           </div>
         )}
+
+        {encPhase === "loading" && (
+          <div
+            className="absolute inset-0 z-40 flex items-center justify-center bg-background/70 backdrop-blur-sm"
+            aria-busy="true"
+            aria-live="polite"
+            // Swallow pointer events so no keystrokes/clicks reach the editor
+            // while the provider is being (re)built after a lock/unlock.
+          >
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
       </main>
 
       <OutlineSidebar doc={doc} onJump={(line) => editorRef.current?.jumpToLine(line)} />
