@@ -585,8 +585,21 @@ pretty-index-mismatch-ci-bundle-recheck:
 	   exit 2; \
 	 fi; \
 	 vr=$$(find "$$out" -maxdepth 3 -type f -name validate-report.json | head -n1); \
-	 if [ -z "$$vr" ] || [ ! -s "$$vr" ]; then \
-	   echo "ERROR: validate-report.json not found (or empty) under $$out" >&2; exit 2; \
+	 vsa=$$(find "$$out" -maxdepth 3 -type f -name validate-schema-assertion.txt | head -n1); \
+	 fail=0; \
+	 if [ -z "$$vr" ]; then \
+	   echo "ERROR: preflight: validate-report.json MISSING under $$out" >&2; fail=1; \
+	 elif [ ! -s "$$vr" ]; then \
+	   echo "ERROR: preflight: validate-report.json EMPTY at $$vr" >&2; fail=1; \
+	 fi; \
+	 if [ -z "$$vsa" ]; then \
+	   echo "ERROR: preflight: validate-schema-assertion.txt MISSING under $$out" >&2; fail=1; \
+	 elif [ ! -s "$$vsa" ]; then \
+	   echo "ERROR: preflight: validate-schema-assertion.txt EMPTY at $$vsa" >&2; fail=1; \
+	 fi; \
+	 if [ "$$fail" -ne 0 ]; then \
+	   echo "  hint: re-run 'make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=$(PI_CI_SCOPE)'" >&2; \
+	   exit 2; \
 	 fi; \
 	 echo "==> re-checking $$vr"; \
 	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
