@@ -206,7 +206,7 @@ run_check() {
         echo "  schema_version: expected=${expected_sv}  actual=${actual_sv}"
         ;;
     esac
-    if [ "$reason" = "jq-parse-failed" ] && [ -n "$jq_excerpt" ]; then
+    if { [ "$reason" = "jq-parse-failed" ] || [ "$reason" = "jq-timeout" ]; } && [ -n "$jq_excerpt" ]; then
       echo "── ${label} jq stderr excerpt ──"
       echo "  ${jq_excerpt}"
       echo "  jq_stderr_path=${jq_stderr_file}"
