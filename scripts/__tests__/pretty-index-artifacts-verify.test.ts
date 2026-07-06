@@ -284,3 +284,216 @@ describe("pretty-index mismatch-report inspection targets", () => {
 });
 
 
+
+// ─────────────────────────────────────────────────────────────────────────
+// Tests for pretty-index-mismatch-summary-md, -summary-validate exit
+// codes, -summary-json-merge exit codes, and diff-report artifact output.
+// ─────────────────────────────────────────────────────────────────────────
+describe("pretty-index-mismatch-summary-md — markdown generation", () => {
+  const validSummary = {
+    schema: "pretty-index-mismatch-summary/v1",
+    scope: "atomic",
+    matrices: {
+      atomic: { total: 3, mismatched: 1, missing: 0 },
+      stress: { total: 2, mismatched: 0, missing: 1 },
+    },
+    totals: { total: 5, mismatched: 1, missing: 1 },
+  };
+
+  it("emits header, source path, schema, and per-matrix + totals rows", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-md-"));
+    tmps.push(root);
+    const summary = join(root, "summary.json");
+    const out = join(root, "summary.md");
+    writeFileSync(summary, JSON.stringify(validSummary));
+    const r = runTarget(root, "pretty-index-mismatch-summary-md", {
+      PI_SUMMARY_JSON_PATH: summary,
+      PI_SUMMARY_MD_PATH: out,
+    });
+    expect(r.status).toBe(0);
+    const md = readFileSync(out, "utf8");
+    expect(md).toMatch(/^# pretty-index mismatch summary/m);
+    expect(md).toContain(`\`${summary}\``);
+    expect(md).toContain("`pretty-index-mismatch-summary/v1`");
+    expect(md).toContain("`atomic`");
+    // per-matrix rows
+    expect(md).toMatch(/\|\s*atomic\s*\|\s*3\s*\|\s*1\s*\|\s*0\s*\|/);
+    expect(md).toMatch(/\|\s*stress\s*\|\s*2\s*\|\s*0\s*\|\s*1\s*\|/);
+    // totals row
+    expect(md).toMatch(/\|\s*\*\*total\*\*\s*\|\s*5\s*\|\s*1\s*\|\s*1\s*\|/);
+    // no merged-sources section for a single-scope summary
+    expect(md).not.toMatch(/## merged sources/);
+  });
+
+  it("emits a merged-sources table with per-source links when merged_from is present", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-md-merged-"));
+    tmps.push(root);
+    const summary = join(root, "merged.json");
+    const out = join(root, "merged.md");
+    writeFileSync(
+      summary,
+      JSON.stringify({
+        schema: "pretty-index-mismatch-summary-merged/v1",
+        merged_from: ["a.json", "b.json"],
+        sources: [
+          { path: "a.json", scope: "atomic", missing: false, totals: { total: 3, mismatched: 1, missing: 0 } },
+          { path: "b.json", scope: "stress", missing: true,  totals: { total: 0, mismatched: 0, missing: 0 } },
+        ],
+        matrices: { atomic: { total: 3, mismatched: 1, missing: 0 }, stress: { total: 0, mismatched: 0, missing: 0 } },
+        totals:   { total: 3, mismatched: 1, missing: 0 },
+      }),
+    );
+    const r = runTarget(root, "pretty-index-mismatch-summary-md", {
+      PI_SUMMARY_JSON_PATH: summary,
+      PI_SUMMARY_MD_PATH: out,
+    });
+    expect(r.status).toBe(0);
+    const md = readFileSync(out, "utf8");
+    expect(md).toContain("## merged sources");
+    expect(md).toMatch(/\|\s*a\.json\s*\|\s*atomic\s*\|\s*false\s*\|\s*3\s*\|\s*1\s*\|\s*0\s*\|/);
+    expect(md).toMatch(/\|\s*b\.json\s*\|\s*stress\s*\|\s*true\s*\|/);
+  });
+});
+
+describe("pretty-index-mismatch-summary-validate — documented exit codes", () => {
+  const repoSchema = join(REPO, "schemas/pretty-index-mismatch-summary-json.schema.json");
+  function seedSchema(root: string) {
+    mkdirSync(join(root, "schemas"), { recursive: true });
+    writeFileSync(
+      join(root, "schemas/pretty-index-mismatch-summary-json.schema.json"),
+      readFileSync(repoSchema, "utf8"),
+    );
+  }
+
+  it("exits 0 on a valid v1 summary", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-validate-ok-"));
+    tmps.push(root);
+    seedSchema(root);
+    const f = join(root, "summary.json");
+    writeFileSync(f, JSON.stringify({
+      schema: "pretty-index-mismatch-summary/v1",
+      matrices: { atomic: { total: 0, mismatched: 0, missing: 0 }, stress: { total: 0, mismatched: 0, missing: 0 } },
+      totals: { total: 0, mismatched: 0, missing: 0 },
+    }));
+    const r = runTarget(root, "pretty-index-mismatch-summary-validate", { PI_SUMMARY_JSON_PATH: f });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^OK/m);
+  });
+
+  it("exits 2 when the summary file is missing (documented tooling/file-missing code)", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-validate-miss-"));
+    tmps.push(root);
+    seedSchema(root);
+    const r = runTarget(root, "pretty-index-mismatch-summary-validate", {
+      PI_SUMMARY_JSON_PATH: join(root, "does-not-exist.json"),
+    });
+    expect(r.status).not.toBe(0);
+    // recipe emits exit 2 → make wraps as Error 2
+    expect(r.stderr).toMatch(/no summary at path=/);
+  });
+
+  it("exits 5 on schema/shape violation and prints the failing JSON path", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-validate-bad-"));
+    tmps.push(root);
+    seedSchema(root);
+    const f = join(root, "summary.json");
+    writeFileSync(f, JSON.stringify({
+      schema: "pretty-index-mismatch-summary/v1",
+      matrices: { atomic: { total: -1 }, stress: {} }, // both matrices invalid
+      totals: { total: 0, mismatched: 0, missing: 0 },
+    }));
+    const r = runTarget(root, "pretty-index-mismatch-summary-validate", { PI_SUMMARY_JSON_PATH: f });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/Error 5/);
+    expect(r.stderr).toMatch(/path=\.matrices\.atomic\.total/);
+  });
+
+  it("exits 0 with a deprecation warning for legacy schema v0", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-validate-v0-"));
+    tmps.push(root);
+    seedSchema(root);
+    const f = join(root, "summary.json");
+    writeFileSync(f, JSON.stringify({ schema: "pretty-index-mismatch-summary/v0" }));
+    const r = runTarget(root, "pretty-index-mismatch-summary-validate", { PI_SUMMARY_JSON_PATH: f });
+    expect(r.status).toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/DEPRECATED/);
+  });
+
+  it("emits ::error:: GHA annotations when GITHUB_ACTIONS=true", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-validate-gha-"));
+    tmps.push(root);
+    seedSchema(root);
+    const f = join(root, "summary.json");
+    writeFileSync(f, JSON.stringify({ schema: "wrong", matrices: {}, totals: {} }));
+    const r = runTarget(root, "pretty-index-mismatch-summary-validate", {
+      PI_SUMMARY_JSON_PATH: f,
+      GITHUB_ACTIONS: "true",
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/::error file=/);
+  });
+});
+
+describe("pretty-index-mismatch-summary-json-merge — documented exit codes", () => {
+  it("exits 2 when PI_SUMMARY_INPUTS is empty", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-merge-noargs-"));
+    tmps.push(root);
+    const r = runTarget(root, "pretty-index-mismatch-summary-json-merge", {
+      PI_SUMMARY_MERGED_PATH: join(root, "merged.json"),
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/usage:/);
+  });
+
+  it("exits 0 and tolerates missing inputs, recording sources[].missing=true", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-merge-missing-"));
+    tmps.push(root);
+    const good = join(root, "a.json");
+    const absent = join(root, "b-missing.json");
+    writeFileSync(good, JSON.stringify({
+      schema: "pretty-index-mismatch-summary/v1",
+      scope: "atomic",
+      matrices: { atomic: { total: 3, mismatched: 1, missing: 0 }, stress: { total: 0, mismatched: 0, missing: 0 } },
+      totals: { total: 3, mismatched: 1, missing: 0 },
+    }));
+    const out = join(root, "merged.json");
+    const r = runTarget(root, "pretty-index-mismatch-summary-json-merge", {
+      PI_SUMMARY_INPUTS: `${good} ${absent}`,
+      PI_SUMMARY_MERGED_PATH: out,
+    });
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/warn: missing input/);
+    const j = JSON.parse(readFileSync(out, "utf8"));
+    expect(j.schema).toBe("pretty-index-mismatch-summary-merged/v1");
+    expect(j.totals.mismatched).toBe(1);
+    const missingSrc = j.sources.find((s: any) => s.path === absent);
+    expect(missingSrc?.missing).toBe(true);
+    expect(missingSrc?.totals).toEqual({ total: 0, mismatched: 0, missing: 0 });
+  });
+});
+
+describe("pretty-index-mismatch-diff — writes machine-readable diff report when PI_DIFF_OUT_PATH is set", () => {
+  it("writes pretty-index-mismatch-diff/v1 JSON alongside NEW entries and exits 4", () => {
+    const root = mkdtempSync(join(tmpdir(), "pi-diff-out-"));
+    tmps.push(root);
+    seedReport(root);
+    const baseline = join(root, "baseline.json");
+    writeFileSync(baseline, JSON.stringify({
+      schema: "pretty-index-checksum-mismatch/v1", scope: "both", results: [],
+    }));
+    const diffOut = join(root, "diff.json");
+    const r = runTarget(root, "pretty-index-mismatch-diff", {
+      PI_BASELINE: baseline,
+      PI_DIFF_OUT_PATH: diffOut,
+    });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/Error 4/);
+    expect(existsSync(diffOut)).toBe(true);
+    const j = JSON.parse(readFileSync(diffOut, "utf8"));
+    expect(j.schema).toBe("pretty-index-mismatch-diff/v1");
+    expect(j.baseline).toBe(baseline);
+    expect(j.count).toBeGreaterThan(0);
+    expect(Array.isArray(j.entries)).toBe(true);
+    expect(j.entries[0].change).toBe("NEW");
+  });
+});
