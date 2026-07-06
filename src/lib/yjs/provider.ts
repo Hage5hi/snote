@@ -551,6 +551,11 @@ export class SupabaseYjsProvider {
    */
   flushBeacon() {
     if (this.destroyed) return;
+    if (this.hasEncryptionModeMismatch()) {
+      // Would overwrite the row in the wrong mode (e.g. plaintext over a
+      // freshly-encrypted note during lock/unlock). Skip entirely.
+      return;
+    }
     try {
       const state = Y.encodeStateAsUpdate(this.doc);
       const text = this.doc.getText("content").toString();
