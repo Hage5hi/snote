@@ -423,7 +423,38 @@ pretty-index-help:
         pretty-index-mismatch-summary-validate \
         pretty-index-mismatch-summary-md \
         pretty-index-mismatch-csv pretty-index-mismatch-diff \
-        pretty-index-mismatch-ci
+        pretty-index-mismatch-ci pretty-index-validate-report-check
+
+# Standalone strict schema check for an arbitrary validate-report.json —
+# same jq assertion invoked by `pretty-index-mismatch-ci`. Usable in
+# pre-commit hooks or ad-hoc CI wiring:
+#   make pretty-index-validate-report-check VALIDATE_REPORT_JSON=path/to/file.json
+# Exits: 0 ok, 2 tooling/missing file, 5 schema assertion failed.
+pretty-index-validate-report-check:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@rj="$(VALIDATE_REPORT_JSON)"; \
+	 if [ -z "$$rj" ]; then \
+	   echo "usage: make pretty-index-validate-report-check VALIDATE_REPORT_JSON=<path>" >&2; exit 2; \
+	 fi; \
+	 if [ ! -s "$$rj" ]; then \
+	   echo "ERROR: validate-report.json not present or empty (path=$$rj)" >&2; exit 2; \
+	 fi; \
+	 problems=$$(jq -r ' \
+	   . as $$r | \
+	   { schema:"string", status:"string", exit_code:"number", file:"string", \
+	     summary_schema:"string", note:"string", errors:"array" } as $$want | \
+	   [ $$want | to_entries[] | .key as $$k | .value as $$t | \
+	     if ($$r | has($$k) | not) then "  - \($$k): missing (expected \($$t))" \
+	     elif (($$r[$$k] | type) != $$t) then "  - \($$k): got \($$r[$$k] | type) (expected \($$t))" \
+	     else empty end ] | .[]' -- "$$rj" 2>/dev/null); \
+	 if [ -n "$$problems" ]; then \
+	   echo "ERROR: validate-report.json failed schema assertion (path=$$rj):" >&2; \
+	   echo "$$problems" >&2; \
+	   echo "  expected keys: schema(string) status(string) exit_code(number) file(string) summary_schema(string) note(string) errors(array)" >&2; \
+	   exit 5; \
+	 fi; \
+	 echo "OK: $$rj matches pretty-index-mismatch-summary-validate/v1 shape"
+
 
 # Print a human-friendly per-file table (file, expected, actual, status)
 # from the mismatch report. Use PI_REPORT_PATH=<path> to point elsewhere.
