@@ -965,6 +965,44 @@ make pretty-index-mismatch-summary-validate \
 
 The target uses `ajv` when available and falls back to a `jq`-based
 structural check on `schema`, `matrices.{atomic,stress}`, and `totals`.
+Under GitHub Actions (`GITHUB_ACTIONS=true`), every failing path is also
+emitted as a `::error file=<summary>::` annotation so the failing field
+is highlighted in the run's "Annotations" panel before the recipe exits
+with status `5`.
+
+**Multi-version support.** `pretty-index-mismatch-summary/v0` (the
+legacy shape) is still accepted for backward compatibility; the
+validator exits `0` but prints a `warn:` line (and a `::warning::` GHA
+annotation) instructing you to regenerate the summary so it upgrades to
+`pretty-index-mismatch-summary/v1`.
+
+### Diff report artifact
+
+Set `PI_DIFF_OUT_PATH` when running `pretty-index-mismatch-diff` to
+write the NEW/CHANGED entries into a machine-readable JSON
+(`pretty-index-mismatch-diff/v1`) alongside the human-readable stdout.
+In CI, upload that file and link its `artifact-url` in
+`$GITHUB_STEP_SUMMARY` whenever the recipe exits `4`:
+
+```yaml
+- name: pretty-index diff vs baseline
+  id: pi-diff
+  continue-on-error: true
+  run: |
+    make -s pretty-index-mismatch-diff \
+      PI_BASELINE=baseline.json \
+      PI_REPORT_PATH=_pretty-index-checksum-mismatch.json \
+      PI_DIFF_OUT_PATH=/tmp/pi-mismatch-diff.json
+- name: upload diff report
+  if: hashFiles('/tmp/pi-mismatch-diff.json') != ''
+  id: upload-pi-diff
+  uses: actions/upload-artifact@v4
+  with: { name: pretty-index-mismatch-diff, path: /tmp/pi-mismatch-diff.json }
+- name: link diff report in step summary
+  if: steps.pi-diff.outcome == 'failure'
+  run: |
+    echo "- [download pretty-index-mismatch-diff.json](${{ steps.upload-pi-diff.outputs.artifact-url }})" >> "$GITHUB_STEP_SUMMARY"
+```
 
 ### Merging per-matrix summary JSONs across CI jobs
 
