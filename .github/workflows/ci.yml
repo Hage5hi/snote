@@ -1734,6 +1734,18 @@ print(json.dumps({
           if-no-files-found: warn
           retention-days: 14
 
+      - name: upload validator I/O artifact on failure (MATRIX=stress)
+        if: always() && steps.pi-ci-report-schemas-stress.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pretty-index-mismatch-ci-schema-validator-io-stress-${{ matrix.os }}
+          path: |
+            /tmp/pi-ci-stress/report-schema-validation-log.txt
+            /tmp/pi-ci-stress/report-schema-errors.txt
+            /tmp/pi-ci-stress/report-schema-validation-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: fail job on report schema drift (MATRIX=stress)
         if: always() && steps.pi-ci-report-schemas-stress.outcome == 'failure'
         shell: bash
