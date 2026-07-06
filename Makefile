@@ -710,6 +710,45 @@ pretty-index-mismatch-ci-bundle-manifest-check:
 	@scripts/ci/pi-ci-manifest-schema-check.sh \
 	   "./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted/pi-ci-$(PI_CI_SCOPE)/extracted-tree.json"
 
+# Schema/format-check BOTH extracted-tree.json and preflight-status.json
+# sidecars for a scope. Fails fast on report format drift; used by E2E
+# and by the CI job so a bad sidecar surfaces as a real failure rather
+# than a silently-mis-shaped artifact.
+#   make pretty-index-mismatch-ci-bundle-validate-reports                 # atomic
+#   make pretty-index-mismatch-ci-bundle-validate-reports PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-validate-reports:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@scripts/ci/pi-ci-validate-report-schemas.sh \
+	   "./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted/pi-ci-$(PI_CI_SCOPE)"
+
+# Zip the downloaded bundle + generated extracted-tree.{txt,json} and
+# preflight-status.{md,json} sidecars into a single shareable archive.
+# Regenerates the sidecars first so the zip always reflects the current
+# on-disk bundle. Output path is printed at the end for easy sharing.
+#   make pretty-index-mismatch-ci-bundle-zip                 # atomic
+#   make pretty-index-mismatch-ci-bundle-zip PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-zip:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@command -v zip >/dev/null || { echo "ERROR: 'zip' required" >&2; exit 2; }
+	@bundle="./_pi-ci-bundle-$(PI_CI_SCOPE)"; \
+	 out="$$bundle/extracted/pi-ci-$(PI_CI_SCOPE)"; \
+	 if [ ! -d "$$bundle" ]; then \
+	   echo "ERROR: $$bundle not found — run 'make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=$(PI_CI_SCOPE)' first" >&2; exit 2; \
+	 fi; \
+	 mkdir -p "$$out"; \
+	 GITHUB_STEP_SUMMARY="$$out/preflight-status.md" \
+	 PI_CI_PREFLIGHT_STATUS_PATH="$$out/preflight-status.md" \
+	   scripts/ci/pi-ci-preflight-status-summary.sh "$$out" "$(PI_CI_SCOPE)" >/dev/null; \
+	 scripts/ci/pi-ci-extracted-tree-manifest.sh "$$out" >/dev/null; \
+	 zipfile="$$bundle/pretty-index-mismatch-ci-bundle-$(PI_CI_SCOPE)-share.zip"; \
+	 rm -f -- "$$zipfile"; \
+	 (cd "$$bundle" && zip -qr "$$(basename "$$zipfile")" \
+	   $$(ls | grep -v -x "$$(basename "$$zipfile")")) ; \
+	 echo "wrote $$zipfile"; \
+	 echo "  includes: bundle files + extracted-tree.{txt,json} + preflight-status.{md,json}"
+
 
 
 
