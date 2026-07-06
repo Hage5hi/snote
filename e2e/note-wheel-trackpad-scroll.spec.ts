@@ -44,6 +44,13 @@ test.use({
 });
 
 async function seedLongNote(page: import("@playwright/test").Page) {
+  // Kill any programmatic smooth-scroll or zoom that could reinterpret
+  // synthesized deltas. Runs before the SPA hydrates.
+  await page.addInitScript(() => {
+    const style = document.createElement("style");
+    style.textContent = `html,body,*{scroll-behavior:auto !important} html{zoom:1 !important}`;
+    (document.head || document.documentElement).appendChild(style);
+  });
   await page.goto("/wheel-scroll-e2e");
   // Wait for CodeMirror to mount.
   const scroller = page.locator(".cm-scroller").first();
