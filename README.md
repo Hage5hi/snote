@@ -1122,6 +1122,38 @@ it is honored by both per-file schema checkers and reflected in the
 annotation. Non-integer, empty, or whitespace-only values fail fast
 with `ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer`.
 
+##### Failure artifact sidecar filenames
+
+All paths are written under the validator's `<out-dir>` (`/tmp/pi-ci-atomic`
+for MATRIX=atomic, `/tmp/pi-ci-stress` for MATRIX=stress) and are uploaded
+via the `pretty-index-mismatch-ci-report-schema-failure-<scope>-<os>` and
+`pretty-index-mismatch-ci-schema-validator-io-<scope>-<os>` artifacts:
+
+| File | Purpose | Mapped to summary field |
+| ---- | ------- | ----------------------- |
+| `report-schema-validation-summary.json`                        | Machine-readable per-file summary                | (this file)                                |
+| `report-schema-validation-log.txt`                             | Full validator stdout+stderr                     | mirrors `files[].reason` / `jq_*` headers  |
+| `report-schema-errors.txt`                                     | Per-check stderr + `::error` excerpt             | `files[].reason` context                   |
+| `report-schema-jq-extracted-tree-json.stderr.txt`              | Raw jq stderr for `extracted-tree.json`          | `files[label="extracted-tree.json"].jq_stderr_path` |
+| `report-schema-jq-preflight-status-json.stderr.txt`            | Raw jq stderr for `preflight-status.json`        | `files[label="preflight-status.json"].jq_stderr_path` |
+| `extracted-tree.json` / `preflight-status.json`                | Original inputs the validator read               | `files[].path`                             |
+
+The sidecar filename pattern is `report-schema-jq-<slug>.stderr.txt` where
+`<slug>` is the file label with any non-alphanumeric character replaced by
+`-` (e.g. `extracted-tree.json` → `extracted-tree-json`).
+
+To reproduce a `jq-parse-failed` or `jq-timeout` case locally after
+downloading the artifact, run:
+
+```bash
+scripts/ci/pi-ci-reproduce-jq-failure.sh path/to/report-schema-validation-summary.json
+```
+
+which prints the exact `jq_bin`, `jq_cmdline` (with any `timeout <N>`
+prefix), `jq_timeout_secs`, per-file `input_path`, and `stderr_path`
+needed to rerun the failing invocation.
+
+
 ##### report-schema-validation-summary.json
 
 Written by `scripts/ci/pi-ci-validate-report-schemas.sh` on every run
