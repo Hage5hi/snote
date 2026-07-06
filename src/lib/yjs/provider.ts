@@ -142,6 +142,20 @@ export class SupabaseYjsProvider {
     this.encryption = enc;
   }
 
+  /** Record the persisted note's encryption mode so writes can be guarded. */
+  setExpectedEncrypted(v: boolean | null) {
+    this.expectedEncrypted = v;
+  }
+
+  /** True when the local encryption mode disagrees with the stored mode. */
+  private hasEncryptionModeMismatch() {
+    return (
+      this.expectedEncrypted !== null &&
+      this.expectedEncrypted !== !!this.encryption
+    );
+  }
+
+
   onAwareness(cb: Listener<Map<number, AwarenessState>>) {
     this.awarenessListeners.add(cb);
     cb(this.awareness.getStates() as Map<number, AwarenessState>);
