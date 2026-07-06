@@ -939,10 +939,11 @@ make pretty-index-mismatch-diff PI_BASELINE=baseline.json
 | --- | --- | --- |
 | `pretty-index-mismatch-summary` | no mismatches AND no missing artifacts | `3` mismatches/missing present, `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-summary-json` | wrote summary JSON | `2` report file absent or `jq` missing |
-| `pretty-index-mismatch-summary-validate` | summary matches schema | `5` schema/shape violation, `2` file or tooling missing |
+| `pretty-index-mismatch-summary-validate` | summary matches schema (also `0` with deprecation warning when `schema` is `pretty-index-mismatch-summary/v0`) | `5` schema/shape violation, `2` file or tooling missing |
+| `pretty-index-mismatch-summary-json-merge` | wrote merged summary (missing inputs are tolerated and recorded under `sources[].missing:true`) | `2` when `PI_SUMMARY_INPUTS` is empty or `jq` missing |
 | `pretty-index-mismatch-csv` | wrote CSV file | `2` report file absent or `jq` missing |
 | `pretty-index-mismatch-show` (± `PI_PATH_GLOB`) | printed table (may be empty after glob filter) | `2` report file absent or `jq` missing |
-| `pretty-index-mismatch-diff` | current report matches baseline | `4` NEW/CHANGED entries found, `2` either report absent or `jq` missing |
+| `pretty-index-mismatch-diff` (± `PI_DIFF_OUT_PATH`) | current report matches baseline | `4` NEW/CHANGED entries found (diff report written to `PI_DIFF_OUT_PATH` when set), `2` either report absent or `jq` missing |
 
 Recipes emit `exit 3` / `exit 4` / `exit 5` intentionally; GNU make wraps any
 failing recipe as its own exit status `2` and prints `make: *** [target]
