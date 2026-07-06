@@ -558,12 +558,37 @@ pretty-index-mismatch-ci-bundle-download:
 	 echo "tarball           : $$tb"; \
 	 echo "validate-report   : $$vr (present)"; \
 	 echo "schema-assertion  : $$va (present, $$(wc -c < "$$va") bytes)"; \
-
 	 echo ""; \
 	 echo "inspect with:"; \
 	 echo "  jq . '$$vr'"; \
 	 echo "  cat '$$va'"; \
-	 echo "  make pretty-index-ci-tarball-verify PI_CI_TARBALL='$$tb' PI_CI_TARBALL_ROOT='$$root'"
+	 echo "  make pretty-index-ci-tarball-verify PI_CI_TARBALL='$$tb' PI_CI_TARBALL_ROOT='$$root'"; \
+	 echo "  make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE='$(PI_CI_SCOPE)'"
+
+
+# Re-run the strict schema check against the ALREADY-EXTRACTED
+# validate-report.json from `pretty-index-mismatch-ci-bundle-download`.
+# Cheap local loop for iterating on validator failures without hitting
+# the `gh` CLI / network again.
+#   make pretty-index-mismatch-ci-bundle-recheck                  # defaults: PI_CI_SCOPE=atomic
+#   make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-recheck:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@out="./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted"; \
+	 if [ ! -d "$$out" ]; then \
+	   echo "ERROR: no extracted bundle at $$out" >&2; \
+	   echo "  run: make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> PI_CI_SCOPE=$(PI_CI_SCOPE)" >&2; \
+	   exit 2; \
+	 fi; \
+	 vr=$$(find "$$out" -maxdepth 3 -type f -name validate-report.json | head -n1); \
+	 if [ -z "$$vr" ] || [ ! -s "$$vr" ]; then \
+	   echo "ERROR: validate-report.json not found (or empty) under $$out" >&2; exit 2; \
+	 fi; \
+	 echo "==> re-checking $$vr"; \
+	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
+	   pretty-index-validate-report-check VALIDATE_REPORT_JSON="$$vr"
+
 
 
 
