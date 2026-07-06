@@ -92,10 +92,20 @@ export async function putObjectWithRetry(
       return;
     } catch (err) {
       lastErr = err;
-      if (attempt === maxAttempts || !isTransientS3Error(err)) throw err;
+      const category = classifyS3Error(err);
+      if (attempt === maxAttempts || category === "none") throw err;
       const exp = Math.min(maxDelay, baseDelay * 2 ** (attempt - 1));
       const delayMs = Math.floor(exp * (0.5 + rand() * 0.5)); // 50–100% jitter
-      opts.onRetry?.({ key, attempt, delayMs, error: err });
+      const info = { key, attempt, delayMs, category, error: err };
+      if (opts.onRetry) opts.onRetry(info);
+      else if (opts.logRetries !== false) {
+        const msg = (err as { message?: string })?.message ?? String(err);
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[s3-retry] key=${key} attempt=${attempt}/${maxAttempts} ` +
+          `category=${category} delayMs=${delayMs} error=${msg}`,
+        );
+      }
       await sleep(delayMs);
     }
   }
