@@ -248,6 +248,36 @@
   }
 }
 
+/* ================== Editor scroll/selection smoothness ==================
+   Selection-drag auto-scroll used to feel "laggy" on long notes because
+   every line was a layout/paint dependency for the scroller. Two cheap
+   wins with no behavior change:
+
+   1) `contain: content` on `.cm-line` isolates each line's layout & paint
+      so the browser can skip work for off-screen lines during a drag.
+   2) `will-change: scroll-position` + `overscroll-behavior: contain` on
+      `.cm-scroller` promotes the scroller to its own compositor layer and
+      stops scroll from chaining to the page — the drag stays buttery.
+   3) `-webkit-user-select: text` keeps native selection acceleration on
+      WebKit/Blink (some parent rules were forcing `user-select: none`
+      during hover states, which forced a fallback selection path). */
+@layer utilities {
+  .cm-scroller {
+    will-change: scroll-position;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cm-editor .cm-line {
+    contain: content;
+  }
+  .cm-content,
+  .cm-content ::selection {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+}
+
+
 /* ================== Typewriter mode ==================
    Keeps the caret line vertically centered (logic in src/lib/typewriter.ts).
    Adds ~45vh of padding at top/bottom of the editor so the first and last
