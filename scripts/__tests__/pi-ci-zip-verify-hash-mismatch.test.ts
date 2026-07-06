@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const REPO_ROOT = process.cwd();
 
 const has = (bin: string) => {
-  try { return spawnSync(bin, ["--version"]).status === 0; } catch { return false; }
+  try { return spawnSync("sh", ["-c", `command -v ${bin}`]).status === 0; } catch { return false; }
 };
 const ok = has("bash") && has("jq") && has("zip") && has("unzip") && has("make");
 const d = ok ? describe : describe.skip;
