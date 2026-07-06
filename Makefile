@@ -662,6 +662,13 @@ pretty-index-mismatch-diff:
 	 count=$$(echo "$$diff_json" | jq 'length'); \
 	 echo "$$diff_json" | jq -r '.[] | "[\(.change)] \(.current.artifact_dir // "-")/\(.current.path // .current.file // "-")  status=\(.current.status)  expected=\(.current.expected // "-")  actual=\(.current.actual // "-")"'; \
 	 echo "diff entries: $$count"; \
+	 if [ -n "$(PI_DIFF_OUT_PATH)" ]; then \
+	   mkdir -p -- "$$(dirname -- "$(PI_DIFF_OUT_PATH)")" 2>/dev/null || true; \
+	   echo "$$diff_json" | jq --arg baseline "$(PI_BASELINE)" --arg current "$(PI_REPORT_PATH)" \
+	     '{schema:"pretty-index-mismatch-diff/v1", baseline:$$baseline, current:$$current, count:length, entries:.}' \
+	     > "$(PI_DIFF_OUT_PATH)"; \
+	   echo "wrote diff report -> $(PI_DIFF_OUT_PATH)"; \
+	 fi; \
 	 if [ "$$count" -gt 0 ]; then exit 4; fi
 
 # Merge two separately-generated mismatch reports (e.g. produced by
