@@ -1564,6 +1564,15 @@ print(json.dumps({
         shell: bash
         run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY" stress
 
+      - name: append pretty-index preflight status to job summary (MATRIX=stress)
+        # Writes a per-file OK/MISSING/EMPTY table with exact paths to
+        # $GITHUB_STEP_SUMMARY so reviewers can debug the failing matrix
+        # run without downloading any artifact bundle.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-stress stress
+
       - name: generate extracted-tree manifest for validator upload (MATRIX=stress)
         # Runs on ANY job failure — including when tarball extraction
         # itself failed before the preflight could execute — so the
@@ -1571,31 +1580,7 @@ print(json.dumps({
         if: always() && failure()
         continue-on-error: true
         shell: bash
-        run: |
-          set -u
-          out=/tmp/pi-ci-stress
-          mf="$out/extracted-tree.txt"
-          mkdir -p "$out"
-          # Touch first so the manifest file ALWAYS exists — even if the
-          # heredoc below crashes half-way, the upload step will find a
-          # (possibly empty) file at the expected path instead of a
-          # missing artifact. Keeps failure-run uploads consistent.
-          : > "$mf"
-          {
-            echo "# extracted-tree for $out (generated on assertion/step failure)"
-            echo "# generated-at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "# format: <size-bytes>\\t<path-relative-to-$out>"
-            if [ -d "$out" ]; then
-              (cd "$out" && find . -type f 2>/dev/null | sort | while read -r f; do
-                sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
-                printf "%s\t%s\n" "$sz" "$f"
-              done) || echo "# (find failed for $out)"
-            else
-              echo "# (directory $out does not exist)"
-            fi
-          } >> "$mf" || true
-          echo "wrote $mf"
-          cat "$mf" || true
+        run: scripts/ci/pi-ci-extracted-tree-manifest.sh /tmp/pi-ci-stress
 
       - name: upload validator files on any summary/assertion failure (MATRIX=stress)
         # Fire on ANY prior step failure in this job (not just the specific
