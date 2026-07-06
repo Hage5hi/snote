@@ -489,6 +489,14 @@ export class SupabaseYjsProvider {
 
   async saveSnapshot() {
     if (this.destroyed) return;
+    if (this.hasEncryptionModeMismatch()) {
+      console.warn("saveSnapshot skipped: encryption mode mismatch", {
+        slug: this.slug,
+        expectedEncrypted: this.expectedEncrypted,
+        haveKey: !!this.encryption,
+      });
+      return;
+    }
     try {
       const state = Y.encodeStateAsUpdate(this.doc);
       const text = this.doc.getText("content").toString();
