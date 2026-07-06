@@ -1691,17 +1691,16 @@ print(json.dumps({
           set -o pipefail
           mkdir -p /tmp/pi-ci-stress
           : > /tmp/pi-ci-stress/report-schema-validation-log.txt
-            /tmp/pi-ci-stress/report-schema-validation-summary.json
           scripts/ci/pi-ci-validate-report-schemas.sh /tmp/pi-ci-stress \
             2>&1 | tee /tmp/pi-ci-stress/report-schema-validation-log.txt
-            /tmp/pi-ci-stress/report-schema-validation-summary.json
 
       - name: upload schema-validation log (MATRIX=stress, always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: pretty-index-mismatch-ci-report-schema-validation-log-stress-${{ matrix.os }}
-          path: /tmp/pi-ci-stress/report-schema-validation-log.txt
+          path: |
+            /tmp/pi-ci-stress/report-schema-validation-log.txt
             /tmp/pi-ci-stress/report-schema-validation-summary.json
           if-no-files-found: warn
           retention-days: 14
