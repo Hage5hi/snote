@@ -86,7 +86,11 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
       if (error) throw error;
 
       toast({ title: t("lock.encrypted_ok") });
-      window.location.replace(`/${slug}#${encodeURIComponent(passphrase)}`);
+      // Full navigation (not just hash change) so NotePage remounts and the
+      // Yjs provider is rebuilt with the new encryption state. Otherwise the
+      // stale provider keeps writing in the previous mode and corrupts the row.
+      window.location.href = `/${slug}#${encodeURIComponent(passphrase)}`;
+      window.location.reload();
     } catch (e) {
       console.error(e);
       toast({
@@ -120,7 +124,10 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
       if (error) throw error;
 
       toast({ title: t("lock.decrypted_ok") });
-      window.location.replace(`/${slug}`);
+      // Full reload so the provider re-initializes without the stale
+      // encryption key and future saves don't clobber the row.
+      window.location.href = `/${slug}`;
+      window.location.reload();
     } catch (e) {
       console.error(e);
       toast({
