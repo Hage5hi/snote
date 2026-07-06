@@ -157,7 +157,7 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
       await page.mouse.wheel(0, 120);
       await page.waitForTimeout(40);
       const after = await scroller.evaluate((el) => el.scrollTop);
-      recordWheel(page, { i, dx: 0, dy: 120, before, after, t: Date.now() });
+      recordWheel(page, { i, dx: 0, dy: 120, before, after, t: Date.now() }, testInfo);
       positions.push(after);
       expect(
         after,
