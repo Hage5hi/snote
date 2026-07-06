@@ -29,6 +29,20 @@ function recordWheel(page: import("@playwright/test").Page, s: WheelSample) {
   wheelLog.set(page, arr);
 }
 
+// Force a consistent scroll environment across engines so the wheel/
+// trackpad deltas we synthesize aren't reinterpreted mid-stream:
+//   - fixed viewport & device scale so `mouse.wheel` deltas map to the
+//     same CSS pixels everywhere,
+//   - reduced-motion + `scroll-behavior: auto` so no engine sneaks in
+//     smooth-scroll interpolation that hides swallowed ticks,
+//   - light color scheme so devtools/media-query CSS doesn't reflow.
+test.use({
+  viewport: { width: 1280, height: 900 },
+  deviceScaleFactor: 1,
+  colorScheme: "light",
+  reducedMotion: "reduce",
+});
+
 async function seedLongNote(page: import("@playwright/test").Page) {
   await page.goto("/wheel-scroll-e2e");
   // Wait for CodeMirror to mount.
