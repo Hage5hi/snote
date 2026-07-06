@@ -41,6 +41,15 @@ case "$PI_CI_SCOPE" in atomic|stress) ;;
   *) echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$PI_CI_SCOPE')" >&2; exit 2 ;;
 esac
 
+# Validate PI_CI_EXPECTED_SCHEMA_VERSION up-front (same rule as the
+# per-file schema checkers) so a typo fails fast instead of appearing
+# as a mysterious "expected=<garbage>" line in the consolidated summary.
+_expected_sv_input="${PI_CI_EXPECTED_SCHEMA_VERSION-1}"
+if ! printf '%s' "$_expected_sv_input" | grep -Eq '^[0-9]+$'; then
+  echo "ERROR: PI_CI_EXPECTED_SCHEMA_VERSION must be a non-empty integer (got: '${_expected_sv_input}')" >&2
+  exit 2
+fi
+
 download_rc=0
 if [ "$MODE" = "download" ]; then
   echo "==> [1/4] downloading bundle (RUN_ID=$RUN_ID PI_CI_SCOPE=$PI_CI_SCOPE OS=$OS)"
