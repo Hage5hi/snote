@@ -58,7 +58,8 @@ jobs:
             e2e/note-lock-multi-tab.spec.ts \
             e2e/note-lock-stress.spec.ts \
             e2e/note-lock-remount-timing.spec.ts \
-            e2e/note-lock-api-authz.spec.ts
+            e2e/note-lock-api-authz.spec.ts \
+            e2e/note-wheel-trackpad-scroll.spec.ts
       # Upload on BOTH success and failure so flaky-test triage doesn't need a
       # re-run. Names are stable per browser + run + attempt so artifacts from
       # parallel matrix jobs never collide.

@@ -71,30 +71,36 @@ mkdir -p "$dir"; cp -R "${artifactDir}"/. "$dir"/
     expect(r.status).toBe(0);
 
     const missing = REQUIRED_SIDECARS.filter((f) => !existsSync(join(dest, f)));
-    if (missing.length) {
-      throw new Error(
-        `README CI-download walkthrough drift: missing ${missing.length} sidecar(s) after ` +
-        `\`gh run download\`: ${missing.join(", ")}. ` +
-        `Update README's "Downloading CI failure artifacts" section or the artifact bundler ` +
-        `so every documented sidecar is uploaded.`,
-      );
-    }
-
-    // Checksum + size parity: every downloaded sidecar must byte-for-byte
-    // match the "server-side" artifact — catches truncated/corrupt uploads
-    // in addition to plain missing files.
+    // Checksum + size parity: aggregate every mismatch so a single failing
+    // run reports the full list — not just the first bad file.
     const sha = (p: string) => createHash("sha256").update(readFileSync(p)).digest("hex");
+    const mismatches: Array<{ file: string; expectedSize: number; actualSize: number; expectedSha: string; actualSha: string }> = [];
     for (const f of REQUIRED_SIDECARS) {
+      if (missing.includes(f)) continue;
       const src = join(artifactDir, f), dl = join(dest, f);
-      const srcSize = statSync(src).size, dlSize = statSync(dl).size;
-      if (srcSize !== dlSize || sha(src) !== sha(dl)) {
-        throw new Error(
-          `README CI-download walkthrough drift: sidecar '${f}' mismatch — ` +
-          `expected size=${srcSize} sha256=${sha(src)}, got size=${dlSize} sha256=${sha(dl)}. ` +
-          `The artifact upload/download pipeline is truncating or altering files.`,
+      const expectedSize = statSync(src).size, actualSize = statSync(dl).size;
+      const expectedSha = sha(src), actualSha = sha(dl);
+      if (expectedSize !== actualSize || expectedSha !== actualSha) {
+        mismatches.push({ file: f, expectedSize, actualSize, expectedSha, actualSha });
+      }
+    }
+    if (missing.length || mismatches.length) {
+      const lines: string[] = ["README CI-download walkthrough drift:"];
+      if (missing.length) {
+        lines.push(`  missing ${missing.length} sidecar(s): ${missing.join(", ")}`);
+      }
+      for (const m of mismatches) {
+        lines.push(
+          `  mismatch '${m.file}': expected size=${m.expectedSize} sha256=${m.expectedSha}, ` +
+          `got size=${m.actualSize} sha256=${m.actualSha}`,
         );
       }
-      expect(dlSize).toBeGreaterThan(0);
+      lines.push(
+        `Update README's "Downloading CI failure artifacts" section or the artifact ` +
+        `upload/download pipeline so every documented sidecar is present and byte-identical.`,
+      );
+      throw new Error(lines.join("\n"));
     }
+    for (const f of REQUIRED_SIDECARS) expect(statSync(join(dest, f)).size).toBeGreaterThan(0);
   }, 30_000);
 });
