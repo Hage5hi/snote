@@ -426,7 +426,8 @@ pretty-index-help:
          pretty-index-mismatch-ci pretty-index-validate-report-check \
          pretty-index-ci-tarball-verify \
          pretty-index-mismatch-ci-bundle-download \
-         pretty-index-mismatch-ci-bundle-recheck
+         pretty-index-mismatch-ci-bundle-recheck \
+         pretty-index-mismatch-ci-bundle-clean
 
 
 # Standalone strict schema check for an arbitrary validate-report.json —
