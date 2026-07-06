@@ -126,14 +126,36 @@ test.describe("note wheel + trackpad scroll @scroll", () => {
         overflowY: getComputedStyle(el).overflowY,
         pointerEvents: getComputedStyle(el).pointerEvents,
       })).catch((e) => ({ error: String(e) }));
-      const payload = { scroller: state, wheelSamples: wheelLog.get(page) ?? [] };
+      const samples = wheelLog.get(page) ?? [];
+      const stuck = stuckFrame.get(page) ?? null;
+      // `replay` = the exact synthesized delta stream (no scrollTop noise)
+      // so a re-runner can feed it back through `page.mouse.wheel` and
+      // reproduce the failing sequence step-for-step.
+      const replay = samples.map(({ i, dx, dy, t }) => ({ i, dx, dy, t }));
+      const payload = {
+        test: testInfo.title, project: testInfo.project.name,
+        retry: testInfo.retry, status: testInfo.status,
+        scroller: state, stuckFrame: stuck,
+        wheelSamples: samples, replay,
+      };
+      // Standardized artifact names inside outputDir. Playwright uploads
+      // `test-results/**` — these names stay identical across retries.
       const jsonPath = join(dir, "wheel-diagnostics.json");
+      const shotPath = join(dir, "scroller.png");
       writeFileSync(jsonPath, JSON.stringify(payload, null, 2));
       await testInfo.attach("wheel-diagnostics.json", { path: jsonPath, contentType: "application/json" });
-      const shot = join(dir, "scroller.png");
-      await scroller.screenshot({ path: shot }).then(
-        () => testInfo.attach("scroller.png", { path: shot, contentType: "image/png" }),
+      await scroller.screenshot({ path: shotPath }).then(
+        () => testInfo.attach("scroller.png", { path: shotPath, contentType: "image/png" }),
       ).catch(() => {});
+
+      // Mirror to a stable, retry-agnostic path so CI's summary/uploader
+      // always finds the latest failure at the same location:
+      //   test-results/wheel-latest/<safe-title>/{wheel-diagnostics.json,scroller.png}
+      const slug = testInfo.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+      const stable = join(process.cwd(), "test-results", "wheel-latest", slug);
+      mkdirSync(stable, { recursive: true });
+      writeFileSync(join(stable, "wheel-diagnostics.json"), JSON.stringify(payload, null, 2));
+      try { cpSync(shotPath, join(stable, "scroller.png")); } catch { /* screenshot may be missing */ }
     } catch { /* best-effort */ }
   });
 
