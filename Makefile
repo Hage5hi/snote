@@ -534,16 +534,27 @@ pretty-index-mismatch-ci-bundle-download:
 	 root=$$(tar -tzf "$$tb" | head -n1 | cut -d/ -f1); \
 	 vr="$$out/extracted/$$root/validate-report.json"; \
 	 va="$$out/extracted/$$root/validate-schema-assertion.txt"; \
+	 miss=""; \
+	 [ -f "$$vr" ] || miss="$$miss $$root/validate-report.json"; \
+	 [ -f "$$va" ] || miss="$$miss $$root/validate-schema-assertion.txt"; \
+	 if [ -n "$$miss" ]; then \
+	   echo "ERROR: extracted tarball $$tb is missing expected files:" >&2; \
+	   for m in $$miss; do echo "  - $$m" >&2; done; \
+	   echo "  extracted tree:" >&2; \
+	   (cd "$$out/extracted" && find . -maxdepth 3 -type f | sed 's/^/    /') >&2; \
+	   exit 2; \
+	 fi; \
 	 echo ""; \
 	 echo "artifact          : $$name"; \
 	 echo "tarball           : $$tb"; \
-	 echo "validate-report   : $$vr $$( [ -s "$$vr" ] && echo '(present)' || echo '(missing/empty)')"; \
+	 echo "validate-report   : $$vr (present)"; \
 	 echo "schema-assertion  : $$va $$( [ -s "$$va" ] && echo '(populated — assertion failed)' || echo '(empty — assertion passed)')"; \
 	 echo ""; \
 	 echo "inspect with:"; \
 	 echo "  jq . '$$vr'"; \
 	 echo "  cat '$$va'"; \
 	 echo "  make pretty-index-ci-tarball-verify PI_CI_TARBALL='$$tb' PI_CI_TARBALL_ROOT='$$root'"
+
 
 
 # Print a human-friendly per-file table (file, expected, actual, status)
