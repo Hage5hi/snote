@@ -842,8 +842,10 @@ print(json.dumps({
         shell: bash
         run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY" atomic
 
-      - name: upload validator files on summary-link assertion failure (MATRIX=atomic)
-        if: always() && steps.assert-pi-ci-summary-links-atomic.outcome == 'failure'
+      - name: upload validator files on any summary/assertion failure (MATRIX=atomic)
+        # Fire on ANY prior step failure in this job (not just the specific
+        # summary-link assertion) so debug artifacts are always available.
+        if: always() && failure()
         uses: actions/upload-artifact@v4
         with:
           name: pretty-index-mismatch-ci-validator-files-atomic-${{ matrix.os }}
