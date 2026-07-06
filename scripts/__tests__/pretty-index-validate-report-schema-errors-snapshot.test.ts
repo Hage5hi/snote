@@ -81,7 +81,7 @@ d("pretty-index-validate-report-check — ERROR block snapshot", () => {
         - note: wrong type (detected: object, expected string)
         - errors: wrong type (detected: string, expected array)
         expected keys: schema(string) status(string) exit_code(number) file(string) summary_schema(string) note(string) errors(array)
-      make: *** [Makefile:435: pretty-index-validate-report-check] Error 5
+      make: *** [Makefile:437: pretty-index-validate-report-check] Error 5
       "
     `);
   });
