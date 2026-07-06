@@ -107,7 +107,7 @@ echo "pi-ci-validate-report-schemas: jq_timeout_secs=${PI_CI_JQ_TIMEOUT_SECS:-<u
 json_escape() {
   local s="$1"
   s=${s//\\/\\\\}
-  s=${s//"/\\"}
+  s=${s//\"/\\\"}
   s=${s//$'\r'/}
   s=${s//$'\n'/\\n}
   printf '%s' "$s"
