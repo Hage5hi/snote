@@ -1107,6 +1107,34 @@ After extraction it re-verifies the two required files exist and prints a
 `make pretty-index-ci-tarball-verify …` command tailored to the download
 so you can immediately re-run the strict schema check locally.
 
+#### Re-check locally without re-downloading (`pretty-index-mismatch-ci-bundle-recheck`)
+
+Iterate on validator failures without hitting the `gh` CLI / network
+again. Runs `pretty-index-validate-report-check` against the
+already-extracted `validate-report.json` under
+`./_pi-ci-bundle-<scope>/extracted/…`.
+
+```sh
+# Atomic failure (default scope):
+make pretty-index-mismatch-ci-bundle-recheck
+
+# Stress failure:
+make pretty-index-mismatch-ci-bundle-recheck PI_CI_SCOPE=stress
+```
+
+Fails with a pointer to `pretty-index-mismatch-ci-bundle-download` when
+no extracted bundle is present.
+
+#### Clean the extracted bundle (`pretty-index-mismatch-ci-bundle-clean`)
+
+Wipe `./_pi-ci-bundle-<scope>/` so the next `…-bundle-download` (or
+`…-bundle-recheck` after a fresh download) starts clean:
+
+```sh
+make pretty-index-mismatch-ci-bundle-clean                  # atomic
+make pretty-index-mismatch-ci-bundle-clean PI_CI_SCOPE=stress
+```
+
 
 
 
