@@ -842,6 +842,30 @@ print(json.dumps({
         shell: bash
         run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY" atomic
 
+      - name: generate extracted-tree manifest for validator upload (MATRIX=atomic)
+        if: always() && failure()
+        shell: bash
+        run: |
+          set -u
+          out=/tmp/pi-ci-atomic
+          mf="$out/extracted-tree.txt"
+          mkdir -p "$out"
+          {
+            echo "# extracted-tree for $out (generated on assertion/step failure)"
+            echo "# generated-at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "# format: <size-bytes>\\t<path-relative-to-$out>"
+            if [ -d "$out" ]; then
+              (cd "$out" && find . -type f 2>/dev/null | sort | while read -r f; do
+                sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+                printf "%s\t%s\n" "$sz" "$f"
+              done)
+            else
+              echo "# (directory $out does not exist)"
+            fi
+          } > "$mf"
+          echo "wrote $mf"
+          cat "$mf"
+
       - name: upload validator files on any summary/assertion failure (MATRIX=atomic)
         # Fire on ANY prior step failure in this job (not just the specific
         # summary-link assertion) so debug artifacts are always available.
@@ -852,6 +876,7 @@ print(json.dumps({
           path: |
             /tmp/pi-ci-atomic/validate-report.json
             /tmp/pi-ci-atomic/validate-schema-assertion.txt
+            /tmp/pi-ci-atomic/extracted-tree.txt
           if-no-files-found: warn
           retention-days: 14
 
@@ -1545,6 +1570,30 @@ print(json.dumps({
         shell: bash
         run: scripts/ci/assert-pi-ci-summary-links.sh "$GITHUB_STEP_SUMMARY" stress
 
+      - name: generate extracted-tree manifest for validator upload (MATRIX=stress)
+        if: always() && failure()
+        shell: bash
+        run: |
+          set -u
+          out=/tmp/pi-ci-stress
+          mf="$out/extracted-tree.txt"
+          mkdir -p "$out"
+          {
+            echo "# extracted-tree for $out (generated on assertion/step failure)"
+            echo "# generated-at: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "# format: <size-bytes>\\t<path-relative-to-$out>"
+            if [ -d "$out" ]; then
+              (cd "$out" && find . -type f 2>/dev/null | sort | while read -r f; do
+                sz=$(wc -c < "$f" 2>/dev/null | tr -d ' ')
+                printf "%s\t%s\n" "$sz" "$f"
+              done)
+            else
+              echo "# (directory $out does not exist)"
+            fi
+          } > "$mf"
+          echo "wrote $mf"
+          cat "$mf"
+
       - name: upload validator files on any summary/assertion failure (MATRIX=stress)
         # Fire on ANY prior step failure in this job (not just the specific
         # summary-link assertion) so debug artifacts are always available.
@@ -1555,6 +1604,7 @@ print(json.dumps({
           path: |
             /tmp/pi-ci-stress/validate-report.json
             /tmp/pi-ci-stress/validate-schema-assertion.txt
+            /tmp/pi-ci-stress/extracted-tree.txt
           if-no-files-found: warn
           retention-days: 14
 

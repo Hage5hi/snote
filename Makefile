@@ -427,7 +427,8 @@ pretty-index-help:
          pretty-index-ci-tarball-verify \
          pretty-index-mismatch-ci-bundle-download \
          pretty-index-mismatch-ci-bundle-recheck \
-         pretty-index-mismatch-ci-bundle-clean
+         pretty-index-mismatch-ci-bundle-clean \
+         pretty-index-mismatch-ci-bundle-list
 
 
 # Standalone strict schema check for an arbitrary validate-report.json —
@@ -578,6 +579,8 @@ pretty-index-mismatch-ci-bundle-download:
 pretty-index-mismatch-ci-bundle-recheck:
 	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
 	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
+	   pretty-index-mismatch-ci-bundle-list PI_CI_SCOPE=$(PI_CI_SCOPE) || true
 	@out="./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted"; \
 	 if [ ! -d "$$out" ]; then \
 	   echo "ERROR: no extracted bundle at $$out" >&2; \
@@ -604,6 +607,32 @@ pretty-index-mismatch-ci-bundle-recheck:
 	 echo "==> re-checking $$vr"; \
 	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
 	   pretty-index-validate-report-check VALIDATE_REPORT_JSON="$$vr"
+
+
+# Print the exact contents (path + byte size) of the locally-extracted
+# bundle directory, so you can eyeball what
+# `pretty-index-mismatch-ci-bundle-recheck` is about to consume without
+# opening a shell to `ls -laR`. Invoked automatically at the start of
+# `…-bundle-recheck`; also runnable standalone:
+#   make pretty-index-mismatch-ci-bundle-list                 # atomic
+#   make pretty-index-mismatch-ci-bundle-list PI_CI_SCOPE=stress
+pretty-index-mismatch-ci-bundle-list:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@out="./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted"; \
+	 echo "── extracted bundle listing (PI_CI_SCOPE=$(PI_CI_SCOPE)) ──"; \
+	 echo "  root: $$out"; \
+	 if [ ! -d "$$out" ]; then \
+	   echo "  (directory does not exist — run pretty-index-mismatch-ci-bundle-download first)"; \
+	   exit 0; \
+	 fi; \
+	 printf "  %-10s  %s\n" "SIZE(B)" "PATH"; \
+	 find "$$out" -type f 2>/dev/null | sort | while read -r f; do \
+	   sz=$$(wc -c < "$$f" 2>/dev/null | tr -d ' '); \
+	   rel=$${f#$$out/}; \
+	   printf "  %-10s  %s\n" "$$sz" "$$rel"; \
+	 done; \
+	 echo "── end listing ──"
 
 
 # Remove the locally-extracted bundle directory so
