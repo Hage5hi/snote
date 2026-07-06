@@ -786,17 +786,7 @@ pretty-index-mismatch-ci-selftest:
 	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
 	@rm -rf -- "$(PI_CI_SELFTEST_DIR)"; mkdir -p -- "$(PI_CI_SELFTEST_DIR)"
 	@echo "── synthesizing minimal mismatch fixture → $(PI_CI_SELFTEST_DIR) ──"
-	@printf '%s\n' '{ \
-	  "schema":"pretty-index-checksum-mismatch/v1", \
-	  "scope":"atomic","matrix":"atomic","fail_fast":false, \
-	  "results":[ \
-	    {"status":"MISMATCH","dir":"synthetic/atomic","file":"pretty-index.json", \
-	     "expected":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", \
-	     "actual":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, \
-	    {"status":"OK","dir":"synthetic/atomic","file":"other.json", \
-	     "expected":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", \
-	     "actual":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"} \
-	  ]}' | jq . > "$(PI_CI_SELFTEST_DIR)/report.json"
+	@jq -n '{schema:"pretty-index-checksum-mismatch/v1", scope:"atomic", matrix:"atomic", fail_fast:false, results:[{status:"MISMATCH", dir:"synthetic/atomic", file:"pretty-index.json", expected:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", actual:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}, {status:"OK", dir:"synthetic/atomic", file:"other.json", expected:"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", actual:"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"}]}' > "$(PI_CI_SELFTEST_DIR)/report.json"
 	@set +e; \
 	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-ci \
 	   PI_REPORT_PATH="$(PI_CI_SELFTEST_DIR)/report.json" \
