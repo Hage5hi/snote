@@ -60,6 +60,9 @@ jobs:
             e2e/note-lock-remount-timing.spec.ts \
             e2e/note-lock-api-authz.spec.ts \
             e2e/note-wheel-trackpad-scroll.spec.ts
+      - name: Publish E2E timing and artifact summary
+        if: always()
+        run: bun run scripts/ci-perf-timing-summary.ts --pw test-results/e2e-results.json
       # Upload on BOTH success and failure so flaky-test triage doesn't need a
       # re-run. Names are stable per browser + run + attempt so artifacts from
       # parallel matrix jobs never collide.

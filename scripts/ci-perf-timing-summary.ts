@@ -70,6 +70,7 @@ export function parsePlaywright(report: PwReport): TimingRow[] {
 // we deep-link to it so a failing summary is one click from evidence.
 export interface FailedTestArtifacts {
   suite: string; name: string; project?: string;
+  retry?: number;
   attachments: Array<{ label: string; path: string }>;
 }
 
@@ -77,20 +78,35 @@ export function parsePlaywrightFailedArtifacts(report: PwReport): FailedTestArti
   const out: FailedTestArtifacts[] = [];
   for (const spec of walk(report.suites)) {
     for (const t of spec.tests) {
-      const last = t.results?.[t.results.length - 1] as { status?: string; attachments?: Array<{ name?: string; path?: string }> } | undefined;
-      if (!last || last.status === "passed" || last.status === "skipped") continue;
-      const attachments = (last.attachments ?? [])
-        .filter((a) => a.path && (/trace\.zip$/.test(a.path) || /\.(png|json)$/.test(a.path)))
-        .map((a) => ({ label: a.name ?? a.path!.split("/").pop() ?? "artifact", path: a.path! }));
-      if (attachments.length) out.push({ suite: spec.file, name: t.title, project: t.projectName, attachments });
+      for (const result of (t.results ?? []) as Array<{ status?: string; retry?: number; attachments?: Array<{ name?: string; path?: string }> }>) {
+        if (result.status === "passed" || result.status === "skipped") continue;
+        const attachments = (result.attachments ?? [])
+          .filter((a) => a.path && (/trace\.zip$/.test(a.path) || /\.(png|json)$/.test(a.path)))
+          .map((a) => ({ label: a.name ?? a.path!.split("/").pop() ?? "artifact", path: a.path! }));
+        if (attachments.length) out.push({ suite: spec.file, name: t.title, project: t.projectName, retry: result.retry, attachments });
+      }
     }
   }
   return out;
 }
 
+export function renderWheelLocalReproCommand(f: FailedTestArtifacts, retries = "0"): string | null {
+  if (!f.suite.includes("note-wheel-trackpad-scroll.spec.ts")) return null;
+  const project = f.project ?? "chromium";
+  return `PLAYWRIGHT_PROJECT=${project} RETRIES=${retries} ./scripts/run-wheel-e2e.sh`;
+}
+
+export function renderWheelDiagnosticsReplayCommand(f: FailedTestArtifacts): string | null {
+  if (!f.suite.includes("note-wheel-trackpad-scroll.spec.ts")) return null;
+  const diagnostics = f.attachments.find((a) => a.path.endsWith("wheel-diagnostics.json"));
+  if (!diagnostics) return null;
+  const project = f.project ?? "chromium";
+  return `PLAYWRIGHT_PROJECT=${project} bun run scripts/replay-wheel-diagnostics.ts ${diagnostics.path}`;
+}
+
 export function renderFailedArtifactLinks(
   failed: FailedTestArtifacts[],
-  env: { serverUrl?: string; repository?: string; runId?: string; runAttempt?: string } = {},
+  env: { serverUrl?: string; repository?: string; runId?: string; runAttempt?: string; playwrightRetries?: string } = {},
 ): string {
   if (failed.length === 0) return "";
   const runUrl = env.serverUrl && env.repository && env.runId
@@ -99,9 +115,12 @@ export function renderFailedArtifactLinks(
   const out: string[] = ["### 🔗 Failed-test artifacts\n"];
   if (runUrl) out.push(`Browse the full artifact bundle from the [workflow run's Artifacts panel](${runUrl}).\n`);
   for (const f of failed) {
-    out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""} — ${
+    const repro = renderWheelLocalReproCommand(f, env.playwrightRetries ?? "0");
+    const replay = renderWheelDiagnosticsReplayCommand(f);
+    const attempt = f.retry == null ? "" : ` retry #${f.retry}`;
+    out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""}${attempt} — ${
       f.attachments.map((a) => `[${a.label}](${a.path})`).join(" · ")
-    }`);
+    }${repro ? `\n  - Local repro: \`${repro}\`` : ""}${replay ? `\n  - Replay artifact: \`${replay}\`` : ""}`);
   }
   out.push("");
   return out.join("\n");
@@ -254,6 +273,7 @@ function main(argv: string[]): void {
     renderFailedArtifactLinks(failedArtifacts, {
       serverUrl: process.env.GITHUB_SERVER_URL, repository: process.env.GITHUB_REPOSITORY,
       runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+      playwrightRetries: process.env.PLAYWRIGHT_RETRIES ?? process.env.RETRIES,
     }),
   ].filter(Boolean).join("\n");
   const dest = out ?? process.env.GITHUB_STEP_SUMMARY;
