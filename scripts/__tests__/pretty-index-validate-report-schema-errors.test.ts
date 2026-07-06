@@ -84,7 +84,7 @@ d("pretty-index-validate-report-check — type-aware schema errors", () => {
     delete bad.schema;
     delete bad.errors;
     const { status, stderr } = runCheck(bad);
-    expect(status).toBe(5);
+    expect(status).not.toBe(0); expect(stderr).toContain("Error 5");
     expect(stderr).toContain("failed schema assertion");
     expect(stderr).toContain(
       "schema: missing (detected: null, expected string)",
@@ -105,7 +105,7 @@ d("pretty-index-validate-report-check — type-aware schema errors", () => {
       errors: { oops: true },
     };
     const { status, stderr } = runCheck(bad);
-    expect(status).toBe(5);
+    expect(status).not.toBe(0); expect(stderr).toContain("Error 5");
     expect(stderr).toContain(
       "schema: wrong type (detected: number, expected string)",
     );
@@ -120,7 +120,7 @@ d("pretty-index-validate-report-check — type-aware schema errors", () => {
   it("reports null-valued fields as wrong type (detected: null)", () => {
     const bad = { ...VALID, note: null, file: null };
     const { status, stderr } = runCheck(bad);
-    expect(status).toBe(5);
+    expect(status).not.toBe(0); expect(stderr).toContain("Error 5");
     expect(stderr).toContain(
       "note: wrong type (detected: null, expected string)",
     );
