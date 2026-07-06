@@ -1,0 +1,90 @@
+// Seeds notes deterministically via the anon key for E2E tests.
+//
+// Two flavors:
+//   - seedPlaintextNote(slug, text): upserts a plaintext row.
+//   - seedEncryptedNote(slug, passphrase, text): derives a key with PBKDF2,
+//     encrypts an initial Yjs state, and upserts the row so the app treats it
+//     as an already-encrypted note. The passphrase is what the UI expects in
+//     the URL hash (`/<slug>#<passphrase>`).
+//
+// Reads VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY from process.env
+// (dotenv-style loading is handled by whatever runs the tests; Playwright's
+// webServer inherits the shell env). Falls back to `.env` values if unset.
+
+import { createClient } from "@supabase/supabase-js";
+import * as Y from "yjs";
+import {
+  deriveKey,
+  encryptBytes,
+  makeCheck,
+  randomSalt,
+  PBKDF2_ITERATIONS,
+} from "../../src/lib/crypto";
+import { bytesToBase64 } from "../../src/lib/yjs/base64";
+
+function env(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing env var ${name} (needed for E2E seeding).`);
+  return v;
+}
+
+function client() {
+  return createClient(env("VITE_SUPABASE_URL"), env("VITE_SUPABASE_PUBLISHABLE_KEY"));
+}
+
+export async function deleteNote(slug: string): Promise<void> {
+  await client().from("notes").delete().eq("slug", slug);
+}
+
+export async function seedPlaintextNote(slug: string, text: string): Promise<void> {
+  const doc = new Y.Doc();
+  doc.getText("content").insert(0, text);
+  const state = Y.encodeStateAsUpdate(doc);
+  const { error } = await client()
+    .from("notes")
+    .upsert(
+      {
+        slug,
+        is_encrypted: false,
+        enc_salt: null,
+        enc_check: null,
+        ydoc_state: bytesToBase64(state),
+        content: text,
+        char_count: text.length,
+      },
+      { onConflict: "slug" },
+    );
+  if (error) throw error;
+}
+
+export async function seedEncryptedNote(
+  slug: string,
+  passphrase: string,
+  text: string,
+): Promise<void> {
+  const doc = new Y.Doc();
+  doc.getText("content").insert(0, text);
+  const state = Y.encodeStateAsUpdate(doc);
+
+  const salt = randomSalt();
+  const key = await deriveKey(passphrase, salt, PBKDF2_ITERATIONS);
+  const check = await makeCheck(key);
+  const encrypted = await encryptBytes(key, state);
+
+  const { error } = await client()
+    .from("notes")
+    .upsert(
+      {
+        slug,
+        is_encrypted: true,
+        enc_salt: salt,
+        enc_check: check,
+        enc_iterations: PBKDF2_ITERATIONS,
+        ydoc_state: bytesToBase64(encrypted),
+        content: "",
+        char_count: 0,
+      },
+      { onConflict: "slug" },
+    );
+  if (error) throw error;
+}
