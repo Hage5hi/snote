@@ -495,6 +495,57 @@ pretty-index-ci-tarball-verify:
 	   VALIDATE_REPORT_JSON="$$td/$$want1"
 
 
+# Download the uploaded pretty-index-mismatch-ci bundle tarball from a
+# GitHub Actions run and extract it locally, so you can inspect
+# `validate-report.json` + `validate-schema-assertion.txt` without
+# clicking around the Actions UI. Requires the `gh` CLI (authenticated).
+#
+# Usage:
+#   make pretty-index-mismatch-ci-bundle-download RUN_ID=<run-id> \
+#     [PI_CI_SCOPE=atomic|stress] [OS=ubuntu-latest]
+#
+# Output layout:
+#   ./_pi-ci-bundle-<scope>/<tarball>.tar.gz         (the uploaded tarball)
+#   ./_pi-ci-bundle-<scope>/extracted/...            (extracted contents,
+#     including <root>/validate-report.json + <root>/validate-schema-assertion.txt)
+PI_CI_SCOPE ?= atomic
+OS          ?= ubuntu-latest
+pretty-index-mismatch-ci-bundle-download:
+	@command -v gh  >/dev/null || { echo "gh CLI required (https://cli.github.com)" >&2; exit 2; }
+	@command -v tar >/dev/null || { echo "tar required" >&2; exit 2; }
+	@if [ -z "$(RUN_ID)" ]; then \
+	   echo "usage: make pretty-index-mismatch-ci-bundle-download RUN_ID=<id> [PI_CI_SCOPE=atomic|stress] [OS=ubuntu-latest]" >&2; \
+	   exit 2; \
+	 fi
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@name="pretty-index-mismatch-ci-bundle-$(PI_CI_SCOPE)-$(OS)"; \
+	 out="./_pi-ci-bundle-$(PI_CI_SCOPE)"; \
+	 rm -rf -- "$$out"; mkdir -p -- "$$out/extracted"; \
+	 echo "==> downloading artifact $$name (run $(RUN_ID))"; \
+	 gh run download "$(RUN_ID)" -n "$$name" -D "$$out"; \
+	 tb=$$(ls -1 "$$out"/*.tar.gz 2>/dev/null | head -n1); \
+	 if [ -z "$$tb" ] || [ ! -s "$$tb" ]; then \
+	   echo "ERROR: no *.tar.gz found in $$out after download" >&2; \
+	   ls -la "$$out" >&2 || true; exit 2; \
+	 fi; \
+	 echo "==> extracting $$tb -> $$out/extracted"; \
+	 tar -xzf "$$tb" -C "$$out/extracted"; \
+	 root=$$(tar -tzf "$$tb" | head -n1 | cut -d/ -f1); \
+	 vr="$$out/extracted/$$root/validate-report.json"; \
+	 va="$$out/extracted/$$root/validate-schema-assertion.txt"; \
+	 echo ""; \
+	 echo "artifact          : $$name"; \
+	 echo "tarball           : $$tb"; \
+	 echo "validate-report   : $$vr $$( [ -s "$$vr" ] && echo '(present)' || echo '(missing/empty)')"; \
+	 echo "schema-assertion  : $$va $$( [ -s "$$va" ] && echo '(populated — assertion failed)' || echo '(empty — assertion passed)')"; \
+	 echo ""; \
+	 echo "inspect with:"; \
+	 echo "  jq . '$$vr'"; \
+	 echo "  cat '$$va'"; \
+	 echo "  make pretty-index-ci-tarball-verify PI_CI_TARBALL='$$tb' PI_CI_TARBALL_ROOT='$$root'"
+
+
 # Print a human-friendly per-file table (file, expected, actual, status)
 # from the mismatch report. Use PI_REPORT_PATH=<path> to point elsewhere.
 # Optional PI_PATH_GLOB=<glob> filters rows by .path (e.g. "*.report.json").
