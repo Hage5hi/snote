@@ -783,12 +783,20 @@ print(json.dumps({
           TB="${{ steps.build-pi-ci-bundle-atomic.outputs.tarball }}"
           {
             echo ''
-            echo "#### 📦 pretty-index-mismatch-ci bundle (MATRIX=atomic, ${{ matrix.os }}, exit=${RC:-?}, ${SZ:-?} bytes)"
+            echo "#### 📦 pretty-index-mismatch-ci bundle (MATRIX=atomic, ${{ matrix.os }})"
+            echo ''
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| tarball | \`${TB:-<missing>}\` |"
+            echo "| filename | \`$(basename "${TB:-unknown}")\` |"
+            echo "| pi_ci exit code | \`${RC:-?}\` |"
+            echo "| tarball size | \`${SZ:-?}\` bytes |"
             echo ''
             echo "- [download \`$(basename "$TB")\`]($URL)"
             echo "  - \`summary.json\` / \`summary.md\` — aggregate mismatch summary"
             echo "  - \`validate-report.json\` — validator machine-readable report (always present, even when empty)"
             echo "  - \`validate-annotations.txt\` — validator stderr annotations (always present, even when empty)"
+            echo "  - \`validate-schema-assertion.txt\` — jq schema-assertion stderr (empty on pass, populated on fail)"
             echo "  - \`diff.json\` — baseline diff (when \`PI_BASELINE\` was provided)"
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"
@@ -1428,12 +1436,20 @@ print(json.dumps({
           TB="${{ steps.build-pi-ci-bundle-stress.outputs.tarball }}"
           {
             echo ''
-            echo "#### 📦 pretty-index-mismatch-ci bundle (MATRIX=stress, ${{ matrix.os }}, exit=${RC:-?}, ${SZ:-?} bytes)"
+            echo "#### 📦 pretty-index-mismatch-ci bundle (MATRIX=stress, ${{ matrix.os }})"
+            echo ''
+            echo "| field | value |"
+            echo "| --- | --- |"
+            echo "| tarball | \`${TB:-<missing>}\` |"
+            echo "| filename | \`$(basename "${TB:-unknown}")\` |"
+            echo "| pi_ci exit code | \`${RC:-?}\` |"
+            echo "| tarball size | \`${SZ:-?}\` bytes |"
             echo ''
             echo "- [download \`$(basename "$TB")\`]($URL)"
             echo "  - \`summary.json\` / \`summary.md\` — aggregate mismatch summary"
             echo "  - \`validate-report.json\` — validator machine-readable report (always present, even when empty)"
             echo "  - \`validate-annotations.txt\` — validator stderr annotations (always present, even when empty)"
+            echo "  - \`validate-schema-assertion.txt\` — jq schema-assertion stderr (empty on pass, populated on fail)"
             echo "  - \`diff.json\` — baseline diff (when \`PI_BASELINE\` was provided)"
             echo ''
           } >> "$GITHUB_STEP_SUMMARY"

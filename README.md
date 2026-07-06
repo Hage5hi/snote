@@ -991,8 +991,24 @@ run the full CI pipeline against it, and assert the tarball plus
 make pretty-index-mismatch-ci-selftest
 make pretty-index-mismatch-ci-selftest PI_CI_SELFTEST_SCOPE=stress
 
-# Run BOTH scopes end-to-end (recommended smoke test on a fresh checkout)
+# Explicit per-scope invocations of the aggregate target (equivalent to
+# what `pretty-index-mismatch-ci-selftest-all` runs internally)
+make pretty-index-mismatch-ci-selftest-all PI_CI_SELFTEST_SCOPE=atomic
+make pretty-index-mismatch-ci-selftest-all PI_CI_SELFTEST_SCOPE=stress
+
+# Recommended fresh-checkout smoke test — runs BOTH scopes back-to-back
+# into isolated scratch dirs (_pi-ci-selftest-atomic, _pi-ci-selftest-stress)
 make pretty-index-mismatch-ci-selftest-all
+```
+
+Standalone strict-schema check for an arbitrary `validate-report.json`
+(pre-commit hook, ad-hoc CI wiring — same jq assertion the pipeline
+uses):
+
+```sh
+make pretty-index-validate-report-check \
+  VALIDATE_REPORT_JSON=path/to/validate-report.json
+# exit 0 = ok, 5 = schema assertion failed, 2 = tooling / missing file
 ```
 
 Variables:
@@ -1001,12 +1017,14 @@ Variables:
 |--------------------------|------------------------|--------------------------------------------------------------------------------------------|
 | `PI_CI_SELFTEST_SCOPE`   | `atomic`               | Scope/matrix label written into the synthetic fixture (`atomic` or `stress`).              |
 | `PI_CI_SELFTEST_DIR`     | `_pi-ci-selftest`      | Scratch directory. `-selftest-all` overrides to `_pi-ci-selftest-{atomic,stress}` per scope. |
+| `VALIDATE_REPORT_JSON`   | _(required)_           | Input path for `pretty-index-validate-report-check`.                                       |
 
 Expected artifacts under `$(PI_CI_SELFTEST_DIR)/`:
 
 - `report.json` — synthesized mismatch input
 - `out/summary.json`, `out/summary.md` — pipeline outputs
 - `out/validate-report.json`, `out/validate-annotations.txt` — always present, even when empty
+- `out/validate-schema-assertion.txt` — jq schema-assertion stderr (empty on pass)
 - `bundle.tar.gz` — the exact tarball CI would upload
 
 

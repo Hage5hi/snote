@@ -423,7 +423,38 @@ pretty-index-help:
         pretty-index-mismatch-summary-validate \
         pretty-index-mismatch-summary-md \
         pretty-index-mismatch-csv pretty-index-mismatch-diff \
-        pretty-index-mismatch-ci
+        pretty-index-mismatch-ci pretty-index-validate-report-check
+
+# Standalone strict schema check for an arbitrary validate-report.json —
+# same jq assertion invoked by `pretty-index-mismatch-ci`. Usable in
+# pre-commit hooks or ad-hoc CI wiring:
+#   make pretty-index-validate-report-check VALIDATE_REPORT_JSON=path/to/file.json
+# Exits: 0 ok, 2 tooling/missing file, 5 schema assertion failed.
+pretty-index-validate-report-check:
+	@command -v jq >/dev/null || { echo "jq required" >&2; exit 2; }
+	@rj="$(VALIDATE_REPORT_JSON)"; \
+	 if [ -z "$$rj" ]; then \
+	   echo "usage: make pretty-index-validate-report-check VALIDATE_REPORT_JSON=<path>" >&2; exit 2; \
+	 fi; \
+	 if [ ! -s "$$rj" ]; then \
+	   echo "ERROR: validate-report.json not present or empty (path=$$rj)" >&2; exit 2; \
+	 fi; \
+	 problems=$$(jq -r ' \
+	   . as $$r | \
+	   { schema:"string", status:"string", exit_code:"number", file:"string", \
+	     summary_schema:"string", note:"string", errors:"array" } as $$want | \
+	   [ $$want | to_entries[] | .key as $$k | .value as $$t | \
+	     if ($$r | has($$k) | not) then "  - \($$k): missing (expected \($$t))" \
+	     elif (($$r[$$k] | type) != $$t) then "  - \($$k): got \($$r[$$k] | type) (expected \($$t))" \
+	     else empty end ] | .[]' -- "$$rj" 2>/dev/null); \
+	 if [ -n "$$problems" ]; then \
+	   echo "ERROR: validate-report.json failed schema assertion (path=$$rj):" >&2; \
+	   echo "$$problems" >&2; \
+	   echo "  expected keys: schema(string) status(string) exit_code(number) file(string) summary_schema(string) note(string) errors(array)" >&2; \
+	   exit 5; \
+	 fi; \
+	 echo "OK: $$rj matches pretty-index-mismatch-summary-validate/v1 shape"
+
 
 # Print a human-friendly per-file table (file, expected, actual, status)
 # from the mismatch report. Use PI_REPORT_PATH=<path> to point elsewhere.
@@ -749,33 +780,20 @@ pretty-index-mismatch-ci:
 	   PI_VALIDATE_REPORT_JSON="$(PI_CI_OUT_DIR)/validate-report.json" \
 	   2> "$(PI_CI_OUT_DIR)/validate-annotations.txt"; \
 	 vrc=$$?; cat "$(PI_CI_OUT_DIR)/validate-annotations.txt" >&2; \
-	 # Strict jq schema assertion on validate-report.json — every documented \
-	 # v1 key must be present AND have the expected type. On failure emit a \
-	 # single actionable ERROR line listing the offending keys with the \
-	 # observed vs expected type so CI logs are self-diagnosing. \
-	 rj="$(PI_CI_OUT_DIR)/validate-report.json"; \
-	 if [ ! -s "$$rj" ]; then \
-	   echo "ERROR: validate-report.json was not written by summary-validate (path=$$rj)" >&2; \
-	   exit 5; \
-	 fi; \
-	 problems=$$(jq -r ' \
-	   . as $$r | \
-	   { schema:"string", status:"string", exit_code:"number", file:"string", \
-	     summary_schema:"string", note:"string", errors:"array" } as $$want | \
-	   [ $$want | to_entries[] | .key as $$k | .value as $$t | \
-	     if ($$r | has($$k) | not) then "  - \($$k): missing (expected \($$t))" \
-	     elif (($$r[$$k] | type) != $$t) then "  - \($$k): got \($$r[$$k] | type) (expected \($$t))" \
-	     else empty end ] | .[]' -- "$$rj" 2>/dev/null); \
-	 if [ -n "$$problems" ]; then \
-	   echo "ERROR: validate-report.json failed schema assertion (path=$$rj):" >&2; \
-	   echo "$$problems" >&2; \
-	   echo "  expected keys: schema(string) status(string) exit_code(number) file(string) summary_schema(string) note(string) errors(array)" >&2; \
-	   exit 5; \
-	 fi; \
-	 if [ "$$vrc" -ne 0 ]; then \
-	   echo "validate failed (exit=$$vrc); packaging partial bundle -> $(PI_CI_BUNDLE_PATH)" >&2; \
+	 # Strict jq schema assertion on validate-report.json via the shared \
+	 # `pretty-index-validate-report-check` target. Its stderr is captured \
+	 # into $(PI_CI_OUT_DIR)/validate-schema-assertion.txt so the file is \
+	 # ALWAYS bundled (empty on pass, populated on fail) for CI triage. \
+	 sa="$(PI_CI_OUT_DIR)/validate-schema-assertion.txt"; : > "$$sa"; \
+	 $(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory \
+	   pretty-index-validate-report-check \
+	   VALIDATE_REPORT_JSON="$(PI_CI_OUT_DIR)/validate-report.json" \
+	   2> "$$sa"; \
+	 src=$$?; cat "$$sa" >&2; \
+	 if [ "$$src" -ne 0 ] || [ "$$vrc" -ne 0 ]; then \
+	   echo "packaging partial bundle (schema-check=$$src validate=$$vrc) -> $(PI_CI_BUNDLE_PATH)" >&2; \
 	   tar -czf "$(PI_CI_BUNDLE_PATH)" -C "$$(dirname -- "$(PI_CI_OUT_DIR)")" "$$(basename -- "$(PI_CI_OUT_DIR)")"; \
-	   exit "$$vrc"; \
+	   if [ "$$src" -ne 0 ]; then exit "$$src"; else exit "$$vrc"; fi; \
 	 fi
 	@$(MAKE) -f $(firstword $(MAKEFILE_LIST)) --no-print-directory pretty-index-mismatch-summary-md \
 	  PI_SUMMARY_JSON_PATH="$(PI_CI_OUT_DIR)/summary.json" \
