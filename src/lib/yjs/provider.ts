@@ -64,6 +64,13 @@ export class SupabaseYjsProvider {
   channel: RealtimeChannel | null = null;
   connected = false;
   encryption: Encryption | null = null;
+  /**
+   * Expected encryption mode of the persisted note row, as most recently
+   * observed via the enc-meta fetch. When set, any write path (saveSnapshot,
+   * flushBeacon) that would upsert bytes in the WRONG mode is skipped to
+   * avoid corrupting the row after a lock/unlock. `null` = unknown; no guard.
+   */
+  private expectedEncrypted: boolean | null = null;
 
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
@@ -134,6 +141,20 @@ export class SupabaseYjsProvider {
   setEncryption(enc: Encryption | null) {
     this.encryption = enc;
   }
+
+  /** Record the persisted note's encryption mode so writes can be guarded. */
+  setExpectedEncrypted(v: boolean | null) {
+    this.expectedEncrypted = v;
+  }
+
+  /** True when the local encryption mode disagrees with the stored mode. */
+  private hasEncryptionModeMismatch() {
+    return (
+      this.expectedEncrypted !== null &&
+      this.expectedEncrypted !== !!this.encryption
+    );
+  }
+
 
   onAwareness(cb: Listener<Map<number, AwarenessState>>) {
     this.awarenessListeners.add(cb);
@@ -468,6 +489,14 @@ export class SupabaseYjsProvider {
 
   async saveSnapshot() {
     if (this.destroyed) return;
+    if (this.hasEncryptionModeMismatch()) {
+      console.warn("saveSnapshot skipped: encryption mode mismatch", {
+        slug: this.slug,
+        expectedEncrypted: this.expectedEncrypted,
+        haveKey: !!this.encryption,
+      });
+      return;
+    }
     try {
       const state = Y.encodeStateAsUpdate(this.doc);
       const text = this.doc.getText("content").toString();
@@ -522,6 +551,11 @@ export class SupabaseYjsProvider {
    */
   flushBeacon() {
     if (this.destroyed) return;
+    if (this.hasEncryptionModeMismatch()) {
+      // Would overwrite the row in the wrong mode (e.g. plaintext over a
+      // freshly-encrypted note during lock/unlock). Skip entirely.
+      return;
+    }
     try {
       const state = Y.encodeStateAsUpdate(this.doc);
       const text = this.doc.getText("content").toString();

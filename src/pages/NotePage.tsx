@@ -147,6 +147,15 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   });
   const [encryption, setEncryption] = useState<Encryption | null>(null);
 
+  // Bumped by the hashchange listener so the meta-fetch effect re-runs when
+  // the encryption key in the URL fragment changes (lock/unlock flows).
+  const [metaVersion, setMetaVersion] = useState(0);
+  useEffect(() => {
+    const onHash = () => setMetaVersion((n) => n + 1);
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   // Single combined fetch: enc-meta + ydoc_state in one round-trip.
   useEffect(() => {
     if (!validSlug) return;
@@ -198,7 +207,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     return () => {
       cancelled = true;
     };
-  }, [slug, validSlug]);
+  }, [slug, validSlug, metaVersion]);
 
   // When inside the Syrin Note Chrome extension side panel, tell the host
   // which slug we're on so it can remember the last-opened note. We retry
@@ -267,6 +276,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   useEffect(() => {
     if (!validSlug || !doc || !provider || encPhase !== "ready") return;
     provider.setEncryption(encryption);
+    provider.setExpectedEncrypted(encMeta.isEncrypted);
 
     const identity = getIdentity();
     if (!embedSlug) touchRecent(slug);
