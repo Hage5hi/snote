@@ -1776,11 +1776,14 @@ print(json.dumps({
             cat "$err" || true
             if grep -qE "files(/|\[)[0-9]+.*required property" "$err"; then
               while IFS= read -r line; do
-                echo "::error title=summary-perfile-field-missing::$line"
+                idx="$(printf '%s' "$line" | grep -oE 'files(/|\[)[0-9]+' | head -1 | tr '[' '/' | tr -d ']')"
+                field="$(printf '%s' "$line" | grep -oE "required property [\"']?[A-Za-z0-9_]+[\"']?" | head -1 | grep -oE "[A-Za-z0-9_]+$")"
+                echo "::error title=summary-perfile-field-missing::${idx} missing required field: ${field}"
               done < <(grep -E "files(/|\[)[0-9]+.*required property" "$err")
             fi
             exit 1
           fi
+
 
 
 
