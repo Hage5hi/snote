@@ -14,8 +14,20 @@
 //      selection stays live (does not get stuck) and the scroller keeps
 //      moving.
 import { expect, test } from "@playwright/test";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 const LINES = 1_000;
+
+// Ring-buffer of wheel deltas so failure diagnostics show exactly which
+// tick got swallowed and where scrollTop was at the time.
+type WheelSample = { i: number; dx: number; dy: number; before: number; after: number; t: number };
+const wheelLog = new WeakMap<import("@playwright/test").Page, WheelSample[]>();
+function recordWheel(page: import("@playwright/test").Page, s: WheelSample) {
+  const arr = wheelLog.get(page) ?? [];
+  arr.push(s); if (arr.length > 200) arr.shift();
+  wheelLog.set(page, arr);
+}
 
 async function seedLongNote(page: import("@playwright/test").Page) {
   await page.goto("/wheel-scroll-e2e");
