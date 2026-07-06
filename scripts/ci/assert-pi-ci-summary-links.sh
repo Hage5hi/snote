@@ -8,19 +8,26 @@
 # form satisfies the contract.
 #
 # Usage:
-#   scripts/ci/assert-pi-ci-summary-links.sh <path-to-step-summary.md>
+#   scripts/ci/assert-pi-ci-summary-links.sh <path-to-step-summary.md> [scope ...]
+# `scope` defaults to "atomic stress"; pass a single scope to check only
+# that matrix job's summary (each matrix job has its own summary file).
 # Exits 0 on success, 2 on usage error, 1 when a link is missing.
 set -euo pipefail
 
 summary="${1:-${GITHUB_STEP_SUMMARY:-}}"
+shift || true
+scopes=("$@")
+[ "${#scopes[@]}" -eq 0 ] && scopes=(atomic stress)
+
 if [ -z "$summary" ] || [ ! -s "$summary" ]; then
-  echo "usage: $0 <step-summary.md>  (or set GITHUB_STEP_SUMMARY)" >&2
+  echo "usage: $0 <step-summary.md> [scope ...]  (or set GITHUB_STEP_SUMMARY)" >&2
   echo "ERROR: step summary file missing or empty: '$summary'" >&2
   exit 2
 fi
 
 fail=0
-for scope in atomic stress; do
+for scope in "${scopes[@]}"; do
+
   # Header line we always emit — its presence proves the summary block ran.
   if ! grep -Fq "pretty-index-mismatch-ci validator files (MATRIX=${scope}" "$summary"; then
     echo "ERROR: missing validator-files section for scope='${scope}'" >&2
