@@ -31,7 +31,15 @@ run_check() {
     local sub=$?
     rc=$sub
     echo "$out_txt" >> "$errfile"
-    echo "::error file=${target}::${label} schema check failed (exit=${sub}) — see report-schema-errors.txt"
+    # Short jq/schema excerpt (first 3 non-empty lines, %0A-escaped for
+    # GitHub Actions single-line annotations). Includes a pointer to the
+    # full log so triagers can jump straight to the uploaded artifact.
+    local excerpt
+    excerpt="$(printf '%s\n' "$out_txt" \
+      | awk 'NF' \
+      | head -n 3 \
+      | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); gsub(/\n/,""); print (NR>1 ? "%0A" $0 : $0)}')"
+    echo "::error file=${target}::${label} schema check failed (exit=${sub}) — see ${errfile} — excerpt: ${excerpt}"
   fi
   echo "" >> "$errfile"
 }

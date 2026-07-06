@@ -1098,6 +1098,47 @@ without the `gh` CLI:
    `./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>/` and run the same
    `make pretty-index-mismatch-ci-bundle-recheck` command.
 
+##### Exact artifact names & on-disk paths (failure upload + zip step)
+
+Per matrix cell (`<scope>` ∈ {`atomic`, `stress`}, `<os>` ∈ CI runner OS,
+typically `ubuntu-latest`), the CI failure path uploads these artifacts
+with these exact names:
+
+| Artifact (GitHub Actions name)                                            | Contents (unzipped)                                                                                                                                                       |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pretty-index-mismatch-ci-bundle-<scope>-<os>`                            | `pi-ci-<scope>.tar.gz` — the full bundle CI produced                                                                                                                       |
+| `pretty-index-mismatch-ci-validator-files-<scope>-<os>`                   | `validate-report.json`, `validate-schema-assertion.txt`, `extracted-tree.txt`, `extracted-tree.json`, `preflight-status.md`, `preflight-status.json`                       |
+| `pretty-index-mismatch-ci-report-schemas-<scope>-<os>` (schema-drift only)| `report-schema-errors.txt` (jq/schema log) + the offending `extracted-tree.json` / `preflight-status.json` — uploaded when `scripts/ci/pi-ci-validate-report-schemas.sh` exits non-zero |
+
+The schema-drift annotation on the failing step points at both the bad
+JSON file and `report-schema-errors.txt`, e.g.
+`::error file=<abs>/extracted-tree.json::extracted-tree.json schema check failed (exit=5) — see <abs>/report-schema-errors.txt — excerpt: …`.
+
+After you download & unpack a `bundle-<scope>-<os>` artifact into
+`./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>/`, the local zip step
+(`make pretty-index-mismatch-ci-bundle-zip PI_CI_SCOPE=<scope>`) writes:
+
+- `./_pi-ci-bundle-<scope>/pretty-index-mismatch-ci-bundle-<scope>-share.zip`
+  — a single shareable archive containing every file from the bundle
+  plus the regenerated sidecars
+  `extracted-tree.txt`, `extracted-tree.json`, `preflight-status.md`,
+  and `preflight-status.json`.
+
+Before uploading/sharing that zip, verify it is a faithful snapshot:
+
+```sh
+make pretty-index-mismatch-ci-bundle-zip-verify                 # atomic
+make pretty-index-mismatch-ci-bundle-zip-verify PI_CI_SCOPE=stress
+```
+
+The target unzips the archive to a scratch dir and confirms that
+`extracted-tree.json` and `preflight-status.json` are both present AND
+that their `content_hash` values match the on-disk sidecars under
+`./_pi-ci-bundle-<scope>/extracted/pi-ci-<scope>/`. Exit codes: `0` on
+match, `3` on hash drift, `2` on missing files/tools.
+
+
+
 2. Download the tarball (`pi-ci-<scope>.tar.gz`) and verify locally:
 
    ```sh
