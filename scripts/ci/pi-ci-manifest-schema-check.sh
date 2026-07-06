@@ -25,6 +25,7 @@ problems="$(jq -r '
   . as $m |
   [
     (if ($m.schema // "") != "pi-ci/extracted-tree/v1" then "  - schema: expected \"pi-ci/extracted-tree/v1\", got \($m.schema|tostring)" else empty end),
+    (if (($m.schema_version // "") | tostring) != "1" then "  - schema_version: expected \"1\", got \($m.schema_version|tostring)" else empty end),
     (if (($m.generated_at // "") | type) != "string" or (($m.generated_at // "") | length) == 0 then "  - generated_at: missing/empty string" else empty end),
     (if (($m.root // "") | type) != "string" or (($m.root // "") | length) == 0 then "  - root: missing/empty string" else empty end),
     (if ($m | has("walk_ok") | not) or (($m.walk_ok | type) != "boolean") then "  - walk_ok: missing or not boolean" else empty end),

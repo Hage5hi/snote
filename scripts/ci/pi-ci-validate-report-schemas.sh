@@ -31,21 +31,23 @@ run_check() {
     local sub=$?
     rc=$sub
     echo "$out_txt" >> "$errfile"
-    # Short jq/schema excerpt (first 3 non-empty lines, %0A-escaped for
-    # GitHub Actions single-line annotations). Includes a pointer to the
-    # full log so triagers can jump straight to the uploaded artifact.
+    # Full jq/schema excerpt (all non-empty lines, %0A-escaped for
+    # GitHub Actions single-line annotations). Always emits a pointer
+    # to the full log so triagers can open the uploaded artifact.
     local excerpt
     excerpt="$(printf '%s\n' "$out_txt" \
       | awk 'NF' \
-      | head -n 3 \
       | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\r/,""); gsub(/\n/,""); print (NR>1 ? "%0A" $0 : $0)}')"
     echo "::error file=${target}::${label} schema check failed (exit=${sub}) — see ${errfile} — excerpt: ${excerpt}"
+    echo "report-schema-errors: ${errfile}"
   fi
   echo "" >> "$errfile"
 }
 
 run_check "extracted-tree.json"  "$here/pi-ci-manifest-schema-check.sh"          "$mf"
 run_check "preflight-status.json" "$here/pi-ci-preflight-status-schema-check.sh" "$pf"
+
+echo "report-schema-errors: $errfile"
 
 if [ "$rc" -ne 0 ]; then
   echo "report schema check FAILED — details in $errfile" >&2

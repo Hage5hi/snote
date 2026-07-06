@@ -434,7 +434,8 @@ pretty-index-help:
          pretty-index-mismatch-ci-bundle-manifest-check \
          pretty-index-mismatch-ci-bundle-validate-reports \
          pretty-index-mismatch-ci-bundle-zip \
-         pretty-index-mismatch-ci-bundle-zip-verify
+         pretty-index-mismatch-ci-bundle-zip-verify \
+         pretty-index-mismatch-ci-bundle-validate-reports-dir
 
 
 
@@ -722,6 +723,32 @@ pretty-index-mismatch-ci-bundle-validate-reports:
 	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
 	@scripts/ci/pi-ci-validate-report-schemas.sh \
 	   "./_pi-ci-bundle-$(PI_CI_SCOPE)/extracted/pi-ci-$(PI_CI_SCOPE)"
+
+# Run schema validation against an ALREADY-DOWNLOADED artifacts dir (no
+# fetch). Prints the preflight status table AND runs the schema
+# validator for extracted-tree.json + preflight-status.json in one
+# command, so local repro of a failed CI run stays a single step.
+#   make pretty-index-mismatch-ci-bundle-validate-reports-dir DIR=<artifacts-dir> [PI_CI_SCOPE=atomic|stress]
+pretty-index-mismatch-ci-bundle-validate-reports-dir:
+	@case "$(PI_CI_SCOPE)" in atomic|stress) ;; *) \
+	   echo "ERROR: PI_CI_SCOPE must be 'atomic' or 'stress' (got '$(PI_CI_SCOPE)')" >&2; exit 2;; esac
+	@if [ -z "$(DIR)" ] || [ ! -d "$(DIR)" ]; then \
+	   echo "ERROR: DIR=<artifacts-dir> is required and must exist (got '$(DIR)')" >&2; exit 2; \
+	 fi
+	@out="$(DIR)"; \
+	 echo "── preflight status ($(PI_CI_SCOPE)) — $$out ──"; \
+	 GITHUB_STEP_SUMMARY="$$out/preflight-status.md" \
+	 PI_CI_PREFLIGHT_STATUS_PATH="$$out/preflight-status.md" \
+	   scripts/ci/pi-ci-preflight-status-summary.sh "$$out" "$(PI_CI_SCOPE)" >/dev/null; \
+	 cat "$$out/preflight-status.md" 2>/dev/null || true; \
+	 echo ""; \
+	 scripts/ci/pi-ci-extracted-tree-manifest.sh "$$out" >/dev/null; \
+	 echo "── extracted-tree manifest ──"; \
+	 echo "  $$out/extracted-tree.txt"; \
+	 echo "  $$out/extracted-tree.json"; \
+	 echo ""; \
+	 echo "── schema validation ──"; \
+	 scripts/ci/pi-ci-validate-report-schemas.sh "$$out"
 
 # Zip the downloaded bundle + generated extracted-tree.{txt,json} and
 # preflight-status.{md,json} sidecars into a single shareable archive.

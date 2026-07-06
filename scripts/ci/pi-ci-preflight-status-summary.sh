@@ -84,7 +84,7 @@ elif command -v shasum >/dev/null 2>&1; then
 else
   content_hash="none:unavailable"
 fi
-printf '{"schema":"pi-ci/preflight-status/v1","scope":"%s","validate_report":{"status":"%s","path":"%s"},"validate_schema_assertion":{"status":"%s","path":"%s"},"content_hash":"%s"}\n' \
+printf '{"schema":"pi-ci/preflight-status/v1","schema_version":"1","scope":"%s","validate_report":{"status":"%s","path":"%s"},"validate_schema_assertion":{"status":"%s","path":"%s"},"content_hash":"%s"}\n' \
   "$scope" "$vr_status" "$vr" "$vsa_status" "$vsa" "$content_hash" \
   > "$json_file" 2>/dev/null || true
 

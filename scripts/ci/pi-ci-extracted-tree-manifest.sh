@@ -80,7 +80,7 @@ if [ -s "$tmp_entries" ]; then
 fi
 rm -f -- "$tmp_entries" 2>/dev/null || true
 
-printf '{"schema":"pi-ci/extracted-tree/v1","generated_at":"%s","root":"%s","walk_ok":%s,"content_hash":"%s","entries":%s}\n' \
+printf '{"schema":"pi-ci/extracted-tree/v1","schema_version":"1","generated_at":"%s","root":"%s","walk_ok":%s,"content_hash":"%s","entries":%s}\n' \
   "$gen_at" "$out" "$([ "$walk_ok" = 1 ] && echo true || echo false)" "$content_hash" "$entries_json" \
   > "$jf" 2>/dev/null || true
 
