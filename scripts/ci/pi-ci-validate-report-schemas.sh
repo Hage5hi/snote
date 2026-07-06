@@ -245,14 +245,22 @@ echo "report-schema-errors: $errfile"
   printf ',"files":['
   for i in "${!labels[@]}"; do
     [ "$i" -gt 0 ] && printf ','
-    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s,"reason":"%s","diff":%s}' \
-      "${labels[$i]}" "${paths[$i]}" "$EXPECTED_SV" "${actuals[$i]}" "${statuses[$i]}" "${exits[$i]}" "${reasons[$i]}" "${diffs[$i]}"
+    printf '{"label":"%s","path":"%s","expected_schema_version":"%s","actual_schema_version":"%s","status":"%s","exit":%s,"reason":"%s","diff":%s' \
+      "$(json_escape "${labels[$i]}")" "$(json_escape "${paths[$i]}")" "$(json_escape "$EXPECTED_SV")" "$(json_escape "${actuals[$i]}")" "$(json_escape "${statuses[$i]}")" "${exits[$i]}" "$(json_escape "${reasons[$i]}")" "${diffs[$i]}"
+    if [ -n "${jq_stderr_excerpts[$i]}" ]; then
+      printf ',"jq_stderr_excerpt":"%s","jq_stderr_path":"%s"' \
+        "$(json_escape "${jq_stderr_excerpts[$i]}")" "$(json_escape "${jq_stderr_paths[$i]}")"
+    else
+      printf ',"jq_stderr_excerpt":null,"jq_stderr_path":null'
+    fi
+    printf '}'
   done
   printf ']'
-  printf ',"jq_bin":"%s"' "$JQ_BIN"
-  printf ',"jq_version":"%s"' "${JQ_VERSION//\"/\\\"}"
-  printf ',"jq_cmdline":"%s"' "${JQ_CMDLINE//\"/\\\"}"
-  printf ',"jq_timeout_secs":"%s"' "${PI_CI_JQ_TIMEOUT_SECS:-}"
+  printf ',"pi_ci_jq_bin":"%s"' "$(json_escape "${PI_CI_JQ_BIN:-}")"
+  printf ',"jq_bin":"%s"' "$(json_escape "$JQ_BIN")"
+  printf ',"jq_version":"%s"' "$(json_escape "$JQ_VERSION")"
+  printf ',"jq_cmdline":"%s"' "$(json_escape "$JQ_CMDLINE")"
+  printf ',"jq_timeout_secs":"%s"' "$(json_escape "${PI_CI_JQ_TIMEOUT_SECS:-}")"
   printf ',"exit":%s' "$rc"
   printf '}\n'
 } > "$summary"
