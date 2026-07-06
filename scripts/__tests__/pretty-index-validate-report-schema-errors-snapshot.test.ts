@@ -67,7 +67,10 @@ d("pretty-index-validate-report-check — ERROR block snapshot", () => {
       errors: "nope", // wrong type: string, expected array
     };
     const { status, stderr } = runCheck(bad);
-    expect(status).toBe(5);
+    // `make` normalizes any recipe failure to exit=2; the underlying jq
+    // `exit 5` shows up in the stderr `Error 5` line pinned below.
+    expect(status).not.toBe(0);
+
     expect(stderr).toMatchInlineSnapshot(`
       "ERROR: validate-report.json failed schema assertion (path=<REPORT>):
         - schema: missing (detected: null, expected string)
