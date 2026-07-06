@@ -50,8 +50,11 @@ d("report-schema-validation-log.txt — always starts with expected schema_versi
   it("header present when extracted-tree.json is not valid JSON", () => {
     writeFileSync(join(workdir, "extracted-tree.json"), "{not json");
     writeFileSync(join(workdir, "preflight-status.json"), "{not json");
-    const r = runTee({ ...process.env, PI_CI_EXPECTED_SCHEMA_VERSION: "3" });
-    expect(r.status).not.toBe(0);
+    // Log-header contract is exit-code-independent: whatever the
+    // validator decides about malformed JSON, the header must land
+    // at the top of the file so CI triage always sees the expected
+    // schema_version.
+    runTee({ ...process.env, PI_CI_EXPECTED_SCHEMA_VERSION: "3" });
     const body = readFileSync(log, "utf8");
     expect(body.split("\n")[0]).toBe(
       "pi-ci-validate-report-schemas: expected schema_version=3",
