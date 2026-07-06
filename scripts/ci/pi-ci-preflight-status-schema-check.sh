@@ -23,6 +23,7 @@ problems="$(jq -r '
   . as $p |
   [
     (if ($p.schema // "") != "pi-ci/preflight-status/v1" then "  - schema: expected \"pi-ci/preflight-status/v1\", got \($p.schema|tostring)" else empty end),
+    (if (($p.schema_version // "") | tostring) != "1" then "  - schema_version: expected \"1\", got \($p.schema_version|tostring)" else empty end),
     (if (($p.scope // "") | type) != "string" or (($p.scope // "") | length) == 0 then "  - scope: missing/empty string" else empty end),
     (if (($p.content_hash // "") | type) != "string" or (($p.content_hash // "") | test("^[A-Za-z0-9_-]+:.+$") | not) then "  - content_hash: missing or not \"<algo>:<value>\"" else empty end),
     (["validate_report","validate_schema_assertion"][] as $k
