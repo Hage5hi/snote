@@ -969,6 +969,47 @@ make pretty-index-mismatch-ci \
   PI_CI_BUNDLE_PATH=/tmp/pi-ci-bundle.tar.gz
 ```
 
+Every run of `pretty-index-mismatch-ci` also asserts that the emitted
+`validate-report.json` is well-formed — every documented v1 key must be
+present with the expected type (`schema`/`status`/`file`/`summary_schema`/`note`
+as `string`, `exit_code` as `number`, `errors` as `array`). If any key
+is missing or has the wrong type the pipeline exits `5` with an
+`ERROR: validate-report.json failed schema assertion` block listing
+each offending key on its own line so CI logs are self-diagnosing.
+
+#### Fresh-checkout selftest (`pretty-index-mismatch-ci-selftest-all`)
+
+To confirm CI parity without needing a real replay run, use the
+synthetic-fixture selftests. They generate a minimal
+`pretty-index-checksum-mismatch/v1` report on the fly with `jq -n`,
+run the full CI pipeline against it, and assert the tarball plus
+`validate-report.json`, `validate-annotations.txt`, `summary.json`, and
+`summary.md` are all produced.
+
+```sh
+# Run for a single scope (default: atomic)
+make pretty-index-mismatch-ci-selftest
+make pretty-index-mismatch-ci-selftest PI_CI_SELFTEST_SCOPE=stress
+
+# Run BOTH scopes end-to-end (recommended smoke test on a fresh checkout)
+make pretty-index-mismatch-ci-selftest-all
+```
+
+Variables:
+
+| Variable                 | Default                | Purpose                                                                                    |
+|--------------------------|------------------------|--------------------------------------------------------------------------------------------|
+| `PI_CI_SELFTEST_SCOPE`   | `atomic`               | Scope/matrix label written into the synthetic fixture (`atomic` or `stress`).              |
+| `PI_CI_SELFTEST_DIR`     | `_pi-ci-selftest`      | Scratch directory. `-selftest-all` overrides to `_pi-ci-selftest-{atomic,stress}` per scope. |
+
+Expected artifacts under `$(PI_CI_SELFTEST_DIR)/`:
+
+- `report.json` — synthesized mismatch input
+- `out/summary.json`, `out/summary.md` — pipeline outputs
+- `out/validate-report.json`, `out/validate-annotations.txt` — always present, even when empty
+- `bundle.tar.gz` — the exact tarball CI would upload
+
+
 ### Machine-readable validator report (`--report-json`)
 
 Set `PI_VALIDATE_REPORT_JSON=<path>` on `pretty-index-mismatch-summary-validate`
