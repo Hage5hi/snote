@@ -9,6 +9,7 @@
 import { test, expect, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
 import { fetchOldSlugCleanupStatus, snapshotSlugRow, verifyOldSlugGoneFromDbAndUi, verifyOldSlugGoneWithRetry } from "./helpers/db-assert";
+import { purgeSlugs } from "./helpers/rename-cleanup";
 
 const TEXT = "Rename race content";
 
@@ -90,11 +91,8 @@ test.describe("note rename Yjs race", () => {
   test.beforeEach(async () => {
     oldSlug = versionedSlug("rename-old");
     newSlug = versionedSlug("rename-new");
-    // Reset DB state defensively — a prior aborted run could have left rows
-    // under these exact slugs (versionedSlug is unique per-run, but be safe
-    // against a re-invocation with a re-seeded random).
-    await deleteNote(oldSlug).catch(() => {});
-    await deleteNote(newSlug).catch(() => {});
+    // Shared purge helper rolls back any leftover rows before & after each run.
+    await purgeSlugs([oldSlug, newSlug]);
     await seedPlaintextNote(oldSlug, TEXT);
   });
 
@@ -124,8 +122,7 @@ test.describe("note rename Yjs race", () => {
         /* ignore */
       }
     }
-    await deleteNote(oldSlug).catch(() => {});
-    await deleteNote(newSlug).catch(() => {});
+    await purgeSlugs([oldSlug, newSlug]);
   });
 
   test("renames after pending Yjs edits and old slug stays gone after debounce", async ({
@@ -171,6 +168,14 @@ test.describe("note rename Yjs race", () => {
     await page.waitForTimeout(2_000);
     const preStatus = await fetchOldSlugCleanupStatus(page, oldSlug).catch((e) => ({ error: String(e) }));
     console.log("[rename-race][main] pre-assert cleanup-status", { oldSlug, newSlug, preStatus });
+    // Contract: cleanup-status response must always carry metrics so slow
+    // cleanups are traceable in CI. Skip when the fetch itself errored.
+    if (preStatus && typeof preStatus === "object" && "database" in preStatus) {
+      const metrics = (preStatus as { metrics?: { dbMs?: number; totalMs?: number } }).metrics;
+      expect(metrics, "cleanup-status must include metrics").toBeDefined();
+      expect(typeof metrics!.totalMs, "metrics.totalMs must be a number").toBe("number");
+      expect(typeof metrics!.dbMs, "metrics.dbMs must be a number").toBe("number");
+    }
 
     const lingering = await verifyOldSlugGoneWithRetry(page, oldSlug, {
       timeoutMs: 5_000,

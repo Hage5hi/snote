@@ -39,8 +39,10 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [submitting, setSubmitting] = useState(false);
-  const [cleanupState, setCleanupState] = useState<"idle" | "checking" | "clean" | "dirty">("idle");
+  const [cleanupState, setCleanupState] = useState<"idle" | "checking" | "clean" | "dirty" | "error" | "timeout">("idle");
   const [cleanupDetail, setCleanupDetail] = useState<string>("");
+  const [cleanupError, setCleanupError] = useState<string>("");
+  const [pendingRename, setPendingRename] = useState<{ oldSlug: string; newSlug: string } | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -49,6 +51,8 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       setSubmitting(false);
       setCleanupState("idle");
       setCleanupDetail("");
+      setCleanupError("");
+      setPendingRename(null);
     }
   }, [open]);
 
@@ -91,62 +95,89 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
 
   const canSubmit = status === "available" && !submitting;
 
-  const onSubmit = async () => {
-    if (!canSubmit) return;
-    const newSlug = value.trim();
-    setSubmitting(true);
+  const renderDetail = (
+    s: { database?: { rowPresent?: boolean }; clientSignals?: Record<string, unknown>; metrics?: { dbMs?: number; totalMs?: number } } | null,
+  ) => {
+    if (!s) return;
+    const cs = (s.clientSignals ?? {}) as Record<string, unknown>;
+    const rowPresent = s.database?.rowPresent;
+    const m = s.metrics;
+    setCleanupDetail(
+      `db=${rowPresent === undefined ? "unknown" : rowPresent ? "present" : "gone"}` +
+        ` · provider=${cs.providerAbandoned ? "abandoned" : "live"}` +
+        ` · doc-cache=${cs.docCacheWarm ? "warm" : "cold"}` +
+        ` · session=${cs.sessionSnapshotPresent ? "present" : "gone"}` +
+        ` · idb=${cs.indexedDbCleared ? "cleared" : "unknown"}` +
+        (m ? ` · dbMs=${m.dbMs ?? "?"} · totalMs=${m.totalMs ?? "?"}` : ""),
+    );
+  };
+
+  const runCleanupPolling = async (oldSlug: string, newSlug: string, alreadyDeleted: boolean) => {
     setCleanupState("checking");
-    setCleanupDetail("");
+    setCleanupError("");
     try {
-      await provider?.saveSnapshot();
-      await prepareRename(currentSlug, newSlug);
-      // Navigate FIRST so the old NotePage unmounts and its Yjs provider
-      // stops upserting `ydoc_state` for currentSlug — otherwise a debounced
-      // snapshot would recreate the old row after we delete it.
-      navigate(`/${newSlug}`);
-      // Give React a tick to unmount, then delete the source row.
-      await new Promise((r) => setTimeout(r, 50));
-      await clearRenamedSlugLocalState(currentSlug);
-      const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
-      const initial = await fetchOldSlugCleanupStatus(currentSlug).catch(() => null);
-      const renderDetail = (s: { database?: { rowPresent?: boolean }; clientSignals?: Record<string, unknown> } | null) => {
-        if (!s) return;
-        const cs = (s.clientSignals ?? {}) as Record<string, unknown>;
-        const rowPresent = s.database?.rowPresent;
-        setCleanupDetail(
-          `db=${rowPresent === undefined ? "unknown" : rowPresent ? "present" : "gone"}` +
-            ` · provider=${cs.providerAbandoned ? "abandoned" : "live"}` +
-            ` · doc-cache=${cs.docCacheWarm ? "warm" : "cold"}` +
-            ` · session=${cs.sessionSnapshotPresent ? "present" : "gone"}` +
-            ` · idb=${cs.indexedDbCleared ? "cleared" : "unknown"}`,
-        );
-      };
+      const initial = await fetchOldSlugCleanupStatus(oldSlug).catch((e) => {
+        setCleanupError(e instanceof Error ? e.message : String(e));
+        return null;
+      });
       renderDetail(initial);
-      const { status: polled, timedOut } = await pollOldSlugCleanupStatus(currentSlug, {
+      const { status: polled, timedOut } = await pollOldSlugCleanupStatus(oldSlug, {
         timeoutMs: 8_000,
         intervalMs: 500,
         onUpdate: renderDetail,
       });
       const finalDeletionConfirmed =
-        deletionConfirmed || polled.cleaned || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
-      setCleanupState(finalDeletionConfirmed ? "clean" : "dirty");
+        alreadyDeleted || polled.cleaned || (await waitForSlugDeletionConfirmed(oldSlug)).deleted;
       renderDetail(polled);
-      toast({
-        title: t("rename.toast_renamed"),
-        description: finalDeletionConfirmed
-          ? `/${currentSlug} → /${newSlug}`
-          : `/${currentSlug} → /${newSlug} (old slug still present${timedOut ? " — cleanup timed out" : ""} — retry)`,
-        variant: finalDeletionConfirmed ? undefined : "destructive",
-      });
-      if (finalDeletionConfirmed) onOpenChange(false);
-      else setSubmitting(false);
+      if (finalDeletionConfirmed) {
+        setCleanupState("clean");
+        toast({ title: t("rename.toast_renamed"), description: `/${oldSlug} → /${newSlug}` });
+        onOpenChange(false);
+      } else {
+        setCleanupState(timedOut ? "timeout" : "dirty");
+        toast({
+          title: t("rename.toast_renamed"),
+          description: `/${oldSlug} → /${newSlug} (old slug still present${timedOut ? " — cleanup timed out" : ""} — retry)`,
+          variant: "destructive",
+        });
+        setSubmitting(false);
+      }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : t("rename.generic_error");
-      toast({ title: t("rename.toast_failed"), description: msg, variant: "destructive" });
-      setCleanupState("idle");
+      const msg = err instanceof Error ? err.message : String(err);
+      setCleanupError(msg);
+      setCleanupState("error");
       setSubmitting(false);
     }
   };
+
+  const onSubmit = async () => {
+    if (!canSubmit) return;
+    const newSlug = value.trim();
+    setSubmitting(true);
+    setPendingRename({ oldSlug: currentSlug, newSlug });
+    try {
+      await provider?.saveSnapshot();
+      await prepareRename(currentSlug, newSlug);
+      navigate(`/${newSlug}`);
+      await new Promise((r) => setTimeout(r, 50));
+      await clearRenamedSlugLocalState(currentSlug);
+      const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
+      await runCleanupPolling(currentSlug, newSlug, deletionConfirmed);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t("rename.generic_error");
+      toast({ title: t("rename.toast_failed"), description: msg, variant: "destructive" });
+      setCleanupState("error");
+      setCleanupError(msg);
+      setSubmitting(false);
+    }
+  };
+
+  const onRetryCleanup = async () => {
+    if (!pendingRename) return;
+    setSubmitting(true);
+    await runCleanupPolling(pendingRename.oldSlug, pendingRename.newSlug, false);
+  };
+
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && canSubmit) {
@@ -216,7 +247,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
                 "rounded-md border p-3 text-xs " +
                 (cleanupState === "clean"
                   ? "border-primary/40 bg-primary/5 text-primary"
-                  : cleanupState === "dirty"
+                  : cleanupState === "dirty" || cleanupState === "timeout" || cleanupState === "error"
                     ? "border-destructive/40 bg-destructive/5 text-destructive"
                     : "border-border bg-muted/40 text-muted-foreground")
               }
@@ -224,9 +255,25 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
               <p className="font-medium">
                 {cleanupState === "checking" && "Cleaning up old slug…"}
                 {cleanupState === "clean" && `Old slug /${currentSlug} fully removed.`}
-                {cleanupState === "dirty" && `Old slug /${currentSlug} still present — retry.`}
+                {cleanupState === "dirty" && `Old slug /${pendingRename?.oldSlug ?? currentSlug} still present — retry.`}
+                {cleanupState === "timeout" && `Cleanup polling timed out for /${pendingRename?.oldSlug ?? currentSlug}. Stopped polling.`}
+                {cleanupState === "error" && `Cleanup status unavailable (db_error).`}
               </p>
               {cleanupDetail && <p className="mt-1 font-mono opacity-80">{cleanupDetail}</p>}
+              {cleanupError && <p className="mt-1 font-mono opacity-80">error: {cleanupError}</p>}
+              {(cleanupState === "dirty" || cleanupState === "timeout" || cleanupState === "error") && (
+                <Button
+                  data-testid="rename-cleanup-retry"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={onRetryCleanup}
+                  disabled={submitting}
+                >
+                  {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                  Retry cleanup
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -240,6 +287,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
             {t("rename.submit")}
           </Button>
         </DialogFooter>
+
       </DialogContent>
     </Dialog>
   );
