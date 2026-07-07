@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   finalizeRename: vi.fn(),
   waitForSlugDeletionConfirmed: vi.fn(),
   fetchOldSlugCleanupStatus: vi.fn(),
+  pollOldSlugCleanupStatus: vi.fn(),
   maybeSingle: vi.fn(),
 }));
 
