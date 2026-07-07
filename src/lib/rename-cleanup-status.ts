@@ -34,6 +34,7 @@ export const OldSlugCleanupStatusSchema = z.object({
   }),
   clientSignals: OldSlugCleanupSignalsPartialSchema,
   cleaned: z.boolean(),
+  metrics: z.object({ dbMs: z.number(), totalMs: z.number() }).optional(),
 });
 
 export type OldSlugRowSnapshot = {
