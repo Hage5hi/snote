@@ -104,6 +104,16 @@ export function renderWheelDiagnosticsReplayCommand(f: FailedTestArtifacts): str
   return `PLAYWRIGHT_PROJECT=${project} bun run scripts/replay-wheel-diagnostics.ts ${diagnostics.path}`;
 }
 
+export function renderWheelDownloadReplayCommand(
+  f: FailedTestArtifacts,
+  env: { runId?: string; runAttempt?: string; playwrightRetries?: string } = {},
+): string | null {
+  if (!f.suite.includes("note-wheel-trackpad-scroll.spec.ts") || !env.runId) return null;
+  const project = f.project ?? "chromium";
+  const attempt = env.runAttempt ? ` --attempt=${env.runAttempt}` : "";
+  return `PLAYWRIGHT_PROJECT=${project} RETRIES=${env.playwrightRetries ?? "0"} bun run scripts/download-and-replay-wheel-artifact.ts ${env.runId} --project=${project} --retries=${env.playwrightRetries ?? "0"}${attempt}`;
+}
+
 export function renderFailedArtifactLinks(
   failed: FailedTestArtifacts[],
   env: { serverUrl?: string; repository?: string; runId?: string; runAttempt?: string; playwrightRetries?: string } = {},
@@ -117,10 +127,11 @@ export function renderFailedArtifactLinks(
   for (const f of failed) {
     const repro = renderWheelLocalReproCommand(f, env.playwrightRetries ?? "0");
     const replay = renderWheelDiagnosticsReplayCommand(f);
+    const downloadReplay = renderWheelDownloadReplayCommand(f, env);
     const attempt = f.retry == null ? "" : ` retry #${f.retry}`;
     out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""}${attempt} — ${
       f.attachments.map((a) => `[${a.label}](${a.path})`).join(" · ")
-    }${repro ? `\n  - Local repro: \`${repro}\`` : ""}${replay ? `\n  - Replay artifact: \`${replay}\`` : ""}`);
+    }${repro ? `\n  - Local repro: \`${repro}\`` : ""}${replay ? `\n  - Replay artifact: \`${replay}\`` : ""}${downloadReplay ? `\n  - Download + replay: \`${downloadReplay}\`` : ""}`);
   }
   out.push("");
   return out.join("\n");
