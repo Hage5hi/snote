@@ -108,5 +108,20 @@ test.describe("note rename Yjs race", () => {
     const newRow = await snapshotSlugRow(newSlug);
     expect(newRow, "new slug row missing").not.toBeNull();
     await expect(page).toHaveURL(new RegExp(`/${newSlug}$`));
+
+    await page.goto(`/${oldSlug}`);
+    const oldEditor = page.locator(".cm-content").first();
+    await expect(oldEditor, "old slug should not rehydrate renamed content from local cache").not.toContainText(
+      `${TEXT} pending edit`,
+      { timeout: 5_000 },
+    );
+    const lingeringAfterRevisit = await waitForSlugAbsent(oldSlug, { timeoutMs: 3_000, intervalMs: 200 });
+    if (lingeringAfterRevisit) {
+      await testInfo.attach("old-slug-after-revisit-snapshot.json", {
+        body: JSON.stringify(lingeringAfterRevisit, null, 2),
+        contentType: "application/json",
+      });
+    }
+    expect(lingeringAfterRevisit, "old slug row was recreated after revisiting old URL").toBeNull();
   });
 });

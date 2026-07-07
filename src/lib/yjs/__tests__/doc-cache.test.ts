@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { acquireDoc, releaseDoc, __docCacheInternals as I } from "../doc-cache";
+import { acquireDoc, evictDoc, releaseDoc, __docCacheInternals as I } from "../doc-cache";
 
 beforeEach(() => {
   I.reset();
@@ -88,6 +88,20 @@ describe("doc-cache — rapid navigation race", () => {
     expect(a2).toBe(a);
     vi.advanceTimersByTime(60_000);
     expect(I.isWarm("x")).toBe(true);
+  });
+});
+
+describe("doc-cache — rename eviction", () => {
+  it("immediately destroys and removes one slug from the warm cache", () => {
+    const oldDoc = acquireDoc("old-slug");
+    acquireDoc("new-slug");
+
+    evictDoc("old-slug");
+
+    expect(I.isWarm("old-slug")).toBe(false);
+    expect(I.isWarm("new-slug")).toBe(true);
+    expect(I.getDestroyCount()).toBe(1);
+    expect(acquireDoc("old-slug")).not.toBe(oldDoc);
   });
 });
 

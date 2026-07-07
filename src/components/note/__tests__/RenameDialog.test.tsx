@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   toast: vi.fn(),
   prepareRename: vi.fn(),
+  clearRenamedSlugLocalState: vi.fn(),
   finalizeRename: vi.fn(),
   maybeSingle: vi.fn(),
 }));
@@ -30,6 +31,7 @@ vi.mock("@/i18n/index", () => ({
 vi.mock("@/lib/rename", () => ({
   SLUG_RE: /^[a-zA-Z0-9_-]{1,64}$/,
   prepareRename: mocks.prepareRename,
+  clearRenamedSlugLocalState: mocks.clearRenamedSlugLocalState,
   finalizeRename: mocks.finalizeRename,
 }));
 
@@ -46,10 +48,10 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-function renderDialog() {
+function renderDialog(provider?: { saveSnapshot: () => Promise<void> }) {
   return render(
     <MemoryRouter initialEntries={["/old-slug"]}>
-      <RenameDialog open onOpenChange={vi.fn()} currentSlug="old-slug" />
+      <RenameDialog open onOpenChange={vi.fn()} currentSlug="old-slug" provider={provider as never} />
     </MemoryRouter>,
   );
 }
@@ -59,6 +61,7 @@ describe("RenameDialog", () => {
     mocks.navigate.mockReset();
     mocks.toast.mockReset();
     mocks.prepareRename.mockResolvedValue(undefined);
+    mocks.clearRenamedSlugLocalState.mockResolvedValue(undefined);
     mocks.finalizeRename.mockResolvedValue({ deletionConfirmed: false });
     mocks.maybeSingle.mockReset();
   });
@@ -79,6 +82,7 @@ describe("RenameDialog", () => {
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
 
     expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
+    expect(mocks.clearRenamedSlugLocalState).toHaveBeenCalledWith("old-slug");
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "rename.toast_renamed",
@@ -86,5 +90,22 @@ describe("RenameDialog", () => {
         variant: undefined,
       }),
     );
+  });
+
+  it("flushes the current provider snapshot before copying the row", async () => {
+    mocks.maybeSingle
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    const provider = { saveSnapshot: vi.fn(() => Promise.resolve()) };
+
+    renderDialog(provider);
+    fireEvent.change(screen.getByPlaceholderText("rename.placeholder"), {
+      target: { value: "new-slug" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "rename.submit" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "rename.submit" }));
+
+    await waitFor(() => expect(mocks.prepareRename).toHaveBeenCalled());
+    expect(provider.saveSnapshot).toHaveBeenCalledBefore(mocks.prepareRename);
   });
 });

@@ -134,6 +134,17 @@ export function releaseDoc(slug: string) {
   log("release", { slug });
 }
 
+/** Immediately remove and destroy a cached doc for slugs that were renamed away. */
+export function evictDoc(slug: string) {
+  const entry = cache.get(slug);
+  if (!entry) return;
+  if (entry.destroyTimer) clearTimeout(entry.destroyTimer);
+  cache.delete(slug);
+  try { entry.doc.destroy(); } catch { /* ignore */ }
+  destroyCount++;
+  log("destroy:evict", { slug });
+}
+
 function trim() {
   while (cache.size > MAX) {
     const oldest = cache.keys().next().value as string | undefined;

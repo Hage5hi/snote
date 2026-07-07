@@ -1,72 +1,37 @@
-## Scope
+## Goal
+Make rename definitive: after `/old` is renamed to `/new`, `/old` must not keep showing the old content and must not be recreated by pending Yjs, IndexedDB, snapshots, beacons, or delayed effects.
 
-Three independent additions on top of the existing `InstallPrompt` redesign:
+## Root cause to address
+The current fix mostly blocks late backend upserts, but the old slug can still appear unchanged because the browser keeps a local Yjs/IndexedDB document under `note:<oldSlug>`. When visiting `/old` again, `IndexeddbPersistence` can hydrate that cached content before/without a real database row, and provider connect can also auto-create an empty row for missing slugs. This makes the old slug look alive even after deletion.
 
-1. **i18n** — extract every hardcoded English string in `src/components/note/InstallPrompt.tsx` (status labels, status reasons, app/extension step labels, aria-labels) into `src/i18n/index.ts` and translate into all 9 configured locales: `en, vi, zh, ja, ko, fr, es, de, pt`.
-2. **Playwright a11y** — assert keyboard navigation, focus trapping, and ARIA labels on the install dialogs and on the non-dismissible panel itself.
-3. **Visual regression** — assert the panel’s 2-col → 1-col responsive layout does not overflow or misalign on small screens.
+## Plan
+1. **Add a canonical rename cleanup API**
+   - Create a small helper that, for an old slug, marks it abandoned, cancels active provider writes, destroys/release-removes the old cached Y.Doc, clears `y-indexeddb` data for `note:<oldSlug>`, removes any prefetched `sessionStorage` snapshot, and optionally clears local disaster-recovery snapshots for that slug.
+   - Keep this helper focused on rename cleanup only.
 
-No business-logic or UX changes — only string externalisation + new tests.
+2. **Strengthen provider/database guards**
+   - Update `SupabaseYjsProvider.connect()` so an abandoned slug never auto-creates a row when `rowExists === false`.
+   - Make all write paths (`scheduleSnapshot`, `saveSnapshot`, `flushBeacon`, reconnect flush) consistently no-op for abandoned/destroyed providers.
+   - Add a doc-cache operation that can immediately evict/destroy a specific slug instead of only releasing it for 30 seconds.
 
-## i18n keys to add (≈22 per locale)
+3. **Fix the UI rename sequence**
+   - In `RenameDialog`, after `prepareRename` and before/around navigation, run old-slug local cleanup so the current tab cannot rehydrate `/old` from IndexedDB later.
+   - Keep the current navigation to `/new`, finalize delete, then re-check deletion with the retry toast behavior.
+   - Ensure cleanup failures do not block rename, but they should be logged for diagnostics.
 
-Status (install-as-app dialog):
-- `install.status_installed_label`, `install.status_installed_reason`
-- `install.status_ready_label`, `install.status_ready_reason`
-- `install.status_ios_label`, `install.status_ios_reason`
-- `install.status_firefox_label`, `install.status_firefox_reason`
-- `install.status_waiting_label`, `install.status_waiting_reason`
-- `install.status_unsupported_label`, `install.status_unsupported_reason`
+4. **Make deletion verification stricter**
+   - Re-check the old slug row after the debounce window and after local cleanup.
+   - If it still exists, show the existing warning toast; otherwise show success.
 
-App steps (platform-specific):
-- `install.app_step_ios_1..4`
-- `install.app_step_desktop_1`, `install.app_step_android_1`, `install.app_step_chromium_2..4`
-
-Extension steps:
-- `install.ext_step_download`, `install.ext_step_unzip`, `install.ext_step_devmode`, `install.ext_step_loadunpacked`
-
-A11y:
-- `install.panel_label` ("Install options")
-- `install.step_completed`, `install.step_mark`
-
-Refactor `InstallPrompt.tsx` so every visible string and `aria-label` reads from `t(...)`. Add `role="region"` + `aria-label={t("install.panel_label")}` to the panel root so the non-dismissible region is a discoverable landmark.
-
-## Playwright — a11y spec
-
-New file: `e2e/install-prompt-a11y.spec.ts`.
-
-- **Panel landmark + non-dismissible**: assert `[data-testid="install-prompt"]` is rendered, has `role="region"` and a localized `aria-label`, and has no close button (`button[aria-label*="close" i]`) inside it.
-- **Trigger buttons**: each has accessible name (install-as-app, browser-extension).
-- **Keyboard open**: Tab to the install-as-app trigger, press Enter, assert dialog open + initial focus inside dialog.
-- **Focus trap**: cycle Tab through dialog, assert focus stays inside `[role="dialog"]`.
-- **Escape closes** dialog and returns focus to the trigger.
-- **Step buttons aria-label**: assert each step toggle has an accessible name (`Mark step` / `Completed`).
-- Run an axe scan with the dialog open; assert no new serious/critical violations beyond a baseline taken before opening.
-
-## Playwright — responsive visual regression
-
-New file: `e2e/install-prompt-responsive.spec.ts`.
-
-Three viewports: 360×800 (mobile), 640×900 (sm breakpoint boundary), 1024×900 (desktop).
-
-For each:
-- Scroll panel into view.
-- Assert no horizontal overflow: `scrollWidth <= clientWidth` on the panel and on `document.documentElement`.
-- Assert layout shape:
-  - <640: `grid-template-columns` resolves to a single track (1-col).
-  - ≥640: two equal tracks (2-col) with a visible vertical divider; both trigger buttons share the same `offsetTop` (alignment guard).
-- Pixel-diff screenshot of the panel only (`getByTestId('install-prompt').screenshot(...)`) via `toHaveScreenshot` with `maxDiffPixelRatio` from `diffRatio()` helper, snapshot per-viewport.
-
-Snapshots are committed under `e2e/__screenshots__/install-prompt-responsive.spec.ts/` on first green run.
+5. **Regression tests**
+   - Add/adjust unit tests for:
+     - abandoned slug connect does not create an empty row,
+     - old-slug cached doc is evicted/destroyed during rename cleanup,
+     - pending snapshot timers do not write after cleanup.
+   - Add/adjust the API-level rename race test to simulate local cache/old doc resurrection and verify no `old-slug` upsert happens.
+   - Enhance the Playwright rename test to revisit `/oldSlug` after rename and debounce, verifying the UI/database no longer show old content.
 
 ## Verification
-
-- `tsgo` typecheck.
-- `bunx vitest run src/i18n/__tests__/i18n-coverage.test.tsx` to confirm every new key is present in all 9 locales.
-- `bunx playwright test e2e/install-prompt-a11y.spec.ts e2e/install-prompt-responsive.spec.ts --update-snapshots` (first run) then re-run to confirm green.
-
-## Out of scope
-
-- No changes to `InstallPrompt` behaviour, layout classes, or dialog content beyond extracting strings.
-- No new translations for the existing pre-redesign keys.
-- No changes to extension-side Playwright suite (`e2e-extension/`).
+- Run the targeted Vitest files for rename/provider/doc-cache behavior.
+- Run the targeted note-rename Playwright spec if browser dependencies are available; otherwise rely on the API-level test and existing CI setup.
+- Manually inspect the changed paths for no extra scope creep.

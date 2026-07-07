@@ -19,7 +19,15 @@ vi.mock("@/integrations/supabase/client", () => ({
       },
       select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
     }),
-    channel: () => ({ on: () => ({ on: () => ({ on: () => ({ subscribe: () => Promise.resolve("SUBSCRIBED") }) }) }) }),
+    channel: () => {
+      const channel = {
+        on: () => channel,
+        subscribe: () => Promise.resolve("SUBSCRIBED"),
+        send: () => Promise.resolve(),
+        unsubscribe: () => Promise.resolve(),
+      };
+      return channel;
+    },
     removeChannel: () => {},
   },
 }));
@@ -80,6 +88,16 @@ describe("SupabaseYjsProvider — rename/unmount cancellation", () => {
 
     expect(saveSpy).not.toHaveBeenCalled();
     expect(upsertCalls).toHaveLength(0);
+  });
+
+  it("does not auto-create a missing row when the slug was abandoned for rename", async () => {
+    const { provider } = makeProvider("old-slug");
+
+    abandonProviderForSlug("old-slug");
+    await provider.connect({ name: "Test", color: "#fff" }, { rowExists: false, prefetchedYdocState: null });
+
+    expect(upsertCalls).toHaveLength(0);
+    await provider.destroy();
   });
 });
 

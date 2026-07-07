@@ -55,6 +55,10 @@ export type Encryption = {
 const abandonedSlugs = new Set<string>();
 const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
 
+function isSlugAbandoned(slug: string) {
+  return abandonedSlugs.has(slug);
+}
+
 /**
  * Snapshot debounce window (ms). Override via VITE_YJS_SNAPSHOT_DEBOUNCE_MS
  * (Vite/browser) or YJS_SNAPSHOT_DEBOUNCE_MS (Node/test env) so rename-race
@@ -85,6 +89,10 @@ export function abandonProviderForSlug(slug: string) {
 /** Clear the abandoned flag (test helper / manual override). */
 export function unabandonProviderForSlug(slug: string) {
   abandonedSlugs.delete(slug);
+}
+
+export function isProviderSlugAbandoned(slug: string) {
+  return isSlugAbandoned(slug);
 }
 
 export type AwarenessState = {
@@ -264,6 +272,7 @@ export class SupabaseYjsProvider {
     identity: { name: string; color: string },
     options?: { prefetchedYdocState?: string | null; rowExists?: boolean },
   ) {
+    if (this.destroyed || isSlugAbandoned(this.slug)) return;
     // 0) Try the prefetched snapshot stashed by Home page hover/touch.
     // Skip prefetched snapshot when encrypted, since the prefetch path doesn't
     // know the key and the bytes would not be Y.update format yet.
@@ -309,10 +318,12 @@ export class SupabaseYjsProvider {
       } catch (e) {
         console.warn("Failed to apply snapshot", e);
       }
-    } else if (rowExists === false) {
+    } else if (rowExists === false && !isSlugAbandoned(this.slug)) {
       // Create empty row so multiple clients can find the slug immediately.
       void supabase.from("notes").upsert({ slug: this.slug }, { onConflict: "slug" });
     }
+
+    if (this.destroyed || isSlugAbandoned(this.slug)) return;
 
     // 2) Set local awareness identity.
     this.awareness.setLocalState({
@@ -368,7 +379,7 @@ export class SupabaseYjsProvider {
           // `lastError` (e.g. "Failed to fetch") never clears until the
           // user types again. A successful saveSnapshot emits
           // `synced-durable`, which the hook uses to clear the error.
-          if (this.hasUnflushedLocalChanges()) {
+          if (!isSlugAbandoned(this.slug) && this.hasUnflushedLocalChanges()) {
             if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
             this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), 0);
           }
@@ -537,7 +548,7 @@ export class SupabaseYjsProvider {
   }
 
   private scheduleSnapshot() {
-    if (this.destroyed || abandonedSlugs.has(this.slug)) return;
+    if (this.destroyed || isSlugAbandoned(this.slug)) return;
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), getSnapshotDebounceMs());
   }
@@ -545,7 +556,7 @@ export class SupabaseYjsProvider {
   async saveSnapshot() {
     this.snapshotTimer = null;
     if (this.destroyed) return;
-    if (abandonedSlugs.has(this.slug)) return;
+    if (isSlugAbandoned(this.slug)) return;
     if (this.hasEncryptionModeMismatch()) {
       console.warn("saveSnapshot skipped: encryption mode mismatch", {
         slug: this.slug,
@@ -611,7 +622,7 @@ export class SupabaseYjsProvider {
    */
   flushBeacon() {
     if (this.destroyed) return;
-    if (abandonedSlugs.has(this.slug)) return;
+    if (isSlugAbandoned(this.slug)) return;
     if (this.hasEncryptionModeMismatch()) {
       // Would overwrite the row in the wrong mode (e.g. plaintext over a
       // freshly-encrypted note during lock/unlock). Skip entirely.
