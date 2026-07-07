@@ -298,14 +298,18 @@ test.describe("note rename Yjs race", () => {
             label: `stress-${i}`,
           });
           if (lingering) {
-            console.log("[rename-race][stress] LINGERING detected", { ...ctx, lingering });
+            timingEntry.outcome = "lingering";
+            timingEntry.durationMs = Date.now() - startedAt;
+            console.log("[rename-race][stress] LINGERING detected", { ...ctx, lingering, durationMs: timingEntry.durationMs });
             await attachOldSlugDetectedArtifacts(testInfo, page, `stress-old-slug-${i}`, lingering, from, to);
             await testInfo.attach(`stress-console-${i}.log`, {
               body: consoleLines.join("\n"),
               contentType: "text/plain",
             });
           } else {
-            console.log("[rename-race][stress] clean", ctx);
+            timingEntry.outcome = "clean";
+            timingEntry.durationMs = Date.now() - startedAt;
+            console.log("[rename-race][stress] clean", { ...ctx, durationMs: timingEntry.durationMs });
           }
           expect(lingering, `old slug resurrected on stress iteration ${i} (debounce=${debounceMs})`).toBeNull();
         } finally {
@@ -314,6 +318,10 @@ test.describe("note rename Yjs race", () => {
         }
       }
     } finally {
+      await testInfo.attach("stress-timings.json", {
+        body: JSON.stringify({ seed: `0x${seed.toString(16)}`, iterations, timings }, null, 2),
+        contentType: "application/json",
+      });
       for (const slug of createdSlugs) await deleteNote(slug).catch(() => {});
     }
   });
