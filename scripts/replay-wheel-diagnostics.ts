@@ -448,6 +448,11 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   if (args.trace) {
     if (args.resume && existsSync(tracePath)) { console.log(`resume: skip existing ${tracePath}`); await context.tracing.stop().catch(() => undefined); }
     else await context.tracing.stop({ path: tracePath });
+    const z = verifyZipIntegrity(tracePath);
+    if (!z.ok) {
+      await browser.close();
+      throw new Error(`trace.zip failed integrity check: ${z.error}`);
+    }
   }
   await browser.close();
 
