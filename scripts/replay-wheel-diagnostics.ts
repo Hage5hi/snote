@@ -413,7 +413,7 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
       let size: number | null = null;
       let mtime: string | null = null;
       try {
-        const s = require("node:fs").statSync(p);
+        const s = statSync(p);
         size = s.size; mtime = new Date(s.mtimeMs).toISOString();
       } catch { /* missing */ }
       return { name, path: p, size, generatedAt: mtime, present: size != null };
