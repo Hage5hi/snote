@@ -55,15 +55,19 @@ function usage(): never {
 }
 
 export function parseArgs(argv: string[]) {
+  const project = process.env.PLAYWRIGHT_PROJECT ?? "chromium";
+  const retries = process.env.RETRIES ?? "0";
   const args = {
     path: "",
-    project: process.env.PLAYWRIGHT_PROJECT ?? "chromium",
+    project,
+    retries,
     baseUrl: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080",
-    outDir: process.env.WHEEL_REPLAY_OUT_DIR ?? join(process.cwd(), "test-results", "wheel-replay"),
+    outDir: process.env.WHEEL_REPLAY_OUT_DIR ?? join(process.cwd(), "test-results", "wheel-replay", `${project}-r${retries}`),
     headed: process.env.HEADED === "1",
     trace: process.env.PLAYWRIGHT_TRACE !== "0",
     extraTraces: process.env.WHEEL_REPLAY_EXTRA_TRACES === "1",
   };
+  let outDirSet = !!process.env.WHEEL_REPLAY_OUT_DIR;
   for (const a of argv) {
     if (a === "--headed") args.headed = true;
     else if (a === "--no-trace" || a === "--trace=off") args.trace = false;
