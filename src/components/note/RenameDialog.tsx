@@ -195,6 +195,30 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
               <p>{t("rename.warn_other_tabs")}</p>
             </div>
           </div>
+
+          {cleanupState !== "idle" && (
+            <div
+              role="status"
+              aria-live="polite"
+              data-testid="rename-cleanup-status"
+              data-cleanup-state={cleanupState}
+              className={
+                "rounded-md border p-3 text-xs " +
+                (cleanupState === "clean"
+                  ? "border-primary/40 bg-primary/5 text-primary"
+                  : cleanupState === "dirty"
+                    ? "border-destructive/40 bg-destructive/5 text-destructive"
+                    : "border-border bg-muted/40 text-muted-foreground")
+              }
+            >
+              <p className="font-medium">
+                {cleanupState === "checking" && "Cleaning up old slug…"}
+                {cleanupState === "clean" && `Old slug /${currentSlug} fully removed.`}
+                {cleanupState === "dirty" && `Old slug /${currentSlug} still present — retry.`}
+              </p>
+              {cleanupDetail && <p className="mt-1 font-mono opacity-80">{cleanupDetail}</p>}
+            </div>
+          )}
         </div>
 
         <DialogFooter>
