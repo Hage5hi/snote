@@ -54,9 +54,34 @@ export type Encryption = {
  */
 const abandonedSlugs = new Set<string>();
 const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
+const ABANDONED_SLUG_STORAGE_PREFIX = "syrin:abandoned-slug:";
 
 function isSlugAbandoned(slug: string) {
   return abandonedSlugs.has(slug);
+}
+
+function markSlugAbandoned(slug: string, broadcast: boolean) {
+  abandonedSlugs.add(slug);
+  activeProvidersBySlug.get(slug)?.forEach((provider) => provider.markAbandoned());
+  // Auto-expire the global slug block so a legitimate later reuse can create
+  // a fresh empty row. Providers that were active at rename time stay marked
+  // abandoned on the instance and can never resurrect the old content.
+  setTimeout(() => abandonedSlugs.delete(slug), 30_000);
+  if (broadcast && typeof localStorage !== "undefined") {
+    try {
+      localStorage.setItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`, String(Date.now()));
+    } catch {
+      /* storage unavailable */
+    }
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("storage", (event) => {
+    if (!event.key?.startsWith(ABANDONED_SLUG_STORAGE_PREFIX)) return;
+    const slug = event.key.slice(ABANDONED_SLUG_STORAGE_PREFIX.length);
+    if (slug) markSlugAbandoned(slug, false);
+  });
 }
 
 /**
@@ -80,10 +105,7 @@ export function getSnapshotDebounceMs(): number {
 
 /** Mark a slug so its still-mounted provider will not write to Postgres. */
 export function abandonProviderForSlug(slug: string) {
-  abandonedSlugs.add(slug);
-  activeProvidersBySlug.get(slug)?.forEach((provider) => provider.cancelPendingSnapshot());
-  // Auto-expire after 30s so a legitimate later reuse of the slug works.
-  setTimeout(() => abandonedSlugs.delete(slug), 30_000);
+  markSlugAbandoned(slug, true);
 }
 
 /** Clear the abandoned flag (test helper / manual override). */
@@ -128,6 +150,7 @@ export class SupabaseYjsProvider {
   private syncListeners = new Set<Listener<SyncEvent>>();
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
+  private abandoned = false;
   // Bytes of local updates that have not yet been durably saved to Postgres.
   // Reset to 0 after each successful `saveSnapshot`. Read via
   // `getPendingBytes()` / `hasUnflushedLocalChanges()`.
@@ -191,6 +214,16 @@ export class SupabaseYjsProvider {
       window.clearTimeout(this.snapshotTimer);
       this.snapshotTimer = null;
     }
+  }
+
+  markAbandoned() {
+    this.abandoned = true;
+    this.cancelPendingSnapshot();
+    this.pendingUpdates = [];
+  }
+
+  private isAbandoned() {
+    return this.abandoned || isSlugAbandoned(this.slug);
   }
 
   private handleNativeOffline = () => {
@@ -272,7 +305,7 @@ export class SupabaseYjsProvider {
     identity: { name: string; color: string },
     options?: { prefetchedYdocState?: string | null; rowExists?: boolean },
   ) {
-    if (this.destroyed || isSlugAbandoned(this.slug)) return;
+    if (this.destroyed || this.isAbandoned()) return;
     // 0) Try the prefetched snapshot stashed by Home page hover/touch.
     // Skip prefetched snapshot when encrypted, since the prefetch path doesn't
     // know the key and the bytes would not be Y.update format yet.
@@ -318,12 +351,12 @@ export class SupabaseYjsProvider {
       } catch (e) {
         console.warn("Failed to apply snapshot", e);
       }
-    } else if (rowExists === false && !isSlugAbandoned(this.slug)) {
+    } else if (rowExists === false && !this.isAbandoned()) {
       // Create empty row so multiple clients can find the slug immediately.
       void supabase.from("notes").upsert({ slug: this.slug }, { onConflict: "slug" });
     }
 
-    if (this.destroyed || isSlugAbandoned(this.slug)) return;
+    if (this.destroyed || this.isAbandoned()) return;
 
     // 2) Set local awareness identity.
     this.awareness.setLocalState({
@@ -379,7 +412,7 @@ export class SupabaseYjsProvider {
           // `lastError` (e.g. "Failed to fetch") never clears until the
           // user types again. A successful saveSnapshot emits
           // `synced-durable`, which the hook uses to clear the error.
-          if (!isSlugAbandoned(this.slug) && this.hasUnflushedLocalChanges()) {
+          if (!this.isAbandoned() && this.hasUnflushedLocalChanges()) {
             if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
             this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), 0);
           }
@@ -548,7 +581,7 @@ export class SupabaseYjsProvider {
   }
 
   private scheduleSnapshot() {
-    if (this.destroyed || isSlugAbandoned(this.slug)) return;
+    if (this.destroyed || this.isAbandoned()) return;
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), getSnapshotDebounceMs());
   }
@@ -556,7 +589,7 @@ export class SupabaseYjsProvider {
   async saveSnapshot() {
     this.snapshotTimer = null;
     if (this.destroyed) return;
-    if (isSlugAbandoned(this.slug)) return;
+    if (this.isAbandoned()) return;
     if (this.hasEncryptionModeMismatch()) {
       console.warn("saveSnapshot skipped: encryption mode mismatch", {
         slug: this.slug,
@@ -622,7 +655,7 @@ export class SupabaseYjsProvider {
    */
   flushBeacon() {
     if (this.destroyed) return;
-    if (isSlugAbandoned(this.slug)) return;
+    if (this.isAbandoned()) return;
     if (this.hasEncryptionModeMismatch()) {
       // Would overwrite the row in the wrong mode (e.g. plaintext over a
       // freshly-encrypted note during lock/unlock). Skip entirely.
