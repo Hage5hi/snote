@@ -24,46 +24,55 @@ function isStringOrNull(v: unknown): v is string | null {
 }
 
 export type PwaReadinessInvalidReason = {
+  /** Field name that failed validation (e.g. "reloadStrategy" or "<root>"). */
   field: string;
+  /** Alias of `field`, kept for QA/E2E consumers that use dot-path naming. */
+  path: string;
+  /** Human-readable reason the field is invalid. */
   reason: string;
+  /** Runtime typeof / stringified value received. */
   received: string;
 };
+
+function mk(field: string, reason: string, received: string): PwaReadinessInvalidReason {
+  return { field, path: field, reason, received };
+}
 
 /** Returns null when valid; otherwise a single reason describing the first
  *  field that failed the schema. */
 export function explainPwaReadinessState(input: unknown): PwaReadinessInvalidReason | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
-    return { field: "<root>", reason: "not-object", received: input === null ? "null" : Array.isArray(input) ? "array" : typeof input };
+    return mk("<root>", "not-object", input === null ? "null" : Array.isArray(input) ? "array" : typeof input);
   }
   const s = input as Record<string, unknown>;
   const t = (v: unknown) => (v === null ? "null" : Array.isArray(v) ? "array" : typeof v);
 
   if (typeof s.currentBuildId !== "string" || s.currentBuildId.length === 0)
-    return { field: "currentBuildId", reason: "must be non-empty string", received: t(s.currentBuildId) };
+    return mk("currentBuildId", "must be non-empty string", t(s.currentBuildId));
   if (!isStringOrNull(s.pendingBuildId))
-    return { field: "pendingBuildId", reason: "must be string|null", received: t(s.pendingBuildId) };
+    return mk("pendingBuildId", "must be string|null", t(s.pendingBuildId));
   if (typeof s.updateAvailable !== "boolean")
-    return { field: "updateAvailable", reason: "must be boolean", received: t(s.updateAvailable) };
+    return mk("updateAvailable", "must be boolean", t(s.updateAvailable));
   if (typeof s.updateInProgress !== "boolean")
-    return { field: "updateInProgress", reason: "must be boolean", received: t(s.updateInProgress) };
+    return mk("updateInProgress", "must be boolean", t(s.updateInProgress));
   if (
     typeof s.reloadAttemptCount !== "number" ||
     !Number.isFinite(s.reloadAttemptCount) ||
     s.reloadAttemptCount < 0 ||
     !Number.isInteger(s.reloadAttemptCount)
   )
-    return { field: "reloadAttemptCount", reason: "must be non-negative integer", received: String(s.reloadAttemptCount) };
+    return mk("reloadAttemptCount", "must be non-negative integer", String(s.reloadAttemptCount));
   if (s.reloadStrategy !== null && !(typeof s.reloadStrategy === "string" && RELOAD_STRATEGIES.has(s.reloadStrategy)))
-    return { field: "reloadStrategy", reason: "must be 'waiting-sw'|'hard'|null", received: String(s.reloadStrategy) };
+    return mk("reloadStrategy", "must be 'waiting-sw'|'hard'|null", String(s.reloadStrategy));
   if ("lastRemoteBuildId" in s && s.lastRemoteBuildId !== undefined && !isStringOrNull(s.lastRemoteBuildId))
-    return { field: "lastRemoteBuildId", reason: "must be string|null|undefined", received: t(s.lastRemoteBuildId) };
+    return mk("lastRemoteBuildId", "must be string|null|undefined", t(s.lastRemoteBuildId));
   if (
     "lastAcceptedAt" in s &&
     s.lastAcceptedAt !== undefined &&
     s.lastAcceptedAt !== null &&
     (typeof s.lastAcceptedAt !== "number" || !Number.isFinite(s.lastAcceptedAt))
   )
-    return { field: "lastAcceptedAt", reason: "must be number|null|undefined", received: t(s.lastAcceptedAt) };
+    return mk("lastAcceptedAt", "must be number|null|undefined", t(s.lastAcceptedAt));
 
   return null;
 }

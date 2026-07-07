@@ -56,6 +56,7 @@ jobs:
             e2e/pwa-readiness-per-field-invalid.spec.ts \
             e2e/pwa-readiness-oscillation.spec.ts \
             e2e/rename-duplicate-deep-link-stress.spec.ts \
+            e2e/pwa-readiness-invalid-event.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}
