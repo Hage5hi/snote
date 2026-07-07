@@ -215,24 +215,52 @@ function selectionDidNotAdvance(before: SelectionRangeFrame, after: SelectionRan
 export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv);
   if (!existsSync(args.path)) throw new Error(`diagnostics file not found: ${args.path}`);
-  const diagnostics = JSON.parse(readFileSync(args.path, "utf8")) as WheelDiagnostics;
+  let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(args.path, "utf8")); }
+  catch (e) { throw new Error(`wheel-diagnostics.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}`); }
+  const schemaErrors = validateDiagnosticsSchema(parsed);
+  const diagnostics = parsed as WheelDiagnostics;
   if ((diagnostics.schemaVersion ?? 0) > SUPPORTED_SCHEMA_VERSION) {
     console.warn(`wheel-diagnostics schemaVersion ${diagnostics.schemaVersion} is newer than this replay script (${SUPPORTED_SCHEMA_VERSION}); replaying compatible fields only`);
   }
   const deltas = getDeltas(diagnostics);
   const selectionDeltas = diagnostics.selectionDragSamples ?? [];
-  if (deltas.length === 0 && selectionDeltas.length === 0) {
-    throw new Error("wheel-diagnostics.json contains no replay, wheelSamples, or selectionDragSamples deltas");
-  }
   const outputs = expectedOutputs(args).map((f) => join(args.outDir, f));
 
-  if (args.listOutputs || args.dryRun) {
+  if (args.dryRun) {
+    console.log(`source: ${args.path}`);
     console.log(`out-dir: ${args.outDir}`);
+    console.log(`schemaVersion: ${diagnostics.schemaVersion ?? "(missing, treated as 0)"}`);
     console.log(`wheel deltas: ${deltas.length}  selection deltas: ${selectionDeltas.length}`);
     console.log("expected outputs:");
     for (const p of outputs) console.log(`  ${p}`);
-    if (args.dryRun) { console.log("dry-run: skipping Playwright launch"); return 0; }
-    if (args.listOutputs) return 0;
+    if (schemaErrors.length) {
+      console.error(`✖ schema validation failed (${schemaErrors.length}):`);
+      for (const err of schemaErrors) console.error(`  - ${err}`);
+      return 2;
+    }
+    if (deltas.length === 0 && selectionDeltas.length === 0) {
+      console.error("✖ no replay, wheelSamples, or selectionDragSamples deltas present");
+      return 2;
+    }
+    console.log("dry-run: input valid, skipping Playwright launch");
+    return 0;
+  }
+  if (schemaErrors.length) {
+    for (const err of schemaErrors) console.error(`schema: ${err}`);
+    throw new Error(`wheel-diagnostics.json failed schema validation (${schemaErrors.length} error(s)); run with --dry-run for details`);
+  }
+  if (deltas.length === 0 && selectionDeltas.length === 0) {
+    throw new Error("wheel-diagnostics.json contains no replay, wheelSamples, or selectionDragSamples deltas");
+  }
+  if (args.listOutputs) {
+    console.log(`out-dir: ${args.outDir}`);
+    for (const p of outputs) console.log(`  ${p}`);
+    return 0;
+  }
+  if (args.resume && outputs.every((p) => existsSync(p))) {
+    console.log(`resume: all ${outputs.length} outputs already exist in ${args.outDir}; skipping replay`);
+    return 0;
   }
 
   const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
