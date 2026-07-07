@@ -253,8 +253,26 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   writeFileSync(jsonlPath, observed.map((o) => JSON.stringify(o)).join("\n") + "\n");
   writeFileSync(join(args.outDir, "selection-frames.jsonl"), observedSelection.map((o) => JSON.stringify(o)).join("\n") + (observedSelection.length ? "\n" : ""));
   await scroller.screenshot({ path: join(args.outDir, "scroller.png") }).catch(() => undefined);
-  if (args.trace) await context.tracing.stop({ path: join(args.outDir, "trace.zip") });
+  const tracePath = join(args.outDir, "trace.zip");
+  if (args.trace) await context.tracing.stop({ path: tracePath });
   await browser.close();
+
+  if (args.extraTraces) {
+    const retries = process.env.RETRIES ?? "0";
+    const notesPath = join(args.outDir, "trace-notes.json");
+    writeFileSync(notesPath, JSON.stringify({
+      source: args.path, project: args.project, retries,
+      generatedAt: result.generatedAt, stuckFrame, selectionStuckFrame,
+      tracePath: args.trace ? tracePath : null,
+      artifacts: ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png", args.trace ? "trace.zip" : null].filter(Boolean),
+    }, null, 2));
+    console.log(`wrote ${notesPath}`);
+    if (args.trace && existsSync(tracePath)) {
+      const perRetry = join(args.outDir, `trace-retry-${retries}.zip`);
+      try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
+    }
+  }
+
 
   console.log(`replayed ${observed.length} deltas from ${args.path}`);
   console.log(`wrote ${resultPath}`);
