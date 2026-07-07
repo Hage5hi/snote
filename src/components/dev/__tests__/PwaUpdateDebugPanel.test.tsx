@@ -61,4 +61,81 @@ describe("PwaUpdateDebugPanel", () => {
     // No literal "null" / "undefined" string leaked into the DOM row.
     expect(screen.queryByText(/last remote:\s*(null|undefined)/i)).not.toBeInTheDocument();
   });
+
+  describe("readiness gate", () => {
+    it("renders nothing when state is unset (undefined)", () => {
+      setState(undefined);
+      const { container } = render(<PwaUpdateDebugPanel />);
+      expect(container.querySelector("[data-pwa-debug-panel='true']")).toBeNull();
+      expect(screen.queryByRole("button")).toBeNull();
+    });
+
+    it("renders nothing when state is explicitly null", () => {
+      (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__ = null;
+      const { container } = render(<PwaUpdateDebugPanel />);
+      expect(container.querySelector("[data-pwa-debug-panel='true']")).toBeNull();
+    });
+
+    it.each([
+      [
+        "idle",
+        {
+          currentBuildId: "build-1",
+          pendingBuildId: null,
+          updateAvailable: false,
+          updateInProgress: false,
+          reloadAttemptCount: 0,
+          reloadStrategy: null,
+          lastRemoteBuildId: "build-1",
+        },
+        [/current:\s*build-1/, /pending:\s*—/, /strategy:\s*—/, /attempts:\s*0/, /inProgress:\s*false/],
+      ],
+      [
+        "available",
+        {
+          currentBuildId: "build-1",
+          pendingBuildId: "build-2",
+          updateAvailable: true,
+          updateInProgress: false,
+          reloadAttemptCount: 0,
+          reloadStrategy: "hard" as const,
+          lastRemoteBuildId: "build-2",
+        },
+        [/pending:\s*build-2/, /strategy:\s*hard/, /inProgress:\s*false/],
+      ],
+      [
+        "in-progress",
+        {
+          currentBuildId: "build-1",
+          pendingBuildId: "build-2",
+          updateAvailable: true,
+          updateInProgress: true,
+          reloadAttemptCount: 2,
+          reloadStrategy: "waiting-sw" as const,
+          lastRemoteBuildId: "build-2",
+        },
+        [/strategy:\s*waiting-sw/, /attempts:\s*2/, /inProgress:\s*true/],
+      ],
+      [
+        "applied",
+        {
+          currentBuildId: "build-2",
+          pendingBuildId: null,
+          updateAvailable: false,
+          updateInProgress: false,
+          reloadAttemptCount: 2,
+          reloadStrategy: "hard" as const,
+          lastRemoteBuildId: "build-2",
+        },
+        [/current:\s*build-2/, /pending:\s*—/, /attempts:\s*2/],
+      ],
+    ])("renders '%s' transition when state is valid", (_label, state, expectations) => {
+      setState(state as PwaState);
+      render(<PwaUpdateDebugPanel />);
+      fireEvent.click(screen.getByRole("button"));
+      for (const re of expectations) {
+        expect(screen.getByText(re)).toBeInTheDocument();
+      }
+    });
+  });
 });
