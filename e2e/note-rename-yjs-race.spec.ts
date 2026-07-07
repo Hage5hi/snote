@@ -8,7 +8,13 @@
 
 import { test, expect, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
-import { fetchOldSlugCleanupStatus, snapshotSlugRow, verifyOldSlugGoneFromDbAndUi, verifyOldSlugGoneWithRetry } from "./helpers/db-assert";
+import {
+  fetchOldSlugCleanupStatus,
+  fetchOldSlugCleanupStatusWithReport,
+  snapshotSlugRow,
+  verifyOldSlugGoneFromDbAndUi,
+  verifyOldSlugGoneWithRetry,
+} from "./helpers/db-assert";
 import { purgeSlugs } from "./helpers/rename-cleanup";
 
 const TEXT = "Rename race content";
@@ -166,7 +172,7 @@ test.describe("note rename Yjs race", () => {
 
     // Wait beyond the provider debounce/finalize window, then poll DB + UI.
     await page.waitForTimeout(2_000);
-    const preStatus = await fetchOldSlugCleanupStatus(page, oldSlug).catch((e) => ({ error: String(e) }));
+    const { status: preStatus } = await fetchOldSlugCleanupStatusWithReport(page, oldSlug, testInfo, "main-pre");
     console.log("[rename-race][main] pre-assert cleanup-status", { oldSlug, newSlug, preStatus });
     // Contract: cleanup-status response must always carry metrics so slow
     // cleanups are traceable in CI. Skip when the fetch itself errored.
@@ -217,18 +223,38 @@ test.describe("note rename Yjs race", () => {
   });
 
   test("stress: repeated randomized-debounce renames never resurrect old slugs", async ({ context }, testInfo) => {
-    testInfo.setTimeout(75_000);
+    // Iterations: STRESS_RENAME_ITERATIONS overrides; defaults 8 in CI, 3 locally.
+    const iterations = (() => {
+      const v = Number(process.env.STRESS_RENAME_ITERATIONS);
+      if (Number.isFinite(v) && v > 0) return Math.floor(v);
+      return process.env.CI ? 8 : 3;
+    })();
+    // Seed: STRESS_RENAME_SEED (hex or int) — logged & attached so failures replay.
+    const seed = (() => {
+      const raw = process.env.STRESS_RENAME_SEED;
+      if (raw) {
+        const parsed = raw.startsWith("0x") ? parseInt(raw, 16) : Number(raw);
+        if (Number.isFinite(parsed)) return parsed >>> 0;
+      }
+      return (Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0;
+    })();
+    await testInfo.attach("stress-seed.json", {
+      body: JSON.stringify({ seed: `0x${seed.toString(16)}`, iterations, ci: !!process.env.CI }, null, 2),
+      contentType: "application/json",
+    });
+    console.log("[rename-race][stress] config", { seed: `0x${seed.toString(16)}`, iterations });
+    testInfo.setTimeout(Math.max(75_000, iterations * 25_000));
     const createdSlugs: string[] = [];
     const rng = (() => {
-      let seed = 0x5eed1234;
+      let s = seed >>> 0;
       return () => {
-        seed = (seed * 1664525 + 1013904223) >>> 0;
-        return seed / 0xffffffff;
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 0xffffffff;
       };
     })();
 
     try {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < iterations; i++) {
         const debounceMs = 100 + Math.floor(rng() * 700);
         const from = versionedSlug(`stress-old-${i}`);
         const to = versionedSlug(`stress-new-${i}`);
@@ -254,7 +280,7 @@ test.describe("note rename Yjs race", () => {
           await staleTab.keyboard.type(` late-${i}`);
 
           await page.waitForTimeout(debounceMs + 1_200);
-          const preStatus = await fetchOldSlugCleanupStatus(page, from).catch((e) => ({ error: String(e) }));
+          const { status: preStatus } = await fetchOldSlugCleanupStatusWithReport(page, from, testInfo, `stress-${i}-pre`);
           console.log("[rename-race][stress] pre-assert cleanup-status", { ...ctx, preStatus });
 
           const lingering = await verifyOldSlugGoneWithRetry(page, from, {
