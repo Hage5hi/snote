@@ -93,3 +93,39 @@ On failure, `.github/workflows/e2e.yml` uploads a dedicated
 `pwa-update-failures-<browser>-run<N>-attempt<M>` artifact containing the
 Playwright trace, screenshots, videos, and JSON attachments for just the
 PWA update specs — no need to download the full `test-results/` archive.
+
+## Dev PWA update debug panel
+
+`src/components/dev/PwaUpdateDebugPanel.tsx` renders a small floating panel
+in the bottom-right corner of the app that mirrors
+`window.__SNOTE_PWA_UPDATE_STATE__`. It only mounts when
+`import.meta.env.DEV` is true — i.e. under `bun run dev` or
+`bunx playwright test` (which uses the Vite dev server), never in a
+production build.
+
+Enable DEV mode locally:
+
+```sh
+bun run dev              # panel appears at http://localhost:8080
+```
+
+Fields (collapsed header shows `[pwa] <current> → <pending>`):
+
+| Field         | Meaning |
+| ------------- | ------- |
+| `current`     | `__BUILD_ID__` baked into the running bundle (or the E2E override). |
+| `pending`     | Latest remote `buildId` returned by `/version.json`; `—` when unset. |
+| `strategy`    | `waiting-sw` if a waiting service worker was activated, `hard` for the hard-reload fallback, `—` before a reload has been attempted. |
+| `attempts`    | `reloadAttemptCount` — number of times `reloadNow()` has fired. Throttle indicator. |
+| `last remote` | `lastRemoteBuildId` — last `buildId` the poller saw from `/version.json`, even if it matches `current`. |
+| `inProgress`  | `updateInProgress` — `reloadNow()` has started and the buildId transition has not been confirmed. |
+
+## Readiness gate
+
+Before the PWA update specs click the toast's Update button, they wait for
+the service worker to reach `registered` + `activated`. If registration
+stalls past the configured timeout, the spec fails fast with a
+`pwa-updater-not-ready.json` attachment listing the last observed SW state,
+so retries don't paper over a broken registration. See
+`e2e/pwa-update-sw-stall.spec.ts` for the reference stall scenario.
+
