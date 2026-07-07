@@ -64,6 +64,34 @@ export async function fetchOldSlugCleanupStatus(page: Page, slug: string): Promi
   }, slug) as Promise<OldSlugCleanupStatus>;
 }
 
+/**
+ * Fetch cleanup-status and attach request/response + timing to the Playwright
+ * HTML report so failures are debuggable without opening raw artifacts.
+ */
+export async function fetchOldSlugCleanupStatusWithReport(
+  page: Page,
+  slug: string,
+  testInfo: TestInfo,
+  label = "cleanup-status",
+): Promise<{ status: OldSlugCleanupStatus | { error: string }; elapsedMs: number }> {
+  const startedAt = Date.now();
+  let status: OldSlugCleanupStatus | { error: string };
+  try {
+    status = await fetchOldSlugCleanupStatus(page, slug);
+  } catch (e) {
+    status = { error: e instanceof Error ? e.message : String(e) };
+  }
+  const elapsedMs = Date.now() - startedAt;
+  const payload = { label, slug, elapsedMs, request: { slug }, response: status };
+  await testInfo.attach(`${label}-${slug}.json`, {
+    body: JSON.stringify(payload, null, 2),
+    contentType: "application/json",
+  });
+  // eslint-disable-next-line no-console
+  console.log(`[cleanup-status][${label}]`, { slug, elapsedMs, response: status });
+  return { status, elapsedMs };
+}
+
 export type WaitForSlugAbsentOptions = {
   /** Total time to keep polling before failing. Defaults to 3000ms. */
   timeoutMs?: number;
