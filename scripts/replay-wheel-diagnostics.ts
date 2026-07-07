@@ -69,6 +69,7 @@ export function parseArgs(argv: string[]) {
     dryRun: false,
     listOutputs: false,
     resume: process.env.WHEEL_REPLAY_RESUME === "1",
+    verifyManifest: false,
   };
   let outDirSet = !!process.env.WHEEL_REPLAY_OUT_DIR;
   for (const a of argv) {
