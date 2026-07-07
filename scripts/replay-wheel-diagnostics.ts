@@ -214,6 +214,73 @@ function selectionDidNotAdvance(before: SelectionRangeFrame, after: SelectionRan
   return after.rangeCount > 0 && after.textLength > 0 && after.signature === before.signature;
 }
 
+/** Given `--resume`, split the expected outputs into files already present
+ *  (which will be preserved) and files still to generate. Exported for tests. */
+export function planResumeOutputs(
+  outDir: string,
+  args: Pick<ReplayArgs, "trace" | "extraTraces" | "retries">,
+): { existing: string[]; missing: string[] } {
+  const existing: string[] = [];
+  const missing: string[] = [];
+  for (const name of expectedOutputs(args)) {
+    (existsSync(join(outDir, name)) ? existing : missing).push(name);
+  }
+  return { existing, missing };
+}
+
+/** Cheap ZIP integrity check: verifies the local-file-header magic (`PK\x03\x04`)
+ *  and the end-of-central-directory record (`PK\x05\x06`). Playwright trace
+ *  zips that are truncated or empty fail one of these checks. */
+export function verifyZipIntegrity(path: string): { ok: boolean; error?: string } {
+  try {
+    const stat = statSync(path);
+    if (stat.size < 22) return { ok: false, error: `too small (${stat.size} bytes)` };
+    const buf = readFileSync(path);
+    if (!(buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04)) {
+      return { ok: false, error: "missing ZIP local-file-header signature (PK\\x03\\x04)" };
+    }
+    // Scan the trailing 64KB for the end-of-central-directory record.
+    const tailStart = Math.max(0, buf.length - (0xffff + 22));
+    for (let i = buf.length - 22; i >= tailStart; i--) {
+      if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
+        return { ok: true };
+      }
+    }
+    return { ok: false, error: "missing end-of-central-directory record (PK\\x05\\x06)" };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+type ManifestEntry = { name: string; path: string; size: number | null; generatedAt: string | null; present: boolean };
+type Manifest = { artifacts: ManifestEntry[] };
+
+/** Verify an out-dir against its manifest.json. Fails if the manifest is
+ *  missing, any listed artifact is absent, its size disagrees, or (for
+ *  .zip artifacts) the zip fails an integrity check. */
+export function verifyManifest(outDir: string): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const manifestPath = join(outDir, "manifest.json");
+  if (!existsSync(manifestPath)) return { ok: false, errors: [`manifest.json not found in ${outDir}`] };
+  let manifest: Manifest;
+  try { manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest; }
+  catch (e) { return { ok: false, errors: [`manifest.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}`] }; }
+  if (!Array.isArray(manifest.artifacts)) return { ok: false, errors: ["manifest.artifacts: expected array"] };
+  for (const entry of manifest.artifacts) {
+    const p = entry.path || join(outDir, entry.name);
+    if (!existsSync(p)) { errors.push(`missing: ${entry.name} (expected at ${p})`); continue; }
+    const actual = statSync(p).size;
+    if (entry.size != null && actual !== entry.size) {
+      errors.push(`size mismatch: ${entry.name} manifest=${entry.size} actual=${actual}`);
+    }
+    if (entry.name.endsWith(".zip")) {
+      const z = verifyZipIntegrity(p);
+      if (!z.ok) errors.push(`corrupt zip: ${entry.name} — ${z.error}`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv);
   if (!existsSync(args.path)) throw new Error(`diagnostics file not found: ${args.path}`);
