@@ -167,56 +167,9 @@ for (const lang of SUPPORTED_LANGS) {
       await expectToastLifecycle(toast);
     });
 
-    // ---------- RENAME ----------------------------------------------------
+    // (Rename/Duplicate features removed — related tests deleted.)
 
-    test("Rename dialog: every interactive element is localized", async ({ page }) => {
-      await page.getByRole("button", { name: new RegExp(`^${escapeRe(t("menu.note"))}`, "i") }).first().click();
-      await page.getByRole("menuitem", { name: t("note.rename"), exact: true }).click();
 
-      const dialog = page.getByRole("dialog");
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByText(t("rename.dialog_title"), { exact: true }).first()).toBeVisible();
-
-      const input = dialog.getByPlaceholder(t("rename.placeholder"));
-      await expect(input).toBeVisible();
-      await expect(input).toHaveAttribute("placeholder", t("rename.placeholder"));
-
-      // Warning lines below the input.
-      await expect(dialog.getByText(t("rename.warn_other_tabs"), { exact: true }).first()).toBeVisible();
-
-      // Footer buttons.
-      await expect(dialog.getByRole("button", { name: t("rename.cancel"), exact: true })).toBeVisible();
-      const submit = dialog.getByRole("button", { name: t("rename.submit"), exact: true });
-      await expect(submit).toBeVisible();
-      await expect(submit).toBeDisabled();
-
-      // Invalid → exact localized inline error.
-      await input.fill("not a valid slug!!");
-      await expect(dialog.getByText(t("rename.invalid"), { exact: true })).toBeVisible({ timeout: TOAST_TIMEOUT });
-      await expect(submit).toBeDisabled();
-      await page.keyboard.press("Escape");
-    });
-
-    test("Rename: failure toast appears and dismisses within window", async ({ page }) => {
-      // GET → null (available), POST/PATCH → 500 (rename fails) ⇒ toast_failed.
-      await stubSupabase(page, { writesSucceed: false });
-
-      await page.getByRole("button", { name: new RegExp(`^${escapeRe(t("menu.note"))}`, "i") }).first().click();
-      await page.getByRole("menuitem", { name: t("note.rename"), exact: true }).click();
-
-      const dialog = page.getByRole("dialog");
-      await expect(dialog).toBeVisible();
-      const input = dialog.getByPlaceholder(t("rename.placeholder"));
-      await input.fill("renamed-target");
-
-      // Wait until "available" status enables the submit button.
-      const submit = dialog.getByRole("button", { name: t("rename.submit"), exact: true });
-      await expect(submit).toBeEnabled({ timeout: TOAST_TIMEOUT });
-      await submit.click();
-
-      const toast = page.getByText(t("rename.toast_failed"), { exact: true }).first();
-      await expectToastLifecycle(toast);
-    });
 
     // ---------- HISTORY ---------------------------------------------------
 

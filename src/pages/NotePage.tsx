@@ -14,7 +14,7 @@ import { GoalConfetti } from "@/components/note/GoalConfetti";
 import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
 import { toast } from "@/hooks/use-toast";
 import { OutlineSidebar } from "@/components/note/OutlineSidebar";
-import { registerAbandonedSlugCleanup, SupabaseYjsProvider, type Encryption } from "@/lib/yjs/provider";
+import { SupabaseYjsProvider, type Encryption } from "@/lib/yjs/provider";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
 import type { PresenceUser } from "@/components/note/PresenceDots";
@@ -34,8 +34,6 @@ import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
-import { clearSlugLocalCaches } from "@/lib/rename";
-import { recordOldSlugCleanupSignal } from "@/lib/rename-cleanup-status";
 import { AppShell } from "@/components/app/AppShell";
 import { isExtensionContext } from "@/lib/ext-context";
 
@@ -295,13 +293,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
     const idb = new IndexeddbPersistence(`note:${slug}`, doc);
     let disposed = false;
-    const unregisterAbandonedCleanup = registerAbandonedSlugCleanup(slug, () => {
-      recordOldSlugCleanupSignal(slug, { cleanupStartedAt: Date.now() });
-      void idb.clearData()
-        .then(() => recordOldSlugCleanupSignal(slug, { indexedDbClearedAt: Date.now() }))
-        .catch(() => {});
-      void clearSlugLocalCaches(slug, { evictDocCache: false, clearIndexedDb: false });
-    });
 
     
     const unsubAwareness = provider.onAwareness((states) => {
@@ -406,7 +397,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       
       unsubAwareness();
       unsubSync();
-      unregisterAbandonedCleanup();
       void provider.destroy();
       idb.destroy();
       // Doc itself stays warm in cache for fast re-open; only release.

@@ -1,5 +1,5 @@
-// Note dropdown: rename, duplicate, word goal, history, copy entire note.
-import { ChevronDown, ClipboardCopy, CopyPlus, History, Pencil, Target } from "lucide-react";
+// Note dropdown: word goal, history, copy entire note.
+import { ChevronDown, ClipboardCopy, History, Target } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -11,20 +11,12 @@ import {
 import { useI18n } from "@/i18n";
 
 interface NoteMenuProps {
-  onOpenRename: () => void;
-  onOpenDuplicate: () => void;
   onOpenGoal: () => void;
   onOpenHistory: () => void;
   onCopyAll: () => void;
 }
 
-export function NoteMenu({
-  onOpenRename,
-  onOpenDuplicate,
-  onOpenGoal,
-  onOpenHistory,
-  onCopyAll,
-}: NoteMenuProps) {
+export function NoteMenu({ onOpenGoal, onOpenHistory, onCopyAll }: NoteMenuProps) {
   const { t } = useI18n();
   return (
     <DropdownMenu>
@@ -35,12 +27,6 @@ export function NoteMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuItem onClick={onOpenRename}>
-          <Pencil className="h-3.5 w-3.5" /> {t("note.rename")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onOpenDuplicate}>
-          <CopyPlus className="h-3.5 w-3.5" /> {t("note.duplicate")}
-        </DropdownMenuItem>
         <DropdownMenuItem onClick={onOpenGoal}>
           <Target className="h-3.5 w-3.5" /> {t("note.goal")}
         </DropdownMenuItem>

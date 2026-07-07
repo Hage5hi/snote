@@ -19,8 +19,6 @@ import { PresenceDots, type PresenceUser } from "../PresenceDots";
 import { HistoryDialog } from "../HistoryDialog";
 import { LockButton } from "../LockButton";
 import { PinButton } from "../PinButton";
-import { RenameDialog } from "../RenameDialog";
-import { DuplicateDialog } from "../DuplicateDialog";
 import { WordGoalDialog } from "../WordGoalDialog";
 import { ShareDialog } from "../ShareDialog";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
@@ -88,8 +86,6 @@ export function Topbar({
   compact = false,
 }: TopbarProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const narrow = useNarrowViewport();
@@ -183,8 +179,6 @@ export function Topbar({
             <ShareDialog slug={slug} isEncrypted={isEncrypted} />
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               <NoteMenu
-                onOpenRename={() => setRenameOpen(true)}
-                onOpenDuplicate={() => setDuplicateOpen(true)}
                 onOpenGoal={() => setGoalOpen(true)}
                 onOpenHistory={() => setHistoryOpen(true)}
                 onCopyAll={copyAll}
@@ -245,8 +239,6 @@ export function Topbar({
             <Separator orientation="vertical" className="mx-1 h-5" />
 
             <NoteMenu
-              onOpenRename={() => setRenameOpen(true)}
-              onOpenDuplicate={() => setDuplicateOpen(true)}
               onOpenGoal={() => setGoalOpen(true)}
               onOpenHistory={() => setHistoryOpen(true)}
               onCopyAll={copyAll}
@@ -293,8 +285,6 @@ export function Topbar({
         trigger={false}
       />
       <ShortcutHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-      <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} provider={provider} />
-      <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />
       <WordGoalDialog
         open={goalOpen}
         onOpenChange={setGoalOpen}
