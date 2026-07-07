@@ -158,16 +158,38 @@ export const PwaReadinessInvalidEventDetailSchema = {
   },
 } as const;
 
+/** Read the env flag that gates {@link installPwaReadinessInvalidReporter}.
+ *  Default: **disabled** — analytics/logging are opt-in so production
+ *  clients never ship a reporter unless the deployer explicitly enables it.
+ *
+ *  Env vars (Vite, prefixed `VITE_` so they're readable client-side):
+ *  - `VITE_PWA_READINESS_REPORTER_ENABLED` — `"true"` / `"1"` to enable.
+ *    Any other value (including unset) leaves the reporter disabled.
+ *  - `VITE_PWA_READINESS_REPORTER_SAMPLE_RATE` — float `0..1`, default `0.01`.
+ *    Ignored when the reporter is disabled. */
+export function resolvePwaReadinessReporterEnv(): { enabled: boolean; sampleRate: number } {
+  const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env ?? {};
+  const raw = String(env.VITE_PWA_READINESS_REPORTER_ENABLED ?? "").toLowerCase();
+  const enabled = raw === "true" || raw === "1";
+  const parsed = Number(env.VITE_PWA_READINESS_REPORTER_SAMPLE_RATE);
+  const sampleRate = Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : 0.01;
+  return { enabled, sampleRate };
+}
+
 /** Optional production-safe reporter. Samples events at the given rate
  *  (0..1) and forwards them to a user-supplied sink (analytics, logger).
- *  No-op if window is unavailable. Returns unsubscribe. */
+ *  No-op if window is unavailable, or when env-gated and disabled. Returns
+ *  unsubscribe. Pass `force: true` to bypass the env gate (tests). */
 export function installPwaReadinessInvalidReporter(opts: {
   sampleRate?: number;
   sink?: (detail: PwaReadinessInvalidEventDetail) => void;
   rng?: () => number;
+  force?: boolean;
 } = {}): () => void {
   if (typeof window === "undefined") return () => {};
-  const rate = Math.max(0, Math.min(1, opts.sampleRate ?? 0.01));
+  const envCfg = resolvePwaReadinessReporterEnv();
+  if (!opts.force && !envCfg.enabled) return () => {};
+  const rate = Math.max(0, Math.min(1, opts.sampleRate ?? envCfg.sampleRate));
   const rng = opts.rng ?? Math.random;
   const sink =
     opts.sink ??

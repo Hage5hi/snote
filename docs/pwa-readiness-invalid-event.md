@@ -88,24 +88,38 @@ window.removeEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
 `field` and `path` are always equal; `path` exists as a stable alias for
 QA tooling that groups reasons by dot-path.
 
-## Production-safe reporter (sampled)
+## Production-safe reporter (sampled, env-gated)
 
 `installPwaReadinessInvalidReporter` wires the event to any analytics/log
-sink with a sample rate so real-world failures are trackable without spam:
+sink with a sample rate so real-world failures are trackable without spam.
+
+**Default behavior: DISABLED.** The reporter is opt-in per-deployment via
+env flags — calling `installPwaReadinessInvalidReporter()` without opts in
+a build that hasn't set `VITE_PWA_READINESS_REPORTER_ENABLED` is a no-op
+and returns a no-op unsubscribe. This keeps production clients silent
+unless the deployer explicitly turns analytics on.
+
+| Env var                                    | Purpose                                | Default |
+| ------------------------------------------ | -------------------------------------- | ------- |
+| `VITE_PWA_READINESS_REPORTER_ENABLED`      | `"true"` / `"1"` to enable reporter    | unset (disabled) |
+| `VITE_PWA_READINESS_REPORTER_SAMPLE_RATE`  | float `0..1`, sampling rate            | `0.01` (1%) |
 
 ```ts
 import { installPwaReadinessInvalidReporter } from "@/lib/pwa-update-readiness";
 
+// Respects env gate (no-op unless VITE_PWA_READINESS_REPORTER_ENABLED=true):
 const off = installPwaReadinessInvalidReporter({
-  sampleRate: 0.05, // 5%
   sink: (detail) => analytics.track("pwa_readiness_invalid", detail),
 });
-// off() to detach.
+
+// Tests / forced usage bypasses the env gate:
+installPwaReadinessInvalidReporter({ sampleRate: 1, sink, force: true });
 ```
 
 The reporter validates each payload against
 `PwaReadinessInvalidEventDetailSchema` before forwarding, and never lets a
 throwing sink escape into app code.
+
 
 ## JSON Schema / typed schema for payload
 
