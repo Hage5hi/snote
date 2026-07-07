@@ -297,6 +297,7 @@ export function registerAppUpdater(): void {
     syncDebugState();
     writeDebugState({ pendingBuildId, lastAcceptedAt: Date.now() });
     renderToast();
+    // Lifecycle log happens after strategy is chosen below.
 
     if (waitingRegistration?.waiting && updateSWFn) {
       reloadStrategy = "waiting-sw";
