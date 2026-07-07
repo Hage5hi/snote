@@ -247,7 +247,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
                 "rounded-md border p-3 text-xs " +
                 (cleanupState === "clean"
                   ? "border-primary/40 bg-primary/5 text-primary"
-                  : cleanupState === "dirty"
+                  : cleanupState === "dirty" || cleanupState === "timeout" || cleanupState === "error"
                     ? "border-destructive/40 bg-destructive/5 text-destructive"
                     : "border-border bg-muted/40 text-muted-foreground")
               }
@@ -255,9 +255,25 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
               <p className="font-medium">
                 {cleanupState === "checking" && "Cleaning up old slug…"}
                 {cleanupState === "clean" && `Old slug /${currentSlug} fully removed.`}
-                {cleanupState === "dirty" && `Old slug /${currentSlug} still present — retry.`}
+                {cleanupState === "dirty" && `Old slug /${pendingRename?.oldSlug ?? currentSlug} still present — retry.`}
+                {cleanupState === "timeout" && `Cleanup polling timed out for /${pendingRename?.oldSlug ?? currentSlug}. Stopped polling.`}
+                {cleanupState === "error" && `Cleanup status unavailable (db_error).`}
               </p>
               {cleanupDetail && <p className="mt-1 font-mono opacity-80">{cleanupDetail}</p>}
+              {cleanupError && <p className="mt-1 font-mono opacity-80">error: {cleanupError}</p>}
+              {(cleanupState === "dirty" || cleanupState === "timeout" || cleanupState === "error") && (
+                <Button
+                  data-testid="rename-cleanup-retry"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  onClick={onRetryCleanup}
+                  disabled={submitting}
+                >
+                  {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                  Retry cleanup
+                </Button>
+              )}
             </div>
           )}
         </div>
@@ -271,6 +287,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
             {t("rename.submit")}
           </Button>
         </DialogFooter>
+
       </DialogContent>
     </Dialog>
   );
