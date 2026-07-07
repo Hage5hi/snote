@@ -59,6 +59,7 @@ jobs:
             e2e/pwa-readiness-invalid-event.spec.ts \
             e2e/pwa-readiness-invalid-event-not-emitted-when-valid.spec.ts \
             e2e/pwa-readiness-invalid-event-order.spec.ts \
+            e2e/pwa-readiness-invalid-single-emit-per-cycle.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}
