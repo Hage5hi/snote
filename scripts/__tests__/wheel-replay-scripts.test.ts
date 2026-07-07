@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs as parseDownloadArgs, buildGhArgs } from "../download-and-replay-wheel-artifact";
-import { parseArgs as parseReplayArgs } from "../replay-wheel-diagnostics";
+import { parseArgs as parseReplayArgs, expectedOutputs } from "../replay-wheel-diagnostics";
 import { validateWheelFixture } from "../validate-wheel-fixture";
 
 describe("wheel diagnostics replay scripts", () => {
@@ -99,5 +99,39 @@ describe("wheel diagnostics replay scripts", () => {
       .replay ?? legacy.wheelSamples.map(({ i, dx, dy, t }) => ({ i, dx, dy, t }));
     expect(deltas.length).toBe(2);
     expect((legacy as { schemaVersion?: number }).schemaVersion).toBeUndefined();
+  });
+
+  it("supports --dry-run and --list-outputs without launching Playwright", () => {
+    const dry = parseReplayArgs(["fixture.json", "--dry-run"]);
+    const list = parseReplayArgs(["fixture.json", "--list-outputs"]);
+    expect(dry.dryRun).toBe(true);
+    expect(list.listOutputs).toBe(true);
+  });
+
+  it("expectedOutputs lists per-retry trace zips only when trace + extra-traces are on", () => {
+    expect(expectedOutputs({ trace: true, extraTraces: true, retries: "2" })).toEqual([
+      "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png",
+      "trace.zip", "trace-notes.json", "trace-retry-2.zip",
+    ]);
+    expect(expectedOutputs({ trace: false, extraTraces: true, retries: "0" })).toEqual([
+      "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png",
+      "trace-notes.json",
+    ]);
+    expect(expectedOutputs({ trace: true, extraTraces: false, retries: "0" })).not.toContain("trace-retry-0.zip");
+  });
+
+  it("concurrent replay runs with different project/retries never collide on output paths", () => {
+    const matrix = [
+      ["chromium", "0"], ["chromium", "2"], ["firefox", "0"], ["firefox", "2"],
+      ["webkit", "0"], ["webkit", "3"],
+    ] as const;
+    const parsed = matrix.map(([p, r]) =>
+      parseReplayArgs(["fixture.json", `--project=${p}`, `--retries=${r}`, "--extra-traces"]),
+    );
+    const paths = parsed.flatMap((a) => expectedOutputs(a).map((f) => `${a.outDir}/${f}`));
+    expect(new Set(paths).size).toBe(paths.length);
+    // Per-retry trace zip names embed the retries count so parallel retries stay unique.
+    const retryZips = parsed.map((a) => `${a.outDir}/trace-retry-${a.retries}.zip`);
+    expect(new Set(retryZips).size).toBe(retryZips.length);
   });
 });

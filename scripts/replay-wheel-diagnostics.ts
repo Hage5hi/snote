@@ -50,7 +50,7 @@ type SelectionDragSample = {
 };
 
 function usage(): never {
-  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed]");
+  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs]");
   process.exit(2);
 }
 
@@ -66,6 +66,8 @@ export function parseArgs(argv: string[]) {
     headed: process.env.HEADED === "1",
     trace: process.env.PLAYWRIGHT_TRACE !== "0",
     extraTraces: process.env.WHEEL_REPLAY_EXTRA_TRACES === "1",
+    dryRun: false,
+    listOutputs: false,
   };
   let outDirSet = !!process.env.WHEEL_REPLAY_OUT_DIR;
   for (const a of argv) {
@@ -73,6 +75,8 @@ export function parseArgs(argv: string[]) {
     else if (a === "--no-trace" || a === "--trace=off") args.trace = false;
     else if (a === "--trace=on") args.trace = true;
     else if (a === "--extra-traces" || a === "--trace-notes") args.extraTraces = true;
+    else if (a === "--dry-run") args.dryRun = true;
+    else if (a === "--list-outputs" || a === "--list-artifacts") args.listOutputs = true;
     else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
     else if (a.startsWith("--retries=")) args.retries = a.slice("--retries=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
@@ -100,6 +104,21 @@ export function preflightPlaywrightBrowser(browserType: BrowserType, project: st
 function getDeltas(diagnostics: WheelDiagnostics): Delta[] {
   return diagnostics.replay ?? diagnostics.wheelSamples?.map(({ i, dx, dy, t }) => ({ i, dx, dy, t })) ?? [];
 }
+
+export type ReplayArgs = ReturnType<typeof parseArgs>;
+
+/** Names of files produced in `--out-dir` for the given args. Kept in sync
+ *  with the actual writes below so `--dry-run` and `--list-outputs` never lie. */
+export function expectedOutputs(args: Pick<ReplayArgs, "trace" | "extraTraces" | "retries">): string[] {
+  const files = ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
+  if (args.trace) files.push("trace.zip");
+  if (args.extraTraces) {
+    files.push("trace-notes.json");
+    if (args.trace) files.push(`trace-retry-${args.retries}.zip`);
+  }
+  return files;
+}
+
 
 async function seedLongNote(page: import("playwright").Page, lineCount: number) {
   await page.addInitScript(() => {
@@ -164,6 +183,16 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   const selectionDeltas = diagnostics.selectionDragSamples ?? [];
   if (deltas.length === 0 && selectionDeltas.length === 0) {
     throw new Error("wheel-diagnostics.json contains no replay, wheelSamples, or selectionDragSamples deltas");
+  }
+  const outputs = expectedOutputs(args).map((f) => join(args.outDir, f));
+
+  if (args.listOutputs || args.dryRun) {
+    console.log(`out-dir: ${args.outDir}`);
+    console.log(`wheel deltas: ${deltas.length}  selection deltas: ${selectionDeltas.length}`);
+    console.log("expected outputs:");
+    for (const p of outputs) console.log(`  ${p}`);
+    if (args.dryRun) { console.log("dry-run: skipping Playwright launch"); return 0; }
+    if (args.listOutputs) return 0;
   }
 
   const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
