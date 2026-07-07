@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  emitPwaReadinessInvalidEvent,
   exposeReadinessValidatorForE2E,
   validatePwaReadinessState,
   type PwaUpdateReadinessState,
@@ -23,12 +24,18 @@ export function PwaUpdateDebugPanel() {
     exposeReadinessValidatorForE2E();
     const read = () => {
       const raw = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__;
-      setState(validatePwaReadinessState(raw) ? raw : null);
+      if (validatePwaReadinessState(raw)) {
+        setState(raw);
+      } else {
+        if (raw !== undefined && raw !== null) emitPwaReadinessInvalidEvent(raw);
+        setState(null);
+      }
     };
     read();
     const id = window.setInterval(read, 500);
     return () => window.clearInterval(id);
   }, []);
+
 
   if (!import.meta.env.DEV || !state) return null;
 
