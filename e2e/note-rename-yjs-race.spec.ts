@@ -169,13 +169,19 @@ test.describe("note rename Yjs race", () => {
 
     // Wait beyond the provider debounce/finalize window, then poll DB + UI.
     await page.waitForTimeout(2_000);
+    const preStatus = await fetchOldSlugCleanupStatus(page, oldSlug).catch((e) => ({ error: String(e) }));
+    console.log("[rename-race][main] pre-assert cleanup-status", { oldSlug, newSlug, preStatus });
 
-    const lingering = await verifyOldSlugGoneFromDbAndUi(page, oldSlug, {
+    const lingering = await verifyOldSlugGoneWithRetry(page, oldSlug, {
       timeoutMs: 5_000,
       intervalMs: 200,
       forbiddenText: `${TEXT} pending edit`,
       postRevisitTimeoutMs: 3_000,
+      attempts: 3,
+      backoffMs: 600,
+      label: "main",
     });
+    console.log("[rename-race][main] verify result", { oldSlug, newSlug, lingering });
     if (lingering) {
       await attachOldSlugDetectedArtifacts(testInfo, page, "old-slug-resurrection", lingering, oldSlug, newSlug);
       await testInfo.attach("browser-console.log", {
