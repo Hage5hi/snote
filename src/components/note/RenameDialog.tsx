@@ -39,12 +39,16 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [submitting, setSubmitting] = useState(false);
+  const [cleanupState, setCleanupState] = useState<"idle" | "checking" | "clean" | "dirty">("idle");
+  const [cleanupDetail, setCleanupDetail] = useState<string>("");
 
   useEffect(() => {
     if (open) {
       setValue("");
       setStatus("idle");
       setSubmitting(false);
+      setCleanupState("idle");
+      setCleanupDetail("");
     }
   }, [open]);
 
