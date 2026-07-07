@@ -8,7 +8,7 @@
 
 import { test, expect, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
-import { fetchOldSlugCleanupStatus, snapshotSlugRow, verifyOldSlugGoneFromDbAndUi } from "./helpers/db-assert";
+import { fetchOldSlugCleanupStatus, snapshotSlugRow, verifyOldSlugGoneFromDbAndUi, verifyOldSlugGoneWithRetry } from "./helpers/db-assert";
 
 const TEXT = "Rename race content";
 
