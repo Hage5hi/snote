@@ -1,11 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as Y from "yjs";
 import {
-  abandonProviderForSlug,
   getSnapshotDebounceMs,
-  registerAbandonedSlugCleanup,
   SupabaseYjsProvider,
-  unabandonProviderForSlug,
   type Encryption,
 } from "../provider";
 
@@ -54,34 +51,18 @@ function makeProvider(slug = "test-slug") {
   return { provider: p, doc };
 }
 
-describe("SupabaseYjsProvider — rename/unmount cancellation", () => {
+describe("SupabaseYjsProvider — unmount cancellation", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
     vi.useFakeTimers();
   });
 
   afterEach(() => {
-    unabandonProviderForSlug("old-slug");
     vi.useRealTimers();
   });
 
-  it("cancels a pending debounced snapshot immediately when the slug is abandoned", async () => {
-    const { provider, doc } = makeProvider("old-slug");
-    const saveSpy = vi.spyOn(provider, "saveSnapshot");
-
-    doc.getText("content").insert(0, "late write");
-    await vi.advanceTimersByTimeAsync(799);
-    expect(saveSpy).not.toHaveBeenCalled();
-
-    abandonProviderForSlug("old-slug");
-    await vi.advanceTimersByTimeAsync(1_000);
-
-    expect(saveSpy).not.toHaveBeenCalled();
-    expect(upsertCalls).toHaveLength(0);
-  });
-
   it("cancels a pending debounced snapshot on unmount with no late writes", async () => {
-    const { provider, doc } = makeProvider("old-slug");
+    const { provider, doc } = makeProvider("some-slug");
     const saveSpy = vi.spyOn(provider, "saveSnapshot");
 
     doc.getText("content").insert(0, "draft");
@@ -91,59 +72,8 @@ describe("SupabaseYjsProvider — rename/unmount cancellation", () => {
     expect(saveSpy).not.toHaveBeenCalled();
     expect(upsertCalls).toHaveLength(0);
   });
-
-  it("does not auto-create a missing row when the slug was abandoned for rename", async () => {
-    const { provider } = makeProvider("old-slug");
-
-    abandonProviderForSlug("old-slug");
-    await provider.connect({ name: "Test", color: "#fff" }, { rowExists: false, prefetchedYdocState: null });
-
-    expect(upsertCalls).toHaveLength(0);
-    await provider.destroy();
-  });
-
-  it("keeps an already-mounted old provider blocked after the global abandoned TTL expires", async () => {
-    const { provider } = makeProvider("old-slug");
-
-    abandonProviderForSlug("old-slug");
-    await vi.advanceTimersByTimeAsync(31_000);
-    await provider.saveSnapshot();
-
-    expect(upsertCalls).toHaveLength(0);
-    await provider.destroy();
-  });
-
-  it("runs slug cleanup handlers in the already-open tab when a slug is abandoned", async () => {
-    const cleanup = vi.fn();
-    const unregister = registerAbandonedSlugCleanup("old-slug", cleanup);
-
-    abandonProviderForSlug("old-slug");
-
-    expect(cleanup).toHaveBeenCalledTimes(1);
-    unregister();
-  });
-
-  it("does not perform a late snapshot upsert if abandonment happens during async snapshot work", async () => {
-    const { provider, doc } = makeProvider("old-slug");
-    let releaseEncrypt!: () => void;
-    provider.setEncryption({
-      encrypt: () => new Promise<Uint8Array>((resolve) => {
-        releaseEncrypt = () => resolve(new Uint8Array([1, 2, 3]));
-      }),
-      decrypt: async (bytes) => bytes,
-    });
-
-    doc.getText("content").insert(0, "late encrypted write");
-    const save = provider.saveSnapshot();
-    await Promise.resolve();
-    abandonProviderForSlug("old-slug");
-    releaseEncrypt();
-    await save;
-
-    expect(upsertCalls).toHaveLength(0);
-    await provider.destroy();
-  });
 });
+
 
 describe("getSnapshotDebounceMs", () => {
   afterEach(() => {

@@ -7,8 +7,6 @@ import {
   getPinned,
   isPinned,
   togglePin,
-  renameRecent,
-  renamePinned,
 } from "../recent-notes";
 
 describe("recent-notes", () => {
@@ -57,21 +55,5 @@ describe("recent-notes", () => {
       expect(isPinned("alpha")).toBe(false);
     });
   });
-
-  describe("rename across both lists", () => {
-    it("renameRecent updates recent entry's slug", () => {
-      touchRecent("old-slug", "preview");
-      renameRecent("old-slug", "new-slug");
-      const recents = getRecents();
-      expect(recents.find((r) => r.slug === "new-slug")).toBeTruthy();
-      expect(recents.find((r) => r.slug === "old-slug")).toBeUndefined();
-    });
-
-    it("renamePinned updates pinned entry's slug", () => {
-      togglePin("old-slug");
-      renamePinned("old-slug", "new-slug");
-      expect(isPinned("new-slug")).toBe(true);
-      expect(isPinned("old-slug")).toBe(false);
-    });
-  });
 });
+

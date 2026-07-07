@@ -1,51 +1,81 @@
-## 1. Fix persistent "New version available" toast on the published site
+## Scope
 
-**Root cause (from `src/lib/pwa-update.ts`):**
-- The version poller compares `/version.json` `buildId` against the tab's `__BUILD_ID__` and triggers the toast whenever they differ.
-- Clicking Update calls `pendingReload()` → `updateSW(true)`. `updateSW(true)` only reloads if there is a *waiting* service worker to activate. When the toast was fired by the **version poller** (not by `onNeedRefresh`), there is often no waiting SW yet — the new SW may still be `installing`, blocked by a large precache, or the user may have SW disabled. Nothing reloads, the poller runs again a minute later, and the toast reappears — forever. This matches the reported "I clicked Update many times, nothing happens, banner keeps coming back."
-- Even when a reload happens, if the browser serves cached `index.html` (e.g. via HTTP cache with no revalidation), the tab boots the old `__BUILD_ID__` again and the mismatch persists.
+Three items. #1 is large and touches many layers, so I'm laying it out before touching code.
 
-**Fix (surgical, `src/lib/pwa-update.ts` only):**
-1. Make `pendingReload` robust:
-   - If `registration.waiting` exists → post `SKIP_WAITING` and reload on the next `controllerchange` (with a hard fallback timeout).
-   - Otherwise → immediately do a cache-busting hard reload: `window.location.replace(location.pathname + '?v=' + newBuildId)` (query param defeats HTTP cache for `index.html`).
-2. Track the last-seen remote `buildId` from the poller. Pass it into `triggerToast` so the reload URL carries the exact target build.
-3. Persist `pwa-update-accepted-build` in `sessionStorage` when the user clicks Update. On boot, if `CURRENT_BUILD_ID` still equals the previously-accepted target (meaning the reload failed to pick up the new bundle), skip re-showing the toast for that build to break the loop and surface a one-time console warning instead.
-4. Suppress duplicate toasts: if a toast with `TOAST_ID` is already visible, don't re-fire it every poll (sonner dedupes by id, but we should also early-return so the reload URL isn't overwritten).
-5. Add lightweight console logs (`[pwa-update] mismatch current=… remote=…`, `[pwa-update] reload strategy=waiting|hard`) so future regressions are diagnosable from DevTools.
+### 1. Remove "Rename slug" and "Duplicate note" entirely
 
-No changes to caches/localStorage/IndexedDB — user data stays untouched.
+These features are woven through UI, libs, edge functions, tests, and i18n. Plan removes them in dependency order so the app never enters a half-broken state.
 
-## 2. Playwright test: right-click Home opens new tab to `/`
+**UI (safe to delete outright)**
+- `src/components/note/RenameDialog.tsx`
+- `src/components/note/DuplicateDialog.tsx`
+- `src/components/note/__tests__/RenameDialog.test.tsx`
+- Prune Rename/Duplicate menu items, handlers, state, and shortcuts from:
+  - `src/components/note/topbar/NoteMenu.tsx`
+  - `src/components/note/topbar/Topbar.tsx`
+  - `src/pages/NotePage.tsx` (dialog mounts, keyboard shortcut wiring)
+  - `src/components/CommandPalette.tsx` / `CommandPaletteBody.tsx` (rename/duplicate commands, if present)
+  - `src/components/ShortcutHelp.tsx` (rename/duplicate rows)
 
-New file `e2e/topbar-home-right-click.spec.ts`:
-- Seed a note via existing `e2e/helpers/seed-note.ts` and navigate to `/<slug>`.
-- Listen for `context.on('page', …)` to capture popups.
-- Right-click the `ArrowLeft` link (`getByRole('link', { name: <brand.home i18n key resolved> })`) using `page.click({ button: 'right' })` — but since our handler uses `onContextMenu` + `window.open`, we dispatch it via `locator.dispatchEvent('contextmenu')` for cross-browser reliability, then await the `page` event.
-- Assert the new page's URL ends with `/` and the original tab's URL is unchanged.
+**Library code**
+- Delete `src/lib/rename.ts` and `src/lib/rename-cleanup-status.ts`.
+- `src/lib/recent-notes.ts` — drop `renamePinned` / `renameRecent` exports; keep the rest.
+- `src/lib/share-tokens.ts` — drop `renameShareToken` export.
+- `src/lib/yjs/provider.ts` + `src/lib/yjs/doc-cache.ts` — remove the rename-abandon path (`unabandonProviderForSlug`, abandoned-slug guards, prepare/finalize hooks). The doc cache/provider keep working; only rename-specific branches go.
+- `src/lib/snapshots.ts` — remove rename-related snapshot cancellation only if it's rename-only; keep general snapshot APIs.
 
-## 3. Documented CLI to replay a failing stress run from HTML report
+**Edge functions**
+- Delete `supabase/functions/share-rename/` and `supabase/functions/old-slug-cleanup-status/` (rename-only surfaces).
+- Leave `share-create`, `share-view`, `share-revoke`, `raw`, etc. untouched.
 
-The script already exists at `scripts/rerun-stress-from-report.sh`. Gaps to close:
-- Add an npm script alias in `package.json`: `"e2e:rerun-stress": "bash scripts/rerun-stress-from-report.sh"` so the documented invocation is stable.
-- Extend `docs/e2e-env-overrides.md` with a **Replaying a failed stress run** section documenting:
-  - `bun run e2e:rerun-stress [report-dir]`
-  - Which attachments it reads (`stress-seed*.json`), which env vars it exports (`STRESS_RENAME_SEED`, `STRESS_RENAME_ITERATIONS`, `CI`), and how to pass extra Playwright flags (`--project=chromium`, `--headed`).
-  - Example end-to-end: download the CI `e2e-html-report-chromium-*` artifact, unzip, run the command.
+**i18n**
+- Remove `rename.*` and `dup.*` keys from `src/i18n/index.ts` (all locales).
+- Update `.lintrc-i18n-allowlist.json` if it references any removed keys.
 
-## 4. CI: fail fast when replay attachments are missing; upload as artifacts
+**Tests**
+- Delete rename/duplicate unit tests: `src/lib/__tests__/rename*.test.ts`, `src/components/note/__tests__/RenameDialog.test.tsx`.
+- Delete rename E2E specs: `e2e/note-rename-*.spec.ts`, `e2e/helpers/rename-cleanup.ts`.
+- Trim rename cases from shared specs: `e2e/i18n-dialogs.spec.ts`, `e2e/i18n-toast-regression.spec.ts`, `e2e/helpers/db-assert.ts`, `src/lib/yjs/__tests__/{provider,doc-cache}.test.ts`, `src/lib/__tests__/recent-notes.test.ts`.
+- Leave unrelated `scripts/__tests__/*` (ci-sticky, i18n-allowlist) alone — their "rename"/"duplicate" matches are coincidental (renaming report files, duplicate-audit heuristics).
 
-Update `.github/workflows/e2e.yml` in the existing `e2e` job:
-- New step `Verify stress replay attachments` after "Run full e2e suite", `if: always()`:
-  - Runs a small inline `node` check that scans `playwright-report/` and `test-results/` for at least one `stress-seed*.json` **and** one `stress-timings.json` when the stress spec ran (detect by grepping `e2e-results.json` for `note-rename-yjs-race`).
-  - If the stress spec ran but attachments are missing → `exit 1` with a clear message so a broken instrumentation change (someone removing the `testInfo.attach` calls) fails CI immediately instead of silently regressing debuggability.
-- New upload step `Upload stress replay attachments`, `if: always()`, `if-no-files-found: warn`:
-  - Name: `stress-replay-${{ matrix.browser }}-run${{ github.run_number }}-attempt${{ github.run_attempt }}`
-  - Paths: `playwright-report/**/stress-seed*.json`, `playwright-report/**/stress-timings.json`, `test-results/**/stress-seed*.json`, `test-results/**/stress-timings.json`.
-- Add a one-line link to this artifact in the existing "Publish E2E timing and artifact summary" job-summary step (or a small new summary step) so reviewers can jump straight to it.
+**Docs**
+- Prune rename/duplicate references from `README.md`, `CLAUDE.md`, `docs/architecture.md`, `docs/known-issues.md`, `CHANGELOG.md` (add a removal entry).
 
-### Technical notes
+**Verification loop**
+1. `bunx tsgo -p tsconfig.app.json` — no dangling imports.
+2. `bunx vitest run` — unit tests green after removals.
+3. `bunx eslint .` — no unused-var warnings from stripped handlers.
+4. Manual: load a note, confirm the Note menu no longer shows Rename/Duplicate and the app renders normally.
 
-- All PWA changes stay inside `src/lib/pwa-update.ts`; no service-worker manifest or Workbox config edits — the SW pipeline is already correct, only the client-side activation path is fragile.
-- The new Playwright spec follows existing patterns in `e2e/note-rename-multi-tab-observer.spec.ts` for popup handling and reuses `e2e/helpers/seed-note.ts` (no new helpers).
-- The CI verification step is pure `node -e` — no new dev dependency.
+### 2. E2E for stalled SW registration
+
+- New spec `e2e/pwa-update-sw-stall.spec.ts` that:
+  - Uses `installPwaUpdateMock` with poll disabled (`initialPollMs: 10_000_000`) so `__SNOTE_PWA_UPDATE_STATE__.lastRemoteBuildId` never populates.
+  - Calls `waitForPwaUpdaterReady(page, testInfo, 500)` inside `expect(...).rejects.toThrow(/version poller never populated/)`.
+  - After the throw, reads `testInfo.attachments` and asserts one entry is `pwa-updater-not-ready.json` with `lastState`, `swState`, and `timeoutMs` fields.
+- No production code changes needed — this only exercises the existing readiness gate.
+
+### 3. Document the dev PWA debug panel + readiness gate in `e2e/README.md`
+
+Add a new "Dev PWA debug panel" section covering:
+- File: `src/components/dev/PwaUpdateDebugPanel.tsx`, mounted from `src/App.tsx`.
+- Enabled only when `import.meta.env.DEV` is true (`bun run dev`); hidden in preview/prod builds.
+- Reads `window.__SNOTE_PWA_UPDATE_STATE__` every 500ms, so the same values feed the toast, the polling summary, and the panel.
+- Field reference: `current`, `pending`, `strategy` (`waiting-sw` | `hard` | `—`), `attempts`, `inProgress`.
+- Note that the pwa updater short-circuits in Lovable preview, so the panel stays empty there.
+
+And a "Readiness gate" section covering:
+- `waitForPwaUpdaterReady(page, testInfo, timeoutMs=5000)` in `e2e/helpers/pwa-update-mock.ts`.
+- What it waits for (`lastRemoteBuildId`), the default 5s timeout, and how to shorten it in stall tests.
+- On timeout it attaches `pwa-updater-not-ready.json` (schema: `{ lastState, swState: { supported, hasRegistration, active, waiting, installing }, timeoutMs }`) and throws — matching item 2's assertion target.
+
+---
+
+## Non-goals / guardrails
+
+- Do not touch unrelated schema-drift, ci-sticky, or i18n-allowlist scripts.
+- Do not alter `src/integrations/supabase/{client,types}.ts` or `supabase/config.toml`.
+- Keep the `notes.slug` column and all other schema untouched — removing the UI is enough; a DB migration is out of scope unless you ask.
+- Recent-notes/pinned-notes storage keys stay backward compatible; only the rename-time mutation helpers are removed.
+
+Reply "go" (or with edits) and I'll execute in the order above.

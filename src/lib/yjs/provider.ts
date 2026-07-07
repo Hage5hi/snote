@@ -139,12 +139,11 @@ export function getSnapshotDebounceMs(): number {
 }
 
 /** Mark a slug so its still-mounted provider will not write to Postgres. */
-export function abandonProviderForSlug(slug: string) {
+function abandonProviderForSlug(slug: string) {
   markSlugAbandoned(slug, true);
 }
 
-/** Clear the abandoned flag (test helper / manual override). */
-export function unabandonProviderForSlug(slug: string) {
+function unabandonProviderForSlug(slug: string) {
   abandonedSlugs.delete(slug);
   try {
     localStorage.removeItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`);
@@ -153,32 +152,10 @@ export function unabandonProviderForSlug(slug: string) {
   }
 }
 
-export function isProviderSlugAbandoned(slug: string) {
-  return isSlugAbandoned(slug);
-}
-
-export function registerAbandonedSlugCleanup(slug: string, cleanup: () => void | Promise<void>) {
-  let cleanups = abandonedSlugCleanups.get(slug);
-  if (!cleanups) {
-    cleanups = new Set();
-    abandonedSlugCleanups.set(slug, cleanups);
-  }
-  cleanups.add(cleanup);
-  if (isSlugAbandoned(slug)) {
-    queueMicrotask(() => {
-      try {
-        void Promise.resolve(cleanup()).catch(() => {});
-      } catch {
-        /* best-effort local cache cleanup */
-      }
-    });
-  }
-  return () => {
-    const current = abandonedSlugCleanups.get(slug);
-    current?.delete(cleanup);
-    if (current?.size === 0) abandonedSlugCleanups.delete(slug);
-  };
-}
+// Retained internally so the cross-tab abandonment broadcast handler compiles;
+// no code path currently calls this since Rename/Duplicate were removed.
+void abandonProviderForSlug;
+void unabandonProviderForSlug;
 
 export type AwarenessState = {
   user?: { name: string; color: string };
