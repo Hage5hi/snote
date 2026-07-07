@@ -88,11 +88,31 @@ export function emitPwaReadinessInvalidEvent(input: unknown): PwaReadinessInvali
   const reason = explainPwaReadinessState(input);
   if (!reason) return null;
   try {
-    window.dispatchEvent(new CustomEvent("snote:pwa-readiness-invalid", { detail: reason }));
+    window.dispatchEvent(
+      new CustomEvent<PwaReadinessInvalidEventDetail>(PWA_READINESS_INVALID_EVENT, { detail: reason }),
+    );
   } catch {
     /* ignore */
   }
   return reason;
+}
+
+/** Canonical event name for readiness-validator rejections. */
+export const PWA_READINESS_INVALID_EVENT = "snote:pwa-readiness-invalid" as const;
+
+/** Canonical `detail` shape carried by {@link PWA_READINESS_INVALID_EVENT}.
+ *  Alias of {@link PwaReadinessInvalidReason} so consumers can import a
+ *  name that reads as "event payload" at the callsite. */
+export type PwaReadinessInvalidEventDetail = PwaReadinessInvalidReason;
+
+/** Strongly-typed CustomEvent for listeners:
+ *  `window.addEventListener(PWA_READINESS_INVALID_EVENT, (e: PwaReadinessInvalidEvent) => …)` */
+export type PwaReadinessInvalidEvent = CustomEvent<PwaReadinessInvalidEventDetail>;
+
+declare global {
+  interface WindowEventMap {
+    "snote:pwa-readiness-invalid": PwaReadinessInvalidEvent;
+  }
 }
 
 /** Install the validator on window so E2E can call the exact same check. */
