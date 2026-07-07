@@ -83,6 +83,7 @@ const App = () => (
           >
             <CommandPalette />
             <DonateButton />
+            <PwaUpdateDebugPanel />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route
