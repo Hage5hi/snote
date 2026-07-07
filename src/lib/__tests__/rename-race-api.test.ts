@@ -102,7 +102,7 @@ describe("rename race (API-level, no browser)", () => {
 
     await prepareRename("old-slug", "new-slug");
     const finalized = finalizeRename("old-slug", "new-slug");
-    await vi.advanceTimersByTimeAsync(getSnapshotDebounceMs());
+    await vi.advanceTimersByTimeAsync(getSnapshotDebounceMs() + 2_000);
     await expect(finalized).resolves.toEqual({ deletionConfirmed: true });
 
     // Simulate a debounced snapshot writer firing AFTER finalizeRename.

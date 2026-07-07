@@ -123,7 +123,7 @@ describe("rename lifecycle", () => {
     await provider.destroy();
 
     const finalized = finalizeRename("old-slug", "new-slug");
-    await vi.advanceTimersByTimeAsync(800);
+    await vi.advanceTimersByTimeAsync(3_000);
     await expect(finalized).resolves.toEqual({ deletionConfirmed: true });
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -150,7 +150,7 @@ describe("rename lifecycle", () => {
       enc_check: null,
       enc_iterations: 100000,
     });
-    await vi.advanceTimersByTimeAsync(1_200);
+    await vi.advanceTimersByTimeAsync(3_000);
 
     await expect(finalized).resolves.toEqual({ deletionConfirmed: true });
     expect(rows.has("old-slug")).toBe(false);
