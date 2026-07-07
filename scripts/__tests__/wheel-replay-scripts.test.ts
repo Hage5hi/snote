@@ -1,9 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { afterEach, describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs as parseDownloadArgs, buildGhArgs } from "../download-and-replay-wheel-artifact";
-import { parseArgs as parseReplayArgs, expectedOutputs } from "../replay-wheel-diagnostics";
+import {
+  parseArgs as parseReplayArgs,
+  expectedOutputs,
+  planResumeOutputs,
+  verifyManifest,
+  verifyZipIntegrity,
+} from "../replay-wheel-diagnostics";
 import { validateWheelFixture } from "../validate-wheel-fixture";
+
+const tmpDirs: string[] = [];
+const mkTmp = () => { const d = mkdtempSync(join(tmpdir(), "wheel-replay-test-")); tmpDirs.push(d); return d; };
+afterEach(() => { while (tmpDirs.length) { try { rmSync(tmpDirs.pop()!, { recursive: true, force: true }); } catch { /* ignore */ } } });
+
+// Minimal valid ZIP: empty archive (PK\x05\x06 EOCD only) - both signatures present via prepending PK\x03\x04 stub.
+// We build a tiny but structurally valid zip by concatenating a local-file-header stub and an EOCD record.
+function makeValidZip(): Buffer {
+  const lfh = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const eocd = Buffer.from([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  return Buffer.concat([lfh, eocd]);
+}
+
 
 describe("wheel diagnostics replay scripts", () => {
   it("parses local replay mode with a selected diagnostics path and trace output", () => {
