@@ -1,7 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RenameDialog } from "../RenameDialog";
 
 const mocks = vi.hoisted(() => ({
@@ -65,18 +64,23 @@ describe("RenameDialog", () => {
     mocks.maybeSingle.mockReset();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("re-checks old slug deletion after finalize before showing a success toast", async () => {
-    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mocks.maybeSingle
       .mockResolvedValueOnce({ data: null, error: null })
       .mockResolvedValueOnce({ data: { slug: "old-slug" }, error: null })
       .mockResolvedValueOnce({ data: null, error: null });
 
     renderDialog();
-    await user.type(screen.getByPlaceholderText("rename.placeholder"), "new-slug");
+    fireEvent.change(screen.getByPlaceholderText("rename.placeholder"), {
+      target: { value: "new-slug" },
+    });
     await vi.advanceTimersByTimeAsync(350);
     await waitFor(() => expect(screen.getByRole("button", { name: "rename.submit" })).toBeEnabled());
-    await user.click(screen.getByRole("button", { name: "rename.submit" }));
+    fireEvent.click(screen.getByRole("button", { name: "rename.submit" }));
 
     await vi.advanceTimersByTimeAsync(1_500);
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
