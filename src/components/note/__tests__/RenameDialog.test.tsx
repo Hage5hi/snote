@@ -125,7 +125,7 @@ describe("RenameDialog", () => {
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "rename.toast_renamed",
-        description: "/old-slug → /new-slug (old slug still present — retry)",
+        description: "/old-slug → /new-slug (old slug still present — cleanup timed out — retry)",
         variant: "destructive",
       }),
     );
