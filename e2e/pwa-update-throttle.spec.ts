@@ -56,6 +56,10 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
 
 
   await page.goto("/");
+  // Fail fast with a useful diagnostic if the poller never runs (rather than
+  // timing out downstream on the toast assertion).
+  await waitForPwaUpdaterReady(page, testInfo);
+
   const toast = page.getByText("New version available");
   await expect(toast).toBeVisible({ timeout: 5_000 });
   await attach(testInfo, page, "before-click");
@@ -63,26 +67,31 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
   const update = page.getByRole("button", { name: /^Update$/ });
   await update.click();
 
-  // Spam clicks while the reload is 'in flight'.
+  // Deterministic wait: pending state must appear before we spam clicks.
   const pending = page.getByRole("button", { name: /^Update…$/ });
-  await expect(pending).toBeDisabled();
+  await expect(pending).toBeDisabled({ timeout: 5_000 });
+  await expect.poll(async () => (await pwaState(page))?.updateInProgress, { timeout: 5_000 }).toBe(true);
+
   for (let i = 0; i < 8; i++) {
     await pending.click({ force: true }).catch(() => {});
   }
-  await expect(page.getByText("Update pending")).toBeVisible();
+  await expect(page.getByText("Update pending")).toBeVisible({ timeout: 5_000 });
   await attach(testInfo, page, "while-pending");
 
   // Only one reload attempt should have been recorded.
-  const midState = await pwaState(page);
-  expect(midState?.reloadAttemptCount).toBe(1);
-  expect(midState?.updateInProgress).toBe(true);
+  await expect.poll(async () => (await pwaState(page))?.reloadAttemptCount, { timeout: 3_000 }).toBe(1);
 
-  // Toast must NOT flip back to "New version available" while pending.
-  for (let i = 0; i < 6; i++) {
-    await page.waitForTimeout(200);
-    const flickered = await page.getByText("New version available").count();
-    expect(flickered, `flicker detected on iteration ${i}`).toBe(0);
-  }
+  // Toast must NOT flip back to "New version available" during the whole
+  // pending window. Use expect.poll's built-in re-check window instead of
+  // hand-rolled waitForTimeout loops — polls every 100ms for 1.2s and fails
+  // the instant a flicker appears.
+  await expect
+    .poll(async () => page.getByText("New version available").count(), {
+      timeout: 1_200,
+      intervals: [100, 100, 100],
+    })
+    .toBe(0);
+
 
   // Now release the held reload → buildId transitions → toast auto-hides.
   await releaseHeldReload(page);
