@@ -79,6 +79,8 @@ describe("RenameDialog", () => {
     mocks.waitForSlugDeletionConfirmed.mockResolvedValue({ deleted: true, snapshot: null });
     mocks.fetchOldSlugCleanupStatus.mockReset();
     mocks.fetchOldSlugCleanupStatus.mockResolvedValue({ cleaned: true });
+    mocks.pollOldSlugCleanupStatus.mockReset();
+    mocks.pollOldSlugCleanupStatus.mockResolvedValue({ status: { cleaned: true }, timedOut: false, attempts: 1 });
     mocks.maybeSingle.mockReset();
   });
 
