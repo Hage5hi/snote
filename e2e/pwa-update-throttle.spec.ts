@@ -81,16 +81,16 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
   // Only one reload attempt should have been recorded.
   await expect.poll(async () => (await pwaState(page))?.reloadAttemptCount, { timeout: 3_000 }).toBe(1);
 
-  // Toast must NOT flip back to "New version available" during the whole
-  // pending window. Use expect.poll's built-in re-check window instead of
-  // hand-rolled waitForTimeout loops — polls every 100ms for 1.2s and fails
-  // the instant a flicker appears.
-  await expect
-    .poll(async () => page.getByText("New version available").count(), {
-      timeout: 1_200,
-      intervals: [100, 100, 100],
-    })
-    .toBe(0);
+  // Toast must NOT flip back to "New version available" during the pending
+  // window. Poll at a stable 100ms cadence and assert on every tick — this is
+  // deterministic under CI load because we only look at DOM state, not races.
+  const flickerDeadline = Date.now() + 1200;
+  while (Date.now() < flickerDeadline) {
+    const flickered = await page.getByText("New version available").count();
+    expect(flickered, `flicker at t=${Date.now()}`).toBe(0);
+    await page.waitForTimeout(100);
+  }
+
 
 
   // Now release the held reload → buildId transitions → toast auto-hides.
