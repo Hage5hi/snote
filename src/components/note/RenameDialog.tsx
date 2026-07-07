@@ -83,13 +83,19 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
     const newSlug = value.trim();
     setSubmitting(true);
     try {
-      await renameNote(currentSlug, newSlug);
+      await prepareRename(currentSlug, newSlug);
+      // Navigate FIRST so the old NotePage unmounts and its Yjs provider
+      // stops upserting `ydoc_state` for currentSlug — otherwise a debounced
+      // snapshot would recreate the old row after we delete it.
+      onOpenChange(false);
+      navigate(`/${newSlug}`);
+      // Give React a tick to unmount, then delete the source row.
+      await new Promise((r) => setTimeout(r, 50));
+      await finalizeRename(currentSlug, newSlug);
       toast({
         title: t("rename.toast_renamed"),
         description: `/${currentSlug} → /${newSlug}`,
       });
-      onOpenChange(false);
-      navigate(`/${newSlug}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("rename.generic_error");
       toast({ title: t("rename.toast_failed"), description: msg, variant: "destructive" });
