@@ -46,7 +46,7 @@ describe("PwaReadinessInvalidEventDetailSchema.parse", () => {
 describe("installPwaReadinessInvalidReporter", () => {
   it("forwards events to sink at sampleRate=1", () => {
     const sink = vi.fn();
-    const off = installPwaReadinessInvalidReporter({ sampleRate: 1, sink });
+    const off = installPwaReadinessInvalidReporter({ sampleRate: 1, sink, force: true });
     window.dispatchEvent(new CustomEvent(PWA_READINESS_INVALID_EVENT, { detail: valid }));
     off();
     expect(sink).toHaveBeenCalledTimes(1);
@@ -55,7 +55,7 @@ describe("installPwaReadinessInvalidReporter", () => {
 
   it("drops events when sampleRate=0", () => {
     const sink = vi.fn();
-    const off = installPwaReadinessInvalidReporter({ sampleRate: 0, sink });
+    const off = installPwaReadinessInvalidReporter({ sampleRate: 0, sink, force: true });
     window.dispatchEvent(new CustomEvent(PWA_READINESS_INVALID_EVENT, { detail: valid }));
     off();
     expect(sink).not.toHaveBeenCalled();
@@ -66,7 +66,7 @@ describe("installPwaReadinessInvalidReporter", () => {
     let calls = 0;
     // rng returns 0.05 then 0.9 → first passes (< 0.1), second drops.
     const rng = () => (calls++ === 0 ? 0.05 : 0.9);
-    const off = installPwaReadinessInvalidReporter({ sampleRate: 0.1, sink, rng });
+    const off = installPwaReadinessInvalidReporter({ sampleRate: 0.1, sink, rng, force: true });
     window.dispatchEvent(new CustomEvent(PWA_READINESS_INVALID_EVENT, { detail: valid }));
     window.dispatchEvent(new CustomEvent(PWA_READINESS_INVALID_EVENT, { detail: valid }));
     off();
@@ -75,7 +75,7 @@ describe("installPwaReadinessInvalidReporter", () => {
 
   it("silently drops malformed detail payloads", () => {
     const sink = vi.fn();
-    const off = installPwaReadinessInvalidReporter({ sampleRate: 1, sink });
+    const off = installPwaReadinessInvalidReporter({ sampleRate: 1, sink, force: true });
     window.dispatchEvent(new CustomEvent(PWA_READINESS_INVALID_EVENT, { detail: { bogus: true } }));
     off();
     expect(sink).not.toHaveBeenCalled();
@@ -85,7 +85,7 @@ describe("installPwaReadinessInvalidReporter", () => {
     const sink = vi.fn(() => {
       throw new Error("boom");
     });
-    const off = installPwaReadinessInvalidReporter({ sampleRate: 1, sink });
+    const off = installPwaReadinessInvalidReporter({ sampleRate: 1, sink, force: true });
     expect(() =>
       window.dispatchEvent(new CustomEvent(PWA_READINESS_INVALID_EVENT, { detail: valid })),
     ).not.toThrow();
