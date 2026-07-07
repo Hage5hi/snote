@@ -249,7 +249,7 @@ describe("failed-test artifact links", () => {
         expect(md).toContain(`[wheel-diagnostics.json](test-results/wheel-latest/${label}/wheel-diagnostics.json)`);
         expect(md).toContain("PLAYWRIGHT_PROJECT=chromium RETRIES=2 ./scripts/run-wheel-e2e.sh");
         expect(md).toContain(
-          `PLAYWRIGHT_PROJECT=chromium bun run scripts/replay-wheel-diagnostics.ts test-results/wheel-latest/${label}/wheel-diagnostics.json`,
+          `PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/replay-wheel-diagnostics.ts test-results/wheel-latest/${label}/wheel-diagnostics.json --project=chromium --retries=2 --out-dir=test-results/wheel-replay/chromium-r2`,
         );
       });
     }
