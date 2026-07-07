@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { installPwaUpdateMock, releaseHeldReload, getHardReloadCount } from "./helpers/pwa-update-mock";
+import { installPwaUpdateMock, releaseHeldReload, getHardReloadCount, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
 
 // Cross-browser: runs on chromium, firefox, and webkit (CI matrix).
 // Forces the hard-reload path (no waiting service worker) and asserts the
