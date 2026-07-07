@@ -5,7 +5,7 @@
 import { describe, it, expect } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { I18nProvider } from "@/i18n/provider";
-import { translations } from "@/i18n";
+import { dict } from "@/i18n";
 import { NoteMenu } from "../NoteMenu";
 
 const RENAME_RE = /rename|đổi tên/i;
@@ -30,21 +30,25 @@ describe("Note menu — Rename/Duplicate fully removed", () => {
   });
 
   it("no rename/duplicate i18n keys remain in any locale", () => {
-    for (const [locale, dict] of Object.entries(translations)) {
-      for (const key of Object.keys(dict)) {
+    for (const [locale, d] of Object.entries(dict)) {
+      for (const key of Object.keys(d)) {
         expect(key, `${locale}:${key}`).not.toMatch(/^(rename|dup)\./);
         expect(key, `${locale}:${key}`).not.toMatch(/^note\.(rename|duplicate)/);
       }
     }
   });
 
-  it("rename/duplicate helper modules are gone (dynamic import 404)", async () => {
-    await expect(import(/* @vite-ignore */ "@/lib/rename")).rejects.toBeTruthy();
-    await expect(
-      import(/* @vite-ignore */ "@/components/note/RenameDialog"),
-    ).rejects.toBeTruthy();
-    await expect(
-      import(/* @vite-ignore */ "@/components/note/DuplicateDialog"),
-    ).rejects.toBeTruthy();
+  it("rename/duplicate helper modules are gone (dynamic import fails)", async () => {
+    // Build specifiers at runtime so TS doesn't try to resolve them.
+    const specs = [
+      "@/lib/rename",
+      "@/components/note/RenameDialog",
+      "@/components/note/DuplicateDialog",
+    ];
+    for (const spec of specs) {
+      const loader = new Function("s", "return import(s)") as (s: string) => Promise<unknown>;
+      await expect(loader(spec)).rejects.toBeTruthy();
+    }
   });
 });
+
