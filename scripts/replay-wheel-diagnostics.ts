@@ -74,12 +74,14 @@ export function parseArgs(argv: string[]) {
     else if (a === "--trace=on") args.trace = true;
     else if (a === "--extra-traces" || a === "--trace-notes") args.extraTraces = true;
     else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
+    else if (a.startsWith("--retries=")) args.retries = a.slice("--retries=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
-    else if (a.startsWith("--out-dir=")) args.outDir = a.slice("--out-dir=".length);
+    else if (a.startsWith("--out-dir=")) { args.outDir = a.slice("--out-dir=".length); outDirSet = true; }
     else if (!args.path) args.path = a;
     else usage();
   }
   if (!args.path) usage();
+  if (!outDirSet) args.outDir = join(process.cwd(), "test-results", "wheel-replay", `${args.project}-r${args.retries}`);
   return args;
 }
 
