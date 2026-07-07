@@ -41,6 +41,7 @@ vi.mock("@/lib/rename", () => ({
 
 vi.mock("@/lib/rename-cleanup-status", () => ({
   fetchOldSlugCleanupStatus: mocks.fetchOldSlugCleanupStatus,
+  pollOldSlugCleanupStatus: mocks.pollOldSlugCleanupStatus,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
