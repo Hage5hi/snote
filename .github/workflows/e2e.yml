@@ -142,6 +142,9 @@ jobs:
             test-results/**/stress-timings*.json
           retention-days: 14
           if-no-files-found: warn
+      - name: Consolidate PWA update buildId summary
+        if: always()
+        run: bun run scripts/collect-pwa-update-summary.ts --out test-results/pwa-update-summary.json
       - name: Upload PWA update metadata attachments
         if: always()
         uses: actions/upload-artifact@v4
@@ -150,6 +153,7 @@ jobs:
           path: |
             playwright-report/**/pwa-update-*.json
             test-results/**/pwa-update-*.json
+            test-results/pwa-update-summary.json
           retention-days: 14
           if-no-files-found: warn
       # Upload on BOTH success and failure so flaky-test triage doesn't need a
