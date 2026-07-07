@@ -55,6 +55,25 @@ export type Encryption = {
 const abandonedSlugs = new Set<string>();
 const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
 
+/**
+ * Snapshot debounce window (ms). Override via VITE_YJS_SNAPSHOT_DEBOUNCE_MS
+ * (Vite/browser) or YJS_SNAPSHOT_DEBOUNCE_MS (Node/test env) so rename-race
+ * tests can tune this reliably across CI and local machines. Default: 800.
+ */
+export function getSnapshotDebounceMs(): number {
+  const fromVite =
+    typeof import.meta !== "undefined" && import.meta.env
+      ? (import.meta.env.VITE_YJS_SNAPSHOT_DEBOUNCE_MS as string | undefined)
+      : undefined;
+  const fromNode =
+    typeof process !== "undefined" && process.env
+      ? process.env.YJS_SNAPSHOT_DEBOUNCE_MS
+      : undefined;
+  const raw = fromVite ?? fromNode;
+  const n = raw != null ? Number(raw) : NaN;
+  return Number.isFinite(n) && n >= 0 ? n : 800;
+}
+
 /** Mark a slug so its still-mounted provider will not write to Postgres. */
 export function abandonProviderForSlug(slug: string) {
   abandonedSlugs.add(slug);
