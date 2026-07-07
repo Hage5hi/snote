@@ -520,7 +520,7 @@ export class SupabaseYjsProvider {
   private scheduleSnapshot() {
     if (this.destroyed || abandonedSlugs.has(this.slug)) return;
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
-    this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), 800);
+    this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), getSnapshotDebounceMs());
   }
 
   async saveSnapshot() {
