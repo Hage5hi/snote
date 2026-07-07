@@ -654,11 +654,6 @@ export class SupabaseYjsProvider {
     }
     this.cancelPendingSnapshot();
     this.pendingUpdates = [];
-    // Skip final flush if this slug was abandoned (e.g. renamed away) —
-    // otherwise the just-deleted row would be resurrected.
-    if (!abandonedSlugs.has(this.slug)) {
-      await this.saveSnapshot();
-    }
     this.doc.off("update", this.handleDocUpdate);
     this.awareness.off("update", this.handleAwarenessUpdate);
     this.cleanupFns.forEach((fn) => fn());
