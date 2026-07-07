@@ -14,6 +14,7 @@ type PwaUpdateDebugState = {
   updateInProgress: boolean;
   reloadAttemptCount: number;
   reloadStrategy: "waiting-sw" | "hard" | null;
+  lastRemoteBuildId?: string | null;
 };
 
 export function PwaUpdateDebugPanel() {
