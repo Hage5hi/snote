@@ -46,6 +46,26 @@ export type Encryption = {
   decrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
 };
 
+/**
+ * Slugs marked as "abandoned" (e.g. renamed away). Any provider whose slug
+ * is in this set will silently drop pending snapshot writes and skip the
+ * final flush on destroy — this prevents the just-deleted row from being
+ * resurrected by a debounced upsert or beacon after rename.
+ */
+const abandonedSlugs = new Set<string>();
+
+/** Mark a slug so its still-mounted provider will not write to Postgres. */
+export function abandonProviderForSlug(slug: string) {
+  abandonedSlugs.add(slug);
+  // Auto-expire after 30s so a legitimate later reuse of the slug works.
+  setTimeout(() => abandonedSlugs.delete(slug), 30_000);
+}
+
+/** Clear the abandoned flag (test helper / manual override). */
+export function unabandonProviderForSlug(slug: string) {
+  abandonedSlugs.delete(slug);
+}
+
 export type AwarenessState = {
   user?: { name: string; color: string };
 } & Record<string, unknown>;
