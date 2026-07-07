@@ -123,7 +123,7 @@ describe("rename lifecycle", () => {
     await provider.destroy();
 
     const finalized = finalizeRename("old-slug", "new-slug");
-    await vi.advanceTimersByTimeAsync(750);
+    await vi.advanceTimersByTimeAsync(800);
     await expect(finalized).resolves.toEqual({ deletionConfirmed: true });
 
     await vi.advanceTimersByTimeAsync(1_000);

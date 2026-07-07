@@ -12,7 +12,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { clearRenamedSlugLocalState, prepareRename, finalizeRename, SLUG_RE } from "@/lib/rename";
+import {
+  clearRenamedSlugLocalState,
+  prepareRename,
+  finalizeRename,
+  waitForSlugDeletionConfirmed,
+  SLUG_RE,
+} from "@/lib/rename";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n/index";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
@@ -25,23 +31,6 @@ interface RenameDialogProps {
 }
 
 type Status = "idle" | "checking" | "available" | "taken" | "invalid" | "same";
-
-const DELETION_RECHECK_DELAYS_MS = [150, 350, 750];
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function waitForOldSlugDeleted(slug: string): Promise<boolean> {
-  for (const delay of DELETION_RECHECK_DELAYS_MS) {
-    await wait(delay);
-    const { data } = await supabase
-      .from("notes")
-      .select("slug")
-      .eq("slug", slug)
-      .maybeSingle();
-    if (!data) return true;
-  }
-  return false;
-}
 
 export function RenameDialog({ open, onOpenChange, currentSlug, provider }: RenameDialogProps) {
   const { t } = useI18n();
@@ -113,7 +102,7 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       await new Promise((r) => setTimeout(r, 50));
       await clearRenamedSlugLocalState(currentSlug);
       const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
-      const finalDeletionConfirmed = deletionConfirmed || await waitForOldSlugDeleted(currentSlug);
+      const finalDeletionConfirmed = deletionConfirmed || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
       toast({
         title: t("rename.toast_renamed"),
         description: finalDeletionConfirmed

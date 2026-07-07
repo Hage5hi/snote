@@ -57,17 +57,22 @@ jobs:
             ${{ runner.os }}-playwright-${{ hashFiles('bun.lockb') }}-
             ${{ runner.os }}-playwright-
       - name: Install Playwright browser (${{ matrix.browser }})
-        run: bunx playwright install --with-deps ${{ matrix.browser }}
+        run: |
+          if [ "${{ matrix.browser }}" = "chromium" ]; then
+            ./scripts/ensure-playwright-browsers.sh
+          else
+            bunx playwright install --with-deps ${{ matrix.browser }}
+          fi
       # Ensure chromium is always present so scripts/replay-wheel-diagnostics.ts
       # (which defaults to chromium) can run in the CI job regardless of matrix.
       - name: Install Playwright chromium for replay tooling
         if: matrix.browser != 'chromium'
-        run: bunx playwright install --with-deps chromium
+        run: ./scripts/ensure-playwright-browsers.sh
       - name: Validate wheel diagnostics fixture
         run: bun run scripts/validate-wheel-fixture.ts
       - name: Run lock/unlock e2e specs
         run: |
-          bunx playwright test \
+          ./scripts/run-playwright.sh test \
             --retries=${PLAYWRIGHT_RETRIES} \
             e2e/note-lock-unlock.spec.ts \
             e2e/note-lock-unlock-modes.spec.ts \

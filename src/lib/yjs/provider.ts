@@ -54,10 +54,33 @@ export type Encryption = {
  */
 const abandonedSlugs = new Set<string>();
 const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
+const abandonedSlugCleanups = new Map<string, Set<() => void | Promise<void>>>();
 const ABANDONED_SLUG_STORAGE_PREFIX = "syrin:abandoned-slug:";
+const ABANDONED_SLUG_TTL_MS = 5 * 60_000;
 
 function isSlugAbandoned(slug: string) {
+  if (abandonedSlugs.has(slug)) return true;
+  if (typeof localStorage !== "undefined") {
+    try {
+      const raw = localStorage.getItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`);
+      const ts = raw ? Number(raw) : NaN;
+      if (Number.isFinite(ts) && Date.now() - ts < ABANDONED_SLUG_TTL_MS) return true;
+      if (raw) localStorage.removeItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`);
+    } catch {
+      /* storage unavailable */
+    }
+  }
   return abandonedSlugs.has(slug);
+}
+
+function runAbandonedSlugCleanups(slug: string) {
+  abandonedSlugCleanups.get(slug)?.forEach((cleanup) => {
+    try {
+      void Promise.resolve(cleanup()).catch(() => {});
+    } catch {
+      /* best-effort local cache cleanup */
+    }
+  });
 }
 
 function markSlugAbandoned(slug: string, broadcast: boolean) {
@@ -66,10 +89,11 @@ function markSlugAbandoned(slug: string, broadcast: boolean) {
     if (broadcast) void provider.broadcastSlugAbandoned();
     provider.markAbandoned();
   });
+  runAbandonedSlugCleanups(slug);
   // Auto-expire the global slug block so a legitimate later reuse can create
   // a fresh empty row. Providers that were active at rename time stay marked
   // abandoned on the instance and can never resurrect the old content.
-  setTimeout(() => abandonedSlugs.delete(slug), 30_000);
+  setTimeout(() => abandonedSlugs.delete(slug), ABANDONED_SLUG_TTL_MS);
   if (broadcast && typeof localStorage !== "undefined") {
     try {
       localStorage.setItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`, String(Date.now()));
@@ -114,10 +138,38 @@ export function abandonProviderForSlug(slug: string) {
 /** Clear the abandoned flag (test helper / manual override). */
 export function unabandonProviderForSlug(slug: string) {
   abandonedSlugs.delete(slug);
+  try {
+    localStorage.removeItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`);
+  } catch {
+    /* storage unavailable */
+  }
 }
 
 export function isProviderSlugAbandoned(slug: string) {
   return isSlugAbandoned(slug);
+}
+
+export function registerAbandonedSlugCleanup(slug: string, cleanup: () => void | Promise<void>) {
+  let cleanups = abandonedSlugCleanups.get(slug);
+  if (!cleanups) {
+    cleanups = new Set();
+    abandonedSlugCleanups.set(slug, cleanups);
+  }
+  cleanups.add(cleanup);
+  if (isSlugAbandoned(slug)) {
+    queueMicrotask(() => {
+      try {
+        void Promise.resolve(cleanup()).catch(() => {});
+      } catch {
+        /* best-effort local cache cleanup */
+      }
+    });
+  }
+  return () => {
+    const current = abandonedSlugCleanups.get(slug);
+    current?.delete(cleanup);
+    if (current?.size === 0) abandonedSlugCleanups.delete(slug);
+  };
 }
 
 export type AwarenessState = {
@@ -404,7 +456,7 @@ export class SupabaseYjsProvider {
     });
 
     this.channel.on("broadcast", { event: "slug-abandoned" }, ({ payload }) => {
-      if (payload?.slug === this.slug) this.markAbandoned();
+      if (payload?.slug === this.slug) markSlugAbandoned(this.slug, false);
     });
 
     // When a new client joins, request the full state from peers.
@@ -520,6 +572,7 @@ export class SupabaseYjsProvider {
   }
 
   private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+    if (this.destroyed || this.isAbandoned()) return;
     if (origin === "remote" || origin === "remote-snapshot") return;
     this.updateCount++;
     // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
@@ -530,6 +583,7 @@ export class SupabaseYjsProvider {
   };
 
   private queueBroadcast(update: Uint8Array) {
+    if (this.destroyed || this.isAbandoned()) return;
     this.pendingUpdates.push(update);
     // Eager flush if rAF starved (background tab) — bounds memory.
     if (this.pendingUpdates.length >= SupabaseYjsProvider.MAX_PENDING_UPDATES) {
@@ -547,6 +601,10 @@ export class SupabaseYjsProvider {
 
   private flushBroadcasts() {
     this.flushScheduled = false;
+    if (this.destroyed || this.isAbandoned()) {
+      this.pendingUpdates = [];
+      return;
+    }
     if (this.pendingUpdates.length === 0) return;
     const queue = this.pendingUpdates;
     this.pendingUpdates = [];
@@ -568,6 +626,7 @@ export class SupabaseYjsProvider {
   };
 
   private async broadcastUpdate(update: Uint8Array) {
+    if (this.destroyed || this.isAbandoned()) return;
     if (!this.channel || !this.connected) return;
     let bytes = update;
     if (this.encryption) {
@@ -578,6 +637,7 @@ export class SupabaseYjsProvider {
         return;
       }
     }
+    if (this.destroyed || this.isAbandoned()) return;
     this.channel.send({
       type: "broadcast",
       event: "y-update",
@@ -639,6 +699,7 @@ export class SupabaseYjsProvider {
           return;
         }
       }
+      if (this.destroyed || this.isAbandoned()) return;
       const { error } = await supabase.from("notes").upsert(
         {
           slug: this.slug,

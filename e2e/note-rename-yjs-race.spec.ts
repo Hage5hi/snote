@@ -6,11 +6,31 @@
 //   - a DB snapshot of the old slug row (so resurrections are trivial to spot)
 //   - Playwright's own trace/video (see playwright.config.ts `retain-on-failure`)
 
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page, type TestInfo } from "@playwright/test";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
-import { snapshotSlugRow, waitForSlugAbsent } from "./helpers/db-assert";
+import { snapshotSlugRow, verifyOldSlugGoneFromDbAndUi } from "./helpers/db-assert";
 
 const TEXT = "Rename race content";
+
+async function attachDiagnostics(
+  testInfo: TestInfo,
+  page: Page,
+  name: string,
+  payload: unknown,
+) {
+  await testInfo.attach(`${name}.json`, {
+    body: JSON.stringify(payload, null, 2),
+    contentType: "application/json",
+  });
+  try {
+    await testInfo.attach(`${name}.png`, {
+      body: await page.screenshot(),
+      contentType: "image/png",
+    });
+  } catch {
+    /* page may already be closed */
+  }
+}
 
 test.describe("note rename Yjs race", () => {
   let oldSlug: string;
@@ -59,6 +79,7 @@ test.describe("note rename Yjs race", () => {
 
   test("renames after pending Yjs edits and old slug stays gone after debounce", async ({
     page,
+    context,
   }, testInfo) => {
     const consoleLines: string[] = [];
     const pageErrors: string[] = [];
@@ -68,6 +89,13 @@ test.describe("note rename Yjs race", () => {
     await page.goto(`/${oldSlug}`);
     const editor = page.locator(".cm-content").first();
     await expect(editor).toContainText(TEXT, { timeout: 15_000 });
+
+    const oldTab = await context.newPage();
+    const oldTabConsole: string[] = [];
+    oldTab.on("console", (msg) => oldTabConsole.push(`[${msg.type()}] ${msg.text()}`));
+    await oldTab.goto(`/${oldSlug}`);
+    const oldTabEditor = oldTab.locator(".cm-content").first();
+    await expect(oldTabEditor).toContainText(TEXT, { timeout: 15_000 });
 
     await editor.click();
     await page.keyboard.press(process.platform === "darwin" ? "Meta+End" : "Control+End");
@@ -84,18 +112,27 @@ test.describe("note rename Yjs race", () => {
     await page.waitForURL(new RegExp(`/${newSlug}$`), { timeout: 15_000 });
     await expect(editor).toContainText(`${TEXT} pending edit`, { timeout: 15_000 });
 
-    // Provider debounce is 800ms and finalizeRename has a 750ms second-pass
-    // delete. Wait beyond both, then poll the DB.
+    const newRow = await snapshotSlugRow(newSlug);
+    expect(newRow, "new slug row missing").not.toBeNull();
+    await expect(page).toHaveURL(new RegExp(`/${newSlug}$`));
+
+    // Wait beyond the provider debounce/finalize window, then poll DB + UI.
     await page.waitForTimeout(2_000);
 
-    const lingering = await waitForSlugAbsent(oldSlug, { timeoutMs: 5_000, intervalMs: 200 });
+    const lingering = await verifyOldSlugGoneFromDbAndUi(page, oldSlug, {
+      timeoutMs: 5_000,
+      intervalMs: 200,
+      forbiddenText: `${TEXT} pending edit`,
+      postRevisitTimeoutMs: 3_000,
+    });
     if (lingering) {
-      await testInfo.attach("old-slug-snapshot.json", {
-        body: JSON.stringify(lingering, null, 2),
-        contentType: "application/json",
-      });
+      await attachDiagnostics(testInfo, page, "old-slug-resurrection", lingering);
       await testInfo.attach("browser-console.log", {
         body: consoleLines.join("\n"),
+        contentType: "text/plain",
+      });
+      await testInfo.attach("old-tab-console.log", {
+        body: oldTabConsole.join("\n"),
         contentType: "text/plain",
       });
       await testInfo.attach("page-errors.log", {
@@ -103,25 +140,85 @@ test.describe("note rename Yjs race", () => {
         contentType: "text/plain",
       });
     }
-    expect(lingering, "old slug row was resurrected after rename").toBeNull();
+    expect(lingering, "old slug row/UI was resurrected after rename").toBeNull();
 
-    const newRow = await snapshotSlugRow(newSlug);
-    expect(newRow, "new slug row missing").not.toBeNull();
-    await expect(page).toHaveURL(new RegExp(`/${newSlug}$`));
+    await oldTab.waitForTimeout(1_000);
+    const oldTabLingering = await verifyOldSlugGoneFromDbAndUi(oldTab, oldSlug, {
+      timeoutMs: 3_000,
+      intervalMs: 200,
+      forbiddenText: TEXT,
+      postRevisitTimeoutMs: 3_000,
+    });
+    if (oldTabLingering) await attachDiagnostics(testInfo, oldTab, "old-tab-resurrection", oldTabLingering);
+    expect(oldTabLingering, "old tab recreated old slug after broadcast").toBeNull();
+    await oldTab.close();
+  });
+});
 
-    await page.goto(`/${oldSlug}`);
-    const oldEditor = page.locator(".cm-content").first();
-    await expect(oldEditor, "old slug should not rehydrate renamed content from local cache").not.toContainText(
-      `${TEXT} pending edit`,
-      { timeout: 5_000 },
-    );
-    const lingeringAfterRevisit = await waitForSlugAbsent(oldSlug, { timeoutMs: 3_000, intervalMs: 200 });
-    if (lingeringAfterRevisit) {
-      await testInfo.attach("old-slug-after-revisit-snapshot.json", {
-        body: JSON.stringify(lingeringAfterRevisit, null, 2),
-        contentType: "application/json",
+test.describe("cross-tab rename abandonment", () => {
+  let oldSlug: string;
+  let newSlug: string;
+
+  test.beforeEach(async () => {
+    oldSlug = versionedSlug("cross-old");
+    newSlug = versionedSlug("cross-new");
+    await deleteNote(oldSlug).catch(() => {});
+    await deleteNote(newSlug).catch(() => {});
+    await seedPlaintextNote(oldSlug, TEXT);
+  });
+
+  test.afterEach(async () => {
+    await deleteNote(oldSlug).catch(() => {});
+    await deleteNote(newSlug).catch(() => {});
+  });
+
+  test("renaming in one tab abandons provider in another tab via broadcast", async ({ context }, testInfo) => {
+    const page1 = await context.newPage();
+    const page2 = await context.newPage();
+    const consoleLines: string[] = [];
+    page1.on("console", (msg) => consoleLines.push(`[tab1:${msg.type()}] ${msg.text()}`));
+    page2.on("console", (msg) => consoleLines.push(`[tab2:${msg.type()}] ${msg.text()}`));
+
+    // Both tabs on the same note
+    await page1.goto(`/${oldSlug}`);
+    await page2.goto(`/${oldSlug}`);
+    
+    const editor1 = page1.locator(".cm-content").first();
+    const editor2 = page2.locator(".cm-content").first();
+    await expect(editor1).toContainText(TEXT);
+    await expect(editor2).toContainText(TEXT);
+
+    // Rename in Tab 1
+    await page1.getByRole("button", { name: /^note/i }).click();
+    await page1.getByRole("menuitem", { name: /rename/i }).click();
+    const dialog = page1.getByRole("dialog");
+    await dialog.getByPlaceholder(/new-slug|slug/i).fill(newSlug);
+    await dialog.getByRole("button", { name: /^rename$/i }).click();
+
+    await page1.waitForURL(new RegExp(`/${newSlug}$`));
+
+    // Tab 2 should now be abandoned. If we type in it, it should NOT recreate oldSlug.
+    await editor2.click();
+    await page2.keyboard.type(" dead edit");
+    
+    // Wait for debounce
+    await page2.waitForTimeout(2000);
+
+    const lingering = await verifyOldSlugGoneFromDbAndUi(page2, oldSlug, {
+      timeoutMs: 5_000,
+      intervalMs: 200,
+      forbiddenText: `${TEXT} dead edit`,
+      postRevisitTimeoutMs: 3_000,
+    });
+    if (lingering) {
+      await attachDiagnostics(testInfo, page2, "cross-tab-old-slug-resurrection", lingering);
+      await testInfo.attach("cross-tab-console.log", {
+        body: consoleLines.join("\n"),
+        contentType: "text/plain",
       });
     }
-    expect(lingeringAfterRevisit, "old slug row was recreated after revisiting old URL").toBeNull();
+    expect(lingering, "old slug resurrected by stale tab").toBeNull();
+    await page1.close();
+    await page2.close();
   });
 });

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as Y from "yjs";
 import {
   abandonProviderForSlug,
+  registerAbandonedSlugCleanup,
   SupabaseYjsProvider,
   unabandonProviderForSlug,
   type Encryption,
@@ -106,6 +107,37 @@ describe("SupabaseYjsProvider — rename/unmount cancellation", () => {
     abandonProviderForSlug("old-slug");
     await vi.advanceTimersByTimeAsync(31_000);
     await provider.saveSnapshot();
+
+    expect(upsertCalls).toHaveLength(0);
+    await provider.destroy();
+  });
+
+  it("runs slug cleanup handlers in the already-open tab when a slug is abandoned", async () => {
+    const cleanup = vi.fn();
+    const unregister = registerAbandonedSlugCleanup("old-slug", cleanup);
+
+    abandonProviderForSlug("old-slug");
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    unregister();
+  });
+
+  it("does not perform a late snapshot upsert if abandonment happens during async snapshot work", async () => {
+    const { provider, doc } = makeProvider("old-slug");
+    let releaseEncrypt!: () => void;
+    provider.setEncryption({
+      encrypt: () => new Promise<Uint8Array>((resolve) => {
+        releaseEncrypt = () => resolve(new Uint8Array([1, 2, 3]));
+      }),
+      decrypt: async (bytes) => bytes,
+    });
+
+    doc.getText("content").insert(0, "late encrypted write");
+    const save = provider.saveSnapshot();
+    await Promise.resolve();
+    abandonProviderForSlug("old-slug");
+    releaseEncrypt();
+    await save;
 
     expect(upsertCalls).toHaveLength(0);
     await provider.destroy();
