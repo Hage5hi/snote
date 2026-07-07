@@ -142,6 +142,16 @@ jobs:
             test-results/**/stress-timings*.json
           retention-days: 14
           if-no-files-found: warn
+      - name: Upload PWA update metadata attachments
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwa-update-metadata-${{ matrix.browser }}-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          path: |
+            playwright-report/**/pwa-update-*.json
+            test-results/**/pwa-update-*.json
+          retention-days: 14
+          if-no-files-found: warn
       # Upload on BOTH success and failure so flaky-test triage doesn't need a
       # re-run. Names are stable per browser + run + attempt so artifacts from
       # parallel matrix jobs never collide.
