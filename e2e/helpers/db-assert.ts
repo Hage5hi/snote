@@ -3,7 +3,7 @@
 // resurrection, etc.). Uses the anon key — same client seed helpers use.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import type { Page } from "@playwright/test";
+import type { Page, TestInfo } from "@playwright/test";
 
 function env(name: string): string {
   const v = process.env[name];
