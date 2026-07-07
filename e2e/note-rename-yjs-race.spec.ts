@@ -1,27 +1,16 @@
 // E2E: renaming a note after local edits must not let the old Yjs provider's
 // debounced snapshot recreate the deleted old slug row.
+//
+// On failure this spec attaches:
+//   - browser console + page errors captured during the run
+//   - a DB snapshot of the old slug row (so resurrections are trivial to spot)
+//   - Playwright's own trace/video (see playwright.config.ts `retain-on-failure`)
 
 import { test, expect } from "@playwright/test";
-import { createClient } from "@supabase/supabase-js";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
+import { snapshotSlugRow, waitForSlugAbsent } from "./helpers/db-assert";
 
 const TEXT = "Rename race content";
-
-function env(name: string): string {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing env var ${name} (needed for E2E verification).`);
-  return value;
-}
-
-function client() {
-  return createClient(env("VITE_SUPABASE_URL"), env("VITE_SUPABASE_PUBLISHABLE_KEY"));
-}
-
-async function noteExists(slug: string): Promise<boolean> {
-  const { data, error } = await client().from("notes").select("slug").eq("slug", slug).maybeSingle();
-  if (error) throw error;
-  return !!data;
-}
 
 test.describe("note rename Yjs race", () => {
   let oldSlug: string;
@@ -39,7 +28,14 @@ test.describe("note rename Yjs race", () => {
     await deleteNote(newSlug).catch(() => {});
   });
 
-  test("renames after pending Yjs edits and old slug stays gone after debounce", async ({ page }) => {
+  test("renames after pending Yjs edits and old slug stays gone after debounce", async ({
+    page,
+  }, testInfo) => {
+    const consoleLines: string[] = [];
+    const pageErrors: string[] = [];
+    page.on("console", (msg) => consoleLines.push(`[${msg.type()}] ${msg.text()}`));
+    page.on("pageerror", (err) => pageErrors.push(`${err.name}: ${err.message}`));
+
     await page.goto(`/${oldSlug}`);
     const editor = page.locator(".cm-content").first();
     await expect(editor).toContainText(TEXT, { timeout: 15_000 });
@@ -60,11 +56,28 @@ test.describe("note rename Yjs race", () => {
     await expect(editor).toContainText(`${TEXT} pending edit`, { timeout: 15_000 });
 
     // Provider debounce is 800ms and finalizeRename has a 750ms second-pass
-    // delete. Waiting beyond both catches any late snapshot resurrection.
+    // delete. Wait beyond both, then poll the DB.
     await page.waitForTimeout(2_000);
 
-    await expect.poll(() => noteExists(oldSlug), { timeout: 5_000 }).toBe(false);
-    await expect.poll(() => noteExists(newSlug), { timeout: 5_000 }).toBe(true);
+    const lingering = await waitForSlugAbsent(oldSlug, { timeoutMs: 5_000, intervalMs: 200 });
+    if (lingering) {
+      await testInfo.attach("old-slug-snapshot.json", {
+        body: JSON.stringify(lingering, null, 2),
+        contentType: "application/json",
+      });
+      await testInfo.attach("browser-console.log", {
+        body: consoleLines.join("\n"),
+        contentType: "text/plain",
+      });
+      await testInfo.attach("page-errors.log", {
+        body: pageErrors.join("\n"),
+        contentType: "text/plain",
+      });
+    }
+    expect(lingering, "old slug row was resurrected after rename").toBeNull();
+
+    const newRow = await snapshotSlugRow(newSlug);
+    expect(newRow, "new slug row missing").not.toBeNull();
     await expect(page).toHaveURL(new RegExp(`/${newSlug}$`));
   });
 });
