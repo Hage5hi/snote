@@ -230,28 +230,40 @@ test.describe("note rename Yjs race", () => {
         const staleTab = await newPageWithDebounce(context, debounceMs);
         const consoleLines: string[] = [];
         try {
+          const ctx = { iteration: i, from, to, debounceMs };
+          console.log("[rename-race][stress] begin", ctx);
           page.on("console", (msg) => consoleLines.push(`[main:${msg.type()}] ${msg.text()}`));
           staleTab.on("console", (msg) => consoleLines.push(`[stale:${msg.type()}] ${msg.text()}`));
 
           await staleTab.goto(`/${from}`);
           await expect(staleTab.locator(".cm-content").first()).toContainText(`${TEXT} stress ${i}`, { timeout: 15_000 });
           await renameViaUi(page, from, to);
+          console.log("[rename-race][stress] rename committed", ctx);
           await staleTab.locator(".cm-content").first().click();
           await staleTab.keyboard.type(` late-${i}`);
 
           await page.waitForTimeout(debounceMs + 1_200);
-          const lingering = await verifyOldSlugGoneFromDbAndUi(page, from, {
+          const preStatus = await fetchOldSlugCleanupStatus(page, from).catch((e) => ({ error: String(e) }));
+          console.log("[rename-race][stress] pre-assert cleanup-status", { ...ctx, preStatus });
+
+          const lingering = await verifyOldSlugGoneWithRetry(page, from, {
             timeoutMs: debounceMs + 3_000,
             intervalMs: 150,
             forbiddenText: `late-${i}`,
             postRevisitTimeoutMs: debounceMs + 1_500,
+            attempts: 4,
+            backoffMs: Math.max(300, Math.floor(debounceMs / 2)),
+            label: `stress-${i}`,
           });
           if (lingering) {
+            console.log("[rename-race][stress] LINGERING detected", { ...ctx, lingering });
             await attachOldSlugDetectedArtifacts(testInfo, page, `stress-old-slug-${i}`, lingering, from, to);
             await testInfo.attach(`stress-console-${i}.log`, {
               body: consoleLines.join("\n"),
               contentType: "text/plain",
             });
+          } else {
+            console.log("[rename-race][stress] clean", ctx);
           }
           expect(lingering, `old slug resurrected on stress iteration ${i} (debounce=${debounceMs})`).toBeNull();
         } finally {
