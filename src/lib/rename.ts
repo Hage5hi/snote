@@ -54,7 +54,7 @@ export async function waitForSlugDeletionConfirmed(
     await wait(intervalMs);
   }
   snapshot = await getSlugDeletionSnapshot(slug);
-  return { deleted: false, snapshot };
+  return { deleted: !snapshot, snapshot };
 }
 
 async function clearIndexedDbDoc(slug: string) {
