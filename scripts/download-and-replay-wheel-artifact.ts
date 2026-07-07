@@ -63,7 +63,7 @@ function findFirst(root: string, fileName: string): string | null {
 export function buildGhArgs(args: Args): string[] {
   const ghArgs = ["run", "download", args.runId, "--dir", args.outDir];
   if (args.artifact) ghArgs.push("--name", args.artifact);
-  else ghArgs.push("--pattern", `e2e-test-results-${args.project}-*`);
+  else ghArgs.push("--pattern", `e2e-test-results-${args.project}-*${args.attempt ? `attempt${args.attempt}` : ""}`);
   return ghArgs;
 }
 
