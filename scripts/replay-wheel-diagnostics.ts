@@ -283,6 +283,16 @@ export function verifyManifest(outDir: string): { ok: boolean; errors: string[] 
 
 export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv);
+  if (args.verifyManifest) {
+    const res = verifyManifest(args.outDir);
+    if (!res.ok) {
+      console.error(`✖ manifest verification failed for ${args.outDir}:`);
+      for (const err of res.errors) console.error(`  - ${err}`);
+      return 4;
+    }
+    console.log(`✔ manifest verified: ${args.outDir}`);
+    return 0;
+  }
   if (!existsSync(args.path)) throw new Error(`diagnostics file not found: ${args.path}`);
   let parsed: unknown;
   try { parsed = JSON.parse(readFileSync(args.path, "utf8")); }
