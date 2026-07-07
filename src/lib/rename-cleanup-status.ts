@@ -1,6 +1,41 @@
+import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { isDocCached } from "@/lib/yjs/doc-cache";
 import { isProviderSlugAbandoned } from "@/lib/yjs/provider";
+
+const OldSlugRowSnapshotSchema = z
+  .object({
+    slug: z.string(),
+    char_count: z.number().nullable(),
+    updated_at: z.string().nullable(),
+    ydoc_state_len: z.number(),
+    content_len: z.number(),
+  })
+  .nullable();
+
+const OldSlugCleanupSignalsPartialSchema = z
+  .object({
+    providerAbandoned: z.boolean().optional(),
+    docCacheWarm: z.boolean().optional(),
+    sessionSnapshotPresent: z.boolean().optional(),
+    indexedDbCleared: z.boolean().optional(),
+    cleanupStartedAt: z.number().nullable().optional(),
+    indexedDbClearedAt: z.number().nullable().optional(),
+    snapshotsClearedAt: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+export const OldSlugCleanupStatusSchema = z.object({
+  slug: z.string(),
+  source: z.enum(["edge-function", "direct-db-fallback"]),
+  database: z.object({
+    rowPresent: z.boolean(),
+    row: OldSlugRowSnapshotSchema,
+  }),
+  clientSignals: OldSlugCleanupSignalsPartialSchema,
+  cleaned: z.boolean(),
+  metrics: z.object({ dbMs: z.number(), totalMs: z.number() }).optional(),
+});
 
 export type OldSlugRowSnapshot = {
   slug: string;
@@ -114,6 +149,59 @@ export async function fetchOldSlugCleanupStatus(slug: string): Promise<OldSlugCl
   const { data, error } = await supabase.functions.invoke("old-slug-cleanup-status", {
     body: { slug, clientSignals },
   });
-  if (!error && data) return data as OldSlugCleanupStatus;
-  return directDbStatus(slug, clientSignals);
+  if (!error && data) {
+    const parsed = OldSlugCleanupStatusSchema.safeParse(data);
+    if (parsed.success) return parsed.data as OldSlugCleanupStatus;
+    console.warn("[cleanup-status] invalid edge-function payload, falling back", parsed.error.flatten());
+  }
+  const fallback = await directDbStatus(slug, clientSignals);
+  const parsed = OldSlugCleanupStatusSchema.safeParse(fallback);
+  return (parsed.success ? (parsed.data as OldSlugCleanupStatus) : fallback);
+}
+
+export type PollOldSlugCleanupOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+  onUpdate?: (status: OldSlugCleanupStatus, attempt: number) => void;
+  signal?: AbortSignal;
+};
+
+/**
+ * Repeatedly fetches cleanup status until `cleaned === true` or the timeout
+ * elapses. Emits every intermediate status via `onUpdate` so UIs can render
+ * progress. Never throws on transient errors — returns the last known status.
+ */
+export async function pollOldSlugCleanupStatus(
+  slug: string,
+  opts: PollOldSlugCleanupOptions = {},
+): Promise<{ status: OldSlugCleanupStatus; timedOut: boolean; attempts: number }> {
+  const timeoutMs = opts.timeoutMs ?? 8_000;
+  const intervalMs = opts.intervalMs ?? 500;
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  let last: OldSlugCleanupStatus | null = null;
+  while (Date.now() < deadline) {
+    if (opts.signal?.aborted) break;
+    attempt += 1;
+    try {
+      const status = await fetchOldSlugCleanupStatus(slug);
+      last = status;
+      opts.onUpdate?.(status, attempt);
+      if (status.cleaned) return { status, timedOut: false, attempts: attempt };
+    } catch (err) {
+      console.warn("[cleanup-status] poll error", { slug, attempt, err });
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return {
+    status: last ?? {
+      slug,
+      source: "direct-db-fallback",
+      database: { rowPresent: false, row: null },
+      clientSignals: {},
+      cleaned: false,
+    },
+    timedOut: true,
+    attempts: attempt,
+  };
 }

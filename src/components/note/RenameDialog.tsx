@@ -19,7 +19,7 @@ import {
   waitForSlugDeletionConfirmed,
   SLUG_RE,
 } from "@/lib/rename";
-import { fetchOldSlugCleanupStatus } from "@/lib/rename-cleanup-status";
+import { fetchOldSlugCleanupStatus, pollOldSlugCleanupStatus } from "@/lib/rename-cleanup-status";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n/index";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
@@ -108,25 +108,34 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       await new Promise((r) => setTimeout(r, 50));
       await clearRenamedSlugLocalState(currentSlug);
       const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
-      const cleanupStatus = await fetchOldSlugCleanupStatus(currentSlug).catch(() => null);
-      const finalDeletionConfirmed = deletionConfirmed || cleanupStatus?.cleaned || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
-      setCleanupState(finalDeletionConfirmed ? "clean" : "dirty");
-      if (cleanupStatus) {
-        const { providerAbandoned, docCacheWarm, sessionSnapshotPresent, indexedDbCleared } = cleanupStatus.clientSignals ?? {};
-        const rowPresent = cleanupStatus.database?.rowPresent;
+      const initial = await fetchOldSlugCleanupStatus(currentSlug).catch(() => null);
+      const renderDetail = (s: { database?: { rowPresent?: boolean }; clientSignals?: Record<string, unknown> } | null) => {
+        if (!s) return;
+        const cs = (s.clientSignals ?? {}) as Record<string, unknown>;
+        const rowPresent = s.database?.rowPresent;
         setCleanupDetail(
           `db=${rowPresent === undefined ? "unknown" : rowPresent ? "present" : "gone"}` +
-            ` · provider=${providerAbandoned ? "abandoned" : "live"}` +
-            ` · doc-cache=${docCacheWarm ? "warm" : "cold"}` +
-            ` · session=${sessionSnapshotPresent ? "present" : "gone"}` +
-            ` · idb=${indexedDbCleared ? "cleared" : "unknown"}`,
+            ` · provider=${cs.providerAbandoned ? "abandoned" : "live"}` +
+            ` · doc-cache=${cs.docCacheWarm ? "warm" : "cold"}` +
+            ` · session=${cs.sessionSnapshotPresent ? "present" : "gone"}` +
+            ` · idb=${cs.indexedDbCleared ? "cleared" : "unknown"}`,
         );
-      }
+      };
+      renderDetail(initial);
+      const { status: polled, timedOut } = await pollOldSlugCleanupStatus(currentSlug, {
+        timeoutMs: 8_000,
+        intervalMs: 500,
+        onUpdate: renderDetail,
+      });
+      const finalDeletionConfirmed =
+        deletionConfirmed || polled.cleaned || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
+      setCleanupState(finalDeletionConfirmed ? "clean" : "dirty");
+      renderDetail(polled);
       toast({
         title: t("rename.toast_renamed"),
         description: finalDeletionConfirmed
           ? `/${currentSlug} → /${newSlug}`
-          : `/${currentSlug} → /${newSlug} (old slug still present — retry)`,
+          : `/${currentSlug} → /${newSlug} (old slug still present${timedOut ? " — cleanup timed out" : ""} — retry)`,
         variant: finalDeletionConfirmed ? undefined : "destructive",
       });
       if (finalDeletionConfirmed) onOpenChange(false);

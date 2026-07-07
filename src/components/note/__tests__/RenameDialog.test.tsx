@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   finalizeRename: vi.fn(),
   waitForSlugDeletionConfirmed: vi.fn(),
   fetchOldSlugCleanupStatus: vi.fn(),
+  pollOldSlugCleanupStatus: vi.fn(),
   maybeSingle: vi.fn(),
 }));
 
@@ -40,6 +41,7 @@ vi.mock("@/lib/rename", () => ({
 
 vi.mock("@/lib/rename-cleanup-status", () => ({
   fetchOldSlugCleanupStatus: mocks.fetchOldSlugCleanupStatus,
+  pollOldSlugCleanupStatus: mocks.pollOldSlugCleanupStatus,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -77,6 +79,8 @@ describe("RenameDialog", () => {
     mocks.waitForSlugDeletionConfirmed.mockResolvedValue({ deleted: true, snapshot: null });
     mocks.fetchOldSlugCleanupStatus.mockReset();
     mocks.fetchOldSlugCleanupStatus.mockResolvedValue({ cleaned: true });
+    mocks.pollOldSlugCleanupStatus.mockReset();
+    mocks.pollOldSlugCleanupStatus.mockResolvedValue({ status: { cleaned: true }, timedOut: false, attempts: 1 });
     mocks.maybeSingle.mockReset();
   });
 
@@ -106,6 +110,7 @@ describe("RenameDialog", () => {
   it("shows a destructive warning toast if the old slug still exists after final recheck", async () => {
     mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     mocks.fetchOldSlugCleanupStatus.mockResolvedValueOnce({ cleaned: false });
+    mocks.pollOldSlugCleanupStatus.mockResolvedValueOnce({ status: { cleaned: false }, timedOut: true, attempts: 3 });
     mocks.waitForSlugDeletionConfirmed.mockResolvedValueOnce({ deleted: false, snapshot: null });
 
     renderDialog();
@@ -120,7 +125,7 @@ describe("RenameDialog", () => {
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "rename.toast_renamed",
-        description: "/old-slug → /new-slug (old slug still present — retry)",
+        description: "/old-slug → /new-slug (old slug still present — cleanup timed out — retry)",
         variant: "destructive",
       }),
     );
