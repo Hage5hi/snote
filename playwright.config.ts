@@ -25,7 +25,7 @@ export default defineConfig({
   retries: 0,
   workers: 1,
   reporter: process.env.CI
-    ? [["github"], ["list"], ["json", { outputFile: "test-results/e2e-results.json" }]]
+    ? [["github"], ["list"], ["html", { outputFolder: "playwright-report", open: "never" }], ["json", { outputFile: "test-results/e2e-results.json" }]]
     : "list",
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080",
