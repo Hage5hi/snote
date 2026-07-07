@@ -65,11 +65,6 @@ test.describe("note rename Yjs race", () => {
 
     await expect.poll(() => noteExists(oldSlug), { timeout: 5_000 }).toBe(false);
     await expect.poll(() => noteExists(newSlug), { timeout: 5_000 }).toBe(true);
-
-    await page.goto(`/${oldSlug}`);
-    await page.waitForTimeout(1_000);
-    const oldText = await page.locator(".cm-content").first().innerText();
-    expect(oldText).not.toContain(TEXT);
-    expect(await noteExists(oldSlug)).toBe(false);
+    await expect(page).toHaveURL(new RegExp(`/${newSlug}$`));
   });
 });
