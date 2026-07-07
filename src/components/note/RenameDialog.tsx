@@ -39,8 +39,10 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [submitting, setSubmitting] = useState(false);
-  const [cleanupState, setCleanupState] = useState<"idle" | "checking" | "clean" | "dirty">("idle");
+  const [cleanupState, setCleanupState] = useState<"idle" | "checking" | "clean" | "dirty" | "error" | "timeout">("idle");
   const [cleanupDetail, setCleanupDetail] = useState<string>("");
+  const [cleanupError, setCleanupError] = useState<string>("");
+  const [pendingRename, setPendingRename] = useState<{ oldSlug: string; newSlug: string } | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -49,6 +51,8 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       setSubmitting(false);
       setCleanupState("idle");
       setCleanupDetail("");
+      setCleanupError("");
+      setPendingRename(null);
     }
   }, [open]);
 
