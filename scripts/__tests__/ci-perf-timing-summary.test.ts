@@ -220,4 +220,31 @@ describe("failed-test artifact links", () => {
   it("returns empty string when there are no failed tests", () => {
     expect(renderFailedArtifactLinks([])).toBe("");
   });
+
+  // Backward-compat: the CI renderer treats wheel-diagnostics.json as an
+  // opaque link, so artifacts written by any schemaVersion (missing/v0/v1/
+  // future v2) must still render identical link + repro/replay commands.
+  describe("wheel-diagnostics.json schemaVersion backward compatibility", () => {
+    const makeReport = (path: string) => ({ suites: [{ specs: [{
+      title: "s", file: "e2e/note-wheel-trackpad-scroll.spec.ts",
+      tests: [{ title: "t", projectName: "chromium", results: [{
+        status: "failed", retry: 0,
+        attachments: [{ name: "wheel-diagnostics.json", path }],
+      }] }],
+    }] }] });
+
+    for (const label of ["pre-schema (v0)", "current (v1)", "future (v2)"]) {
+      it(`renders identical links + replay command for ${label} artifacts`, () => {
+        const failed = parsePlaywrightFailedArtifacts(
+          makeReport(`test-results/wheel-latest/${label}/wheel-diagnostics.json`),
+        );
+        const md = renderFailedArtifactLinks(failed, { playwrightRetries: "2" });
+        expect(md).toContain(`[wheel-diagnostics.json](test-results/wheel-latest/${label}/wheel-diagnostics.json)`);
+        expect(md).toContain("PLAYWRIGHT_PROJECT=chromium RETRIES=2 ./scripts/run-wheel-e2e.sh");
+        expect(md).toContain(
+          `PLAYWRIGHT_PROJECT=chromium bun run scripts/replay-wheel-diagnostics.ts test-results/wheel-latest/${label}/wheel-diagnostics.json`,
+        );
+      });
+    }
+  });
 });
