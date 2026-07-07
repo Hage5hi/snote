@@ -3,7 +3,7 @@
 // debounce window elapses.
 import { test, expect } from "@playwright/test";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
-import { fetchOldSlugCleanupStatus, verifyOldSlugGoneWithRetry } from "./helpers/db-assert";
+import { fetchOldSlugCleanupStatusWithReport, snapshotSlugRow, verifyOldSlugGoneWithRetry } from "./helpers/db-assert";
 
 const TEXT = "Multi-tab observer content";
 
