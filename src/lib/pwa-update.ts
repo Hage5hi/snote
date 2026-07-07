@@ -326,6 +326,7 @@ export function registerAppUpdater(): void {
     reloadStrategy = "hard";
     syncDebugState();
     console.log("[pwa-update] reload strategy=hard", { currentBuildId: getCurrentBuildId(), pendingBuildId });
+    logLifecycle("reload-start");
     hardReload(pendingBuildId);
   };
 
