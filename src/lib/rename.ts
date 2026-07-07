@@ -7,6 +7,7 @@
 import { supabase } from "@/integrations/supabase/client";
 import { renamePinned, renameRecent } from "@/lib/recent-notes";
 import { renameShareToken } from "@/lib/share-tokens";
+import { abandonProviderForSlug } from "@/lib/yjs/provider";
 
 export const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -62,6 +63,10 @@ export async function prepareRename(oldSlug: string, newSlug: string): Promise<v
   if (oldSlug === newSlug) return;
   if (!SLUG_RE.test(newSlug)) throw new Error("Invalid slug");
 
+  // Mark the old slug as abandoned BEFORE any writes so the still-mounted
+  // Yjs provider stops upserting snapshots (debounced or on-destroy).
+  abandonProviderForSlug(oldSlug);
+
   await copyNoteRow(oldSlug, newSlug);
 
   const { error: shareErr } = await supabase.functions.invoke("share-rename", {
@@ -76,7 +81,10 @@ export async function prepareRename(oldSlug: string, newSlug: string): Promise<v
  * unmounted). Runs a second-pass delete after a short delay to defeat any
  * last debounced snapshot upsert that raced the unmount.
  */
-export async function finalizeRename(oldSlug: string, newSlug: string): Promise<void> {
+export async function finalizeRename(
+  oldSlug: string,
+  newSlug: string,
+): Promise<{ deletionConfirmed: boolean }> {
   const del = async () => {
     const { error } = await supabase.from("notes").delete().eq("slug", oldSlug);
     if (error) throw error;
@@ -92,6 +100,14 @@ export async function finalizeRename(oldSlug: string, newSlug: string): Promise<
   renameRecent(oldSlug, newSlug);
   renamePinned(oldSlug, newSlug);
   renameShareToken(oldSlug, newSlug);
+
+  // Verify the old row is fully gone (no debounced upsert resurrected it).
+  const { data } = await supabase
+    .from("notes")
+    .select("slug")
+    .eq("slug", oldSlug)
+    .maybeSingle();
+  return { deletionConfirmed: !data };
 }
 
 /** One-shot rename. UI callers should prefer prepareRename + navigate + finalizeRename. */

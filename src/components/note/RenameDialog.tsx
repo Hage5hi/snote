@@ -91,10 +91,13 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
       navigate(`/${newSlug}`);
       // Give React a tick to unmount, then delete the source row.
       await new Promise((r) => setTimeout(r, 50));
-      await finalizeRename(currentSlug, newSlug);
+      const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
       toast({
         title: t("rename.toast_renamed"),
-        description: `/${currentSlug} → /${newSlug}`,
+        description: deletionConfirmed
+          ? `/${currentSlug} → /${newSlug}`
+          : `/${currentSlug} → /${newSlug} (old slug still present — retry)`,
+        variant: deletionConfirmed ? undefined : "destructive",
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("rename.generic_error");
