@@ -9,6 +9,7 @@
 import { test, expect, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
 import { fetchOldSlugCleanupStatus, snapshotSlugRow, verifyOldSlugGoneFromDbAndUi, verifyOldSlugGoneWithRetry } from "./helpers/db-assert";
+import { purgeSlugs } from "./helpers/rename-cleanup";
 
 const TEXT = "Rename race content";
 
@@ -90,11 +91,8 @@ test.describe("note rename Yjs race", () => {
   test.beforeEach(async () => {
     oldSlug = versionedSlug("rename-old");
     newSlug = versionedSlug("rename-new");
-    // Reset DB state defensively — a prior aborted run could have left rows
-    // under these exact slugs (versionedSlug is unique per-run, but be safe
-    // against a re-invocation with a re-seeded random).
-    await deleteNote(oldSlug).catch(() => {});
-    await deleteNote(newSlug).catch(() => {});
+    // Shared purge helper rolls back any leftover rows before & after each run.
+    await purgeSlugs([oldSlug, newSlug]);
     await seedPlaintextNote(oldSlug, TEXT);
   });
 
