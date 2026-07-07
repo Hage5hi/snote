@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as Y from "yjs";
-import { SupabaseYjsProvider, type Encryption } from "../provider";
+import {
+  abandonProviderForSlug,
+  SupabaseYjsProvider,
+  unabandonProviderForSlug,
+  type Encryption,
+} from "../provider";
 
 // Capture upsert calls so saveSnapshot tests can assert payloads.
 const upsertCalls: Array<Record<string, unknown>> = [];
@@ -30,14 +35,53 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function makeProvider() {
+function makeProvider(slug = "test-slug") {
   const doc = new Y.Doc();
-  const p = new SupabaseYjsProvider("test-slug", doc);
+  const p = new SupabaseYjsProvider(slug, doc);
   // Wire the doc update handler ourselves (connect() would do this, but it
   // needs a live Supabase channel which we deliberately skip in unit tests).
   doc.on("update", (p as unknown as { handleDocUpdate: (u: Uint8Array, o: unknown) => void }).handleDocUpdate);
   return { provider: p, doc };
 }
+
+describe("SupabaseYjsProvider — rename/unmount cancellation", () => {
+  beforeEach(() => {
+    upsertCalls.length = 0;
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    unabandonProviderForSlug("old-slug");
+    vi.useRealTimers();
+  });
+
+  it("cancels a pending debounced snapshot immediately when the slug is abandoned", async () => {
+    const { provider, doc } = makeProvider("old-slug");
+    const saveSpy = vi.spyOn(provider, "saveSnapshot");
+
+    doc.getText("content").insert(0, "late write");
+    await vi.advanceTimersByTimeAsync(799);
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    abandonProviderForSlug("old-slug");
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(upsertCalls).toHaveLength(0);
+  });
+
+  it("cancels a pending debounced snapshot on unmount with no late writes", async () => {
+    const { provider, doc } = makeProvider("old-slug");
+    const saveSpy = vi.spyOn(provider, "saveSnapshot");
+
+    doc.getText("content").insert(0, "draft");
+    await provider.destroy();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(upsertCalls).toHaveLength(0);
+  });
+});
 
 
 describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {

@@ -53,10 +53,12 @@ export type Encryption = {
  * resurrected by a debounced upsert or beacon after rename.
  */
 const abandonedSlugs = new Set<string>();
+const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
 
 /** Mark a slug so its still-mounted provider will not write to Postgres. */
 export function abandonProviderForSlug(slug: string) {
   abandonedSlugs.add(slug);
+  activeProvidersBySlug.get(slug)?.forEach((provider) => provider.cancelPendingSnapshot());
   // Auto-expire after 30s so a legitimate later reuse of the slug works.
   setTimeout(() => abandonedSlugs.delete(slug), 30_000);
 }
@@ -148,6 +150,19 @@ export class SupabaseYjsProvider {
       if (import.meta.env.DEV) {
         (window as unknown as { __provider?: SupabaseYjsProvider }).__provider = this;
       }
+    }
+    let activeForSlug = activeProvidersBySlug.get(slug);
+    if (!activeForSlug) {
+      activeForSlug = new Set();
+      activeProvidersBySlug.set(slug, activeForSlug);
+    }
+    activeForSlug.add(this);
+  }
+
+  cancelPendingSnapshot() {
+    if (this.snapshotTimer) {
+      window.clearTimeout(this.snapshotTimer);
+      this.snapshotTimer = null;
     }
   }
 
@@ -503,11 +518,13 @@ export class SupabaseYjsProvider {
   }
 
   private scheduleSnapshot() {
+    if (this.destroyed || abandonedSlugs.has(this.slug)) return;
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
     this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), 800);
   }
 
   async saveSnapshot() {
+    this.snapshotTimer = null;
     if (this.destroyed) return;
     if (abandonedSlugs.has(this.slug)) return;
     if (this.hasEncryptionModeMismatch()) {
@@ -635,13 +652,8 @@ export class SupabaseYjsProvider {
     if (typeof window !== "undefined") {
       window.removeEventListener("offline", this.handleNativeOffline);
     }
-    if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
+    this.cancelPendingSnapshot();
     this.pendingUpdates = [];
-    // Skip final flush if this slug was abandoned (e.g. renamed away) —
-    // otherwise the just-deleted row would be resurrected.
-    if (!abandonedSlugs.has(this.slug)) {
-      await this.saveSnapshot();
-    }
     this.doc.off("update", this.handleDocUpdate);
     this.awareness.off("update", this.handleAwarenessUpdate);
     this.cleanupFns.forEach((fn) => fn());
@@ -655,5 +667,8 @@ export class SupabaseYjsProvider {
       supabase.removeChannel(this.channel);
       this.channel = null;
     }
+    const activeForSlug = activeProvidersBySlug.get(this.slug);
+    activeForSlug?.delete(this);
+    if (activeForSlug?.size === 0) activeProvidersBySlug.delete(this.slug);
   }
 }
