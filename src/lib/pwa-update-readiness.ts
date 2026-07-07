@@ -219,11 +219,14 @@ export function installPwaReadinessInvalidReporter(opts: {
 /** Install the validator on window so E2E can call the exact same check. */
 export function exposeReadinessValidatorForE2E(): void {
   if (typeof window === "undefined") return;
-  (window as unknown as {
-    __SNOTE_PWA_READINESS_VALIDATE__?: (v: unknown) => boolean;
-    __SNOTE_PWA_READINESS_EXPLAIN__?: (v: unknown) => PwaReadinessInvalidReason | null;
-  }).__SNOTE_PWA_READINESS_VALIDATE__ = validatePwaReadinessState;
-  (window as unknown as {
-    __SNOTE_PWA_READINESS_EXPLAIN__?: (v: unknown) => PwaReadinessInvalidReason | null;
-  }).__SNOTE_PWA_READINESS_EXPLAIN__ = explainPwaReadinessState;
+  const w = window as unknown as {
+    __SNOTE_PWA_READINESS_VALIDATE__?: typeof validatePwaReadinessState;
+    __SNOTE_PWA_READINESS_EXPLAIN__?: typeof explainPwaReadinessState;
+    __SNOTE_PWA_READINESS_REPORTER_ENV__?: typeof resolvePwaReadinessReporterEnv;
+    __SNOTE_PWA_READINESS_INSTALL_REPORTER__?: typeof installPwaReadinessInvalidReporter;
+  };
+  w.__SNOTE_PWA_READINESS_VALIDATE__ = validatePwaReadinessState;
+  w.__SNOTE_PWA_READINESS_EXPLAIN__ = explainPwaReadinessState;
+  w.__SNOTE_PWA_READINESS_REPORTER_ENV__ = resolvePwaReadinessReporterEnv;
+  w.__SNOTE_PWA_READINESS_INSTALL_REPORTER__ = installPwaReadinessInvalidReporter;
 }

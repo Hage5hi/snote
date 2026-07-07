@@ -10,6 +10,7 @@ import {
   emitPwaReadinessInvalidEvent,
   explainPwaReadinessState,
   exposeReadinessValidatorForE2E,
+  PWA_READINESS_INVALID_EVENT,
   validatePwaReadinessState,
   type PwaReadinessInvalidReason,
   type PwaUpdateReadinessState,
@@ -17,10 +18,20 @@ import {
 
 type PwaUpdateDebugState = PwaUpdateReadinessState;
 
+type InvalidStats = {
+  total: number;
+  lastMinute: number;
+  lastHour: number;
+  lastAt: number | null;
+};
+
 export function PwaUpdateDebugPanel() {
   const [state, setState] = useState<PwaUpdateDebugState | null>(null);
   const [invalid, setInvalid] = useState<PwaReadinessInvalidReason | null>(null);
   const [collapsed, setCollapsed] = useState(true);
+  const [stats, setStats] = useState<InvalidStats>({ total: 0, lastMinute: 0, lastHour: 0, lastAt: null });
+  const invalidTimestamps = useRef<number[]>([]);
+  const invalidTotal = useRef<number>(0);
   const lastEmitKey = useRef<string | null>(null);
   const lastRawKey = useRef<string | null>(null);
 
@@ -82,7 +93,35 @@ export function PwaUpdateDebugPanel() {
     };
     read();
     const id = window.setInterval(read, 500);
-    return () => window.clearInterval(id);
+
+    // Stats: count every `snote:pwa-readiness-invalid` event (from any source,
+    // not just our own emit) so staging can eyeball the frequency.
+    const onInvalid = () => {
+      const now = Date.now();
+      invalidTotal.current += 1;
+      invalidTimestamps.current.push(now);
+      const cutoff = now - 3_600_000;
+      invalidTimestamps.current = invalidTimestamps.current.filter((t) => t >= cutoff);
+    };
+    window.addEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
+    const statsId = window.setInterval(() => {
+      const now = Date.now();
+      const ts = invalidTimestamps.current;
+      const lastMinute = ts.filter((t) => t >= now - 60_000).length;
+      const lastHour = ts.length;
+      setStats({
+        total: invalidTotal.current,
+        lastMinute,
+        lastHour,
+        lastAt: ts.length ? ts[ts.length - 1] : null,
+      });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(id);
+      window.clearInterval(statsId);
+      window.removeEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
+    };
   }, []);
 
   if (!import.meta.env.DEV) return null;
@@ -102,6 +141,19 @@ export function PwaUpdateDebugPanel() {
     pointerEvents: "auto",
   };
 
+  const statsBlock = (
+    <div
+      data-pwa-debug-stats="invalid-events"
+      data-invalid-total={stats.total}
+      data-invalid-last-minute={stats.lastMinute}
+      data-invalid-last-hour={stats.lastHour}
+      style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.15)", opacity: 0.75 }}
+    >
+      invalid events — total: {stats.total} · 1m: {stats.lastMinute} · 1h: {stats.lastHour}
+      {stats.lastAt ? ` · last: ${Math.round((Date.now() - stats.lastAt) / 1000)}s ago` : ""}
+    </div>
+  );
+
   if (invalid) {
     return (
       <div style={style} data-pwa-debug-panel="invalid" data-invalid-field={invalid.field}>
@@ -120,6 +172,7 @@ export function PwaUpdateDebugPanel() {
             </li>
           </ol>
         )}
+        {!collapsed && statsBlock}
       </div>
     );
   }
@@ -143,6 +196,7 @@ export function PwaUpdateDebugPanel() {
           <div>inProgress: {String(state!.updateInProgress)}</div>
         </div>
       )}
+      {!collapsed && statsBlock}
     </div>
   );
 }
