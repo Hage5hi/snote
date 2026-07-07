@@ -172,6 +172,7 @@ export function PwaUpdateDebugPanel() {
             </li>
           </ol>
         )}
+        {!collapsed && statsBlock}
       </div>
     );
   }
