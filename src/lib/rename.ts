@@ -42,7 +42,7 @@ export async function clearRenamedSlugLocalState(oldSlug: string): Promise<void>
   } catch {
     /* unavailable */
   }
-  await Promise.allSettled([
+  void Promise.allSettled([
     withTimeout(clearIndexedDbDoc(oldSlug), 750),
     withTimeout(clearSnapshots(oldSlug), 750),
   ]);
