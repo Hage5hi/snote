@@ -110,13 +110,51 @@ export type ReplayArgs = ReturnType<typeof parseArgs>;
 /** Names of files produced in `--out-dir` for the given args. Kept in sync
  *  with the actual writes below so `--dry-run` and `--list-outputs` never lie. */
 export function expectedOutputs(args: Pick<ReplayArgs, "trace" | "extraTraces" | "retries">): string[] {
-  const files = ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
+  const files = ["manifest.json", "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
   if (args.trace) files.push("trace.zip");
   if (args.extraTraces) {
     files.push("trace-notes.json");
     if (args.trace) files.push(`trace-retry-${args.retries}.zip`);
   }
   return files;
+}
+
+/** Validate a parsed wheel-diagnostics.json against the expected schema.
+ *  Returns an array of actionable error strings; empty = valid. */
+export function validateDiagnosticsSchema(d: unknown): string[] {
+  const errors: string[] = [];
+  if (!d || typeof d !== "object") { errors.push("root: expected object"); return errors; }
+  const o = d as Record<string, unknown>;
+  if (o.schemaVersion != null && typeof o.schemaVersion !== "number") errors.push("schemaVersion: expected number");
+  if (o.schemaVersion != null && typeof o.schemaVersion === "number" && o.schemaVersion > SUPPORTED_SCHEMA_VERSION) {
+    errors.push(`schemaVersion: ${o.schemaVersion} > supported ${SUPPORTED_SCHEMA_VERSION} (upgrade replay script)`);
+  }
+  const hasReplay = Array.isArray(o.replay);
+  const hasWheel = Array.isArray(o.wheelSamples);
+  const hasSel = Array.isArray(o.selectionDragSamples);
+  if (!hasReplay && !hasWheel && !hasSel) errors.push("must contain at least one of: replay[], wheelSamples[], selectionDragSamples[]");
+  const validateDeltas = (arr: unknown, name: string) => {
+    if (!Array.isArray(arr)) return;
+    arr.forEach((v, i) => {
+      if (!v || typeof v !== "object") { errors.push(`${name}[${i}]: expected object`); return; }
+      const r = v as Record<string, unknown>;
+      if (typeof r.dx !== "number") errors.push(`${name}[${i}].dx: expected number`);
+      if (typeof r.dy !== "number") errors.push(`${name}[${i}].dy: expected number`);
+    });
+  };
+  validateDeltas(o.replay, "replay");
+  validateDeltas(o.wheelSamples, "wheelSamples");
+  if (hasSel) {
+    (o.selectionDragSamples as unknown[]).forEach((v, i) => {
+      if (!v || typeof v !== "object") { errors.push(`selectionDragSamples[${i}]: expected object`); return; }
+      const r = v as Record<string, unknown>;
+      for (const k of ["x", "y", "dx", "dy"]) {
+        if (typeof r[k] !== "number") errors.push(`selectionDragSamples[${i}].${k}: expected number`);
+      }
+    });
+  }
+  if (o.note != null && (typeof o.note !== "object" || Array.isArray(o.note))) errors.push("note: expected object");
+  return errors;
 }
 
 
