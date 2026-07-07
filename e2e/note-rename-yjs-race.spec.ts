@@ -122,8 +122,7 @@ test.describe("note rename Yjs race", () => {
         /* ignore */
       }
     }
-    await deleteNote(oldSlug).catch(() => {});
-    await deleteNote(newSlug).catch(() => {});
+    await purgeSlugs([oldSlug, newSlug]);
   });
 
   test("renames after pending Yjs edits and old slug stays gone after debounce", async ({
