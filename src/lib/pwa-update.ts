@@ -297,11 +297,13 @@ export function registerAppUpdater(): void {
     syncDebugState();
     writeDebugState({ pendingBuildId, lastAcceptedAt: Date.now() });
     renderToast();
+    // Lifecycle log happens after strategy is chosen below.
 
     if (waitingRegistration?.waiting && updateSWFn) {
       reloadStrategy = "waiting-sw";
       syncDebugState();
       console.log("[pwa-update] reload strategy=waiting-sw", { currentBuildId: getCurrentBuildId(), pendingBuildId });
+      logLifecycle("reload-start");
       const fallback = window.setTimeout(() => {
         console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
         hardReload(pendingBuildId);
@@ -324,13 +326,36 @@ export function registerAppUpdater(): void {
     reloadStrategy = "hard";
     syncDebugState();
     console.log("[pwa-update] reload strategy=hard", { currentBuildId: getCurrentBuildId(), pendingBuildId });
+    logLifecycle("reload-start");
     hardReload(pendingBuildId);
   };
+
+  const logLifecycle = (event: string) => {
+    const payload = {
+      event,
+      currentBuildId: getCurrentBuildId(),
+      pendingBuildId: latestRemoteBuildId ?? pendingBuildFromPreviousLoad,
+      reloadStrategy,
+      reloadAttemptCount,
+      updateAvailable,
+      updateInProgress: reloadInProgress,
+      at: new Date().toISOString(),
+    };
+    console.info("[pwa-update:lifecycle]", payload);
+  };
+  // On-demand debug dump for humans (paste `__SNOTE_PWA_UPDATE_DEBUG__()`
+  // into the devtools console to see current vs pending buildId + strategy).
+  (window as unknown as { __SNOTE_PWA_UPDATE_DEBUG__?: () => PwaUpdateDebugState | undefined }).__SNOTE_PWA_UPDATE_DEBUG__ =
+    () => {
+      logLifecycle("manual-dump");
+      return window.__SNOTE_PWA_UPDATE_STATE__;
+    };
 
   const triggerToast = () => {
     updateAvailable = true;
     syncDebugState();
     renderToast();
+    logLifecycle("toast-shown");
   };
 
   syncDebugState();
@@ -361,6 +386,7 @@ export function registerAppUpdater(): void {
         reloadAttemptCount,
         reloadStrategy,
       });
+      logLifecycle("transition-complete");
     },
   );
 

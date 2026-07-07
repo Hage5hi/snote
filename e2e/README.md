@@ -59,3 +59,37 @@ specs into one file.
 A `buildIdMismatchCount > 0` at the end of a run means at least one toast was
 still showing a pending build that hadn't taken effect — usually the smoking
 gun for "clicked Update but nothing changed" reports.
+
+## Cross-browser matrix
+
+`pwa-update-toast.spec.ts`, `pwa-update-throttle.spec.ts`, and
+`pwa-update-hard-reload.spec.ts` are cross-browser: the CI matrix
+(`.github/workflows/e2e.yml`) runs them under chromium, firefox, and webkit
+via `PLAYWRIGHT_PROJECT`. Locally, override with:
+
+```sh
+PLAYWRIGHT_PROJECT=firefox bunx playwright test e2e/pwa-update-throttle.spec.ts
+PLAYWRIGHT_PROJECT=webkit  bunx playwright test e2e/pwa-update-hard-reload.spec.ts
+```
+
+## Deterministic PWA update mock
+
+Use `installPwaUpdateMock(page, { fromBuildId, toBuildId, holdHardReload })`
+from `e2e/helpers/pwa-update-mock.ts` — it sets fixed buildIds, fixed poll
+intervals (10ms initial / 250ms interval), and optionally holds the hard-reload
+event until `releaseHeldReload(page)` runs. No `Date.now()` or randomness in
+the setup, so results are repeatable across runs and browsers.
+
+## In-app debug helper
+
+Paste `__SNOTE_PWA_UPDATE_DEBUG__()` into the browser devtools console to log
+a `[pwa-update:lifecycle]` payload showing current vs pending buildId and the
+selected reload strategy. The same payload is auto-logged at each toast
+lifecycle transition (`toast-shown`, `reload-start`, `transition-complete`).
+
+## CI failure artifacts
+
+On failure, `.github/workflows/e2e.yml` uploads a dedicated
+`pwa-update-failures-<browser>-run<N>-attempt<M>` artifact containing the
+Playwright trace, screenshots, videos, and JSON attachments for just the
+PWA update specs — no need to download the full `test-results/` archive.

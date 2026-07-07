@@ -1,4 +1,8 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { installPwaUpdateMock, releaseHeldReload } from "./helpers/pwa-update-mock";
+
+// Cross-browser: this spec must pass on chromium, firefox, and webkit — do not
+// scope it to a single project. CI runs the full matrix via PLAYWRIGHT_PROJECT.
 
 type PwaUpdateState = {
   currentBuildId: string;
@@ -44,25 +48,12 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
   test.setTimeout(20_000);
   currentPageForHook = page;
   // Hold the hard reload so we can rapid-fire click while the update is 'in-flight'.
-  const version = { buildId: "build-v2" };
-  await page.addInitScript(() => {
-    (window as any).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = true;
-    (window as any).__SNOTE_E2E_BUILD_ID__ = "build-v1";
-    (window as any).__SNOTE_E2E_PWA_INITIAL_POLL_MS__ = 10;
-    (window as any).__SNOTE_E2E_PWA_POLL_INTERVAL_MS__ = 250;
-    // Intercept the E2E hard-reload event and defer applying the new buildId
-    // so we can spam Update clicks while a reload is 'in progress'.
-    (window as any).__SNOTE_E2E_HELD_TARGET__ = null;
-    window.addEventListener("snote:e2e-pwa-hard-reload", (e: Event) => {
-      const detail = (e as CustomEvent).detail as { targetBuildId: string };
-      // Undo the immediate buildId swap so the toast stays in 'pending'.
-      (window as any).__SNOTE_E2E_BUILD_ID__ = "build-v1";
-      (window as any).__SNOTE_E2E_HELD_TARGET__ = detail.targetBuildId;
-    });
+  await installPwaUpdateMock(page, {
+    fromBuildId: "build-v1",
+    toBuildId: "build-v2",
+    holdHardReload: true,
   });
-  await page.route("**/version.json**", async (route) => {
-    await route.fulfill({ contentType: "application/json", body: JSON.stringify(version) });
-  });
+
 
   await page.goto("/");
   const toast = page.getByText("New version available");
@@ -94,10 +85,8 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
   }
 
   // Now release the held reload → buildId transitions → toast auto-hides.
-  await page.evaluate(() => {
-    const target = (window as any).__SNOTE_E2E_HELD_TARGET__;
-    if (target) (window as any).__SNOTE_E2E_BUILD_ID__ = target;
-  });
+  await releaseHeldReload(page);
+
 
   await expect(toast).toBeHidden({ timeout: 5_000 });
   await expect(page.getByText("Update pending")).toBeHidden();
