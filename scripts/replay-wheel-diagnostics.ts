@@ -163,6 +163,7 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
   const browserType = browserTypes[args.project];
   if (!browserType) throw new Error(`unsupported project: ${args.project}`);
+  preflightPlaywrightBrowser(browserType, args.project);
 
   mkdirSync(args.outDir, { recursive: true });
   const browser = await browserType.launch({ headless: !args.headed });
