@@ -6,14 +6,17 @@
 //      if the service worker is slow to fire `onNeedRefresh` or the user has
 //      SW disabled entirely. We do this by polling /version.json (no-store)
 //      and comparing against the build ID stamped into THIS tab's bundle.
-//   2. The Lovable preview iframe (id-preview--*.lovable.app) NEVER serves a
-//      stale build. Iterating in the editor and seeing yesterday's UI is a
-//      bug — there is no offline-install value in a preview. We unregister
-//      any previously-installed SW and nuke its caches, then skip
-//      re-registration entirely on those hosts.
-//   3. User data (localStorage: recents, pins, theme; IndexedDB: Yjs docs;
-//      Supabase session) is NEVER touched by any cache-clearing logic.
-//      Only Cache Storage (workbox / SW caches) is cleared.
+//   2. Clicking Update ALWAYS results in the tab actually running the new
+//      build. Previously we only called `updateSW(true)` which is a no-op
+//      when there is no *waiting* service worker (which is exactly the case
+//      when the version poller fires the toast before the SW has installed
+//      the new build, or when the user has SW disabled entirely). Result:
+//      the toast kept re-appearing forever after the user clicked Update.
+//      Now we fall back to a cache-busting hard reload in that path.
+//   3. The Lovable preview iframe (id-preview--*.lovable.app) NEVER serves a
+//      stale build — SW is unregistered + caches nuked; no re-registration.
+//   4. User data (localStorage: recents, pins, theme; IndexedDB: Yjs docs;
+//      Supabase session) is NEVER touched. Only Cache Storage is cleared.
 
 import { registerSW } from "virtual:pwa-register";
 import { toast as sonnerToast } from "sonner";
@@ -23,13 +26,15 @@ import { detectLang, dict, STORAGE_KEY, type Lang } from "@/i18n";
 declare const __BUILD_ID__: string;
 const CURRENT_BUILD_ID: string = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
 
-// Poll cadence for /version.json. Short enough that a user idling on the app
-// during a deploy gets the update prompt within a minute, long enough that
-// it's not a thundering herd on the static host.
 const VERSION_POLL_INTERVAL_MS = 60 * 1000;
-// Independent cadence for asking the SW to re-check itself. Same target.
 const SW_UPDATE_POLL_INTERVAL_MS = 60 * 1000;
 const TOAST_ID = "pwa-update-toast";
+// When the user clicks Update we remember the target buildId here. If the
+// tab boots and still sees CURRENT_BUILD_ID === accepted target, that means
+// the reload failed to pick up the new bundle (aggressive HTTP cache, proxy,
+// etc.). We skip re-showing the toast for that build to avoid the infinite
+// loop, and log a diagnostic instead.
+const ACCEPTED_BUILD_KEY = "pwa-update-accepted-build";
 
 type FlatDict = Record<string, string>;
 
@@ -38,15 +43,11 @@ function tr(lang: Lang, key: string): string {
   return d[lang]?.[key] ?? d.en[key] ?? key;
 }
 
-// Preview iframe served by Lovable's editor. We don't want a SW caching
-// anything here — every reload should hit the latest deployed preview build.
 function isLovablePreviewHost(): boolean {
   if (typeof window === "undefined") return false;
   return /(^|\.)id-preview--/.test(window.location.hostname);
 }
 
-// Best-effort: remove every previously-registered SW + every Cache Storage
-// entry. Does NOT touch localStorage / IndexedDB — user data is sacred.
 async function nukeServiceWorkersAndCaches(): Promise<void> {
   try {
     if ("serviceWorker" in navigator) {
@@ -66,6 +67,21 @@ async function nukeServiceWorkersAndCaches(): Promise<void> {
   }
 }
 
+// Cache-busting reload: replaces the URL with a `?v=<buildId>` query so the
+// browser HTTP cache can't serve the previously-cached index.html. We use
+// `replace` (not `assign`) so back-button history isn't polluted with the
+// versioned URL. Falls back to the current href if we don't know the target.
+function hardReload(targetBuildId: string | null): void {
+  try {
+    const url = new URL(window.location.href);
+    if (targetBuildId) url.searchParams.set("v", targetBuildId);
+    else url.searchParams.set("v", String(Date.now()));
+    window.location.replace(url.toString());
+  } catch {
+    window.location.reload();
+  }
+}
+
 function showUpdateToast(onReload: () => void): void {
   const lang = detectLang();
   sonnerToast(tr(lang, "update.title"), {
@@ -79,8 +95,7 @@ function showUpdateToast(onReload: () => void): void {
   });
 }
 
-// /version.json poller — works even with no SW. Returns a stop fn.
-function startVersionPoller(onMismatch: () => void): () => void {
+function startVersionPoller(onMismatch: (remoteBuildId: string) => void): () => void {
   let stopped = false;
   let timer: number | undefined;
 
@@ -94,15 +109,16 @@ function startVersionPoller(onMismatch: () => void): () => void {
       if (!res.ok) return;
       const data = (await res.json()) as { buildId?: string };
       if (data?.buildId && data.buildId !== CURRENT_BUILD_ID) {
-        onMismatch();
+        console.log(
+          `[pwa-update] mismatch current=${CURRENT_BUILD_ID} remote=${data.buildId}`,
+        );
+        onMismatch(data.buildId);
       }
     } catch {
       /* network blip — try again next tick */
     }
   };
 
-  // First check shortly after boot so a user who opens the app right after a
-  // deploy sees the prompt quickly, not a minute later.
   window.setTimeout(check, 3000);
   timer = window.setInterval(check, VERSION_POLL_INTERVAL_MS) as unknown as number;
   document.addEventListener("visibilitychange", () => {
@@ -118,52 +134,90 @@ function startVersionPoller(onMismatch: () => void): () => void {
 
 export function registerAppUpdater(): void {
   if (typeof window === "undefined") return;
-  // No SW is generated in dev builds (devOptions.enabled: false). Nothing to
-  // poll either — Vite already serves fresh modules.
   if (import.meta.env.DEV) return;
 
-  // Lovable preview iframe: unregister anything previously installed, wipe
-  // caches, and bail. Future reloads will always hit the latest deploy.
   if (isLovablePreviewHost()) {
     void nukeServiceWorkersAndCaches();
     return;
   }
 
-  let updateAvailable = false;
-  let pendingReload: (() => void) | null = null;
+  // Break the infinite-toast loop: if a previous reload was accepted for a
+  // buildId that matches THIS tab's build, the reload failed to activate the
+  // new build (HTTP cache, aggressive proxy, offline SW). Don't keep asking.
+  let acceptedBuild: string | null = null;
+  try {
+    acceptedBuild = sessionStorage.getItem(ACCEPTED_BUILD_KEY);
+  } catch {
+    /* ignore */
+  }
+  if (acceptedBuild && acceptedBuild === CURRENT_BUILD_ID) {
+    console.warn(
+      `[pwa-update] update was accepted for build=${acceptedBuild} but tab is still on the same build; ` +
+        `suppressing toast for this session. The next deploy will trigger it again.`,
+    );
+  }
 
-  const triggerToast = () => {
-    updateAvailable = true;
-    showUpdateToast(() => {
-      // If the SW has a waiting worker, prefer its proper activation path
-      // (skipWaiting → controllerchange → reload). Otherwise just hard-reload
-      // — the new index.html will pick up the new bundle hashes.
-      if (pendingReload) {
-        pendingReload();
-      } else {
-        window.location.reload();
-      }
-    });
+  let updateAvailable = false;
+  let latestRemoteBuildId: string | null = null;
+  let waitingRegistration: ServiceWorkerRegistration | null = null;
+  let updateSWFn: ((reload?: boolean) => Promise<void>) | null = null;
+
+  const reloadNow = () => {
+    try {
+      sessionStorage.setItem(ACCEPTED_BUILD_KEY, latestRemoteBuildId ?? "unknown");
+    } catch {
+      /* ignore */
+    }
+
+    // Prefer the proper SW activation path when a waiting worker exists —
+    // it swaps controllers cleanly and Workbox prunes outdated caches.
+    if (waitingRegistration?.waiting && updateSWFn) {
+      console.log("[pwa-update] reload strategy=waiting-sw");
+      // Safety net: some browsers don't reliably fire controllerchange after
+      // skipWaiting when there are open clients. Force a hard reload after a
+      // short wait so the user is never stuck.
+      const fallback = window.setTimeout(() => {
+        console.log("[pwa-update] waiting-sw fallback → hard reload");
+        hardReload(latestRemoteBuildId);
+      }, 2500);
+      let done = false;
+      const onCtrl = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(fallback);
+        hardReload(latestRemoteBuildId);
+      };
+      navigator.serviceWorker?.addEventListener("controllerchange", onCtrl, { once: true });
+      void updateSWFn(true).catch(() => {
+        window.clearTimeout(fallback);
+        hardReload(latestRemoteBuildId);
+      });
+      return;
+    }
+
+    // No waiting SW → the update came from the version poller (or SW is
+    // disabled). A cache-busting hard reload is the only reliable path.
+    console.log("[pwa-update] reload strategy=hard");
+    hardReload(latestRemoteBuildId);
   };
 
-  // Always run the version poller — it's the safety net for the "SW didn't
-  // fire onNeedRefresh" failure mode that originally caused stale tabs.
-  startVersionPoller(triggerToast);
+  const triggerToast = () => {
+    if (acceptedBuild && acceptedBuild === CURRENT_BUILD_ID) return;
+    updateAvailable = true;
+    showUpdateToast(reloadNow);
+  };
+
+  startVersionPoller((remoteBuildId) => {
+    latestRemoteBuildId = remoteBuildId;
+    triggerToast();
+  });
 
   if (!("serviceWorker" in navigator)) return;
 
-  const updateSW = registerSW({
+  updateSWFn = registerSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
-      pendingReload = () => {
-        // updateSW(true) posts SKIP_WAITING to the waiting SW and reloads
-        // once the new SW takes control. Caches are managed by Workbox
-        // (`cleanupOutdatedCaches: true`), so old precache entries are
-        // pruned automatically on activate. User data is untouched.
-        void updateSW(true);
-      };
-      // Immediate check so a freshly opened tab after a deploy doesn't sit
-      // on the old build for an hour.
+      waitingRegistration = registration;
       registration.update().catch(() => {});
       window.setInterval(() => {
         registration.update().catch(() => {});
@@ -182,8 +236,6 @@ export function registerAppUpdater(): void {
     },
   });
 
-  // Re-render the toast in the user's current language if they switch while
-  // the update prompt is up.
   window.addEventListener("storage", (e) => {
     if (e.key === STORAGE_KEY && updateAvailable) triggerToast();
   });

@@ -57,14 +57,32 @@ Helper: `newPageWithDebounce(context, ms)` in `e2e/note-rename-yjs-race.spec.ts`
 
 The stress spec attaches `stress-seed.json` (seed + iterations + CI flag) and
 `stress-timings.json` (per-iteration `debounceMs`, `from`, `to`, `durationMs`,
-`outcome`). To replay the exact timeline from a downloaded report:
+`outcome`). Preferred invocation (documented alias):
 
 ```sh
-scripts/rerun-stress-from-report.sh path/to/playwright-report
+bun run e2e:rerun-stress path/to/playwright-report
+# equivalent:
+bash scripts/rerun-stress-from-report.sh path/to/playwright-report
 ```
 
-The script parses the seed attachment and re-exports `STRESS_RENAME_SEED` /
-`STRESS_RENAME_ITERATIONS` before invoking Playwright.
+The script:
+
+1. Locates the first `stress-seed*.json` under the given directory (defaults
+   to `./playwright-report` then `./test-results`).
+2. Extracts `seed`, `iterations`, and `ci` from that payload.
+3. Exports `STRESS_RENAME_SEED`, `STRESS_RENAME_ITERATIONS`, and (when the
+   report was produced under CI) `CI=1`.
+4. Invokes `bunx playwright test e2e/note-rename-yjs-race.spec.ts -g "stress: …"`.
+
+Extra Playwright flags are forwarded, e.g.:
+
+```sh
+bun run e2e:rerun-stress path/to/playwright-report -- --project=chromium --headed
+```
+
+**End-to-end (from a CI failure):** download the
+`e2e-html-report-<browser>-run<N>-attempt<M>` artifact from the failing run,
+unzip it, then run `bun run e2e:rerun-stress <unzipped-dir>`.
 
 ### Debugging which iteration failed
 

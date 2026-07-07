@@ -16,6 +16,7 @@
     "test:e2e": "bash scripts/run-playwright.sh test",
     "test:e2e:system": "PLAYWRIGHT_FORCE_SYSTEM_CHROMIUM=1 PLAYWRIGHT_PROJECT=chromium bash scripts/run-playwright.sh test",
     "test:e2e:both": "bun run test:e2e && bun run test:e2e:system",
+    "e2e:rerun-stress": "bash scripts/rerun-stress-from-report.sh",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:e2e:update:scene": "playwright test e2e/home-scenes-visual.spec.ts e2e/home-scene.spec.ts --update-snapshots",
     "test:e2e:update:changed": "bun run scripts/e2e-update-changed-scenes.ts",
