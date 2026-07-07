@@ -64,7 +64,6 @@ test("Update toast disappears only after the running buildId changes", async ({ 
 
   const disabledUpdate = page.getByRole("button", { name: /^Update…$/ });
   await expect(disabledUpdate).toBeDisabled();
-  await disabledUpdate.click({ force: true }).catch(() => undefined);
   await expect.poll(async () => (await pwaState(page))?.reloadAttemptCount).toBe(1);
   await attachPwaMetadata(testInfo, page, "after-click");
 
