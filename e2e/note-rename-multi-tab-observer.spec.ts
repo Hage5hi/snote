@@ -49,8 +49,48 @@ test.describe("multi-tab rename observer", () => {
 
     // Give broadcast + Yjs debounce time to settle in tab B.
     await tabB.waitForTimeout(2_500);
-    const status = await fetchOldSlugCleanupStatus(tabB, oldSlug).catch((e) => ({ error: String(e) }));
-    console.log("[multi-tab] tabB cleanup-status", { oldSlug, newSlug, status });
+
+    // Assert tab B keeps polling for a configurable minimum window and NEVER
+    // sees the old slug during the entire duration. Overridable via env.
+    const observerWindowMs = (() => {
+      const v = Number(process.env.MULTI_TAB_OBSERVER_WINDOW_MS);
+      if (Number.isFinite(v) && v > 0) return v;
+      return process.env.CI ? 15_000 : 6_000;
+    })();
+    const pollIntervalMs = 500;
+    const deadline = Date.now() + observerWindowMs;
+    const timeline: Array<{ t: number; elapsedMs: number; cleaned?: boolean; rowPresent?: boolean; error?: string }> = [];
+    let firstBreach: { t: number; row: unknown; status: unknown } | null = null;
+    let iter = 0;
+    while (Date.now() < deadline) {
+      const { status, elapsedMs } = await fetchOldSlugCleanupStatusWithReport(
+        tabB,
+        oldSlug,
+        testInfo,
+        `tabB-observer-${iter++}`,
+      );
+      const row = await snapshotSlugRow(oldSlug).catch(() => null);
+      const cleaned = "cleaned" in (status as object) ? (status as { cleaned?: boolean }).cleaned : undefined;
+      const rowPresent = "database" in (status as object)
+        ? (status as { database?: { rowPresent?: boolean } }).database?.rowPresent
+        : undefined;
+      timeline.push({
+        t: Date.now(),
+        elapsedMs,
+        cleaned,
+        rowPresent,
+        error: "error" in (status as object) ? (status as { error?: string }).error : undefined,
+      });
+      if (row || rowPresent) {
+        firstBreach = { t: Date.now(), row, status };
+        break;
+      }
+      await tabB.waitForTimeout(pollIntervalMs);
+    }
+    await testInfo.attach("multi-tab-observer-timeline.json", {
+      body: JSON.stringify({ oldSlug, newSlug, observerWindowMs, iterations: timeline.length, timeline, firstBreach }, null, 2),
+      contentType: "application/json",
+    });
 
     const lingering = await verifyOldSlugGoneWithRetry(tabB, oldSlug, {
       timeoutMs: 5_000,
@@ -61,13 +101,14 @@ test.describe("multi-tab rename observer", () => {
       backoffMs: 500,
       label: "tabB-observer",
     });
-    if (lingering) {
+    if (lingering || firstBreach) {
       await testInfo.attach("multi-tab-console.log", { body: logs.join("\n"), contentType: "text/plain" });
       await testInfo.attach("multi-tab-lingering.json", {
-        body: JSON.stringify({ oldSlug, newSlug, lingering, status }, null, 2),
+        body: JSON.stringify({ oldSlug, newSlug, lingering, firstBreach }, null, 2),
         contentType: "application/json",
       });
     }
+    expect(firstBreach, "tab B saw old-slug row during the observer window").toBeNull();
     expect(lingering, "tab B observed old-slug resurrection after tab A rename").toBeNull();
 
     await tabA.close();
