@@ -687,6 +687,47 @@ Attachments land under `test-results/<test-id>/` locally and in the
 The spec also writes per-browser rows to `$GITHUB_STEP_SUMMARY` in CI
 with a link to the run's Artifacts page for the trace/screenshot.
 
+## Wheel / trackpad scroll diagnostics
+
+The 1,000-line wheel/trackpad E2E in
+[`e2e/note-wheel-trackpad-scroll.spec.ts`](e2e/note-wheel-trackpad-scroll.spec.ts)
+writes a fixed-name diagnostics bundle on failure so a single CI
+artifact is enough to reproduce a stuck-scroll or stuck-selection frame.
+
+### Artifact locations
+
+| Filename | Where |
+|---|---|
+| `wheel-diagnostics.json` | `test-results/<test-id>/wheel-diagnostics.json` **and** mirrored to `test-results/wheel-latest/<test-slug>/wheel-diagnostics.json` (retry/attempt-agnostic) |
+| `scroller.png` | Same two locations as above |
+| `trace.zip` | Playwright default location under `test-results/<test-id>/` |
+
+`wheel-diagnostics.json` carries `schemaVersion` (currently `1`), the
+recorded wheel/trackpad `replay` delta stream, `wheelSamples`,
+`selectionDragSamples`, and the first `stuckFrame` / selection stuck
+frame detected. The CI renderer treats the file as an opaque link, so
+older or newer schema versions still render correct summary links.
+
+### Replay from a single artifact
+
+Download `wheel-diagnostics.json` from the failing run's Artifacts panel
+(the CI step summary links it directly) and feed it back through:
+
+```sh
+# Replay the exact recorded deltas against the long-note fixture
+PLAYWRIGHT_PROJECT=chromium \
+  bun run scripts/replay-wheel-diagnostics.ts \
+  path/to/wheel-diagnostics.json
+
+# Or re-run the full E2E with the same viewport / warm-up / device
+# settings CI uses (matches the "Local repro" command in the CI summary):
+PLAYWRIGHT_PROJECT=chromium RETRIES=0 ./scripts/run-wheel-e2e.sh
+```
+
+The replay writes `test-results/wheel-replay/replay-result.json` (the
+observed `before`/`after` `scrollTop` per delta) plus a fresh
+`scroller.png` for visual comparison against the failing artifact.
+
 ## pretty-index.json CI failure diagnostics
 
 When the pretty-index.json check fails in CI (either matrix), each job
