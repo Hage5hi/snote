@@ -24,6 +24,23 @@ interface RenameDialogProps {
 
 type Status = "idle" | "checking" | "available" | "taken" | "invalid" | "same";
 
+const DELETION_RECHECK_DELAYS_MS = [150, 350, 750];
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function waitForOldSlugDeleted(slug: string): Promise<boolean> {
+  for (const delay of DELETION_RECHECK_DELAYS_MS) {
+    await wait(delay);
+    const { data } = await supabase
+      .from("notes")
+      .select("slug")
+      .eq("slug", slug)
+      .maybeSingle();
+    if (!data) return true;
+  }
+  return false;
+}
+
 export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogProps) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -92,12 +109,13 @@ export function RenameDialog({ open, onOpenChange, currentSlug }: RenameDialogPr
       // Give React a tick to unmount, then delete the source row.
       await new Promise((r) => setTimeout(r, 50));
       const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
+      const finalDeletionConfirmed = deletionConfirmed || await waitForOldSlugDeleted(currentSlug);
       toast({
         title: t("rename.toast_renamed"),
-        description: deletionConfirmed
+        description: finalDeletionConfirmed
           ? `/${currentSlug} → /${newSlug}`
           : `/${currentSlug} → /${newSlug} (old slug still present — retry)`,
-        variant: deletionConfirmed ? undefined : "destructive",
+        variant: finalDeletionConfirmed ? undefined : "destructive",
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("rename.generic_error");
