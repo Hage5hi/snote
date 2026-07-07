@@ -4,6 +4,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { chromium, firefox, webkit, type BrowserType } from "playwright";
+import { preflightPlaywrightBrowser } from "./replay-wheel-diagnostics";
 
 type Args = {
   runId: string;
