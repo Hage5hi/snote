@@ -39,16 +39,31 @@ jobs:
           bunx playwright test \
             e2e/note-menu-no-rename-duplicate.spec.ts \
             e2e/pwa-update-debug-panel.spec.ts \
+            e2e/pwa-readiness-gate.spec.ts \
+            e2e/pwa-readiness-malformed.spec.ts \
+            e2e/pwa-update-full-flow.spec.ts \
+            e2e/rename-duplicate-routes-404.spec.ts \
+            e2e/rename-duplicate-disabled-shortcuts.spec.ts \
+            e2e/rename-duplicate-deep-link-variants.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}
-      - name: Upload report
+      - name: Upload HTML report (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: e2e-new-specs-report-run${{ github.run_number }}-attempt${{ github.run_attempt }}
-          path: |
-            playwright-report/
-            test-results/
+          path: playwright-report/
           retention-days: 7
+          if-no-files-found: ignore
+      - name: Upload Playwright traces, videos & screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          # playwright.config.ts sets trace/video/screenshot to
+          # retain-on-failure / only-on-failure, so test-results/ contains
+          # the per-test artifacts needed to debug the failing run.
+          name: e2e-new-specs-test-results-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
           if-no-files-found: ignore
