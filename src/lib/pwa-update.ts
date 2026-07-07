@@ -386,6 +386,7 @@ export function registerAppUpdater(): void {
         reloadAttemptCount,
         reloadStrategy,
       });
+      logLifecycle("transition-complete");
     },
   );
 
