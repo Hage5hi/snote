@@ -50,7 +50,7 @@ type SelectionDragSample = {
 };
 
 function usage(): never {
-  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs] [--resume]");
+  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs] [--resume] [--verify-manifest]");
   process.exit(2);
 }
 
