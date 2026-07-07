@@ -85,10 +85,8 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
   }
 
   // Now release the held reload → buildId transitions → toast auto-hides.
-  await page.evaluate(() => {
-    const target = (window as any).__SNOTE_E2E_HELD_TARGET__;
-    if (target) (window as any).__SNOTE_E2E_BUILD_ID__ = target;
-  });
+  await releaseHeldReload(page);
+
 
   await expect(toast).toBeHidden({ timeout: 5_000 });
   await expect(page.getByText("Update pending")).toBeHidden();
