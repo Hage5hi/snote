@@ -50,7 +50,7 @@ type SelectionDragSample = {
 };
 
 function usage(): never {
-  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay] [--trace=on|off] [--headed]");
+  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay] [--trace=on|off] [--extra-traces] [--headed]");
   process.exit(2);
 }
 
@@ -62,11 +62,13 @@ export function parseArgs(argv: string[]) {
     outDir: process.env.WHEEL_REPLAY_OUT_DIR ?? join(process.cwd(), "test-results", "wheel-replay"),
     headed: process.env.HEADED === "1",
     trace: process.env.PLAYWRIGHT_TRACE !== "0",
+    extraTraces: process.env.WHEEL_REPLAY_EXTRA_TRACES === "1",
   };
   for (const a of argv) {
     if (a === "--headed") args.headed = true;
     else if (a === "--no-trace" || a === "--trace=off") args.trace = false;
     else if (a === "--trace=on") args.trace = true;
+    else if (a === "--extra-traces" || a === "--trace-notes") args.extraTraces = true;
     else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
     else if (a.startsWith("--out-dir=")) args.outDir = a.slice("--out-dir=".length);
@@ -75,6 +77,18 @@ export function parseArgs(argv: string[]) {
   }
   if (!args.path) usage();
   return args;
+}
+
+export function preflightPlaywrightBrowser(browserType: BrowserType, project: string): void {
+  try {
+    const exe = browserType.executablePath();
+    if (!exe || !existsSync(exe)) throw new Error(`missing binary at ${exe || "<unknown>"}`);
+  } catch (e) {
+    const install = `bunx playwright install --with-deps ${project}`;
+    console.error(`✖ Playwright ${project} browser is not installed (${e instanceof Error ? e.message : String(e)}).`);
+    console.error(`  Install it with:\n    ${install}`);
+    process.exit(3);
+  }
 }
 
 function getDeltas(diagnostics: WheelDiagnostics): Delta[] {
