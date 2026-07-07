@@ -264,7 +264,7 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   await browser.close();
 
   if (args.extraTraces) {
-    const retries = process.env.RETRIES ?? "0";
+    const retries = args.retries;
     const notesPath = join(args.outDir, "trace-notes.json");
     writeFileSync(notesPath, JSON.stringify({
       source: args.path, project: args.project, retries,
