@@ -48,6 +48,10 @@ jobs:
             e2e/pwa-readiness-malformed-then-valid.spec.ts \
             e2e/pwa-readiness-malformed-then-valid-flow.spec.ts \
             e2e/no-runtime-errors-malformed-and-deeplinks.spec.ts \
+            e2e/pwa-reload-strategy-soft-after-fix.spec.ts \
+            e2e/pwa-update-offline.spec.ts \
+            e2e/pwa-debug-panel-visual-snapshot.spec.ts \
+            e2e/rename-duplicate-deep-link-console-strict.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}
