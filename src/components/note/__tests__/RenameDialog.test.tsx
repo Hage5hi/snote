@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   clearRenamedSlugLocalState: vi.fn(),
   finalizeRename: vi.fn(),
   waitForSlugDeletionConfirmed: vi.fn(),
+  fetchOldSlugCleanupStatus: vi.fn(),
   maybeSingle: vi.fn(),
 }));
 
@@ -35,6 +36,10 @@ vi.mock("@/lib/rename", () => ({
   clearRenamedSlugLocalState: mocks.clearRenamedSlugLocalState,
   finalizeRename: mocks.finalizeRename,
   waitForSlugDeletionConfirmed: mocks.waitForSlugDeletionConfirmed,
+}));
+
+vi.mock("@/lib/rename-cleanup-status", () => ({
+  fetchOldSlugCleanupStatus: mocks.fetchOldSlugCleanupStatus,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -70,6 +75,8 @@ describe("RenameDialog", () => {
     mocks.finalizeRename.mockResolvedValue({ deletionConfirmed: false });
     mocks.waitForSlugDeletionConfirmed.mockReset();
     mocks.waitForSlugDeletionConfirmed.mockResolvedValue({ deleted: true, snapshot: null });
+    mocks.fetchOldSlugCleanupStatus.mockReset();
+    mocks.fetchOldSlugCleanupStatus.mockResolvedValue({ cleaned: true });
     mocks.maybeSingle.mockReset();
   });
 
@@ -86,7 +93,7 @@ describe("RenameDialog", () => {
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
 
     expect(mocks.clearRenamedSlugLocalState).toHaveBeenCalledWith("old-slug");
-    expect(mocks.waitForSlugDeletionConfirmed).toHaveBeenCalledWith("old-slug");
+    expect(mocks.fetchOldSlugCleanupStatus).toHaveBeenCalledWith("old-slug");
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "rename.toast_renamed",
@@ -98,10 +105,8 @@ describe("RenameDialog", () => {
 
   it("shows a destructive warning toast if the old slug still exists after final recheck", async () => {
     mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
-    mocks.waitForSlugDeletionConfirmed.mockResolvedValueOnce({
-      deleted: false,
-      snapshot: { slug: "old-slug", char_count: 12, ydoc_state_len: 20, content_len: 12 },
-    });
+    mocks.fetchOldSlugCleanupStatus.mockResolvedValueOnce({ cleaned: false });
+    mocks.waitForSlugDeletionConfirmed.mockResolvedValueOnce({ deleted: false, snapshot: null });
 
     renderDialog();
     fireEvent.change(screen.getByPlaceholderText("rename.placeholder"), {

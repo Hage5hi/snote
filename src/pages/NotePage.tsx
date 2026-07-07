@@ -35,6 +35,7 @@ import { useI18n } from "@/i18n";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 import { clearSlugLocalCaches } from "@/lib/rename";
+import { recordOldSlugCleanupSignal } from "@/lib/rename-cleanup-status";
 import { AppShell } from "@/components/app/AppShell";
 import { isExtensionContext } from "@/lib/ext-context";
 
@@ -295,7 +296,10 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const idb = new IndexeddbPersistence(`note:${slug}`, doc);
     let disposed = false;
     const unregisterAbandonedCleanup = registerAbandonedSlugCleanup(slug, () => {
-      void idb.clearData().catch(() => {});
+      recordOldSlugCleanupSignal(slug, { cleanupStartedAt: Date.now() });
+      void idb.clearData()
+        .then(() => recordOldSlugCleanupSignal(slug, { indexedDbClearedAt: Date.now() }))
+        .catch(() => {});
       void clearSlugLocalCaches(slug, { evictDocCache: false, clearIndexedDb: false });
     });
 

@@ -145,6 +145,11 @@ export function evictDoc(slug: string) {
   log("destroy:evict", { slug });
 }
 
+/** True when a slug still has a warm Y.Doc in this tab's in-memory cache. */
+export function isDocCached(slug: string) {
+  return cache.has(slug);
+}
+
 function trim() {
   while (cache.size > MAX) {
     const oldest = cache.keys().next().value as string | undefined;

@@ -19,6 +19,7 @@ import {
   waitForSlugDeletionConfirmed,
   SLUG_RE,
 } from "@/lib/rename";
+import { fetchOldSlugCleanupStatus } from "@/lib/rename-cleanup-status";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n/index";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
@@ -102,7 +103,8 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       await new Promise((r) => setTimeout(r, 50));
       await clearRenamedSlugLocalState(currentSlug);
       const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
-      const finalDeletionConfirmed = deletionConfirmed || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
+      const cleanupStatus = await fetchOldSlugCleanupStatus(currentSlug).catch(() => null);
+      const finalDeletionConfirmed = deletionConfirmed || cleanupStatus?.cleaned || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
       toast({
         title: t("rename.toast_renamed"),
         description: finalDeletionConfirmed
