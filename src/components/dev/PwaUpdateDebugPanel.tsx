@@ -10,6 +10,7 @@ import {
   emitPwaReadinessInvalidEvent,
   explainPwaReadinessState,
   exposeReadinessValidatorForE2E,
+  PWA_READINESS_INVALID_EVENT,
   validatePwaReadinessState,
   type PwaReadinessInvalidReason,
   type PwaUpdateReadinessState,
@@ -17,10 +18,19 @@ import {
 
 type PwaUpdateDebugState = PwaUpdateReadinessState;
 
+type InvalidStats = {
+  total: number;
+  lastMinute: number;
+  lastHour: number;
+  lastAt: number | null;
+};
+
 export function PwaUpdateDebugPanel() {
   const [state, setState] = useState<PwaUpdateDebugState | null>(null);
   const [invalid, setInvalid] = useState<PwaReadinessInvalidReason | null>(null);
   const [collapsed, setCollapsed] = useState(true);
+  const [stats, setStats] = useState<InvalidStats>({ total: 0, lastMinute: 0, lastHour: 0, lastAt: null });
+  const invalidTimestamps = useRef<number[]>([]);
   const lastEmitKey = useRef<string | null>(null);
   const lastRawKey = useRef<string | null>(null);
 
