@@ -100,3 +100,11 @@ jobs:
           path: test-results/
           retention-days: 14
           if-no-files-found: ignore
+      - name: Upload wheel replay diagnostics (out-dir)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-replay-${{ matrix.browser }}-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          path: test-results/wheel-replay/
+          retention-days: 14
+          if-no-files-found: ignore
