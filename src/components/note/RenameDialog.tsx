@@ -39,12 +39,16 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
   const [value, setValue] = useState("");
   const [status, setStatus] = useState<Status>("idle");
   const [submitting, setSubmitting] = useState(false);
+  const [cleanupState, setCleanupState] = useState<"idle" | "checking" | "clean" | "dirty">("idle");
+  const [cleanupDetail, setCleanupDetail] = useState<string>("");
 
   useEffect(() => {
     if (open) {
       setValue("");
       setStatus("idle");
       setSubmitting(false);
+      setCleanupState("idle");
+      setCleanupDetail("");
     }
   }, [open]);
 
@@ -91,13 +95,14 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
     if (!canSubmit) return;
     const newSlug = value.trim();
     setSubmitting(true);
+    setCleanupState("checking");
+    setCleanupDetail("");
     try {
       await provider?.saveSnapshot();
       await prepareRename(currentSlug, newSlug);
       // Navigate FIRST so the old NotePage unmounts and its Yjs provider
       // stops upserting `ydoc_state` for currentSlug — otherwise a debounced
       // snapshot would recreate the old row after we delete it.
-      onOpenChange(false);
       navigate(`/${newSlug}`);
       // Give React a tick to unmount, then delete the source row.
       await new Promise((r) => setTimeout(r, 50));
@@ -105,6 +110,18 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
       const cleanupStatus = await fetchOldSlugCleanupStatus(currentSlug).catch(() => null);
       const finalDeletionConfirmed = deletionConfirmed || cleanupStatus?.cleaned || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
+      setCleanupState(finalDeletionConfirmed ? "clean" : "dirty");
+      if (cleanupStatus) {
+        const { providerAbandoned, docCacheWarm, sessionSnapshotPresent, indexedDbCleared } = cleanupStatus.clientSignals ?? {};
+        const rowPresent = cleanupStatus.database?.rowPresent;
+        setCleanupDetail(
+          `db=${rowPresent === undefined ? "unknown" : rowPresent ? "present" : "gone"}` +
+            ` · provider=${providerAbandoned ? "abandoned" : "live"}` +
+            ` · doc-cache=${docCacheWarm ? "warm" : "cold"}` +
+            ` · session=${sessionSnapshotPresent ? "present" : "gone"}` +
+            ` · idb=${indexedDbCleared ? "cleared" : "unknown"}`,
+        );
+      }
       toast({
         title: t("rename.toast_renamed"),
         description: finalDeletionConfirmed
@@ -112,9 +129,12 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
           : `/${currentSlug} → /${newSlug} (old slug still present — retry)`,
         variant: finalDeletionConfirmed ? undefined : "destructive",
       });
+      if (finalDeletionConfirmed) onOpenChange(false);
+      else setSubmitting(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("rename.generic_error");
       toast({ title: t("rename.toast_failed"), description: msg, variant: "destructive" });
+      setCleanupState("idle");
       setSubmitting(false);
     }
   };
@@ -176,6 +196,30 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
               <p>{t("rename.warn_other_tabs")}</p>
             </div>
           </div>
+
+          {cleanupState !== "idle" && (
+            <div
+              role="status"
+              aria-live="polite"
+              data-testid="rename-cleanup-status"
+              data-cleanup-state={cleanupState}
+              className={
+                "rounded-md border p-3 text-xs " +
+                (cleanupState === "clean"
+                  ? "border-primary/40 bg-primary/5 text-primary"
+                  : cleanupState === "dirty"
+                    ? "border-destructive/40 bg-destructive/5 text-destructive"
+                    : "border-border bg-muted/40 text-muted-foreground")
+              }
+            >
+              <p className="font-medium">
+                {cleanupState === "checking" && "Cleaning up old slug…"}
+                {cleanupState === "clean" && `Old slug /${currentSlug} fully removed.`}
+                {cleanupState === "dirty" && `Old slug /${currentSlug} still present — retry.`}
+              </p>
+              {cleanupDetail && <p className="mt-1 font-mono opacity-80">{cleanupDetail}</p>}
+            </div>
+          )}
         </div>
 
         <DialogFooter>
