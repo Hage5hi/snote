@@ -244,7 +244,7 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
     source: args.path,
     schemaVersion: diagnostics.schemaVersion ?? 0,
     project: args.project,
-    retries: process.env.RETRIES ?? "0",
+    retries: args.retries,
     generatedAt: new Date().toISOString(),
     sourceStuckFrame: diagnostics.stuckFrame ?? null,
     sourceSelectionStuckFrame: diagnostics.selectionStuckFrame ?? null,
