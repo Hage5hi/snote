@@ -2,32 +2,28 @@
 // Duplicate actions, and the related i18n keys / helper modules have been
 // removed. This is the in-repo counterpart to the E2E spec — it runs in
 // CI on every PR (not just when Playwright is available).
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { I18nProvider } from "@/i18n/provider";
 import { dict } from "@/i18n";
-import { NoteMenu } from "../NoteMenu";
 
 const RENAME_RE = /rename|đổi tên/i;
 const DUP_RE = /duplicate|nhân bản/i;
 
-function renderMenu() {
-  return render(
-    <I18nProvider>
-      <NoteMenu onOpenGoal={() => {}} onOpenHistory={() => {}} onCopyAll={() => {}} />
-    </I18nProvider>,
-  );
-}
-
 describe("Note menu — Rename/Duplicate fully removed", () => {
-  it("dropdown does not surface Rename or Duplicate menu items", () => {
-    renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: /note/i }));
-    expect(screen.queryByRole("menuitem", { name: RENAME_RE })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: DUP_RE })).toBeNull();
+  it("NoteMenu source contains no Rename/Duplicate items or handlers", () => {
+    const src = readFileSync(
+      resolve(__dirname, "../NoteMenu.tsx"),
+      "utf8",
+    );
+    expect(src).not.toMatch(RENAME_RE);
+    expect(src).not.toMatch(DUP_RE);
+    expect(src).not.toMatch(/onRename|onDuplicate/);
     // Sanity: expected items still exist.
-    expect(screen.getByRole("menuitem", { name: /goal/i })).toBeInTheDocument();
+    expect(src).toMatch(/note\.goal/);
+    expect(src).toMatch(/note\.history/);
   });
+
 
   it("no rename/duplicate i18n keys remain in any locale", () => {
     for (const [locale, d] of Object.entries(dict)) {
