@@ -105,6 +105,21 @@ function getDeltas(diagnostics: WheelDiagnostics): Delta[] {
   return diagnostics.replay ?? diagnostics.wheelSamples?.map(({ i, dx, dy, t }) => ({ i, dx, dy, t })) ?? [];
 }
 
+export type ReplayArgs = ReturnType<typeof parseArgs>;
+
+/** Names of files produced in `--out-dir` for the given args. Kept in sync
+ *  with the actual writes below so `--dry-run` and `--list-outputs` never lie. */
+export function expectedOutputs(args: Pick<ReplayArgs, "trace" | "extraTraces" | "retries">): string[] {
+  const files = ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
+  if (args.trace) files.push("trace.zip");
+  if (args.extraTraces) {
+    files.push("trace-notes.json");
+    if (args.trace) files.push(`trace-retry-${args.retries}.zip`);
+  }
+  return files;
+}
+
+
 async function seedLongNote(page: import("playwright").Page, lineCount: number) {
   await page.addInitScript(() => {
     const style = document.createElement("style");
