@@ -92,7 +92,30 @@ export function PwaUpdateDebugPanel() {
     };
     read();
     const id = window.setInterval(read, 500);
-    return () => window.clearInterval(id);
+
+    // Stats: count every `snote:pwa-readiness-invalid` event (from any source,
+    // not just our own emit) so staging can eyeball the frequency.
+    const onInvalid = () => {
+      const now = Date.now();
+      invalidTimestamps.current.push(now);
+      // Keep at most last hour to bound memory.
+      const cutoff = now - 3_600_000;
+      invalidTimestamps.current = invalidTimestamps.current.filter((t) => t >= cutoff);
+    };
+    window.addEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
+    const statsId = window.setInterval(() => {
+      const now = Date.now();
+      const ts = invalidTimestamps.current;
+      const lastMinute = ts.filter((t) => t >= now - 60_000).length;
+      const lastHour = ts.length;
+      setStats({ total: ts.length === 0 ? 0 : ts.length, lastMinute, lastHour, lastAt: ts.length ? ts[ts.length - 1] : null });
+    }, 1000);
+
+    return () => {
+      window.clearInterval(id);
+      window.clearInterval(statsId);
+      window.removeEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
+    };
   }, []);
 
   if (!import.meta.env.DEV) return null;
