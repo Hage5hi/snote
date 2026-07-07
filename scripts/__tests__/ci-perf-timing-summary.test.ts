@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   parsePlaywright, parsePlaywrightFailedArtifacts, parseVitest,
   renderFailedArtifactLinks, renderMarkdown, renderS3Markdown,
-  renderWheelDiagnosticsReplayCommand, renderWheelLocalReproCommand,
+  renderWheelDiagnosticsReplayCommand, renderWheelDownloadReplayCommand, renderWheelLocalReproCommand,
   type S3RetrySample,
 } from "../ci-perf-timing-summary";
 
@@ -192,6 +192,7 @@ describe("failed-test artifact links", () => {
     expect(md).toContain("retry #1");
     expect(md).toContain("Local repro: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 ./scripts/run-wheel-e2e.sh`");
     expect(md).toContain("Replay artifact: `PLAYWRIGHT_PROJECT=chromium bun run scripts/replay-wheel-diagnostics.ts test-results/note-wheel/wheel-diagnostics.json`");
+    expect(md).toContain("Download + replay: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/download-and-replay-wheel-artifact.ts 42 --project=chromium --retries=2 --attempt=2`");
   });
 
   it("renders the wheel local repro command with project + retries", () => {
@@ -202,6 +203,12 @@ describe("failed-test artifact links", () => {
   it("renders the single-artifact wheel diagnostics replay command", () => {
     expect(renderWheelDiagnosticsReplayCommand(parsePlaywrightFailedArtifacts(pwReport)[0]))
       .toBe("PLAYWRIGHT_PROJECT=chromium bun run scripts/replay-wheel-diagnostics.ts test-results/note-wheel/wheel-diagnostics.json");
+  });
+
+  it("renders the one-click download + replay command for a workflow run", () => {
+    expect(renderWheelDownloadReplayCommand(parsePlaywrightFailedArtifacts(pwReport)[0], {
+      runId: "99", runAttempt: "3", playwrightRetries: "2",
+    })).toBe("PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/download-and-replay-wheel-artifact.ts 99 --project=chromium --retries=2 --attempt=3");
   });
 
   it("keeps wheel-diagnostics links schema-version agnostic", () => {
