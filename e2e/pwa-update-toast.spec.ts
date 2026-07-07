@@ -25,8 +25,10 @@ async function attachPwaMetadata(testInfo: TestInfo, page: Page, label: string) 
 }
 
 test("Update toast disappears only after the running buildId changes", async ({ page }, testInfo) => {
+  test.setTimeout(15_000);
   const version = { buildId: "build-v2" };
   const consoleLines: string[] = [];
+  const versionRequests: string[] = [];
   page.on("console", (msg) => consoleLines.push(`[${msg.type()}] ${msg.text()}`));
   page.on("pageerror", (error) => consoleLines.push(`[pageerror] ${error.name}: ${error.message}`));
 
@@ -37,6 +39,7 @@ test("Update toast disappears only after the running buildId changes", async ({ 
     (window as any).__SNOTE_E2E_PWA_POLL_INTERVAL_MS__ = 1000;
   });
   await page.route("**/version.json**", async (route) => {
+    versionRequests.push(route.request().url());
     await route.fulfill({
       contentType: "application/json",
       body: JSON.stringify(version),
@@ -44,8 +47,9 @@ test("Update toast disappears only after the running buildId changes", async ({ 
   });
 
   await page.goto("/");
+  await expect.poll(async () => page.evaluate(() => (window as any).__SNOTE_E2E_ENABLE_PWA_UPDATE__)).toBe(true);
   await testInfo.attach("pwa-update-console.log", {
-    body: consoleLines.join("\n"),
+    body: JSON.stringify({ consoleLines, versionRequests, state: await pwaState(page) }, null, 2),
     contentType: "text/plain",
   });
 
