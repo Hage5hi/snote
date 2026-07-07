@@ -172,7 +172,7 @@ test.describe("note rename Yjs race", () => {
 
     // Wait beyond the provider debounce/finalize window, then poll DB + UI.
     await page.waitForTimeout(2_000);
-    const preStatus = await fetchOldSlugCleanupStatus(page, oldSlug).catch((e) => ({ error: String(e) }));
+    const { status: preStatus } = await fetchOldSlugCleanupStatusWithReport(page, oldSlug, testInfo, "main-pre");
     console.log("[rename-race][main] pre-assert cleanup-status", { oldSlug, newSlug, preStatus });
     // Contract: cleanup-status response must always carry metrics so slow
     // cleanups are traceable in CI. Skip when the fetch itself errored.
