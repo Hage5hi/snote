@@ -140,3 +140,33 @@ export async function verifyOldSlugGoneFromDbAndUi(
   if (afterUi) return { phase: "db-after-ui", db: afterUi, uiTextMatched: false };
   return null;
 }
+
+/**
+ * Runs `verifyOldSlugGoneFromDbAndUi` repeatedly until it returns null (gone)
+ * or all attempts fail. Yjs broadcast timing is inherently racy — this smooths
+ * the last-mile of the debounce/finalize window without hiding real regressions.
+ */
+export async function verifyOldSlugGoneWithRetry(
+  page: Page,
+  slug: string,
+  opts: Parameters<typeof verifyOldSlugGoneFromDbAndUi>[2] & {
+    attempts?: number;
+    backoffMs?: number;
+    label?: string;
+  } = {},
+): Promise<OldSlugPresence | null> {
+  const attempts = opts.attempts ?? 3;
+  const backoffMs = opts.backoffMs ?? 500;
+  let last: OldSlugPresence | null = null;
+  for (let i = 0; i < attempts; i++) {
+    last = await verifyOldSlugGoneFromDbAndUi(page, slug, opts);
+    if (!last) return null;
+    // eslint-disable-next-line no-console
+    console.log(
+      `[rename-race][${opts.label ?? "verify"}] attempt ${i + 1}/${attempts} still-present`,
+      { slug, phase: last.phase, db: last.db },
+    );
+    await new Promise((r) => setTimeout(r, backoffMs * (i + 1)));
+  }
+  return last;
+}
