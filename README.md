@@ -719,14 +719,26 @@ PLAYWRIGHT_PROJECT=chromium \
   bun run scripts/replay-wheel-diagnostics.ts \
   path/to/wheel-diagnostics.json
 
+# Download a failed workflow run's wheel bundle, then replay it immediately
+PLAYWRIGHT_PROJECT=chromium RETRIES=2 \
+  bun run scripts/download-and-replay-wheel-artifact.ts <run-id> \
+  --project=chromium --retries=2
+
 # Or re-run the full E2E with the same viewport / warm-up / device
 # settings CI uses (matches the "Local repro" command in the CI summary):
 PLAYWRIGHT_PROJECT=chromium RETRIES=0 ./scripts/run-wheel-e2e.sh
+
+# Or replay the checked-in failing fixture without waiting for CI artifacts:
+bun run test:e2e:replay:wheel:fixture
 ```
 
 The replay writes `test-results/wheel-replay/replay-result.json` (the
-observed `before`/`after` `scrollTop` per delta) plus a fresh
-`scroller.png` for visual comparison against the failing artifact.
+observed `before`/`after` `scrollTop` per delta),
+`wheel-deltas.jsonl`, `selection-frames.jsonl`, a fresh `scroller.png`,
+and `trace.zip` for inspection with `bunx playwright show-trace`.
+`replay-result.json` includes the first replayed wheel `stuckFrame`, the
+first `selectionStuckFrame`, and the source artifact's stuck-frame marker
+so you can compare the CI failure with the local reproduction.
 
 ## pretty-index.json CI failure diagnostics
 

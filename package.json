@@ -23,6 +23,8 @@
     "test:e2e:inspect:focus-trap": "bun run scripts/inspect-focus-trap.ts",
     "test:e2e:replay:focus-trap": "./scripts/replay-focus-trap.sh",
     "test:e2e:replay:wheel": "bun run scripts/replay-wheel-diagnostics.ts",
+    "test:e2e:replay:wheel:fixture": "PLAYWRIGHT_PROJECT=chromium RETRIES=0 bun run scripts/replay-wheel-diagnostics.ts scripts/__fixtures__/wheel-diagnostics-failure/wheel-diagnostics.json --out-dir=test-results/wheel-replay-fixture --trace=on",
+    "test:e2e:download-replay:wheel": "bun run scripts/download-and-replay-wheel-artifact.ts",
     "schema:types": "bun run scripts/generate-focus-trap-schema-types.ts",
     "schema:types:check": "bun run scripts/generate-focus-trap-schema-types.ts && git diff --exit-code -- scripts/_helpers/focus-trap-inspect-schema.types.gen.ts",
     "schema-guard": "./scripts/schema-guard.sh",
