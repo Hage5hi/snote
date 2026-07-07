@@ -150,11 +150,12 @@ export async function fetchOldSlugCleanupStatus(slug: string): Promise<OldSlugCl
   });
   if (!error && data) {
     const parsed = OldSlugCleanupStatusSchema.safeParse(data);
-    if (parsed.success) return parsed.data;
+    if (parsed.success) return parsed.data as OldSlugCleanupStatus;
     console.warn("[cleanup-status] invalid edge-function payload, falling back", parsed.error.flatten());
   }
   const fallback = await directDbStatus(slug, clientSignals);
-  return OldSlugCleanupStatusSchema.parse(fallback);
+  const parsed = OldSlugCleanupStatusSchema.safeParse(fallback);
+  return (parsed.success ? (parsed.data as OldSlugCleanupStatus) : fallback);
 }
 
 export type PollOldSlugCleanupOptions = {
