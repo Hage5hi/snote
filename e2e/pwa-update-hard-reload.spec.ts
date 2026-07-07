@@ -24,6 +24,7 @@ test("Hard-reload fallback fires exactly once and toast clears", async ({ page }
   });
 
   await page.goto("/");
+  await waitForPwaUpdaterReady(page, testInfo);
   await expect(page.getByText("New version available")).toBeVisible({ timeout: 5_000 });
 
   const update = page.getByRole("button", { name: /^Update$/ });
