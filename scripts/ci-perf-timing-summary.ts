@@ -96,12 +96,18 @@ export function renderWheelLocalReproCommand(f: FailedTestArtifacts, retries = "
   return `PLAYWRIGHT_PROJECT=${project} RETRIES=${retries} ./scripts/run-wheel-e2e.sh`;
 }
 
-export function renderWheelDiagnosticsReplayCommand(f: FailedTestArtifacts): string | null {
+function wheelReplayOutDir(project: string, retries: string): string {
+  return `test-results/wheel-replay/${project}-r${retries}`;
+}
+
+export function renderWheelDiagnosticsReplayCommand(f: FailedTestArtifacts, env: { playwrightRetries?: string } = {}): string | null {
   if (!f.suite.includes("note-wheel-trackpad-scroll.spec.ts")) return null;
   const diagnostics = f.attachments.find((a) => a.path.endsWith("wheel-diagnostics.json"));
   if (!diagnostics) return null;
   const project = f.project ?? "chromium";
-  return `PLAYWRIGHT_PROJECT=${project} bun run scripts/replay-wheel-diagnostics.ts ${diagnostics.path}`;
+  const retries = env.playwrightRetries ?? "0";
+  const outDir = wheelReplayOutDir(project, retries);
+  return `PLAYWRIGHT_PROJECT=${project} RETRIES=${retries} bun run scripts/replay-wheel-diagnostics.ts ${diagnostics.path} --project=${project} --retries=${retries} --out-dir=${outDir}`;
 }
 
 export function renderWheelDownloadReplayCommand(
@@ -110,8 +116,10 @@ export function renderWheelDownloadReplayCommand(
 ): string | null {
   if (!f.suite.includes("note-wheel-trackpad-scroll.spec.ts") || !env.runId) return null;
   const project = f.project ?? "chromium";
+  const retries = env.playwrightRetries ?? "0";
   const attempt = env.runAttempt ? ` --attempt=${env.runAttempt}` : "";
-  return `PLAYWRIGHT_PROJECT=${project} RETRIES=${env.playwrightRetries ?? "0"} bun run scripts/download-and-replay-wheel-artifact.ts ${env.runId} --project=${project} --retries=${env.playwrightRetries ?? "0"}${attempt}`;
+  const outDir = wheelReplayOutDir(project, retries);
+  return `PLAYWRIGHT_PROJECT=${project} RETRIES=${retries} bun run scripts/download-and-replay-wheel-artifact.ts ${env.runId} --project=${project} --retries=${retries} --out-dir=${outDir}${attempt}`;
 }
 
 export function renderFailedArtifactLinks(
