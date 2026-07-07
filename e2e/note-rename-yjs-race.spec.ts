@@ -19,11 +19,40 @@ test.describe("note rename Yjs race", () => {
   test.beforeEach(async () => {
     oldSlug = versionedSlug("rename-old");
     newSlug = versionedSlug("rename-new");
-    await seedPlaintextNote(oldSlug, TEXT);
+    // Reset DB state defensively — a prior aborted run could have left rows
+    // under these exact slugs (versionedSlug is unique per-run, but be safe
+    // against a re-invocation with a re-seeded random).
+    await deleteNote(oldSlug).catch(() => {});
     await deleteNote(newSlug).catch(() => {});
+    await seedPlaintextNote(oldSlug, TEXT);
   });
 
-  test.afterEach(async () => {
+  test.afterEach(async ({ page }, testInfo) => {
+    // On failure attach a fresh screenshot + DB snapshots of both slugs so
+    // CI artifacts contain everything needed to diagnose a resurrection.
+    if (testInfo.status !== testInfo.expectedStatus) {
+      try {
+        const shot = await page.screenshot();
+        await testInfo.attach("failure-screenshot.png", {
+          body: shot,
+          contentType: "image/png",
+        });
+      } catch {
+        /* page may already be closed */
+      }
+      try {
+        const [oldRow, newRow] = await Promise.all([
+          snapshotSlugRow(oldSlug),
+          snapshotSlugRow(newSlug),
+        ]);
+        await testInfo.attach("db-snapshot.json", {
+          body: JSON.stringify({ oldSlug, newSlug, oldRow, newRow }, null, 2),
+          contentType: "application/json",
+        });
+      } catch {
+        /* ignore */
+      }
+    }
     await deleteNote(oldSlug).catch(() => {});
     await deleteNote(newSlug).catch(() => {});
   });
