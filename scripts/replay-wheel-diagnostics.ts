@@ -184,6 +184,16 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   if (deltas.length === 0 && selectionDeltas.length === 0) {
     throw new Error("wheel-diagnostics.json contains no replay, wheelSamples, or selectionDragSamples deltas");
   }
+  const outputs = expectedOutputs(args).map((f) => join(args.outDir, f));
+
+  if (args.listOutputs || args.dryRun) {
+    console.log(`out-dir: ${args.outDir}`);
+    console.log(`wheel deltas: ${deltas.length}  selection deltas: ${selectionDeltas.length}`);
+    console.log("expected outputs:");
+    for (const p of outputs) console.log(`  ${p}`);
+    if (args.dryRun) { console.log("dry-run: skipping Playwright launch"); return 0; }
+    if (args.listOutputs) return 0;
+  }
 
   const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
   const browserType = browserTypes[args.project];
