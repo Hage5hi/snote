@@ -26,6 +26,13 @@ async function clearIndexedDbDoc(slug: string) {
   }
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | void> {
+  return Promise.race([
+    promise,
+    new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  ]);
+}
+
 /** Clear local state that could otherwise rehydrate a slug after it was renamed away. */
 export async function clearRenamedSlugLocalState(oldSlug: string): Promise<void> {
   abandonProviderForSlug(oldSlug);
@@ -36,8 +43,8 @@ export async function clearRenamedSlugLocalState(oldSlug: string): Promise<void>
     /* unavailable */
   }
   await Promise.allSettled([
-    clearIndexedDbDoc(oldSlug),
-    clearSnapshots(oldSlug),
+    withTimeout(clearIndexedDbDoc(oldSlug), 750),
+    withTimeout(clearSnapshots(oldSlug), 750),
   ]);
 }
 
@@ -93,16 +100,17 @@ export async function prepareRename(oldSlug: string, newSlug: string): Promise<v
   if (oldSlug === newSlug) return;
   if (!SLUG_RE.test(newSlug)) throw new Error("Invalid slug");
 
-  // Mark the old slug as abandoned BEFORE any writes so the still-mounted
-  // Yjs provider stops upserting snapshots (debounced or on-destroy).
-  abandonProviderForSlug(oldSlug);
-
   await copyNoteRow(oldSlug, newSlug);
 
   const { error: shareErr } = await supabase.functions.invoke("share-rename", {
     body: { oldSlug, newSlug },
   });
   if (shareErr) throw shareErr;
+
+  // Mark the old slug as abandoned only after the copy/share work succeeds.
+  // If preparation fails, the user remains on the old note and it must keep
+  // saving normally. Finalization/navigation happens immediately after this.
+  abandonProviderForSlug(oldSlug);
 }
 
 /**
