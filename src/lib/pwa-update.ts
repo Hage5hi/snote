@@ -305,7 +305,7 @@ export function registerAppUpdater(): void {
       const fallback = window.setTimeout(() => {
         console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
         hardReload(pendingBuildId);
-      }, 2500);
+      }, RELOAD_FALLBACK_MS);
       let done = false;
       const onCtrl = () => {
         if (done) return;
