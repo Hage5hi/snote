@@ -509,6 +509,7 @@ export class SupabaseYjsProvider {
 
   async saveSnapshot() {
     if (this.destroyed) return;
+    if (abandonedSlugs.has(this.slug)) return;
     if (this.hasEncryptionModeMismatch()) {
       console.warn("saveSnapshot skipped: encryption mode mismatch", {
         slug: this.slug,
@@ -574,6 +575,7 @@ export class SupabaseYjsProvider {
    */
   flushBeacon() {
     if (this.destroyed) return;
+    if (abandonedSlugs.has(this.slug)) return;
     if (this.hasEncryptionModeMismatch()) {
       // Would overwrite the row in the wrong mode (e.g. plaintext over a
       // freshly-encrypted note during lock/unlock). Skip entirely.
@@ -634,8 +636,12 @@ export class SupabaseYjsProvider {
       window.removeEventListener("offline", this.handleNativeOffline);
     }
     if (this.snapshotTimer) window.clearTimeout(this.snapshotTimer);
-    // Final flush.
-    await this.saveSnapshot();
+    this.pendingUpdates = [];
+    // Skip final flush if this slug was abandoned (e.g. renamed away) —
+    // otherwise the just-deleted row would be resurrected.
+    if (!abandonedSlugs.has(this.slug)) {
+      await this.saveSnapshot();
+    }
     this.doc.off("update", this.handleDocUpdate);
     this.awareness.off("update", this.handleAwarenessUpdate);
     this.cleanupFns.forEach((fn) => fn());
