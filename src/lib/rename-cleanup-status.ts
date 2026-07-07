@@ -148,6 +148,58 @@ export async function fetchOldSlugCleanupStatus(slug: string): Promise<OldSlugCl
   const { data, error } = await supabase.functions.invoke("old-slug-cleanup-status", {
     body: { slug, clientSignals },
   });
-  if (!error && data) return data as OldSlugCleanupStatus;
-  return directDbStatus(slug, clientSignals);
+  if (!error && data) {
+    const parsed = OldSlugCleanupStatusSchema.safeParse(data);
+    if (parsed.success) return parsed.data;
+    console.warn("[cleanup-status] invalid edge-function payload, falling back", parsed.error.flatten());
+  }
+  const fallback = await directDbStatus(slug, clientSignals);
+  return OldSlugCleanupStatusSchema.parse(fallback);
+}
+
+export type PollOldSlugCleanupOptions = {
+  timeoutMs?: number;
+  intervalMs?: number;
+  onUpdate?: (status: OldSlugCleanupStatus, attempt: number) => void;
+  signal?: AbortSignal;
+};
+
+/**
+ * Repeatedly fetches cleanup status until `cleaned === true` or the timeout
+ * elapses. Emits every intermediate status via `onUpdate` so UIs can render
+ * progress. Never throws on transient errors — returns the last known status.
+ */
+export async function pollOldSlugCleanupStatus(
+  slug: string,
+  opts: PollOldSlugCleanupOptions = {},
+): Promise<{ status: OldSlugCleanupStatus; timedOut: boolean; attempts: number }> {
+  const timeoutMs = opts.timeoutMs ?? 8_000;
+  const intervalMs = opts.intervalMs ?? 500;
+  const deadline = Date.now() + timeoutMs;
+  let attempt = 0;
+  let last: OldSlugCleanupStatus | null = null;
+  while (Date.now() < deadline) {
+    if (opts.signal?.aborted) break;
+    attempt += 1;
+    try {
+      const status = await fetchOldSlugCleanupStatus(slug);
+      last = status;
+      opts.onUpdate?.(status, attempt);
+      if (status.cleaned) return { status, timedOut: false, attempts: attempt };
+    } catch (err) {
+      console.warn("[cleanup-status] poll error", { slug, attempt, err });
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return {
+    status: last ?? {
+      slug,
+      source: "direct-db-fallback",
+      database: { rowPresent: false, row: null },
+      clientSignals: {},
+      cleaned: false,
+    },
+    timedOut: true,
+    attempts: attempt,
+  };
 }
