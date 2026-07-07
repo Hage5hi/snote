@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs as parseDownloadArgs, buildGhArgs } from "../download-and-replay-wheel-artifact";
-import { parseArgs as parseReplayArgs } from "../replay-wheel-diagnostics";
+import { parseArgs as parseReplayArgs, expectedOutputs } from "../replay-wheel-diagnostics";
 import { validateWheelFixture } from "../validate-wheel-fixture";
 
 describe("wheel diagnostics replay scripts", () => {
