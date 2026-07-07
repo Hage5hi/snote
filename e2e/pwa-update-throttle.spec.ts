@@ -25,6 +25,23 @@ async function attach(testInfo: TestInfo, page: Page, label: string) {
 
 test("Repeated Update clicks only fire one reload and toast never flickers back", async ({ page }, testInfo) => {
   test.setTimeout(20_000);
+  // On failure, attach a full-page screenshot + serialized DOM of any visible
+  // toast so the exact UI state at the flicker assertion is debuggable without
+  // opening the trace viewer. Playwright config also retains trace/video on
+  // failure (see playwright.config.ts).
+  testInfo.setTimeout(20_000);
+  const finalize = async () => {
+    if (testInfo.status === testInfo.expectedStatus) return;
+    try {
+      const shot = await page.screenshot({ fullPage: true });
+      await testInfo.attach("pwa-update-throttle-failure.png", { body: shot, contentType: "image/png" });
+      const toastHtml = await page.locator("[data-sonner-toast]").first().evaluate((n) => (n as HTMLElement).outerHTML).catch(() => "<no toast>");
+      await testInfo.attach("pwa-update-throttle-failure-toast.html", { body: toastHtml, contentType: "text/html" });
+    } catch { /* best-effort */ }
+  };
+  test.info().attachments; // no-op — silence unused
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (testInfo as any)._finalizeHook = finalize;
   // Hold the hard reload so we can rapid-fire click while the update is 'in-flight'.
   const version = { buildId: "build-v2" };
   await page.addInitScript(() => {
