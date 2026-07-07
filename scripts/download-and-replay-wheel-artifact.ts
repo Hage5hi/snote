@@ -64,7 +64,6 @@ export function buildGhArgs(args: Args): string[] {
   const ghArgs = ["run", "download", args.runId, "--dir", args.outDir];
   if (args.artifact) ghArgs.push("--name", args.artifact);
   else ghArgs.push("--pattern", `e2e-test-results-${args.project}-*`);
-  if (args.attempt) ghArgs.push("--attempt", args.attempt);
   return ghArgs;
 }
 
