@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs as parseDownloadArgs, buildGhArgs } from "../download-and-replay-wheel-artifact";
 import { parseArgs as parseReplayArgs } from "../replay-wheel-diagnostics";
+import { validateWheelFixture } from "../validate-wheel-fixture";
 
 describe("wheel diagnostics replay scripts", () => {
   it("parses local replay mode with a selected diagnostics path and trace output", () => {
