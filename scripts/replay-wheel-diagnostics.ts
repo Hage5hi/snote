@@ -352,37 +352,82 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   };
   const resultPath = join(args.outDir, "replay-result.json");
   const jsonlPath = join(args.outDir, "wheel-deltas.jsonl");
-  writeFileSync(resultPath, JSON.stringify(result, null, 2));
-  writeFileSync(jsonlPath, observed.map((o) => JSON.stringify(o)).join("\n") + "\n");
-  writeFileSync(join(args.outDir, "selection-frames.jsonl"), observedSelection.map((o) => JSON.stringify(o)).join("\n") + (observedSelection.length ? "\n" : ""));
-  await scroller.screenshot({ path: join(args.outDir, "scroller.png") }).catch(() => undefined);
+  const scrollerPath = join(args.outDir, "scroller.png");
+  const selFramesPath = join(args.outDir, "selection-frames.jsonl");
+  const write = (p: string, data: string | Buffer) => {
+    if (args.resume && existsSync(p)) { console.log(`resume: skip existing ${p}`); return false; }
+    writeFileSync(p, data);
+    return true;
+  };
+  write(resultPath, JSON.stringify(result, null, 2));
+  write(jsonlPath, observed.map((o) => JSON.stringify(o)).join("\n") + "\n");
+  write(selFramesPath, observedSelection.map((o) => JSON.stringify(o)).join("\n") + (observedSelection.length ? "\n" : ""));
+  if (!(args.resume && existsSync(scrollerPath))) {
+    await scroller.screenshot({ path: scrollerPath }).catch(() => undefined);
+  }
   const tracePath = join(args.outDir, "trace.zip");
-  if (args.trace) await context.tracing.stop({ path: tracePath });
+  if (args.trace) {
+    if (args.resume && existsSync(tracePath)) { console.log(`resume: skip existing ${tracePath}`); await context.tracing.stop().catch(() => undefined); }
+    else await context.tracing.stop({ path: tracePath });
+  }
   await browser.close();
+
+  const artifactList: string[] = ["manifest.json", "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
+  if (args.trace) artifactList.push("trace.zip");
 
   if (args.extraTraces) {
     const retries = args.retries;
     const notesPath = join(args.outDir, "trace-notes.json");
-    writeFileSync(notesPath, JSON.stringify({
+    write(notesPath, JSON.stringify({
       source: args.path, project: args.project, retries,
       generatedAt: result.generatedAt, stuckFrame, selectionStuckFrame,
       tracePath: args.trace ? tracePath : null,
-      artifacts: ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png", args.trace ? "trace.zip" : null].filter(Boolean),
+      artifacts: artifactList.slice(),
     }, null, 2));
-    console.log(`wrote ${notesPath}`);
+    artifactList.push("trace-notes.json");
     if (args.trace && existsSync(tracePath)) {
-      const perRetry = join(args.outDir, `trace-retry-${retries}.zip`);
-      try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
+      const perRetryName = `trace-retry-${retries}.zip`;
+      const perRetry = join(args.outDir, perRetryName);
+      if (!(args.resume && existsSync(perRetry))) {
+        try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
+      }
+      artifactList.push(perRetryName);
     }
   }
 
+  // Always (re)write manifest.json so it reflects the current on-disk state,
+  // including files skipped by --resume. This is the single source of truth
+  // consumed by CI artifact uploads and reviewer tooling.
+  const manifestPath = join(args.outDir, "manifest.json");
+  const now = new Date().toISOString();
+  const manifest = {
+    schemaVersion: 1,
+    generatedAt: now,
+    source: args.path,
+    project: args.project,
+    retries: args.retries,
+    resume: args.resume,
+    outDir: args.outDir,
+    artifacts: artifactList.map((name) => {
+      const p = join(args.outDir, name);
+      let size: number | null = null;
+      let mtime: string | null = null;
+      try {
+        const s = require("node:fs").statSync(p);
+        size = s.size; mtime = new Date(s.mtimeMs).toISOString();
+      } catch { /* missing */ }
+      return { name, path: p, size, generatedAt: mtime, present: size != null };
+    }),
+  };
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  console.log(`wrote ${manifestPath}`);
 
   console.log(`replayed ${observed.length} deltas from ${args.path}`);
   console.log(`wrote ${resultPath}`);
   console.log(`wrote ${jsonlPath}`);
-  console.log(`wrote ${join(args.outDir, "selection-frames.jsonl")}`);
-  console.log(`wrote ${join(args.outDir, "scroller.png")}`);
-  if (args.trace) console.log(`wrote ${join(args.outDir, "trace.zip")}`);
+  console.log(`wrote ${selFramesPath}`);
+  console.log(`wrote ${scrollerPath}`);
+  if (args.trace) console.log(`wrote ${tracePath}`);
   if (stuckFrame) console.log(`first stuck frame: #${stuckFrame.i} scrollTop=${stuckFrame.before}`);
   if (selectionStuckFrame) console.log(`first selection stuck frame: #${selectionStuckFrame.i} selection=${selectionStuckFrame.afterRange.signature}`);
   if (diagnostics.selectionStuckFrame && !selectionStuckFrame) console.log("source artifact contains selectionStuckFrame; replay did not reproduce it in this run");
