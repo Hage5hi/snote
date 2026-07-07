@@ -259,6 +259,10 @@ test.describe("note rename Yjs race", () => {
         const debounceMs = 100 + Math.floor(rng() * 700);
         const from = versionedSlug(`stress-old-${i}`);
         const to = versionedSlug(`stress-new-${i}`);
+        const startedAt = Date.now();
+        const timingEntry: (typeof timings)[number] = { i, from, to, debounceMs, startedAt };
+        timings.push(timingEntry);
+        console.log("[rename-race][stress] iteration-timing", { i, from, to, debounceMs, startedAt });
         createdSlugs.push(from, to);
         await deleteNote(from).catch(() => {});
         await deleteNote(to).catch(() => {});
