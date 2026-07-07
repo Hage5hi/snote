@@ -45,6 +45,17 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      # Cache Playwright browser binaries between runs to shave install time
+      # off both the matrix browser and the chromium replay tooling install.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('bun.lockb') }}-${{ matrix.browser }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-${{ hashFiles('bun.lockb') }}-
+            ${{ runner.os }}-playwright-
       - name: Install Playwright browser (${{ matrix.browser }})
         run: bunx playwright install --with-deps ${{ matrix.browser }}
       # Ensure chromium is always present so scripts/replay-wheel-diagnostics.ts
