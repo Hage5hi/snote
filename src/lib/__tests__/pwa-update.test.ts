@@ -128,4 +128,38 @@ describe("registerAppUpdater", () => {
     const state = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: { reloadAttemptCount: number } }).__SNOTE_PWA_UPDATE_STATE__;
     expect(state?.reloadAttemptCount).toBe(1);
   });
+
+  it("clears the pwa-update-pending-build sessionStorage entry after the buildId transitions", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    // Accept the update.
+    const opts = toastMock.mock.calls.at(-1)![1] as { action: { props: { onClick: (e: Event) => void } } };
+    opts.action.props.onClick({ preventDefault: () => {} } as unknown as Event);
+
+    // Simulate the reload completing: reported buildId matches remote.
+    (window as unknown as { __SNOTE_E2E_BUILD_ID__?: string }).__SNOTE_E2E_BUILD_ID__ = "build-b";
+    await flush(80);
+
+    expect(sessionStorage.getItem("pwa-update-pending-build")).toBeNull();
+    expect(dismissMock).toHaveBeenCalledWith("pwa-update-toast");
+  });
+
+  it("re-issues the toast under the same id when Update is clicked", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    const callsBefore = toastMock.mock.calls.length;
+    const opts = toastMock.mock.calls.at(-1)![1] as { action: { props: { onClick: (e: Event) => void } } };
+    opts.action.props.onClick({ preventDefault: () => {} } as unknown as Event);
+
+    // Toast re-issued with same id so it visually replaces (not stacks).
+    expect(toastMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    const lastOpts = toastMock.mock.calls.at(-1)![1] as { id: string };
+    expect(lastOpts.id).toBe("pwa-update-toast");
+  });
 });

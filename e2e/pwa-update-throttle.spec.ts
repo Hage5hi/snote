@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { installPwaUpdateMock, releaseHeldReload } from "./helpers/pwa-update-mock";
+import { installPwaUpdateMock, releaseHeldReload, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
 
 // Cross-browser: this spec must pass on chromium, firefox, and webkit — do not
 // scope it to a single project. CI runs the full matrix via PLAYWRIGHT_PROJECT.
@@ -56,6 +56,10 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
 
 
   await page.goto("/");
+  // Fail fast with a useful diagnostic if the poller never runs (rather than
+  // timing out downstream on the toast assertion).
+  await waitForPwaUpdaterReady(page, testInfo);
+
   const toast = page.getByText("New version available");
   await expect(toast).toBeVisible({ timeout: 5_000 });
   await attach(testInfo, page, "before-click");
@@ -63,26 +67,31 @@ test("Repeated Update clicks only fire one reload and toast never flickers back"
   const update = page.getByRole("button", { name: /^Update$/ });
   await update.click();
 
-  // Spam clicks while the reload is 'in flight'.
+  // Deterministic wait: pending state must appear before we spam clicks.
   const pending = page.getByRole("button", { name: /^Update…$/ });
-  await expect(pending).toBeDisabled();
+  await expect(pending).toBeDisabled({ timeout: 5_000 });
+  await expect.poll(async () => (await pwaState(page))?.updateInProgress, { timeout: 5_000 }).toBe(true);
+
   for (let i = 0; i < 8; i++) {
     await pending.click({ force: true }).catch(() => {});
   }
-  await expect(page.getByText("Update pending")).toBeVisible();
+  await expect(page.getByText("Update pending")).toBeVisible({ timeout: 5_000 });
   await attach(testInfo, page, "while-pending");
 
   // Only one reload attempt should have been recorded.
-  const midState = await pwaState(page);
-  expect(midState?.reloadAttemptCount).toBe(1);
-  expect(midState?.updateInProgress).toBe(true);
+  await expect.poll(async () => (await pwaState(page))?.reloadAttemptCount, { timeout: 3_000 }).toBe(1);
 
-  // Toast must NOT flip back to "New version available" while pending.
-  for (let i = 0; i < 6; i++) {
-    await page.waitForTimeout(200);
+  // Toast must NOT flip back to "New version available" during the pending
+  // window. Poll at a stable 100ms cadence and assert on every tick — this is
+  // deterministic under CI load because we only look at DOM state, not races.
+  const flickerDeadline = Date.now() + 1200;
+  while (Date.now() < flickerDeadline) {
     const flickered = await page.getByText("New version available").count();
-    expect(flickered, `flicker detected on iteration ${i}`).toBe(0);
+    expect(flickered, `flicker at t=${Date.now()}`).toBe(0);
+    await page.waitForTimeout(100);
   }
+
+
 
   // Now release the held reload → buildId transitions → toast auto-hides.
   await releaseHeldReload(page);

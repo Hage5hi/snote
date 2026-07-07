@@ -66,3 +66,46 @@ export async function releaseHeldReload(page: Page): Promise<void> {
 export async function getHardReloadCount(page: Page): Promise<number> {
   return page.evaluate(() => (window as any).__SNOTE_E2E_HARD_RELOAD_COUNT__ ?? 0);
 }
+
+/**
+ * Wait for the version poller to have fetched at least once and populated
+ * window.__SNOTE_PWA_UPDATE_STATE__. Fails fast with an attached diagnostic
+ * (state snapshot, console log) if the poller stalls, so CI failures point
+ * at "poller never ran" rather than a downstream toast assertion timeout.
+ *
+ * In non-E2E production this is where you'd also wait for the service worker
+ * to reach `activated` before letting the Update button click. In E2E mode
+ * (`__SNOTE_E2E_ENABLE_PWA_UPDATE__ = true`) the real SW is skipped, so we
+ * only assert the poller side is healthy.
+ */
+export async function waitForPwaUpdaterReady(
+  page: import("@playwright/test").Page,
+  testInfo: import("@playwright/test").TestInfo,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let lastState: unknown = null;
+  while (Date.now() < deadline) {
+    lastState = await page.evaluate(() => (window as any).__SNOTE_PWA_UPDATE_STATE__ ?? null);
+    if (lastState && (lastState as { lastRemoteBuildId?: string }).lastRemoteBuildId) return;
+    await page.waitForTimeout(50);
+  }
+  const swState = await page.evaluate(async () => {
+    if (!("serviceWorker" in navigator)) return { supported: false };
+    const reg = await navigator.serviceWorker.getRegistration().catch(() => null);
+    return {
+      supported: true,
+      hasRegistration: !!reg,
+      active: reg?.active?.state ?? null,
+      waiting: reg?.waiting?.state ?? null,
+      installing: reg?.installing?.state ?? null,
+    };
+  });
+  await testInfo.attach("pwa-updater-not-ready.json", {
+    body: JSON.stringify({ lastState, swState, timeoutMs }, null, 2),
+    contentType: "application/json",
+  });
+  throw new Error(
+    `[pwa-update] version poller never populated __SNOTE_PWA_UPDATE_STATE__.lastRemoteBuildId within ${timeoutMs}ms — see pwa-updater-not-ready.json`,
+  );
+}
