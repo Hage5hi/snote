@@ -95,13 +95,14 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
     if (!canSubmit) return;
     const newSlug = value.trim();
     setSubmitting(true);
+    setCleanupState("checking");
+    setCleanupDetail("");
     try {
       await provider?.saveSnapshot();
       await prepareRename(currentSlug, newSlug);
       // Navigate FIRST so the old NotePage unmounts and its Yjs provider
       // stops upserting `ydoc_state` for currentSlug — otherwise a debounced
       // snapshot would recreate the old row after we delete it.
-      onOpenChange(false);
       navigate(`/${newSlug}`);
       // Give React a tick to unmount, then delete the source row.
       await new Promise((r) => setTimeout(r, 50));
@@ -109,6 +110,17 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       const { deletionConfirmed } = await finalizeRename(currentSlug, newSlug);
       const cleanupStatus = await fetchOldSlugCleanupStatus(currentSlug).catch(() => null);
       const finalDeletionConfirmed = deletionConfirmed || cleanupStatus?.cleaned || (await waitForSlugDeletionConfirmed(currentSlug)).deleted;
+      setCleanupState(finalDeletionConfirmed ? "clean" : "dirty");
+      if (cleanupStatus) {
+        const { providerAbandoned, docCacheWarm, sessionSnapshotPresent, indexedDbCleared } = cleanupStatus.clientSignals ?? {};
+        setCleanupDetail(
+          `db=${cleanupStatus.database.rowPresent ? "present" : "gone"}` +
+            ` · provider=${providerAbandoned ? "abandoned" : "live"}` +
+            ` · doc-cache=${docCacheWarm ? "warm" : "cold"}` +
+            ` · session=${sessionSnapshotPresent ? "present" : "gone"}` +
+            ` · idb=${indexedDbCleared ? "cleared" : "unknown"}`,
+        );
+      }
       toast({
         title: t("rename.toast_renamed"),
         description: finalDeletionConfirmed
@@ -116,9 +128,12 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
           : `/${currentSlug} → /${newSlug} (old slug still present — retry)`,
         variant: finalDeletionConfirmed ? undefined : "destructive",
       });
+      if (finalDeletionConfirmed) onOpenChange(false);
+      else setSubmitting(false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("rename.generic_error");
       toast({ title: t("rename.toast_failed"), description: msg, variant: "destructive" });
+      setCleanupState("idle");
       setSubmitting(false);
     }
   };
