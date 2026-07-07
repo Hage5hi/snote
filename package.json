@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "./scripts/run-playwright.sh test",
+    "test:e2e": "bash scripts/run-playwright.sh test",
     "test:e2e:update": "playwright test --update-snapshots",
     "test:e2e:update:scene": "playwright test e2e/home-scenes-visual.spec.ts e2e/home-scene.spec.ts --update-snapshots",
     "test:e2e:update:changed": "bun run scripts/e2e-update-changed-scenes.ts",
