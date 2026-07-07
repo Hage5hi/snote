@@ -23,11 +23,32 @@ export function PwaUpdateDebugPanel() {
     if (!import.meta.env.DEV) return;
     exposeReadinessValidatorForE2E();
     const read = () => {
-      const raw = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__;
-      if (validatePwaReadinessState(raw)) {
-        setState(raw);
-      } else {
-        if (raw !== undefined && raw !== null) emitPwaReadinessInvalidEvent(raw);
+      let raw: unknown;
+      try {
+        raw = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__;
+      } catch {
+        setState(null);
+        return;
+      }
+      try {
+        if (validatePwaReadinessState(raw)) {
+          setState(raw);
+        } else {
+          if (raw !== undefined && raw !== null) emitPwaReadinessInvalidEvent(raw);
+          setState(null);
+        }
+      } catch {
+        // Validator/emit must never crash the panel. Emit a synthetic
+        // invalid event so QA still sees the rejection.
+        try {
+          window.dispatchEvent(
+            new CustomEvent("snote:pwa-readiness-invalid", {
+              detail: { field: "<root>", path: "<root>", reason: "validator-threw", received: typeof raw },
+            }),
+          );
+        } catch {
+          /* ignore */
+        }
         setState(null);
       }
     };
@@ -35,6 +56,7 @@ export function PwaUpdateDebugPanel() {
     const id = window.setInterval(read, 500);
     return () => window.clearInterval(id);
   }, []);
+
 
 
   if (!import.meta.env.DEV || !state) return null;
