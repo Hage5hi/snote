@@ -155,6 +155,23 @@ jobs:
             test-results/**/pwa-update-*.json
             test-results/pwa-update-summary.json
           retention-days: 14
+      # PWA update spec failures: upload only the trace/video/screenshot bundles
+      # from the three pwa-update-*.spec.ts files so triage doesn't require
+      # downloading the full test-results/ archive.
+      - name: Upload PWA update failure artifacts (traces + screenshots + videos)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwa-update-failures-${{ matrix.browser }}-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          path: |
+            test-results/**/pwa-update-*/**
+            test-results/**/*pwa-update*trace*.zip
+            test-results/**/*pwa-update*.png
+            test-results/**/*pwa-update*.webm
+            playwright-report/**/pwa-update-*.json
+            playwright-report/**/pwa-update-*.png
+            playwright-report/**/pwa-update-*.html
+          retention-days: 14
           if-no-files-found: warn
       # Upload on BOTH success and failure so flaky-test triage doesn't need a
       # re-run. Names are stable per browser + run + attempt so artifacts from
