@@ -134,7 +134,7 @@ export function renderFailedArtifactLinks(
   if (runUrl) out.push(`Browse the full artifact bundle from the [workflow run's Artifacts panel](${runUrl}).\n`);
   for (const f of failed) {
     const repro = renderWheelLocalReproCommand(f, env.playwrightRetries ?? "0");
-    const replay = renderWheelDiagnosticsReplayCommand(f);
+    const replay = renderWheelDiagnosticsReplayCommand(f, env);
     const downloadReplay = renderWheelDownloadReplayCommand(f, env);
     const attempt = f.retry == null ? "" : ` retry #${f.retry}`;
     out.push(`- **${f.name}**${f.project ? ` _(${f.project})_` : ""}${attempt} — ${
