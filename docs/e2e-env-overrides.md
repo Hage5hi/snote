@@ -97,3 +97,29 @@ The multi-tab observer captures a lightweight DOM snapshot of both tabs
 (`url`, first 200 chars of `.cm-content`, whether `body.innerText` contains the
 old slug) at every polling check. On failure they land in the
 `multi-tab-observer-timeline.json` report attachment under `domA` / `domB`.
+
+## PWA update tunables
+
+`src/lib/pwa-update.ts` reads the following build-time Vite env vars. All
+accept a positive integer number of milliseconds; invalid values fall back to
+the default.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VITE_PWA_VERSION_POLL_MS` | `60000` | Interval for `/version.json` polling (mismatch → toast). |
+| `VITE_PWA_SW_POLL_MS` | `60000` | Interval for `ServiceWorkerRegistration.update()` polling. |
+| `VITE_PWA_RELOAD_FALLBACK_MS` | `2500` | How long to wait for `controllerchange` after `updateSW(true)` before hard-reloading. |
+
+### Recommended values
+
+| Context | version poll | sw poll | reload fallback |
+| --- | --- | --- | --- |
+| Production | `60000` | `60000` | `2500` |
+| Local dev PWA smoke test | `5000` | `5000` | `1500` |
+| CI (Playwright PWA specs) | overridden per-spec via `__SNOTE_E2E_PWA_POLL_INTERVAL_MS__` (see `e2e/pwa-update-*.spec.ts`) — the env vars above are the fallback when the E2E hook is not set | | |
+
+E2E specs bypass the env vars entirely by setting
+`window.__SNOTE_E2E_PWA_INITIAL_POLL_MS__` and
+`window.__SNOTE_E2E_PWA_POLL_INTERVAL_MS__` via `addInitScript`, so tuning the
+env vars for CI is only useful for real (non-E2E) builds deployed to preview
+environments.

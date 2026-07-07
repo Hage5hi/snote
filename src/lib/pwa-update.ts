@@ -13,8 +13,15 @@ import { detectLang, dict, STORAGE_KEY, type Lang } from "@/i18n";
 declare const __BUILD_ID__: string;
 const STAMPED_BUILD_ID: string = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
 
-const VERSION_POLL_INTERVAL_MS = 60 * 1000;
-const SW_UPDATE_POLL_INTERVAL_MS = 60 * 1000;
+// Tunables — see docs/e2e-env-overrides.md ("PWA update tunables").
+function envNum(key: string, fallback: number): number {
+  const raw = (import.meta.env as Record<string, string | undefined>)[key];
+  const v = raw ? Number(raw) : NaN;
+  return Number.isFinite(v) && v > 0 ? v : fallback;
+}
+const VERSION_POLL_INTERVAL_MS = envNum("VITE_PWA_VERSION_POLL_MS", 60 * 1000);
+const SW_UPDATE_POLL_INTERVAL_MS = envNum("VITE_PWA_SW_POLL_MS", 60 * 1000);
+const RELOAD_FALLBACK_MS = envNum("VITE_PWA_RELOAD_FALLBACK_MS", 2500);
 const TOAST_ID = "pwa-update-toast";
 const PENDING_BUILD_KEY = "pwa-update-pending-build";
 
@@ -298,7 +305,7 @@ export function registerAppUpdater(): void {
       const fallback = window.setTimeout(() => {
         console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
         hardReload(pendingBuildId);
-      }, 2500);
+      }, RELOAD_FALLBACK_MS);
       let done = false;
       const onCtrl = () => {
         if (done) return;
