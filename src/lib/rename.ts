@@ -52,29 +52,52 @@ async function copyNoteRow(sourceSlug: string, targetSlug: string) {
   if (insertErr) throw insertErr;
 }
 
-export async function renameNote(oldSlug: string, newSlug: string): Promise<void> {
+/**
+ * Copy the note row and migrate share tokens to `newSlug`. Does NOT delete
+ * the source row — call {@link finalizeRename} AFTER the UI has navigated
+ * away from `oldSlug` so the still-mounted Yjs provider (which debounces
+ * snapshot upserts) can't recreate the source row post-delete.
+ */
+export async function prepareRename(oldSlug: string, newSlug: string): Promise<void> {
   if (oldSlug === newSlug) return;
   if (!SLUG_RE.test(newSlug)) throw new Error("Invalid slug");
 
   await copyNoteRow(oldSlug, newSlug);
 
-  // Migrate active share tokens BEFORE the delete. note_shares FK is ON
-  // DELETE CASCADE, so deleting the old row would otherwise destroy every
-  // share link for this note. share-rename runs with the service role and
-  // re-points the token rows at newSlug; the subsequent delete cascades
-  // onto an empty set.
   const { error: shareErr } = await supabase.functions.invoke("share-rename", {
     body: { oldSlug, newSlug },
   });
   if (shareErr) throw shareErr;
+}
 
-  // Remove the old row. If this fails the new row still exists.
-  const { error: delErr } = await supabase.from("notes").delete().eq("slug", oldSlug);
-  if (delErr) throw delErr;
+/**
+ * Delete the source row and migrate localStorage. Must be called AFTER the
+ * caller has navigated away from `/oldSlug` (so the old Yjs provider is
+ * unmounted). Runs a second-pass delete after a short delay to defeat any
+ * last debounced snapshot upsert that raced the unmount.
+ */
+export async function finalizeRename(oldSlug: string, newSlug: string): Promise<void> {
+  const del = async () => {
+    const { error } = await supabase.from("notes").delete().eq("slug", oldSlug);
+    if (error) throw error;
+  };
+  await del();
+  await new Promise((r) => setTimeout(r, 750));
+  try {
+    await del();
+  } catch {
+    /* best-effort second pass */
+  }
 
   renameRecent(oldSlug, newSlug);
   renamePinned(oldSlug, newSlug);
   renameShareToken(oldSlug, newSlug);
+}
+
+/** One-shot rename. UI callers should prefer prepareRename + navigate + finalizeRename. */
+export async function renameNote(oldSlug: string, newSlug: string): Promise<void> {
+  await prepareRename(oldSlug, newSlug);
+  await finalizeRename(oldSlug, newSlug);
 }
 
 /**
