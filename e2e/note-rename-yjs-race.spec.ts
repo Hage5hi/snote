@@ -245,6 +245,7 @@ test.describe("note rename Yjs race", () => {
     console.log("[rename-race][stress] config", { seed: `0x${seed.toString(16)}`, iterations });
     testInfo.setTimeout(Math.max(75_000, iterations * 25_000));
     const createdSlugs: string[] = [];
+    const timings: Array<{ i: number; from: string; to: string; debounceMs: number; startedAt: number; durationMs?: number; outcome?: "clean" | "lingering" }> = [];
     const rng = (() => {
       let s = seed >>> 0;
       return () => {
