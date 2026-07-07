@@ -60,9 +60,11 @@ describe("RenameDialog", () => {
   beforeEach(() => {
     mocks.navigate.mockReset();
     mocks.toast.mockReset();
+    mocks.prepareRename.mockReset();
     mocks.prepareRename.mockResolvedValue(undefined);
     mocks.clearRenamedSlugLocalState.mockReset();
     mocks.clearRenamedSlugLocalState.mockResolvedValue(undefined);
+    mocks.finalizeRename.mockReset();
     mocks.finalizeRename.mockResolvedValue({ deletionConfirmed: false });
     mocks.maybeSingle.mockReset();
   });
