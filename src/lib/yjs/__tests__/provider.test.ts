@@ -99,6 +99,17 @@ describe("SupabaseYjsProvider — rename/unmount cancellation", () => {
     expect(upsertCalls).toHaveLength(0);
     await provider.destroy();
   });
+
+  it("keeps an already-mounted old provider blocked after the global abandoned TTL expires", async () => {
+    const { provider } = makeProvider("old-slug");
+
+    abandonProviderForSlug("old-slug");
+    await vi.advanceTimersByTimeAsync(31_000);
+    await provider.saveSnapshot();
+
+    expect(upsertCalls).toHaveLength(0);
+    await provider.destroy();
+  });
 });
 
 
