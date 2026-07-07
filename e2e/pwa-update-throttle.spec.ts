@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
-import { installPwaUpdateMock, releaseHeldReload } from "./helpers/pwa-update-mock";
+import { installPwaUpdateMock, releaseHeldReload, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
 
 // Cross-browser: this spec must pass on chromium, firefox, and webkit — do not
 // scope it to a single project. CI runs the full matrix via PLAYWRIGHT_PROJECT.
