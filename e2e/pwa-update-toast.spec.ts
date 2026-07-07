@@ -17,11 +17,10 @@ async function pwaState(page: Page): Promise<PwaUpdateState | null> {
 
 async function attachPwaMetadata(testInfo: TestInfo, page: Page, label: string) {
   const state = await pwaState(page).catch((error) => ({ error: String(error) }));
-  const toastText = await page
-    .locator("[data-sonner-toast]")
-    .first()
-    .evaluate((node) => (node as HTMLElement).innerText, { timeout: 250 })
-    .catch(() => null);
+  const toastLocator = page.locator("[data-sonner-toast]");
+  const toastText = (await toastLocator.count())
+    ? await toastLocator.first().evaluate((node) => (node as HTMLElement).innerText).catch(() => null)
+    : null;
   await testInfo.attach(`pwa-update-${label}.json`, {
     body: JSON.stringify({ state, toastText }, null, 2),
     contentType: "application/json",
