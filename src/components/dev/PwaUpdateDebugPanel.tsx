@@ -62,6 +62,7 @@ export function PwaUpdateDebugPanel() {
           <div>pending: {state.pendingBuildId ?? "—"}</div>
           <div>strategy: {state.reloadStrategy ?? "—"}</div>
           <div>attempts: {state.reloadAttemptCount}</div>
+          <div>last remote: {state.lastRemoteBuildId ?? "—"}</div>
           <div>inProgress: {String(state.updateInProgress)}</div>
         </div>
       )}
