@@ -19,7 +19,7 @@ import {
   waitForSlugDeletionConfirmed,
   SLUG_RE,
 } from "@/lib/rename";
-import { fetchOldSlugCleanupStatus } from "@/lib/rename-cleanup-status";
+import { fetchOldSlugCleanupStatus, pollOldSlugCleanupStatus } from "@/lib/rename-cleanup-status";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n/index";
 import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
