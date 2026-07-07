@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Replay the exact wheel/trackpad delta stream stored in a failed
 // wheel-diagnostics.json artifact against the same long-note fixture.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { chromium, firefox, webkit, type BrowserType } from "playwright";
 
