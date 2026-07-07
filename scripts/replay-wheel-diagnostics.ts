@@ -50,7 +50,7 @@ type SelectionDragSample = {
 };
 
 function usage(): never {
-  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay] [--trace=on|off] [--headed]");
+  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay] [--trace=on|off] [--extra-traces] [--headed]");
   process.exit(2);
 }
 
@@ -62,11 +62,13 @@ export function parseArgs(argv: string[]) {
     outDir: process.env.WHEEL_REPLAY_OUT_DIR ?? join(process.cwd(), "test-results", "wheel-replay"),
     headed: process.env.HEADED === "1",
     trace: process.env.PLAYWRIGHT_TRACE !== "0",
+    extraTraces: process.env.WHEEL_REPLAY_EXTRA_TRACES === "1",
   };
   for (const a of argv) {
     if (a === "--headed") args.headed = true;
     else if (a === "--no-trace" || a === "--trace=off") args.trace = false;
     else if (a === "--trace=on") args.trace = true;
+    else if (a === "--extra-traces" || a === "--trace-notes") args.extraTraces = true;
     else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
     else if (a.startsWith("--out-dir=")) args.outDir = a.slice("--out-dir=".length);
@@ -75,6 +77,18 @@ export function parseArgs(argv: string[]) {
   }
   if (!args.path) usage();
   return args;
+}
+
+export function preflightPlaywrightBrowser(browserType: BrowserType, project: string): void {
+  try {
+    const exe = browserType.executablePath();
+    if (!exe || !existsSync(exe)) throw new Error(`missing binary at ${exe || "<unknown>"}`);
+  } catch (e) {
+    const install = `bunx playwright install --with-deps ${project}`;
+    console.error(`✖ Playwright ${project} browser is not installed (${e instanceof Error ? e.message : String(e)}).`);
+    console.error(`  Install it with:\n    ${install}`);
+    process.exit(3);
+  }
 }
 
 function getDeltas(diagnostics: WheelDiagnostics): Delta[] {
@@ -149,6 +163,7 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
   const browserType = browserTypes[args.project];
   if (!browserType) throw new Error(`unsupported project: ${args.project}`);
+  preflightPlaywrightBrowser(browserType, args.project);
 
   mkdirSync(args.outDir, { recursive: true });
   const browser = await browserType.launch({ headless: !args.headed });
@@ -238,8 +253,26 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   writeFileSync(jsonlPath, observed.map((o) => JSON.stringify(o)).join("\n") + "\n");
   writeFileSync(join(args.outDir, "selection-frames.jsonl"), observedSelection.map((o) => JSON.stringify(o)).join("\n") + (observedSelection.length ? "\n" : ""));
   await scroller.screenshot({ path: join(args.outDir, "scroller.png") }).catch(() => undefined);
-  if (args.trace) await context.tracing.stop({ path: join(args.outDir, "trace.zip") });
+  const tracePath = join(args.outDir, "trace.zip");
+  if (args.trace) await context.tracing.stop({ path: tracePath });
   await browser.close();
+
+  if (args.extraTraces) {
+    const retries = process.env.RETRIES ?? "0";
+    const notesPath = join(args.outDir, "trace-notes.json");
+    writeFileSync(notesPath, JSON.stringify({
+      source: args.path, project: args.project, retries,
+      generatedAt: result.generatedAt, stuckFrame, selectionStuckFrame,
+      tracePath: args.trace ? tracePath : null,
+      artifacts: ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png", args.trace ? "trace.zip" : null].filter(Boolean),
+    }, null, 2));
+    console.log(`wrote ${notesPath}`);
+    if (args.trace && existsSync(tracePath)) {
+      const perRetry = join(args.outDir, `trace-retry-${retries}.zip`);
+      try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
+    }
+  }
+
 
   console.log(`replayed ${observed.length} deltas from ${args.path}`);
   console.log(`wrote ${resultPath}`);

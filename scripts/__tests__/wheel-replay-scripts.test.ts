@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs as parseDownloadArgs, buildGhArgs } from "../download-and-replay-wheel-artifact";
 import { parseArgs as parseReplayArgs } from "../replay-wheel-diagnostics";
+import { validateWheelFixture } from "../validate-wheel-fixture";
 
 describe("wheel diagnostics replay scripts", () => {
   it("parses local replay mode with a selected diagnostics path and trace output", () => {
@@ -38,5 +39,34 @@ describe("wheel diagnostics replay scripts", () => {
     expect(diagnostics.selectionDragSamples.length).toBeGreaterThan(0);
     expect(diagnostics.selectionStuckFrame.afterRange.signature)
       .toBe(diagnostics.selectionStuckFrame.beforeRange.signature);
+  });
+
+  it("supports --extra-traces flag for per-retry trace/trace-notes export", () => {
+    const args = parseReplayArgs([
+      "scripts/__fixtures__/wheel-diagnostics-failure/wheel-diagnostics.json",
+      "--extra-traces",
+    ]);
+    expect(args.extraTraces).toBe(true);
+  });
+
+  it("validates the wheel-diagnostics-failure fixture has every required file", () => {
+    const dir = join(process.cwd(), "scripts", "__fixtures__", "wheel-diagnostics-failure");
+    const res = validateWheelFixture(dir);
+    expect(res.missing).toEqual([]);
+    expect(res.errors).toEqual([]);
+    expect(res.ok).toBe(true);
+  });
+
+  it("reports missing files by exact name so CI logs point at the gap", () => {
+    const res = validateWheelFixture(join(process.cwd(), "scripts", "__fixtures__", "does-not-exist"));
+    expect(res.ok).toBe(false);
+    expect(res.missing).toContain("wheel-diagnostics.json");
+    expect(res.missing).toContain("scroller.png");
+  });
+
+  it("optionally requires trace.zip when the caller asks for it", () => {
+    const dir = join(process.cwd(), "scripts", "__fixtures__", "wheel-diagnostics-failure");
+    const res = validateWheelFixture(dir, { requireTrace: true });
+    if (!res.ok) expect(res.missing).toContain("trace.zip");
   });
 });

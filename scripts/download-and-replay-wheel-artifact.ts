@@ -4,6 +4,8 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { chromium, firefox, webkit, type BrowserType } from "playwright";
+import { preflightPlaywrightBrowser } from "./replay-wheel-diagnostics";
 
 type Args = {
   runId: string;
@@ -69,6 +71,10 @@ export function buildGhArgs(args: Args): string[] {
 
 export function main(argv = process.argv.slice(2)): void {
   const args = parseArgs(argv);
+  const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
+  const bt = browserTypes[args.project];
+  if (!bt) throw new Error(`unsupported project: ${args.project}`);
+  preflightPlaywrightBrowser(bt, args.project);
   mkdirSync(args.outDir, { recursive: true });
   run("gh", buildGhArgs(args));
 
