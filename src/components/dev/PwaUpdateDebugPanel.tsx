@@ -98,8 +98,8 @@ export function PwaUpdateDebugPanel() {
     // not just our own emit) so staging can eyeball the frequency.
     const onInvalid = () => {
       const now = Date.now();
+      invalidTotal.current += 1;
       invalidTimestamps.current.push(now);
-      // Keep at most last hour to bound memory.
       const cutoff = now - 3_600_000;
       invalidTimestamps.current = invalidTimestamps.current.filter((t) => t >= cutoff);
     };
@@ -109,7 +109,12 @@ export function PwaUpdateDebugPanel() {
       const ts = invalidTimestamps.current;
       const lastMinute = ts.filter((t) => t >= now - 60_000).length;
       const lastHour = ts.length;
-      setStats({ total: ts.length === 0 ? 0 : ts.length, lastMinute, lastHour, lastAt: ts.length ? ts[ts.length - 1] : null });
+      setStats({
+        total: invalidTotal.current,
+        lastMinute,
+        lastHour,
+        lastAt: ts.length ? ts[ts.length - 1] : null,
+      });
     }, 1000);
 
     return () => {
