@@ -5,6 +5,26 @@ documented here. Format loosely follows [Keep a Changelog](https://keepachangelo
 
 ## [Unreleased]
 
+### PWA update — readiness validator
+
+#### Added
+
+- **`snote:pwa-readiness-invalid` CustomEvent** — dispatched on `window` by
+  `<PwaUpdateDebugPanel>` (DEV) and `emitPwaReadinessInvalidEvent()` whenever
+  `window.__SNOTE_PWA_UPDATE_STATE__` fails the shared schema in
+  `src/lib/pwa-update-readiness.ts`. Fail-fast: one event per rejection,
+  reporting the first invalid field.
+  - `detail` shape (`PwaReadinessInvalidEventDetail`):
+    - `field: string` — invalid field name (e.g. `"reloadStrategy"`, `"<root>"`)
+    - `path: string` — alias of `field` (dot-path style for QA tooling)
+    - `reason: string` — human-readable failure description
+    - `received: string` — `typeof` / stringified value that failed
+  - Canonical event name exported as `PWA_READINESS_INVALID_EVENT`.
+  - Augments `WindowEventMap` so `addEventListener` is fully typed.
+  - See `docs/pwa-readiness-invalid-event.md` for the QA debug guide.
+
+
+
 ### `scripts/schema-drift-diff.ts`
 
 #### Added
