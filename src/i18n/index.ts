@@ -398,6 +398,8 @@ export const dict = {
     "install.ext_step_devmode": "Open chrome://extensions and enable Developer mode (top-right).",
     "install.ext_step_loadunpacked": "Click 'Load unpacked' and select the unzipped folder.",
     "update.title": "New version available",
+    "update.pending_title": "Update pending",
+    "update.pending_desc": "Applying the new build. This toast will close automatically once the update takes effect.",
     "update.description": "Reload to get the latest features and fixes. Your notes and history will be kept.",
     "update.btn_reload": "Update",
     "unlock.wrong_key": "Wrong key. Try again.",

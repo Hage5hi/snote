@@ -1,0 +1,131 @@
+// Unit tests for the PWA update logic. We mock the virtual PWA register module,
+// sonner, and /version.json fetches so we can drive the toast lifecycle directly.
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type RegisterSWOptions = {
+  onRegisteredSW?: (swUrl: string, registration?: ServiceWorkerRegistration) => void;
+  onNeedRefresh?: () => void | Promise<void>;
+};
+
+const registerSWMock = vi.fn<(opts: RegisterSWOptions) => (reload?: boolean) => Promise<void>>();
+const toastMock = vi.fn();
+const dismissMock = vi.fn();
+
+vi.mock("virtual:pwa-register", () => ({
+  registerSW: (opts: RegisterSWOptions) => registerSWMock(opts),
+}));
+
+vi.mock("sonner", () => ({
+  toast: Object.assign(toastMock, { dismiss: dismissMock }),
+}));
+
+async function fresh() {
+  vi.resetModules();
+  return await import("../pwa-update");
+}
+
+function respondVersion(buildId: string) {
+  const fetchMock = vi.fn(async () => ({
+    ok: true,
+    json: async () => ({ buildId }),
+  }));
+  (globalThis as unknown as { fetch: typeof fetch }).fetch = fetchMock as unknown as typeof fetch;
+  return fetchMock;
+}
+
+async function flush(ms = 30) {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
+describe("registerAppUpdater", () => {
+  beforeEach(() => {
+    registerSWMock.mockReset();
+    registerSWMock.mockReturnValue(async () => {});
+    toastMock.mockReset();
+    dismissMock.mockReset();
+    (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = true;
+    (window as unknown as { __SNOTE_E2E_BUILD_ID__?: string }).__SNOTE_E2E_BUILD_ID__ = "build-a";
+    (window as unknown as { __SNOTE_E2E_PWA_INITIAL_POLL_MS__?: number }).__SNOTE_E2E_PWA_INITIAL_POLL_MS__ = 1;
+    (window as unknown as { __SNOTE_E2E_PWA_POLL_INTERVAL_MS__?: number }).__SNOTE_E2E_PWA_POLL_INTERVAL_MS__ = 20;
+    (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__ = undefined;
+    sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    delete (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__;
+  });
+
+  it("keeps the toast open until the running buildId actually changes to the remote build", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    expect(toastMock).toHaveBeenCalled();
+    // Not dismissed while buildId still mismatched.
+    expect(dismissMock).not.toHaveBeenCalled();
+
+    // Simulate reload succeeding: swap the reported buildId, next poll matches.
+    (window as unknown as { __SNOTE_E2E_BUILD_ID__?: string }).__SNOTE_E2E_BUILD_ID__ = "build-b";
+    await flush(80);
+
+    expect(dismissMock).toHaveBeenCalledWith("pwa-update-toast");
+    const state = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: { currentBuildId: string; pendingBuildId: string | null } }).__SNOTE_PWA_UPDATE_STATE__;
+    expect(state?.currentBuildId).toBe("build-b");
+    expect(state?.pendingBuildId).toBeNull();
+  });
+
+  it("keeps the toast open when the reload silently keeps the old buildId", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    dismissMock.mockClear();
+    // Reload attempt but buildId did NOT change — poller keeps seeing mismatch.
+    await flush(80);
+    expect(dismissMock).not.toHaveBeenCalled();
+    const state = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: { currentBuildId: string; updateAvailable: boolean } }).__SNOTE_PWA_UPDATE_STATE__;
+    expect(state?.currentBuildId).toBe("build-a");
+    expect(state?.updateAvailable).toBe(true);
+  });
+
+  it("uses the hard-reload strategy when no waiting service worker is available (E2E mode)", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    // Grab the onReload from the last toast call and invoke it.
+    const lastCall = toastMock.mock.calls.at(-1)!;
+    const opts = lastCall[1] as { action: { props: { onClick: (e: Event) => void } } };
+    const stopEvt = { preventDefault: () => {} } as unknown as Event;
+    opts.action.props.onClick(stopEvt);
+
+    const state = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: { reloadAttemptCount: number; reloadStrategy: string | null; pendingBuildId: string | null } }).__SNOTE_PWA_UPDATE_STATE__;
+    expect(state?.reloadAttemptCount).toBe(1);
+    expect(state?.reloadStrategy).toBe("hard");
+    expect(state?.pendingBuildId).toBe("build-b");
+    expect(sessionStorage.getItem("pwa-update-pending-build")).toBe("build-b");
+  });
+
+  it("ignores repeated Update clicks while a reload is already in progress", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    const invokeUpdate = () => {
+      const call = toastMock.mock.calls.at(-1)!;
+      const opts = call[1] as { action: { props: { onClick: (e: Event) => void } } };
+      opts.action.props.onClick({ preventDefault: () => {} } as unknown as Event);
+    };
+    invokeUpdate();
+    invokeUpdate();
+    invokeUpdate();
+
+    const state = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: { reloadAttemptCount: number } }).__SNOTE_PWA_UPDATE_STATE__;
+    expect(state?.reloadAttemptCount).toBe(1);
+  });
+});

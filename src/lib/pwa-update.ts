@@ -135,20 +135,28 @@ function updateButton(label: string, disabled: boolean, onReload: () => void): R
   );
 }
 
-function updateDescription(currentBuildId: string, pendingBuildId: string | null): ReactNode {
+function updateDescription(
+  currentBuildId: string,
+  pendingBuildId: string | null,
+  updateInProgress: boolean,
+): ReactNode {
   const lang = detectLang();
+  const bodyKey = updateInProgress ? "update.pending_desc" : "update.description";
   return createElement(
     "div",
-    null,
-    createElement("div", null, tr(lang, "update.description")),
+    { "data-pwa-update-state": updateInProgress ? "pending" : "available" },
+    createElement("div", null, tr(lang, bodyKey)),
     createElement(
       "div",
       {
         "data-pwa-update-metadata": "true",
+        "data-current-build": currentBuildId,
+        "data-pending-build": pendingBuildId ?? "unknown",
         style: { marginTop: 6, fontSize: 11, lineHeight: 1.35, opacity: 0.82 },
       },
       createElement("div", null, `Current: ${currentBuildId}`),
       createElement("div", null, `Pending: ${pendingBuildId ?? "unknown"}`),
+      createElement("div", null, `Transition: ${currentBuildId} → ${pendingBuildId ?? "unknown"}`),
     ),
   );
 }
@@ -160,9 +168,10 @@ function showUpdateToast(options: {
   onReload: () => void;
 }): void {
   const lang = detectLang();
-  sonnerToast(tr(lang, "update.title"), {
+  const titleKey = options.updateInProgress ? "update.pending_title" : "update.title";
+  sonnerToast(tr(lang, titleKey), {
     id: TOAST_ID,
-    description: updateDescription(options.currentBuildId, options.pendingBuildId),
+    description: updateDescription(options.currentBuildId, options.pendingBuildId, options.updateInProgress),
     duration: Infinity,
     action: updateButton(tr(lang, "update.btn_reload"), options.updateInProgress, options.onReload),
   });
