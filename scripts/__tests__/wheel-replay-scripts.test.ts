@@ -24,7 +24,7 @@ describe("wheel diagnostics replay scripts", () => {
     const args = parseDownloadArgs(["12345", "--project=webkit", "--retries=2", "--attempt=3", "--out-dir=.artifacts/wheel"]);
     expect(buildGhArgs(args)).toEqual([
       "run", "download", "12345", "--dir", ".artifacts/wheel",
-      "--pattern", "e2e-test-results-webkit-*",
+      "--pattern", "e2e-test-results-webkit-*attempt3",
     ]);
   });
 
