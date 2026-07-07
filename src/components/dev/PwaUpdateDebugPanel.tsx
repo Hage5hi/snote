@@ -196,6 +196,7 @@ export function PwaUpdateDebugPanel() {
           <div>inProgress: {String(state!.updateInProgress)}</div>
         </div>
       )}
+      {!collapsed && statsBlock}
     </div>
   );
 }
