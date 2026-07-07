@@ -303,6 +303,7 @@ export function registerAppUpdater(): void {
       reloadStrategy = "waiting-sw";
       syncDebugState();
       console.log("[pwa-update] reload strategy=waiting-sw", { currentBuildId: getCurrentBuildId(), pendingBuildId });
+      logLifecycle("reload-start");
       const fallback = window.setTimeout(() => {
         console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
         hardReload(pendingBuildId);
