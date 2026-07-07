@@ -93,6 +93,11 @@ describe("rename race (API-level, no browser)", () => {
   it("late debounced snapshot after finalizeRename does not resurrect old slug", async () => {
     const doc = new Y.Doc();
     const provider = new SupabaseYjsProvider("old-slug", doc);
+    const providerLogs: string[] = [];
+    const origWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      providerLogs.push(args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+    };
     doc.getText("content").insert(0, "hello world");
 
     await prepareRename("old-slug", "new-slug");
@@ -104,9 +109,28 @@ describe("rename race (API-level, no browser)", () => {
     await provider.saveSnapshot();
     await vi.advanceTimersByTimeAsync(1_000);
 
-    expect(rows.has("old-slug")).toBe(false);
-    expect(upserts.some((u) => u.slug === "old-slug" && "ydoc_state" in u)).toBe(false);
-
-    await provider.destroy();
+    try {
+      expect(rows.has("old-slug")).toBe(false);
+      expect(upserts.some((u) => u.slug === "old-slug" && "ydoc_state" in u)).toBe(false);
+    } catch (assertionErr) {
+      // Persist diagnostics as CI artifacts so failures are debuggable.
+      try {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const outDir = path.resolve(process.cwd(), "test-results", "rename-race-api");
+        fs.mkdirSync(outDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(outDir, "db-snapshot.json"),
+          JSON.stringify({ rows: Array.from(rows.entries()), upserts }, null, 2),
+        );
+        fs.writeFileSync(path.join(outDir, "provider.log"), providerLogs.join("\n"));
+      } catch {
+        /* best-effort */
+      }
+      throw assertionErr;
+    } finally {
+      console.warn = origWarn;
+      await provider.destroy();
+    }
   });
 });
