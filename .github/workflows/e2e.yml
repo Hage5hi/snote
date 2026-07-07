@@ -101,6 +101,7 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
       - name: Upload wheel replay diagnostics (out-dir)
+        id: upload-wheel-replay
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -108,3 +109,22 @@ jobs:
           path: test-results/wheel-replay/
           retention-days: 14
           if-no-files-found: ignore
+      # Emit a job-summary section that links directly to the uploaded wheel
+      # replay artifact for this matrix run so reviewers can jump straight to
+      # the diagnostics + trace zips without hunting through the artifacts UI.
+      - name: Link wheel replay artifacts in job summary
+        if: always()
+        env:
+          ARTIFACT_NAME: wheel-replay-${{ matrix.browser }}-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          ARTIFACT_URL: ${{ steps.upload-wheel-replay.outputs.artifact-url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          {
+            echo "### Wheel replay diagnostics — ${{ matrix.browser }} (retries=${PLAYWRIGHT_RETRIES})"
+            if [ -n "${ARTIFACT_URL}" ]; then
+              echo "- Artifact: [${ARTIFACT_NAME}](${ARTIFACT_URL})"
+            else
+              echo "- Artifact: \`${ARTIFACT_NAME}\` (see [run artifacts](${RUN_URL}#artifacts))"
+            fi
+            echo "- Contents: \`test-results/wheel-replay/<project>-r<retries>/\` (manifest.json, replay-result.json, wheel-deltas.jsonl, selection-frames.jsonl, scroller.png, trace.zip)"
+          } >> "$GITHUB_STEP_SUMMARY"

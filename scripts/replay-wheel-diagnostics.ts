@@ -50,7 +50,7 @@ type SelectionDragSample = {
 };
 
 function usage(): never {
-  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs] [--resume]");
+  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs] [--resume] [--verify-manifest]");
   process.exit(2);
 }
 
@@ -69,6 +69,7 @@ export function parseArgs(argv: string[]) {
     dryRun: false,
     listOutputs: false,
     resume: process.env.WHEEL_REPLAY_RESUME === "1",
+    verifyManifest: false,
   };
   let outDirSet = !!process.env.WHEEL_REPLAY_OUT_DIR;
   for (const a of argv) {
@@ -79,6 +80,7 @@ export function parseArgs(argv: string[]) {
     else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--list-outputs" || a === "--list-artifacts") args.listOutputs = true;
     else if (a === "--resume" || a === "--idempotent") args.resume = true;
+    else if (a === "--verify-manifest") args.verifyManifest = true;
     else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
     else if (a.startsWith("--retries=")) args.retries = a.slice("--retries=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
@@ -212,8 +214,85 @@ function selectionDidNotAdvance(before: SelectionRangeFrame, after: SelectionRan
   return after.rangeCount > 0 && after.textLength > 0 && after.signature === before.signature;
 }
 
+/** Given `--resume`, split the expected outputs into files already present
+ *  (which will be preserved) and files still to generate. Exported for tests. */
+export function planResumeOutputs(
+  outDir: string,
+  args: Pick<ReplayArgs, "trace" | "extraTraces" | "retries">,
+): { existing: string[]; missing: string[] } {
+  const existing: string[] = [];
+  const missing: string[] = [];
+  for (const name of expectedOutputs(args)) {
+    (existsSync(join(outDir, name)) ? existing : missing).push(name);
+  }
+  return { existing, missing };
+}
+
+/** Cheap ZIP integrity check: verifies the local-file-header magic (`PK\x03\x04`)
+ *  and the end-of-central-directory record (`PK\x05\x06`). Playwright trace
+ *  zips that are truncated or empty fail one of these checks. */
+export function verifyZipIntegrity(path: string): { ok: boolean; error?: string } {
+  try {
+    const stat = statSync(path);
+    if (stat.size < 22) return { ok: false, error: `too small (${stat.size} bytes)` };
+    const buf = readFileSync(path);
+    if (!(buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04)) {
+      return { ok: false, error: "missing ZIP local-file-header signature (PK\\x03\\x04)" };
+    }
+    // Scan the trailing 64KB for the end-of-central-directory record.
+    const tailStart = Math.max(0, buf.length - (0xffff + 22));
+    for (let i = buf.length - 22; i >= tailStart; i--) {
+      if (buf[i] === 0x50 && buf[i + 1] === 0x4b && buf[i + 2] === 0x05 && buf[i + 3] === 0x06) {
+        return { ok: true };
+      }
+    }
+    return { ok: false, error: "missing end-of-central-directory record (PK\\x05\\x06)" };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+type ManifestEntry = { name: string; path: string; size: number | null; generatedAt: string | null; present: boolean };
+type Manifest = { artifacts: ManifestEntry[] };
+
+/** Verify an out-dir against its manifest.json. Fails if the manifest is
+ *  missing, any listed artifact is absent, its size disagrees, or (for
+ *  .zip artifacts) the zip fails an integrity check. */
+export function verifyManifest(outDir: string): { ok: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const manifestPath = join(outDir, "manifest.json");
+  if (!existsSync(manifestPath)) return { ok: false, errors: [`manifest.json not found in ${outDir}`] };
+  let manifest: Manifest;
+  try { manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as Manifest; }
+  catch (e) { return { ok: false, errors: [`manifest.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}`] }; }
+  if (!Array.isArray(manifest.artifacts)) return { ok: false, errors: ["manifest.artifacts: expected array"] };
+  for (const entry of manifest.artifacts) {
+    const p = entry.path || join(outDir, entry.name);
+    if (!existsSync(p)) { errors.push(`missing: ${entry.name} (expected at ${p})`); continue; }
+    const actual = statSync(p).size;
+    if (entry.size != null && actual !== entry.size) {
+      errors.push(`size mismatch: ${entry.name} manifest=${entry.size} actual=${actual}`);
+    }
+    if (entry.name.endsWith(".zip")) {
+      const z = verifyZipIntegrity(p);
+      if (!z.ok) errors.push(`corrupt zip: ${entry.name} — ${z.error}`);
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv);
+  if (args.verifyManifest) {
+    const res = verifyManifest(args.outDir);
+    if (!res.ok) {
+      console.error(`✖ manifest verification failed for ${args.outDir}:`);
+      for (const err of res.errors) console.error(`  - ${err}`);
+      return 4;
+    }
+    console.log(`✔ manifest verified: ${args.outDir}`);
+    return 0;
+  }
   if (!existsSync(args.path)) throw new Error(`diagnostics file not found: ${args.path}`);
   let parsed: unknown;
   try { parsed = JSON.parse(readFileSync(args.path, "utf8")); }
@@ -369,6 +448,11 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   if (args.trace) {
     if (args.resume && existsSync(tracePath)) { console.log(`resume: skip existing ${tracePath}`); await context.tracing.stop().catch(() => undefined); }
     else await context.tracing.stop({ path: tracePath });
+    const z = verifyZipIntegrity(tracePath);
+    if (!z.ok) {
+      await browser.close();
+      throw new Error(`trace.zip failed integrity check: ${z.error}`);
+    }
   }
   await browser.close();
 
@@ -391,6 +475,8 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
       if (!(args.resume && existsSync(perRetry))) {
         try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
       }
+      const z = verifyZipIntegrity(perRetry);
+      if (!z.ok) throw new Error(`${perRetryName} failed integrity check: ${z.error}`);
       artifactList.push(perRetryName);
     }
   }

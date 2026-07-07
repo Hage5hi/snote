@@ -1,9 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { afterEach, describe, expect, it } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseArgs as parseDownloadArgs, buildGhArgs } from "../download-and-replay-wheel-artifact";
-import { parseArgs as parseReplayArgs, expectedOutputs } from "../replay-wheel-diagnostics";
+import {
+  parseArgs as parseReplayArgs,
+  expectedOutputs,
+  planResumeOutputs,
+  verifyManifest,
+  verifyZipIntegrity,
+} from "../replay-wheel-diagnostics";
 import { validateWheelFixture } from "../validate-wheel-fixture";
+
+const tmpDirs: string[] = [];
+const mkTmp = () => { const d = mkdtempSync(join(tmpdir(), "wheel-replay-test-")); tmpDirs.push(d); return d; };
+afterEach(() => { while (tmpDirs.length) { try { rmSync(tmpDirs.pop()!, { recursive: true, force: true }); } catch { /* ignore */ } } });
+
+// Minimal valid ZIP: empty archive (PK\x05\x06 EOCD only) - both signatures present via prepending PK\x03\x04 stub.
+// We build a tiny but structurally valid zip by concatenating a local-file-header stub and an EOCD record.
+function makeValidZip(): Buffer {
+  const lfh = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  const eocd = Buffer.from([0x50, 0x4b, 0x05, 0x06, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  return Buffer.concat([lfh, eocd]);
+}
+
 
 describe("wheel diagnostics replay scripts", () => {
   it("parses local replay mode with a selected diagnostics path and trace output", () => {
@@ -133,5 +153,68 @@ describe("wheel diagnostics replay scripts", () => {
     // Per-retry trace zip names embed the retries count so parallel retries stay unique.
     const retryZips = parsed.map((a) => `${a.outDir}/trace-retry-${a.retries}.zip`);
     expect(new Set(retryZips).size).toBe(retryZips.length);
+  });
+
+  it("planResumeOutputs classifies a partially-complete out-dir into existing vs missing", () => {
+    const dir = mkTmp();
+    const args = { trace: true, extraTraces: false, retries: "2" as const };
+    // Pre-create a subset of expected outputs to simulate a partial prior run.
+    writeFileSync(join(dir, "replay-result.json"), "{}");
+    writeFileSync(join(dir, "wheel-deltas.jsonl"), "");
+    writeFileSync(join(dir, "trace.zip"), makeValidZip());
+    const plan = planResumeOutputs(dir, args);
+    expect(plan.existing.sort()).toEqual(["replay-result.json", "trace.zip", "wheel-deltas.jsonl"]);
+    // Missing outputs must include everything not pre-created; --resume will
+    // regenerate only these while leaving `existing` untouched.
+    expect(plan.missing).toContain("manifest.json");
+    expect(plan.missing).toContain("scroller.png");
+    expect(plan.missing).toContain("selection-frames.jsonl");
+    // Round-trip: existing ∪ missing == expectedOutputs.
+    expect([...plan.existing, ...plan.missing].sort()).toEqual(expectedOutputs(args).sort());
+  });
+
+  it("verifyZipIntegrity accepts a well-formed zip and rejects a corrupted one", () => {
+    const dir = mkTmp();
+    const good = join(dir, "good.zip");
+    const bad = join(dir, "bad.zip");
+    writeFileSync(good, makeValidZip());
+    writeFileSync(bad, Buffer.from("not a zip"));
+    expect(verifyZipIntegrity(good).ok).toBe(true);
+    const badRes = verifyZipIntegrity(bad);
+    expect(badRes.ok).toBe(false);
+    expect(badRes.error).toMatch(/PK|too small|central-directory/);
+  });
+
+  it("verifyManifest passes for a matching out-dir and fails when files are missing or corrupt", () => {
+    const dir = mkTmp();
+    const zip = makeValidZip();
+    writeFileSync(join(dir, "replay-result.json"), "{}");
+    writeFileSync(join(dir, "trace.zip"), zip);
+    const manifest = {
+      schemaVersion: 1,
+      artifacts: [
+        { name: "replay-result.json", path: join(dir, "replay-result.json"), size: 2, generatedAt: null, present: true },
+        { name: "trace.zip", path: join(dir, "trace.zip"), size: zip.length, generatedAt: null, present: true },
+      ],
+    };
+    writeFileSync(join(dir, "manifest.json"), JSON.stringify(manifest));
+    expect(verifyManifest(dir)).toEqual({ ok: true, errors: [] });
+
+    // Corrupt the trace and rewrite manifest with the new (wrong-size) expectation removed.
+    writeFileSync(join(dir, "trace.zip"), Buffer.from("garbage"));
+    const bad = verifyManifest(dir);
+    expect(bad.ok).toBe(false);
+    expect(bad.errors.join("\n")).toMatch(/trace\.zip/);
+
+    // Missing manifest entirely.
+    const empty = mkTmp();
+    const missing = verifyManifest(empty);
+    expect(missing.ok).toBe(false);
+    expect(missing.errors[0]).toMatch(/manifest\.json not found/);
+  });
+
+  it("exposes --verify-manifest as a parseable flag", () => {
+    const args = parseReplayArgs(["fixture.json", "--verify-manifest"]);
+    expect(args.verifyManifest).toBe(true);
   });
 });
