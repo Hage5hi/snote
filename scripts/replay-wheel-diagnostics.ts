@@ -50,7 +50,7 @@ type SelectionDragSample = {
 };
 
 function usage(): never {
-  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed]");
+  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs]");
   process.exit(2);
 }
 
@@ -66,6 +66,8 @@ export function parseArgs(argv: string[]) {
     headed: process.env.HEADED === "1",
     trace: process.env.PLAYWRIGHT_TRACE !== "0",
     extraTraces: process.env.WHEEL_REPLAY_EXTRA_TRACES === "1",
+    dryRun: false,
+    listOutputs: false,
   };
   let outDirSet = !!process.env.WHEEL_REPLAY_OUT_DIR;
   for (const a of argv) {
@@ -73,6 +75,8 @@ export function parseArgs(argv: string[]) {
     else if (a === "--no-trace" || a === "--trace=off") args.trace = false;
     else if (a === "--trace=on") args.trace = true;
     else if (a === "--extra-traces" || a === "--trace-notes") args.extraTraces = true;
+    else if (a === "--dry-run") args.dryRun = true;
+    else if (a === "--list-outputs" || a === "--list-artifacts") args.listOutputs = true;
     else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
     else if (a.startsWith("--retries=")) args.retries = a.slice("--retries=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
