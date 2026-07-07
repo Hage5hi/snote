@@ -115,6 +115,85 @@ declare global {
   }
 }
 
+/** Runtime schema (Zod-compatible surface without adding a dep) plus JSON
+ *  Schema (draft-07) for {@link PwaReadinessInvalidEventDetail}. Consumers
+ *  can use `PwaReadinessInvalidEventDetailSchema.parse(v)` in tests / at
+ *  runtime, or feed the JSON Schema to any generic validator (ajv, etc.). */
+export const PwaReadinessInvalidEventDetailJsonSchema = {
+  $schema: "http://json-schema.org/draft-07/schema#",
+  $id: "https://snote.lovable.app/schemas/pwa-readiness-invalid-event-detail.json",
+  title: "PwaReadinessInvalidEventDetail",
+  type: "object",
+  required: ["field", "path", "reason", "received"],
+  additionalProperties: false,
+  properties: {
+    field: { type: "string", minLength: 1 },
+    path: { type: "string", minLength: 1 },
+    reason: { type: "string", minLength: 1 },
+    received: { type: "string" },
+  },
+} as const;
+
+export const PwaReadinessInvalidEventDetailSchema = {
+  parse(v: unknown): PwaReadinessInvalidEventDetail {
+    if (!v || typeof v !== "object")
+      throw new TypeError("PwaReadinessInvalidEventDetail: not an object");
+    const o = v as Record<string, unknown>;
+    for (const k of ["field", "path", "reason"] as const) {
+      if (typeof o[k] !== "string" || (o[k] as string).length === 0)
+        throw new TypeError(`PwaReadinessInvalidEventDetail: invalid ${k}`);
+    }
+    if (typeof o.received !== "string")
+      throw new TypeError("PwaReadinessInvalidEventDetail: invalid received");
+    if (o.field !== o.path)
+      throw new TypeError("PwaReadinessInvalidEventDetail: path must equal field");
+    return v as PwaReadinessInvalidEventDetail;
+  },
+  safeParse(v: unknown): { success: true; data: PwaReadinessInvalidEventDetail } | { success: false; error: Error } {
+    try {
+      return { success: true, data: this.parse(v) };
+    } catch (e) {
+      return { success: false, error: e instanceof Error ? e : new Error(String(e)) };
+    }
+  },
+} as const;
+
+/** Optional production-safe reporter. Samples events at the given rate
+ *  (0..1) and forwards them to a user-supplied sink (analytics, logger).
+ *  No-op if window is unavailable. Returns unsubscribe. */
+export function installPwaReadinessInvalidReporter(opts: {
+  sampleRate?: number;
+  sink?: (detail: PwaReadinessInvalidEventDetail) => void;
+  rng?: () => number;
+} = {}): () => void {
+  if (typeof window === "undefined") return () => {};
+  const rate = Math.max(0, Math.min(1, opts.sampleRate ?? 0.01));
+  const rng = opts.rng ?? Math.random;
+  const sink =
+    opts.sink ??
+    ((detail) => {
+      try {
+        // eslint-disable-next-line no-console
+        console.warn("[pwa-readiness-invalid]", detail);
+      } catch {
+        /* ignore */
+      }
+    });
+  const handler = (e: PwaReadinessInvalidEvent) => {
+    if (rate <= 0) return;
+    if (rate < 1 && rng() >= rate) return;
+    const parsed = PwaReadinessInvalidEventDetailSchema.safeParse(e.detail);
+    if (!parsed.success) return;
+    try {
+      sink(parsed.data);
+    } catch {
+      /* sink must never throw */
+    }
+  };
+  window.addEventListener(PWA_READINESS_INVALID_EVENT, handler);
+  return () => window.removeEventListener(PWA_READINESS_INVALID_EVENT, handler);
+}
+
 /** Install the validator on window so E2E can call the exact same check. */
 export function exposeReadinessValidatorForE2E(): void {
   if (typeof window === "undefined") return;

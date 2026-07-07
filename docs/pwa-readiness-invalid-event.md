@@ -88,13 +88,48 @@ window.removeEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
 `field` and `path` are always equal; `path` exists as a stable alias for
 QA tooling that groups reasons by dot-path.
 
+## Production-safe reporter (sampled)
+
+`installPwaReadinessInvalidReporter` wires the event to any analytics/log
+sink with a sample rate so real-world failures are trackable without spam:
+
+```ts
+import { installPwaReadinessInvalidReporter } from "@/lib/pwa-update-readiness";
+
+const off = installPwaReadinessInvalidReporter({
+  sampleRate: 0.05, // 5%
+  sink: (detail) => analytics.track("pwa_readiness_invalid", detail),
+});
+// off() to detach.
+```
+
+The reporter validates each payload against
+`PwaReadinessInvalidEventDetailSchema` before forwarding, and never lets a
+throwing sink escape into app code.
+
+## JSON Schema / typed schema for payload
+
+`PwaReadinessInvalidEventDetailJsonSchema` (draft-07) and
+`PwaReadinessInvalidEventDetailSchema.parse` / `.safeParse` are exported
+from `@/lib/pwa-update-readiness` for runtime + test payload validation.
+
+## Dedupe guarantee
+
+The debug panel keys emissions by the raw readiness state (JSON hash) and
+by the invalid signature, so an unchanged malformed state emits
+`snote:pwa-readiness-invalid` **once**, not once per 500 ms poll tick.
+Changing the state to a new invalid signature emits again.
+
 ## Related tests
 
-- Unit: `src/lib/__tests__/pwa-update-readiness.test.ts`
+- Unit: `src/lib/__tests__/pwa-update-readiness.test.ts`,
+  `src/lib/__tests__/pwa-readiness-invalid-event-schema.test.ts`
 - Integration: `src/lib/__tests__/pwa-readiness-invalid-event.test.ts`,
   `src/lib/__tests__/pwa-readiness-invalid-edge-fields.test.ts`,
   `src/lib/__tests__/pwa-readiness-invalid-event-batch.test.ts`
 - E2E: `e2e/pwa-readiness-invalid-event.spec.ts`,
   `e2e/pwa-readiness-invalid-event-order.spec.ts`,
-  `e2e/pwa-readiness-invalid-event-not-emitted-when-valid.spec.ts`
+  `e2e/pwa-readiness-invalid-event-not-emitted-when-valid.spec.ts`,
+  `e2e/pwa-readiness-invalid-single-emit-per-cycle.spec.ts`
+
 

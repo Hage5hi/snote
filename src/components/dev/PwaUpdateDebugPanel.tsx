@@ -5,11 +5,13 @@
 // Not shown in production builds and not shown in Lovable preview (the pwa
 // updater short-circuits there anyway, so the state never populates).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   emitPwaReadinessInvalidEvent,
+  explainPwaReadinessState,
   exposeReadinessValidatorForE2E,
   validatePwaReadinessState,
+  type PwaReadinessInvalidReason,
   type PwaUpdateReadinessState,
 } from "@/lib/pwa-update-readiness";
 
@@ -17,7 +19,10 @@ type PwaUpdateDebugState = PwaUpdateReadinessState;
 
 export function PwaUpdateDebugPanel() {
   const [state, setState] = useState<PwaUpdateDebugState | null>(null);
+  const [invalid, setInvalid] = useState<PwaReadinessInvalidReason | null>(null);
   const [collapsed, setCollapsed] = useState(true);
+  const lastEmitKey = useRef<string | null>(null);
+  const lastRawKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -28,18 +33,40 @@ export function PwaUpdateDebugPanel() {
         raw = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__;
       } catch {
         setState(null);
+        setInvalid(null);
         return;
       }
+      // Dedupe: only re-process when the raw state actually changes so we
+      // don't spam `snote:pwa-readiness-invalid` every 500ms poll tick.
+      let rawKey: string;
+      try {
+        rawKey = raw === undefined ? "\0undef" : JSON.stringify(raw) ?? "\0nonjson";
+      } catch {
+        rawKey = "\0circular";
+      }
+      if (rawKey === lastRawKey.current) return;
+      lastRawKey.current = rawKey;
+
       try {
         if (validatePwaReadinessState(raw)) {
+          lastEmitKey.current = null;
+          setInvalid(null);
           setState(raw);
         } else {
-          if (raw !== undefined && raw !== null) emitPwaReadinessInvalidEvent(raw);
+          const reason = raw !== undefined && raw !== null ? explainPwaReadinessState(raw) : null;
+          if (reason) {
+            const key = `${reason.field}|${reason.reason}|${reason.received}`;
+            if (key !== lastEmitKey.current) {
+              lastEmitKey.current = key;
+              emitPwaReadinessInvalidEvent(raw);
+            }
+          } else {
+            lastEmitKey.current = null;
+          }
+          setInvalid(reason);
           setState(null);
         }
       } catch {
-        // Validator/emit must never crash the panel. Emit a synthetic
-        // invalid event so QA still sees the rejection.
         try {
           window.dispatchEvent(
             new CustomEvent("snote:pwa-readiness-invalid", {
@@ -49,6 +76,7 @@ export function PwaUpdateDebugPanel() {
         } catch {
           /* ignore */
         }
+        setInvalid({ field: "<root>", path: "<root>", reason: "validator-threw", received: typeof raw });
         setState(null);
       }
     };
@@ -57,9 +85,8 @@ export function PwaUpdateDebugPanel() {
     return () => window.clearInterval(id);
   }, []);
 
-
-
-  if (!import.meta.env.DEV || !state) return null;
+  if (!import.meta.env.DEV) return null;
+  if (!state && !invalid) return null;
 
   const style: React.CSSProperties = {
     position: "fixed",
@@ -75,6 +102,28 @@ export function PwaUpdateDebugPanel() {
     pointerEvents: "auto",
   };
 
+  if (invalid) {
+    return (
+      <div style={style} data-pwa-debug-panel="invalid" data-invalid-field={invalid.field}>
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          style={{ background: "transparent", color: "#f88", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
+        >
+          [pwa] invalid readiness ⚠ {collapsed ? "▸" : "▾"}
+        </button>
+        {!collapsed && (
+          <ol style={{ margin: "4px 0 0", paddingLeft: 16, opacity: 0.9 }}>
+            <li data-invalid-row="0">
+              <code>{invalid.path}</code>: {invalid.reason}{" "}
+              <span style={{ opacity: 0.7 }}>(received: {invalid.received})</span>
+            </li>
+          </ol>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={style} data-pwa-debug-panel="true">
       <button
@@ -82,16 +131,16 @@ export function PwaUpdateDebugPanel() {
         onClick={() => setCollapsed((c) => !c)}
         style={{ background: "transparent", color: "#fff", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
       >
-        [pwa] {state.currentBuildId} → {state.pendingBuildId ?? "—"} {state.updateAvailable ? "●" : ""} {collapsed ? "▸" : "▾"}
+        [pwa] {state!.currentBuildId} → {state!.pendingBuildId ?? "—"} {state!.updateAvailable ? "●" : ""} {collapsed ? "▸" : "▾"}
       </button>
       {!collapsed && (
         <div style={{ marginTop: 4, opacity: 0.85 }}>
-          <div>current: {state.currentBuildId}</div>
-          <div>pending: {state.pendingBuildId ?? "—"}</div>
-          <div>strategy: {state.reloadStrategy ?? "—"}</div>
-          <div>attempts: {state.reloadAttemptCount}</div>
-          <div>last remote: {state.lastRemoteBuildId ?? "—"}</div>
-          <div>inProgress: {String(state.updateInProgress)}</div>
+          <div>current: {state!.currentBuildId}</div>
+          <div>pending: {state!.pendingBuildId ?? "—"}</div>
+          <div>strategy: {state!.reloadStrategy ?? "—"}</div>
+          <div>attempts: {state!.reloadAttemptCount}</div>
+          <div>last remote: {state!.lastRemoteBuildId ?? "—"}</div>
+          <div>inProgress: {String(state!.updateInProgress)}</div>
         </div>
       )}
     </div>
