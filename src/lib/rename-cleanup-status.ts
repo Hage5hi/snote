@@ -1,6 +1,40 @@
+import { z } from "zod";
 import { supabase } from "@/integrations/supabase/client";
 import { isDocCached } from "@/lib/yjs/doc-cache";
 import { isProviderSlugAbandoned } from "@/lib/yjs/provider";
+
+const OldSlugRowSnapshotSchema = z
+  .object({
+    slug: z.string(),
+    char_count: z.number().nullable(),
+    updated_at: z.string().nullable(),
+    ydoc_state_len: z.number(),
+    content_len: z.number(),
+  })
+  .nullable();
+
+const OldSlugCleanupSignalsPartialSchema = z
+  .object({
+    providerAbandoned: z.boolean().optional(),
+    docCacheWarm: z.boolean().optional(),
+    sessionSnapshotPresent: z.boolean().optional(),
+    indexedDbCleared: z.boolean().optional(),
+    cleanupStartedAt: z.number().nullable().optional(),
+    indexedDbClearedAt: z.number().nullable().optional(),
+    snapshotsClearedAt: z.number().nullable().optional(),
+  })
+  .passthrough();
+
+export const OldSlugCleanupStatusSchema = z.object({
+  slug: z.string(),
+  source: z.enum(["edge-function", "direct-db-fallback"]),
+  database: z.object({
+    rowPresent: z.boolean(),
+    row: OldSlugRowSnapshotSchema,
+  }),
+  clientSignals: OldSlugCleanupSignalsPartialSchema,
+  cleaned: z.boolean(),
+});
 
 export type OldSlugRowSnapshot = {
   slug: string;
