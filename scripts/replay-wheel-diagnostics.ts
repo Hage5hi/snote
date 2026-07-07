@@ -475,6 +475,8 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
       if (!(args.resume && existsSync(perRetry))) {
         try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
       }
+      const z = verifyZipIntegrity(perRetry);
+      if (!z.ok) throw new Error(`${perRetryName} failed integrity check: ${z.error}`);
       artifactList.push(perRetryName);
     }
   }
