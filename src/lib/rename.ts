@@ -42,7 +42,7 @@ export async function getSlugDeletionSnapshot(slug: string): Promise<SlugDeletio
 
 export async function waitForSlugDeletionConfirmed(
   slug: string,
-  opts: { timeoutMs?: number; intervalMs?: number } = {},
+  opts: { timeoutMs?: number; intervalMs?: number; onPresent?: (snapshot: NonNullable<SlugDeletionSnapshot>) => Promise<void> | void } = {},
 ): Promise<{ deleted: boolean; snapshot: SlugDeletionSnapshot }> {
   const timeoutMs = opts.timeoutMs ?? Math.max(getSnapshotDebounceMs() + 1_000, 2_000);
   const intervalMs = opts.intervalMs ?? 150;
@@ -50,9 +50,10 @@ export async function waitForSlugDeletionConfirmed(
   let snapshot: SlugDeletionSnapshot = null;
   while (Date.now() <= deadline) {
     snapshot = await getSlugDeletionSnapshot(slug);
-    if (!snapshot) return { deleted: true, snapshot: null };
+    if (snapshot) await opts.onPresent?.(snapshot);
     await wait(intervalMs);
   }
+  snapshot = await getSlugDeletionSnapshot(slug);
   return { deleted: false, snapshot };
 }
 
@@ -187,7 +188,11 @@ export async function finalizeRename(
   renamePinned(oldSlug, newSlug);
   renameShareToken(oldSlug, newSlug);
 
-  const { deleted } = await waitForSlugDeletionConfirmed(oldSlug, { timeoutMs: 1_000, intervalMs: 150 });
+  const { deleted } = await waitForSlugDeletionConfirmed(oldSlug, {
+    timeoutMs: Math.max(getSnapshotDebounceMs() + 500, 1_000),
+    intervalMs: 150,
+    onPresent: del,
+  });
   return { deletionConfirmed: deleted };
 }
 
