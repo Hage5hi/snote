@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RenameDialog } from "../RenameDialog";
 
 const mocks = vi.hoisted(() => ({
@@ -56,16 +56,11 @@ function renderDialog() {
 
 describe("RenameDialog", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
     mocks.navigate.mockReset();
     mocks.toast.mockReset();
     mocks.prepareRename.mockResolvedValue(undefined);
     mocks.finalizeRename.mockResolvedValue({ deletionConfirmed: false });
     mocks.maybeSingle.mockReset();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("re-checks old slug deletion after finalize before showing a success toast", async () => {
@@ -78,11 +73,9 @@ describe("RenameDialog", () => {
     fireEvent.change(screen.getByPlaceholderText("rename.placeholder"), {
       target: { value: "new-slug" },
     });
-    await vi.advanceTimersByTimeAsync(350);
     await waitFor(() => expect(screen.getByRole("button", { name: "rename.submit" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "rename.submit" }));
 
-    await vi.advanceTimersByTimeAsync(1_500);
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
 
     expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
