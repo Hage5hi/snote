@@ -732,13 +732,35 @@ PLAYWRIGHT_PROJECT=chromium RETRIES=0 ./scripts/run-wheel-e2e.sh
 bun run test:e2e:replay:wheel:fixture
 ```
 
-The replay writes `test-results/wheel-replay/replay-result.json` (the
-observed `before`/`after` `scrollTop` per delta),
-`wheel-deltas.jsonl`, `selection-frames.jsonl`, a fresh `scroller.png`,
-and `trace.zip` for inspection with `bunx playwright show-trace`.
-`replay-result.json` includes the first replayed wheel `stuckFrame`, the
-first `selectionStuckFrame`, and the source artifact's stuck-frame marker
-so you can compare the CI failure with the local reproduction.
+The replay writes into `test-results/wheel-replay/<project>-r<retries>/`
+by default so concurrent matrix runs never overwrite each other's output.
+
+### `replay-wheel-diagnostics.ts` flags
+
+| Flag | Env fallback | Default | Purpose |
+|---|---|---|---|
+| `<path>` (positional) | — | required | Path to `wheel-diagnostics.json` |
+| `--project=<name>` | `PLAYWRIGHT_PROJECT` | `chromium` | `chromium` \| `firefox` \| `webkit` |
+| `--retries=<n>` | `RETRIES` | `0` | Included in default `--out-dir` and trace filenames |
+| `--base-url=<url>` | `PLAYWRIGHT_BASE_URL` | `http://localhost:8080` | Origin serving the long-note fixture |
+| `--out-dir=<dir>` | `WHEEL_REPLAY_OUT_DIR` | `test-results/wheel-replay/<project>-r<retries>` | Where all replay artifacts land |
+| `--trace=on\|off`, `--no-trace` | `PLAYWRIGHT_TRACE=0` disables | `on` | Enable `context.tracing` |
+| `--extra-traces`, `--trace-notes` | `WHEEL_REPLAY_EXTRA_TRACES=1` | off | Also emit `trace-notes.json` and `trace-retry-<retries>.zip` |
+| `--headed` | `HEADED=1` | off | Run non-headless for local debugging |
+
+### Output artifacts (in `--out-dir`)
+
+| File | Contents |
+|---|---|
+| `replay-result.json` | Per-delta `before`/`after` scrollTop, `stuckFrame`, `selectionStuckFrame`, source stuck-frame markers, `project`, `retries` |
+| `wheel-deltas.jsonl` | One JSON row per observed wheel delta |
+| `selection-frames.jsonl` | One JSON row per observed selection-drag sample |
+| `scroller.png` | Final screenshot of the `.cm-scroller` |
+| `trace.zip` | Playwright trace (when `--trace=on`) — open with `bunx playwright show-trace` |
+| `trace-notes.json` | Only with `--extra-traces`: source, project, retries, stuck frames, artifact list |
+| `trace-retry-<retries>.zip` | Only with `--extra-traces`: per-retry copy of `trace.zip` |
+
+
 
 ## pretty-index.json CI failure diagnostics
 
