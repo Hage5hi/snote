@@ -6,16 +6,13 @@
 // updater short-circuits there anyway, so the state never populates).
 
 import { useEffect, useState } from "react";
+import {
+  exposeReadinessValidatorForE2E,
+  validatePwaReadinessState,
+  type PwaUpdateReadinessState,
+} from "@/lib/pwa-update-readiness";
 
-type PwaUpdateDebugState = {
-  currentBuildId: string;
-  pendingBuildId: string | null;
-  updateAvailable: boolean;
-  updateInProgress: boolean;
-  reloadAttemptCount: number;
-  reloadStrategy: "waiting-sw" | "hard" | null;
-  lastRemoteBuildId?: string | null;
-};
+type PwaUpdateDebugState = PwaUpdateReadinessState;
 
 export function PwaUpdateDebugPanel() {
   const [state, setState] = useState<PwaUpdateDebugState | null>(null);
@@ -23,8 +20,10 @@ export function PwaUpdateDebugPanel() {
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
+    exposeReadinessValidatorForE2E();
     const read = () => {
-      setState((window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: PwaUpdateDebugState }).__SNOTE_PWA_UPDATE_STATE__ ?? null);
+      const raw = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__;
+      setState(validatePwaReadinessState(raw) ? raw : null);
     };
     read();
     const id = window.setInterval(read, 500);
