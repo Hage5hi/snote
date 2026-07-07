@@ -33,8 +33,20 @@ type WheelDiagnostics = {
   test?: string;
   project?: string;
   note?: { lineCount?: number };
+  stuckFrame?: unknown;
+  selectionStuckFrame?: SelectionDragSample | null;
   replay?: Delta[];
   wheelSamples?: Array<Delta & { before?: number; after?: number }>;
+  selectionDragSamples?: SelectionDragSample[];
+};
+
+type SelectionDragSample = {
+  i: number;
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  t?: number;
 };
 
 function usage(): never {
@@ -117,6 +129,10 @@ function findStuckFrame(observed: ObservedDelta[]): ObservedDelta | null {
   return observed.find((o) => o.dy !== 0 && o.before === o.after) ?? null;
 }
 
+function selectionDidNotAdvance(before: SelectionRangeFrame, after: SelectionRangeFrame): boolean {
+  return after.rangeCount > 0 && after.textLength > 0 && after.signature === before.signature;
+}
+
 export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv);
   if (!existsSync(args.path)) throw new Error(`diagnostics file not found: ${args.path}`);
@@ -125,7 +141,10 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
     console.warn(`wheel-diagnostics schemaVersion ${diagnostics.schemaVersion} is newer than this replay script (${SUPPORTED_SCHEMA_VERSION}); replaying compatible fields only`);
   }
   const deltas = getDeltas(diagnostics);
-  if (deltas.length === 0) throw new Error("wheel-diagnostics.json contains no replay or wheelSamples deltas");
+  const selectionDeltas = diagnostics.selectionDragSamples ?? [];
+  if (deltas.length === 0 && selectionDeltas.length === 0) {
+    throw new Error("wheel-diagnostics.json contains no replay, wheelSamples, or selectionDragSamples deltas");
+  }
 
   const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
   const browserType = browserTypes[args.project];
@@ -168,20 +187,56 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
     console.log(`[wheel-replay] #${row.i} dx=${row.dx} dy=${row.dy} scrollTop=${before}->${after}${row.stuck ? " STUCK" : ""} selection=${afterRange.signature}`);
   }
 
+  const observedSelection: Array<SelectionDragSample & {
+    replayTimestampMs: number;
+    beforeScrollTop: number;
+    afterScrollTop: number;
+    beforeRange: SelectionRangeFrame;
+    afterRange: SelectionRangeFrame;
+    stuck: boolean;
+  }> = [];
+  if (selectionDeltas.length) {
+    await scroller.evaluate((el) => { el.scrollTop = 0; });
+    await page.mouse.move(box.x + 40, box.y + 40);
+    await page.mouse.down();
+    for (let idx = 0; idx < selectionDeltas.length; idx++) {
+      const d = selectionDeltas[idx];
+      const beforeScrollTop = await scroller.evaluate((el) => el.scrollTop);
+      const beforeRange = await getSelectionRangeFrame(page);
+      await page.mouse.move(d.x, d.y, { steps: 2 });
+      const nextT = selectionDeltas[idx + 1]?.t;
+      const waitMs = d.t != null && nextT != null ? Math.max(0, Math.min(1_000, nextT - d.t)) : 30;
+      await page.waitForTimeout(waitMs);
+      const afterScrollTop = await scroller.evaluate((el) => el.scrollTop);
+      const afterRange = await getSelectionRangeFrame(page);
+      const stuck = (d.dx !== 0 || d.dy !== 0) && selectionDidNotAdvance(beforeRange, afterRange);
+      const row = { ...d, replayTimestampMs: Date.now(), beforeScrollTop, afterScrollTop, beforeRange, afterRange, stuck };
+      observedSelection.push(row);
+      console.log(`[selection-replay] #${d.i} dx=${d.dx} dy=${d.dy} scrollTop=${beforeScrollTop}->${afterScrollTop}${stuck ? " STUCK" : ""} selection=${afterRange.signature}`);
+    }
+    await page.mouse.up().catch(() => undefined);
+  }
+
   const stuckFrame = findStuckFrame(observed);
+  const selectionStuckFrame = observedSelection.find((o) => o.stuck) ?? null;
   const result = {
     source: args.path,
     schemaVersion: diagnostics.schemaVersion ?? 0,
     project: args.project,
     retries: process.env.RETRIES ?? "0",
     generatedAt: new Date().toISOString(),
+    sourceStuckFrame: diagnostics.stuckFrame ?? null,
+    sourceSelectionStuckFrame: diagnostics.selectionStuckFrame ?? null,
     stuckFrame,
+    selectionStuckFrame,
     observed,
+    observedSelection,
   };
   const resultPath = join(args.outDir, "replay-result.json");
   const jsonlPath = join(args.outDir, "wheel-deltas.jsonl");
   writeFileSync(resultPath, JSON.stringify(result, null, 2));
   writeFileSync(jsonlPath, observed.map((o) => JSON.stringify(o)).join("\n") + "\n");
+  writeFileSync(join(args.outDir, "selection-frames.jsonl"), observedSelection.map((o) => JSON.stringify(o)).join("\n") + (observedSelection.length ? "\n" : ""));
   await scroller.screenshot({ path: join(args.outDir, "scroller.png") }).catch(() => undefined);
   if (args.trace) await context.tracing.stop({ path: join(args.outDir, "trace.zip") });
   await browser.close();
@@ -189,10 +244,13 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   console.log(`replayed ${observed.length} deltas from ${args.path}`);
   console.log(`wrote ${resultPath}`);
   console.log(`wrote ${jsonlPath}`);
+  console.log(`wrote ${join(args.outDir, "selection-frames.jsonl")}`);
   console.log(`wrote ${join(args.outDir, "scroller.png")}`);
   if (args.trace) console.log(`wrote ${join(args.outDir, "trace.zip")}`);
   if (stuckFrame) console.log(`first stuck frame: #${stuckFrame.i} scrollTop=${stuckFrame.before}`);
-  return stuckFrame ? 1 : 0;
+  if (selectionStuckFrame) console.log(`first selection stuck frame: #${selectionStuckFrame.i} selection=${selectionStuckFrame.afterRange.signature}`);
+  if (diagnostics.selectionStuckFrame && !selectionStuckFrame) console.log("source artifact contains selectionStuckFrame; replay did not reproduce it in this run");
+  return stuckFrame || selectionStuckFrame ? 1 : 0;
 }
 
 if (import.meta.main) {
