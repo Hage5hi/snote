@@ -41,10 +41,12 @@ jobs:
             e2e/pwa-update-debug-panel.spec.ts \
             e2e/pwa-readiness-gate.spec.ts \
             e2e/pwa-readiness-malformed.spec.ts \
+            e2e/pwa-readiness-recovery.spec.ts \
             e2e/pwa-update-full-flow.spec.ts \
             e2e/rename-duplicate-routes-404.spec.ts \
             e2e/rename-duplicate-disabled-shortcuts.spec.ts \
             e2e/rename-duplicate-deep-link-variants.spec.ts \
+            e2e/no-runtime-errors-malformed-and-deeplinks.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}
