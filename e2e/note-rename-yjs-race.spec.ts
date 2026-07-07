@@ -280,7 +280,7 @@ test.describe("note rename Yjs race", () => {
           await staleTab.keyboard.type(` late-${i}`);
 
           await page.waitForTimeout(debounceMs + 1_200);
-          const preStatus = await fetchOldSlugCleanupStatus(page, from).catch((e) => ({ error: String(e) }));
+          const { status: preStatus } = await fetchOldSlugCleanupStatusWithReport(page, from, testInfo, `stress-${i}-pre`);
           console.log("[rename-race][stress] pre-assert cleanup-status", { ...ctx, preStatus });
 
           const lingering = await verifyOldSlugGoneWithRetry(page, from, {
