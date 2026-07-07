@@ -31,6 +31,7 @@ export function PwaUpdateDebugPanel() {
   const [collapsed, setCollapsed] = useState(true);
   const [stats, setStats] = useState<InvalidStats>({ total: 0, lastMinute: 0, lastHour: 0, lastAt: null });
   const invalidTimestamps = useRef<number[]>([]);
+  const invalidTotal = useRef<number>(0);
   const lastEmitKey = useRef<string | null>(null);
   const lastRawKey = useRef<string | null>(null);
 
