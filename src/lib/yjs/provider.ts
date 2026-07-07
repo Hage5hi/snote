@@ -117,6 +117,14 @@ if (typeof window !== "undefined") {
  * tests can tune this reliably across CI and local machines. Default: 800.
  */
 export function getSnapshotDebounceMs(): number {
+  let fromRuntime: string | undefined;
+  if (typeof localStorage !== "undefined") {
+    try {
+      fromRuntime = localStorage.getItem("syrin:yjs-snapshot-debounce-ms") ?? undefined;
+    } catch {
+      fromRuntime = undefined;
+    }
+  }
   const fromVite =
     typeof import.meta !== "undefined" && import.meta.env
       ? (import.meta.env.VITE_YJS_SNAPSHOT_DEBOUNCE_MS as string | undefined)
@@ -125,7 +133,7 @@ export function getSnapshotDebounceMs(): number {
     typeof process !== "undefined" && process.env
       ? process.env.YJS_SNAPSHOT_DEBOUNCE_MS
       : undefined;
-  const raw = fromVite ?? fromNode;
+  const raw = fromRuntime ?? fromVite ?? fromNode;
   const n = raw != null ? Number(raw) : NaN;
   return Number.isFinite(n) && n >= 0 ? n : 800;
 }

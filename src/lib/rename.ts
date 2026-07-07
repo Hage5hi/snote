@@ -12,6 +12,7 @@ import { evictDoc } from "@/lib/yjs/doc-cache";
 import { clearSnapshots } from "@/lib/snapshots";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
+import { recordOldSlugCleanupSignal } from "@/lib/rename-cleanup-status";
 
 export const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -63,6 +64,7 @@ async function clearIndexedDbDoc(slug: string) {
   try {
     const idb = new IndexeddbPersistence(`note:${slug}`, doc);
     await idb.clearData();
+    recordOldSlugCleanupSignal(slug, { indexedDbClearedAt: Date.now() });
   } finally {
     doc.destroy();
   }
@@ -80,13 +82,16 @@ export async function clearSlugLocalCaches(
   oldSlug: string,
   opts: { evictDocCache?: boolean; clearIndexedDb?: boolean } = {},
 ): Promise<void> {
+  recordOldSlugCleanupSignal(oldSlug, { cleanupStartedAt: Date.now() });
   if (opts.evictDocCache !== false) evictDoc(oldSlug);
   try {
     sessionStorage.removeItem(`note-snapshot:${oldSlug}`);
   } catch {
     /* unavailable */
   }
-  const jobs = [withTimeout(clearSnapshots(oldSlug), 750)];
+  const jobs = [withTimeout(clearSnapshots(oldSlug).then(() => {
+    recordOldSlugCleanupSignal(oldSlug, { snapshotsClearedAt: Date.now() });
+  }), 750)];
   if (opts.clearIndexedDb !== false) jobs.push(withTimeout(clearIndexedDbDoc(oldSlug), 750));
   void Promise.allSettled(jobs);
 }

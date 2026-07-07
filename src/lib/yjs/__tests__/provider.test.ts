@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as Y from "yjs";
 import {
   abandonProviderForSlug,
+  getSnapshotDebounceMs,
   registerAbandonedSlugCleanup,
   SupabaseYjsProvider,
   unabandonProviderForSlug,
@@ -141,6 +142,18 @@ describe("SupabaseYjsProvider — rename/unmount cancellation", () => {
 
     expect(upsertCalls).toHaveLength(0);
     await provider.destroy();
+  });
+});
+
+describe("getSnapshotDebounceMs", () => {
+  afterEach(() => {
+    localStorage.removeItem("syrin:yjs-snapshot-debounce-ms");
+  });
+
+  it("accepts a runtime debounce override for E2E stress runs", () => {
+    localStorage.setItem("syrin:yjs-snapshot-debounce-ms", "37");
+
+    expect(getSnapshotDebounceMs()).toBe(37);
   });
 });
 

@@ -6,11 +6,15 @@
 //   - a DB snapshot of the old slug row (so resurrections are trivial to spot)
 //   - Playwright's own trace/video (see playwright.config.ts `retain-on-failure`)
 
-import { test, expect, type Page, type TestInfo } from "@playwright/test";
+import { test, expect, type BrowserContext, type Page, type TestInfo } from "@playwright/test";
 import { deleteNote, seedPlaintextNote, versionedSlug } from "./helpers/seed-note";
-import { snapshotSlugRow, verifyOldSlugGoneFromDbAndUi } from "./helpers/db-assert";
+import { fetchOldSlugCleanupStatus, snapshotSlugRow, verifyOldSlugGoneFromDbAndUi } from "./helpers/db-assert";
 
 const TEXT = "Rename race content";
+
+// Keep trace/video for every rename/Yjs race run. The workflow uploads
+// test-results/ on every outcome, so old-slug detections always carry media.
+test.use({ trace: "on", video: "on", screenshot: "only-on-failure" });
 
 async function attachDiagnostics(
   testInfo: TestInfo,
@@ -30,6 +34,53 @@ async function attachDiagnostics(
   } catch {
     /* page may already be closed */
   }
+}
+
+async function attachOldSlugDetectedArtifacts(
+  testInfo: TestInfo,
+  page: Page,
+  name: string,
+  payload: unknown,
+  oldSlug: string,
+  newSlug?: string,
+) {
+  const cleanupStatus = await fetchOldSlugCleanupStatus(page, oldSlug).catch((error) => ({
+    error: error instanceof Error ? error.message : String(error),
+  }));
+  const [oldRow, newRow] = await Promise.all([
+    snapshotSlugRow(oldSlug).catch((error) => ({ error: String(error) })),
+    newSlug ? snapshotSlugRow(newSlug).catch((error) => ({ error: String(error) })) : Promise.resolve(null),
+  ]);
+  await attachDiagnostics(testInfo, page, name, { payload, cleanupStatus, oldSlug, newSlug, oldRow, newRow });
+  const video = page.video();
+  if (video) {
+    await testInfo.attach(`${name}-video-pending.txt`, {
+      body: "Playwright retains the video under test-results/ after the page closes.",
+      contentType: "text/plain",
+    });
+  }
+}
+
+async function renameViaUi(page: Page, oldSlug: string, newSlug: string) {
+  await page.goto(`/${oldSlug}`);
+  const editor = page.locator(".cm-content").first();
+  await expect(editor).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: /^note/i }).click();
+  await page.getByRole("menuitem", { name: /rename/i }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByPlaceholder(/new-slug|slug/i).fill(newSlug);
+  const submit = dialog.getByRole("button", { name: /^rename$/i });
+  await expect(submit).toBeEnabled({ timeout: 5_000 });
+  await submit.click();
+  await page.waitForURL(new RegExp(`/${newSlug}$`), { timeout: 15_000 });
+}
+
+async function newPageWithDebounce(context: BrowserContext, debounceMs: number) {
+  const page = await context.newPage();
+  await page.addInitScript((ms) => {
+    localStorage.setItem("syrin:yjs-snapshot-debounce-ms", String(ms));
+  }, debounceMs);
+  return page;
 }
 
 test.describe("note rename Yjs race", () => {
@@ -126,7 +177,7 @@ test.describe("note rename Yjs race", () => {
       postRevisitTimeoutMs: 3_000,
     });
     if (lingering) {
-      await attachDiagnostics(testInfo, page, "old-slug-resurrection", lingering);
+      await attachOldSlugDetectedArtifacts(testInfo, page, "old-slug-resurrection", lingering, oldSlug, newSlug);
       await testInfo.attach("browser-console.log", {
         body: consoleLines.join("\n"),
         contentType: "text/plain",
@@ -149,9 +200,68 @@ test.describe("note rename Yjs race", () => {
       forbiddenText: TEXT,
       postRevisitTimeoutMs: 3_000,
     });
-    if (oldTabLingering) await attachDiagnostics(testInfo, oldTab, "old-tab-resurrection", oldTabLingering);
+    if (oldTabLingering) await attachOldSlugDetectedArtifacts(testInfo, oldTab, "old-tab-resurrection", oldTabLingering, oldSlug, newSlug);
     expect(oldTabLingering, "old tab recreated old slug after broadcast").toBeNull();
     await oldTab.close();
+  });
+
+  test("stress: repeated randomized-debounce renames never resurrect old slugs", async ({ context }, testInfo) => {
+    testInfo.setTimeout(75_000);
+    const createdSlugs: string[] = [];
+    const rng = (() => {
+      let seed = 0x5eed1234;
+      return () => {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        return seed / 0xffffffff;
+      };
+    })();
+
+    try {
+      for (let i = 0; i < 3; i++) {
+        const debounceMs = 100 + Math.floor(rng() * 700);
+        const from = versionedSlug(`stress-old-${i}`);
+        const to = versionedSlug(`stress-new-${i}`);
+        createdSlugs.push(from, to);
+        await deleteNote(from).catch(() => {});
+        await deleteNote(to).catch(() => {});
+        await seedPlaintextNote(from, `${TEXT} stress ${i}`);
+
+        const page = await newPageWithDebounce(context, debounceMs);
+        const staleTab = await newPageWithDebounce(context, debounceMs);
+        const consoleLines: string[] = [];
+        try {
+          page.on("console", (msg) => consoleLines.push(`[main:${msg.type()}] ${msg.text()}`));
+          staleTab.on("console", (msg) => consoleLines.push(`[stale:${msg.type()}] ${msg.text()}`));
+
+          await staleTab.goto(`/${from}`);
+          await expect(staleTab.locator(".cm-content").first()).toContainText(`${TEXT} stress ${i}`, { timeout: 15_000 });
+          await renameViaUi(page, from, to);
+          await staleTab.locator(".cm-content").first().click();
+          await staleTab.keyboard.type(` late-${i}`);
+
+          await page.waitForTimeout(debounceMs + 1_200);
+          const lingering = await verifyOldSlugGoneFromDbAndUi(page, from, {
+            timeoutMs: debounceMs + 3_000,
+            intervalMs: 150,
+            forbiddenText: `late-${i}`,
+            postRevisitTimeoutMs: debounceMs + 1_500,
+          });
+          if (lingering) {
+            await attachOldSlugDetectedArtifacts(testInfo, page, `stress-old-slug-${i}`, lingering, from, to);
+            await testInfo.attach(`stress-console-${i}.log`, {
+              body: consoleLines.join("\n"),
+              contentType: "text/plain",
+            });
+          }
+          expect(lingering, `old slug resurrected on stress iteration ${i} (debounce=${debounceMs})`).toBeNull();
+        } finally {
+          await page.close().catch(() => {});
+          await staleTab.close().catch(() => {});
+        }
+      }
+    } finally {
+      for (const slug of createdSlugs) await deleteNote(slug).catch(() => {});
+    }
   });
 });
 
@@ -211,7 +321,7 @@ test.describe("cross-tab rename abandonment", () => {
       postRevisitTimeoutMs: 3_000,
     });
     if (lingering) {
-      await attachDiagnostics(testInfo, page2, "cross-tab-old-slug-resurrection", lingering);
+      await attachOldSlugDetectedArtifacts(testInfo, page2, "cross-tab-old-slug-resurrection", lingering, oldSlug, newSlug);
       await testInfo.attach("cross-tab-console.log", {
         body: consoleLines.join("\n"),
         contentType: "text/plain",

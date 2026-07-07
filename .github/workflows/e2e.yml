@@ -70,20 +70,18 @@ jobs:
         run: bash scripts/ensure-playwright-browsers.sh
       - name: Validate wheel diagnostics fixture
         run: bun run scripts/validate-wheel-fixture.ts
-      - name: Run lock/unlock e2e specs
+      - name: Run full e2e suite
         run: |
           bash scripts/run-playwright.sh test \
-            --retries=${PLAYWRIGHT_RETRIES} \
-            e2e/note-lock-unlock.spec.ts \
-            e2e/note-lock-unlock-modes.spec.ts \
-            e2e/note-lock-unlock-rapid.spec.ts \
-            e2e/note-lock-unlock-history.spec.ts \
-            e2e/note-lock-multi-tab.spec.ts \
-            e2e/note-lock-stress.spec.ts \
-            e2e/note-lock-remount-timing.spec.ts \
-            e2e/note-lock-api-authz.spec.ts \
-            e2e/note-wheel-trackpad-scroll.spec.ts \
-            e2e/note-rename-yjs-race.spec.ts
+            --retries=${PLAYWRIGHT_RETRIES}
+      - name: Run full e2e suite with system Chromium fallback
+        if: matrix.browser == 'chromium'
+        env:
+          PLAYWRIGHT_FORCE_SYSTEM_CHROMIUM: "1"
+          PLAYWRIGHT_PROJECT: chromium
+        run: |
+          bash scripts/run-playwright.sh test \
+            --retries=${PLAYWRIGHT_RETRIES}
       - name: Publish E2E timing and artifact summary
         if: always()
         run: bun run scripts/ci-perf-timing-summary.ts --pw test-results/e2e-results.json

@@ -27,6 +27,17 @@ export type NoteRowSnapshot = {
   content_len: number;
 } | null;
 
+export type OldSlugCleanupStatus = {
+  slug: string;
+  source: "edge-function" | "direct-db-fallback";
+  database: {
+    rowPresent: boolean;
+    row: NoteRowSnapshot;
+  };
+  clientSignals: Record<string, unknown>;
+  cleaned: boolean;
+};
+
 /** One-shot fetch of the row (or null) with size-only fields — safe to log. */
 export async function snapshotSlugRow(slug: string): Promise<NoteRowSnapshot> {
   const { data, error } = await client()
@@ -43,6 +54,14 @@ export async function snapshotSlugRow(slug: string): Promise<NoteRowSnapshot> {
     ydoc_state_len: (data.ydoc_state ?? "").length,
     content_len: (data.content ?? "").length,
   };
+}
+
+export async function fetchOldSlugCleanupStatus(page: Page, slug: string): Promise<OldSlugCleanupStatus> {
+  return page.evaluate(async (slug) => {
+    const modulePath = "/src/lib/rename-cleanup-status.ts";
+    const mod = await import(/* @vite-ignore */ modulePath);
+    return mod.fetchOldSlugCleanupStatus(slug);
+  }, slug) as Promise<OldSlugCleanupStatus>;
 }
 
 export type WaitForSlugAbsentOptions = {
@@ -88,6 +107,10 @@ export async function verifyOldSlugGoneFromDbAndUi(
     postRevisitTimeoutMs?: number;
   } = {},
 ): Promise<OldSlugPresence | null> {
+  const status = await fetchOldSlugCleanupStatus(page, slug).catch(() => null);
+  if (status?.database.rowPresent) {
+    return { phase: "db-before-ui", db: status.database.row, uiTextMatched: false };
+  }
   const beforeUi = await waitForSlugAbsent(slug, opts);
   if (beforeUi) return { phase: "db-before-ui", db: beforeUi, uiTextMatched: false };
 
