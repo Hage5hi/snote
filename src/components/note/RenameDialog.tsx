@@ -113,8 +113,9 @@ export function RenameDialog({ open, onOpenChange, currentSlug, provider }: Rena
       setCleanupState(finalDeletionConfirmed ? "clean" : "dirty");
       if (cleanupStatus) {
         const { providerAbandoned, docCacheWarm, sessionSnapshotPresent, indexedDbCleared } = cleanupStatus.clientSignals ?? {};
+        const rowPresent = cleanupStatus.database?.rowPresent;
         setCleanupDetail(
-          `db=${cleanupStatus.database.rowPresent ? "present" : "gone"}` +
+          `db=${rowPresent === undefined ? "unknown" : rowPresent ? "present" : "gone"}` +
             ` · provider=${providerAbandoned ? "abandoned" : "live"}` +
             ` · doc-cache=${docCacheWarm ? "warm" : "cold"}` +
             ` · session=${sessionSnapshotPresent ? "present" : "gone"}` +
