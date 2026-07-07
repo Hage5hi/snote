@@ -110,6 +110,7 @@ describe("RenameDialog", () => {
   it("shows a destructive warning toast if the old slug still exists after final recheck", async () => {
     mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
     mocks.fetchOldSlugCleanupStatus.mockResolvedValueOnce({ cleaned: false });
+    mocks.pollOldSlugCleanupStatus.mockResolvedValueOnce({ status: { cleaned: false }, timedOut: true, attempts: 3 });
     mocks.waitForSlugDeletionConfirmed.mockResolvedValueOnce({ deleted: false, snapshot: null });
 
     renderDialog();
