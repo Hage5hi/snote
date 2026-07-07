@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Replay the exact wheel/trackpad delta stream stored in a failed
 // wheel-diagnostics.json artifact against the same long-note fixture.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { chromium, firefox, webkit, type BrowserType } from "playwright";
 
@@ -50,7 +50,7 @@ type SelectionDragSample = {
 };
 
 function usage(): never {
-  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs]");
+  console.error("Usage: bun run scripts/replay-wheel-diagnostics.ts <wheel-diagnostics.json> [--project=chromium|firefox|webkit] [--retries=N] [--base-url=http://localhost:8080] [--out-dir=test-results/wheel-replay/<project>-r<retries>] [--trace=on|off] [--extra-traces] [--headed] [--dry-run] [--list-outputs] [--resume]");
   process.exit(2);
 }
 
@@ -68,6 +68,7 @@ export function parseArgs(argv: string[]) {
     extraTraces: process.env.WHEEL_REPLAY_EXTRA_TRACES === "1",
     dryRun: false,
     listOutputs: false,
+    resume: process.env.WHEEL_REPLAY_RESUME === "1",
   };
   let outDirSet = !!process.env.WHEEL_REPLAY_OUT_DIR;
   for (const a of argv) {
@@ -77,6 +78,7 @@ export function parseArgs(argv: string[]) {
     else if (a === "--extra-traces" || a === "--trace-notes") args.extraTraces = true;
     else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--list-outputs" || a === "--list-artifacts") args.listOutputs = true;
+    else if (a === "--resume" || a === "--idempotent") args.resume = true;
     else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
     else if (a.startsWith("--retries=")) args.retries = a.slice("--retries=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
@@ -110,13 +112,51 @@ export type ReplayArgs = ReturnType<typeof parseArgs>;
 /** Names of files produced in `--out-dir` for the given args. Kept in sync
  *  with the actual writes below so `--dry-run` and `--list-outputs` never lie. */
 export function expectedOutputs(args: Pick<ReplayArgs, "trace" | "extraTraces" | "retries">): string[] {
-  const files = ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
+  const files = ["manifest.json", "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
   if (args.trace) files.push("trace.zip");
   if (args.extraTraces) {
     files.push("trace-notes.json");
     if (args.trace) files.push(`trace-retry-${args.retries}.zip`);
   }
   return files;
+}
+
+/** Validate a parsed wheel-diagnostics.json against the expected schema.
+ *  Returns an array of actionable error strings; empty = valid. */
+export function validateDiagnosticsSchema(d: unknown): string[] {
+  const errors: string[] = [];
+  if (!d || typeof d !== "object") { errors.push("root: expected object"); return errors; }
+  const o = d as Record<string, unknown>;
+  if (o.schemaVersion != null && typeof o.schemaVersion !== "number") errors.push("schemaVersion: expected number");
+  if (o.schemaVersion != null && typeof o.schemaVersion === "number" && o.schemaVersion > SUPPORTED_SCHEMA_VERSION) {
+    errors.push(`schemaVersion: ${o.schemaVersion} > supported ${SUPPORTED_SCHEMA_VERSION} (upgrade replay script)`);
+  }
+  const hasReplay = Array.isArray(o.replay);
+  const hasWheel = Array.isArray(o.wheelSamples);
+  const hasSel = Array.isArray(o.selectionDragSamples);
+  if (!hasReplay && !hasWheel && !hasSel) errors.push("must contain at least one of: replay[], wheelSamples[], selectionDragSamples[]");
+  const validateDeltas = (arr: unknown, name: string) => {
+    if (!Array.isArray(arr)) return;
+    arr.forEach((v, i) => {
+      if (!v || typeof v !== "object") { errors.push(`${name}[${i}]: expected object`); return; }
+      const r = v as Record<string, unknown>;
+      if (typeof r.dx !== "number") errors.push(`${name}[${i}].dx: expected number`);
+      if (typeof r.dy !== "number") errors.push(`${name}[${i}].dy: expected number`);
+    });
+  };
+  validateDeltas(o.replay, "replay");
+  validateDeltas(o.wheelSamples, "wheelSamples");
+  if (hasSel) {
+    (o.selectionDragSamples as unknown[]).forEach((v, i) => {
+      if (!v || typeof v !== "object") { errors.push(`selectionDragSamples[${i}]: expected object`); return; }
+      const r = v as Record<string, unknown>;
+      for (const k of ["x", "y", "dx", "dy"]) {
+        if (typeof r[k] !== "number") errors.push(`selectionDragSamples[${i}].${k}: expected number`);
+      }
+    });
+  }
+  if (o.note != null && (typeof o.note !== "object" || Array.isArray(o.note))) errors.push("note: expected object");
+  return errors;
 }
 
 
@@ -175,24 +215,52 @@ function selectionDidNotAdvance(before: SelectionRangeFrame, after: SelectionRan
 export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Promise<number> {
   const args = parseArgs(argv);
   if (!existsSync(args.path)) throw new Error(`diagnostics file not found: ${args.path}`);
-  const diagnostics = JSON.parse(readFileSync(args.path, "utf8")) as WheelDiagnostics;
+  let parsed: unknown;
+  try { parsed = JSON.parse(readFileSync(args.path, "utf8")); }
+  catch (e) { throw new Error(`wheel-diagnostics.json is not valid JSON: ${e instanceof Error ? e.message : String(e)}`); }
+  const schemaErrors = validateDiagnosticsSchema(parsed);
+  const diagnostics = parsed as WheelDiagnostics;
   if ((diagnostics.schemaVersion ?? 0) > SUPPORTED_SCHEMA_VERSION) {
     console.warn(`wheel-diagnostics schemaVersion ${diagnostics.schemaVersion} is newer than this replay script (${SUPPORTED_SCHEMA_VERSION}); replaying compatible fields only`);
   }
   const deltas = getDeltas(diagnostics);
   const selectionDeltas = diagnostics.selectionDragSamples ?? [];
-  if (deltas.length === 0 && selectionDeltas.length === 0) {
-    throw new Error("wheel-diagnostics.json contains no replay, wheelSamples, or selectionDragSamples deltas");
-  }
   const outputs = expectedOutputs(args).map((f) => join(args.outDir, f));
 
-  if (args.listOutputs || args.dryRun) {
+  if (args.dryRun) {
+    console.log(`source: ${args.path}`);
     console.log(`out-dir: ${args.outDir}`);
+    console.log(`schemaVersion: ${diagnostics.schemaVersion ?? "(missing, treated as 0)"}`);
     console.log(`wheel deltas: ${deltas.length}  selection deltas: ${selectionDeltas.length}`);
     console.log("expected outputs:");
     for (const p of outputs) console.log(`  ${p}`);
-    if (args.dryRun) { console.log("dry-run: skipping Playwright launch"); return 0; }
-    if (args.listOutputs) return 0;
+    if (schemaErrors.length) {
+      console.error(`✖ schema validation failed (${schemaErrors.length}):`);
+      for (const err of schemaErrors) console.error(`  - ${err}`);
+      return 2;
+    }
+    if (deltas.length === 0 && selectionDeltas.length === 0) {
+      console.error("✖ no replay, wheelSamples, or selectionDragSamples deltas present");
+      return 2;
+    }
+    console.log("dry-run: input valid, skipping Playwright launch");
+    return 0;
+  }
+  if (schemaErrors.length) {
+    for (const err of schemaErrors) console.error(`schema: ${err}`);
+    throw new Error(`wheel-diagnostics.json failed schema validation (${schemaErrors.length} error(s)); run with --dry-run for details`);
+  }
+  if (deltas.length === 0 && selectionDeltas.length === 0) {
+    throw new Error("wheel-diagnostics.json contains no replay, wheelSamples, or selectionDragSamples deltas");
+  }
+  if (args.listOutputs) {
+    console.log(`out-dir: ${args.outDir}`);
+    for (const p of outputs) console.log(`  ${p}`);
+    return 0;
+  }
+  if (args.resume && outputs.every((p) => existsSync(p))) {
+    console.log(`resume: all ${outputs.length} outputs already exist in ${args.outDir}; skipping replay`);
+    return 0;
   }
 
   const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
@@ -284,37 +352,82 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   };
   const resultPath = join(args.outDir, "replay-result.json");
   const jsonlPath = join(args.outDir, "wheel-deltas.jsonl");
-  writeFileSync(resultPath, JSON.stringify(result, null, 2));
-  writeFileSync(jsonlPath, observed.map((o) => JSON.stringify(o)).join("\n") + "\n");
-  writeFileSync(join(args.outDir, "selection-frames.jsonl"), observedSelection.map((o) => JSON.stringify(o)).join("\n") + (observedSelection.length ? "\n" : ""));
-  await scroller.screenshot({ path: join(args.outDir, "scroller.png") }).catch(() => undefined);
+  const scrollerPath = join(args.outDir, "scroller.png");
+  const selFramesPath = join(args.outDir, "selection-frames.jsonl");
+  const write = (p: string, data: string | Buffer) => {
+    if (args.resume && existsSync(p)) { console.log(`resume: skip existing ${p}`); return false; }
+    writeFileSync(p, data);
+    return true;
+  };
+  write(resultPath, JSON.stringify(result, null, 2));
+  write(jsonlPath, observed.map((o) => JSON.stringify(o)).join("\n") + "\n");
+  write(selFramesPath, observedSelection.map((o) => JSON.stringify(o)).join("\n") + (observedSelection.length ? "\n" : ""));
+  if (!(args.resume && existsSync(scrollerPath))) {
+    await scroller.screenshot({ path: scrollerPath }).catch(() => undefined);
+  }
   const tracePath = join(args.outDir, "trace.zip");
-  if (args.trace) await context.tracing.stop({ path: tracePath });
+  if (args.trace) {
+    if (args.resume && existsSync(tracePath)) { console.log(`resume: skip existing ${tracePath}`); await context.tracing.stop().catch(() => undefined); }
+    else await context.tracing.stop({ path: tracePath });
+  }
   await browser.close();
+
+  const artifactList: string[] = ["manifest.json", "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png"];
+  if (args.trace) artifactList.push("trace.zip");
 
   if (args.extraTraces) {
     const retries = args.retries;
     const notesPath = join(args.outDir, "trace-notes.json");
-    writeFileSync(notesPath, JSON.stringify({
+    write(notesPath, JSON.stringify({
       source: args.path, project: args.project, retries,
       generatedAt: result.generatedAt, stuckFrame, selectionStuckFrame,
       tracePath: args.trace ? tracePath : null,
-      artifacts: ["replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png", args.trace ? "trace.zip" : null].filter(Boolean),
+      artifacts: artifactList.slice(),
     }, null, 2));
-    console.log(`wrote ${notesPath}`);
+    artifactList.push("trace-notes.json");
     if (args.trace && existsSync(tracePath)) {
-      const perRetry = join(args.outDir, `trace-retry-${retries}.zip`);
-      try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
+      const perRetryName = `trace-retry-${retries}.zip`;
+      const perRetry = join(args.outDir, perRetryName);
+      if (!(args.resume && existsSync(perRetry))) {
+        try { writeFileSync(perRetry, readFileSync(tracePath)); console.log(`wrote ${perRetry}`); } catch { /* ignore */ }
+      }
+      artifactList.push(perRetryName);
     }
   }
 
+  // Always (re)write manifest.json so it reflects the current on-disk state,
+  // including files skipped by --resume. This is the single source of truth
+  // consumed by CI artifact uploads and reviewer tooling.
+  const manifestPath = join(args.outDir, "manifest.json");
+  const now = new Date().toISOString();
+  const manifest = {
+    schemaVersion: 1,
+    generatedAt: now,
+    source: args.path,
+    project: args.project,
+    retries: args.retries,
+    resume: args.resume,
+    outDir: args.outDir,
+    artifacts: artifactList.map((name) => {
+      const p = join(args.outDir, name);
+      let size: number | null = null;
+      let mtime: string | null = null;
+      try {
+        const s = statSync(p);
+        size = s.size; mtime = new Date(s.mtimeMs).toISOString();
+      } catch { /* missing */ }
+      return { name, path: p, size, generatedAt: mtime, present: size != null };
+    }),
+  };
+  writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+  console.log(`wrote ${manifestPath}`);
 
   console.log(`replayed ${observed.length} deltas from ${args.path}`);
   console.log(`wrote ${resultPath}`);
   console.log(`wrote ${jsonlPath}`);
-  console.log(`wrote ${join(args.outDir, "selection-frames.jsonl")}`);
-  console.log(`wrote ${join(args.outDir, "scroller.png")}`);
-  if (args.trace) console.log(`wrote ${join(args.outDir, "trace.zip")}`);
+  console.log(`wrote ${selFramesPath}`);
+  console.log(`wrote ${scrollerPath}`);
+  if (args.trace) console.log(`wrote ${tracePath}`);
   if (stuckFrame) console.log(`first stuck frame: #${stuckFrame.i} scrollTop=${stuckFrame.before}`);
   if (selectionStuckFrame) console.log(`first selection stuck frame: #${selectionStuckFrame.i} selection=${selectionStuckFrame.afterRange.signature}`);
   if (diagnostics.selectionStuckFrame && !selectionStuckFrame) console.log("source artifact contains selectionStuckFrame; replay did not reproduce it in this run");

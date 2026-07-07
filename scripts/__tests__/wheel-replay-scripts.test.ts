@@ -110,11 +110,11 @@ describe("wheel diagnostics replay scripts", () => {
 
   it("expectedOutputs lists per-retry trace zips only when trace + extra-traces are on", () => {
     expect(expectedOutputs({ trace: true, extraTraces: true, retries: "2" })).toEqual([
-      "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png",
+      "manifest.json", "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png",
       "trace.zip", "trace-notes.json", "trace-retry-2.zip",
     ]);
     expect(expectedOutputs({ trace: false, extraTraces: true, retries: "0" })).toEqual([
-      "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png",
+      "manifest.json", "replay-result.json", "wheel-deltas.jsonl", "selection-frames.jsonl", "scroller.png",
       "trace-notes.json",
     ]);
     expect(expectedOutputs({ trace: true, extraTraces: false, retries: "0" })).not.toContain("trace-retry-0.zip");
