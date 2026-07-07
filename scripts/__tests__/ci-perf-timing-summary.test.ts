@@ -191,8 +191,8 @@ describe("failed-test artifact links", () => {
     expect(md).toContain("[scroller.png](test-results/note-wheel/scroller.png)");
     expect(md).toContain("retry #1");
     expect(md).toContain("Local repro: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 ./scripts/run-wheel-e2e.sh`");
-    expect(md).toContain("Replay artifact: `PLAYWRIGHT_PROJECT=chromium bun run scripts/replay-wheel-diagnostics.ts test-results/note-wheel/wheel-diagnostics.json`");
-    expect(md).toContain("Download + replay: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/download-and-replay-wheel-artifact.ts 42 --project=chromium --retries=2 --attempt=2`");
+    expect(md).toContain("Replay artifact: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/replay-wheel-diagnostics.ts test-results/note-wheel/wheel-diagnostics.json --project=chromium --retries=2 --out-dir=test-results/wheel-replay/chromium-r2`");
+    expect(md).toContain("Download + replay: `PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/download-and-replay-wheel-artifact.ts 42 --project=chromium --retries=2 --out-dir=test-results/wheel-replay/chromium-r2 --attempt=2`");
   });
 
   it("renders the wheel local repro command with project + retries", () => {
@@ -201,8 +201,8 @@ describe("failed-test artifact links", () => {
   });
 
   it("renders the single-artifact wheel diagnostics replay command", () => {
-    expect(renderWheelDiagnosticsReplayCommand(parsePlaywrightFailedArtifacts(pwReport)[0]))
-      .toBe("PLAYWRIGHT_PROJECT=chromium bun run scripts/replay-wheel-diagnostics.ts test-results/note-wheel/wheel-diagnostics.json");
+    expect(renderWheelDiagnosticsReplayCommand(parsePlaywrightFailedArtifacts(pwReport)[0], { playwrightRetries: "2" }))
+      .toBe("PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/replay-wheel-diagnostics.ts test-results/note-wheel/wheel-diagnostics.json --project=chromium --retries=2 --out-dir=test-results/wheel-replay/chromium-r2");
   });
 
   it("renders the one-click download + replay command for a workflow run", () => {
