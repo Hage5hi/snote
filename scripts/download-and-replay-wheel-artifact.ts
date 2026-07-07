@@ -71,6 +71,10 @@ export function buildGhArgs(args: Args): string[] {
 
 export function main(argv = process.argv.slice(2)): void {
   const args = parseArgs(argv);
+  const browserTypes: Record<string, BrowserType> = { chromium, firefox, webkit };
+  const bt = browserTypes[args.project];
+  if (!bt) throw new Error(`unsupported project: ${args.project}`);
+  preflightPlaywrightBrowser(bt, args.project);
   mkdirSync(args.outDir, { recursive: true });
   run("gh", buildGhArgs(args));
 
