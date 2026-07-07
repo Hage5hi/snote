@@ -61,6 +61,7 @@ describe("RenameDialog", () => {
     mocks.navigate.mockReset();
     mocks.toast.mockReset();
     mocks.prepareRename.mockResolvedValue(undefined);
+    mocks.clearRenamedSlugLocalState.mockReset();
     mocks.clearRenamedSlugLocalState.mockResolvedValue(undefined);
     mocks.finalizeRename.mockResolvedValue({ deletionConfirmed: false });
     mocks.maybeSingle.mockReset();
@@ -106,6 +107,8 @@ describe("RenameDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "rename.submit" }));
 
     await waitFor(() => expect(mocks.prepareRename).toHaveBeenCalled());
-    expect(provider.saveSnapshot).toHaveBeenCalledBefore(mocks.prepareRename);
+    expect(provider.saveSnapshot.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.prepareRename.mock.invocationCallOrder[0],
+    );
   });
 });
