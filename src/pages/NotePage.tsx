@@ -292,6 +292,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     if (!embedSlug) touchRecent(slug);
 
     const idb = new IndexeddbPersistence(`note:${slug}`, doc);
+    let disposed = false;
 
     
     const unsubAwareness = provider.onAwareness((states) => {
@@ -347,6 +348,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     ytext.observe(scheduleCounts);
 
     idb.whenSynced.then(() => {
+      if (disposed) return;
       provider
         .connect(identity, {
           prefetchedYdocState: encMeta.ydocState,
@@ -363,6 +365,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       void maybeSaveSnapshot(slug, ytext.toString());
     }, SNAPSHOT_INTERVAL_MS);
     const onVisibility = () => {
+      if (disposed) return;
       if (document.visibilityState === "hidden") {
         window.clearInterval(snapshotTimer);
         // Best-effort flush before browser may freeze the tab.
@@ -376,6 +379,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     document.addEventListener("visibilitychange", onVisibility);
 
     const handleBeforeUnload = () => {
+      if (disposed) return;
       // sendBeacon survives the page teardown; sync supabase fetch may not.
       provider.flushBeacon();
     };
@@ -383,6 +387,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     window.addEventListener("pagehide", handleBeforeUnload);
 
     return () => {
+      disposed = true;
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handleBeforeUnload);
       document.removeEventListener("visibilitychange", onVisibility);

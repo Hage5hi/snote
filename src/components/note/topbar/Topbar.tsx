@@ -293,7 +293,7 @@ export function Topbar({
         trigger={false}
       />
       <ShortcutHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
-      <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} />
+      <RenameDialog open={renameOpen} onOpenChange={setRenameOpen} currentSlug={slug} provider={provider} />
       <DuplicateDialog open={duplicateOpen} onOpenChange={setDuplicateOpen} currentSlug={slug} />
       <WordGoalDialog
         open={goalOpen}

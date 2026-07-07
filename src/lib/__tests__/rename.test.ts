@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { prepareRename, finalizeRename } from "../rename";
+import { clearRenamedSlugLocalState, prepareRename, finalizeRename } from "../rename";
+import { acquireDoc, __docCacheInternals as docCache } from "../yjs/doc-cache";
 import { SupabaseYjsProvider, unabandonProviderForSlug } from "../yjs/provider";
 
 type NoteRow = {
@@ -64,6 +65,17 @@ vi.mock("@/lib/share-tokens", () => ({
   renameShareToken: vi.fn(),
 }));
 
+const clearDataMock = vi.fn(() => Promise.resolve());
+vi.mock("y-indexeddb", () => ({
+  IndexeddbPersistence: vi.fn().mockImplementation(() => ({
+    clearData: clearDataMock,
+  })),
+}));
+
+vi.mock("@/lib/snapshots", () => ({
+  clearSnapshots: vi.fn(() => Promise.resolve()),
+}));
+
 function makeProvider(slug: string) {
   const doc = new Y.Doc();
   const provider = new SupabaseYjsProvider(slug, doc);
@@ -74,6 +86,13 @@ function makeProvider(slug: string) {
 describe("rename lifecycle", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    Object.defineProperty(globalThis, "indexedDB", {
+      value: {},
+      configurable: true,
+    });
+    docCache.reset();
+    sessionStorage.clear();
+    clearDataMock.mockClear();
     rows.clear();
     upserts.length = 0;
     rows.set("old-slug", {
@@ -91,6 +110,7 @@ describe("rename lifecycle", () => {
 
   afterEach(() => {
     unabandonProviderForSlug("old-slug");
+    docCache.reset();
     vi.useRealTimers();
   });
 
@@ -112,5 +132,16 @@ describe("rename lifecycle", () => {
     expect(rows.has("old-slug")).toBe(false);
     expect(rows.get("new-slug")?.content).toBe("seed content");
     expect(upserts.filter((row) => row.slug === "old-slug")).toHaveLength(0);
+  });
+
+  it("clears local Yjs/IndexedDB/session state for the old slug during rename", async () => {
+    acquireDoc("old-slug").getText("content").insert(0, "cached old content");
+    sessionStorage.setItem("note-snapshot:old-slug", "stale-state");
+
+    await clearRenamedSlugLocalState("old-slug");
+
+    expect(docCache.isWarm("old-slug")).toBe(false);
+    expect(sessionStorage.getItem("note-snapshot:old-slug")).toBeNull();
+    expect(clearDataMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -8,8 +8,45 @@ import { supabase } from "@/integrations/supabase/client";
 import { renamePinned, renameRecent } from "@/lib/recent-notes";
 import { renameShareToken } from "@/lib/share-tokens";
 import { abandonProviderForSlug } from "@/lib/yjs/provider";
+import { evictDoc } from "@/lib/yjs/doc-cache";
+import { clearSnapshots } from "@/lib/snapshots";
+import { IndexeddbPersistence } from "y-indexeddb";
+import * as Y from "yjs";
 
 export const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+async function clearIndexedDbDoc(slug: string) {
+  if (typeof indexedDB === "undefined") return;
+  const doc = new Y.Doc();
+  try {
+    const idb = new IndexeddbPersistence(`note:${slug}`, doc);
+    await idb.clearData();
+  } finally {
+    doc.destroy();
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | void> {
+  return Promise.race([
+    promise,
+    new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  ]);
+}
+
+/** Clear local state that could otherwise rehydrate a slug after it was renamed away. */
+export async function clearRenamedSlugLocalState(oldSlug: string): Promise<void> {
+  abandonProviderForSlug(oldSlug);
+  evictDoc(oldSlug);
+  try {
+    sessionStorage.removeItem(`note-snapshot:${oldSlug}`);
+  } catch {
+    /* unavailable */
+  }
+  void Promise.allSettled([
+    withTimeout(clearIndexedDbDoc(oldSlug), 750),
+    withTimeout(clearSnapshots(oldSlug), 750),
+  ]);
+}
 
 /**
  * Returns true if `slug` is free (no row, or row exists but is empty —
@@ -63,16 +100,17 @@ export async function prepareRename(oldSlug: string, newSlug: string): Promise<v
   if (oldSlug === newSlug) return;
   if (!SLUG_RE.test(newSlug)) throw new Error("Invalid slug");
 
-  // Mark the old slug as abandoned BEFORE any writes so the still-mounted
-  // Yjs provider stops upserting snapshots (debounced or on-destroy).
-  abandonProviderForSlug(oldSlug);
-
   await copyNoteRow(oldSlug, newSlug);
 
   const { error: shareErr } = await supabase.functions.invoke("share-rename", {
     body: { oldSlug, newSlug },
   });
   if (shareErr) throw shareErr;
+
+  // Mark the old slug as abandoned only after the copy/share work succeeds.
+  // If preparation fails, the user remains on the old note and it must keep
+  // saving normally. Finalization/navigation happens immediately after this.
+  abandonProviderForSlug(oldSlug);
 }
 
 /**
