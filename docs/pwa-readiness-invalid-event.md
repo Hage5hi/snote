@@ -64,8 +64,37 @@ window.__SNOTE_PWA_READINESS_EXPLAIN__?.(window.__SNOTE_PWA_UPDATE_STATE__)
 installed by the debug panel in DEV (`exposeReadinessValidatorForE2E`) — they
 are not available in production builds.
 
+## Typed consumer guide
+
+Prefer the exported constant + type alias over string/shape duplication:
+
+```ts
+import {
+  PWA_READINESS_INVALID_EVENT,
+  type PwaReadinessInvalidEventDetail,
+} from "@/lib/pwa-update-readiness";
+
+function onInvalid(e: CustomEvent<PwaReadinessInvalidEventDetail>) {
+  const { field, path, reason, received } = e.detail;
+  console.warn(`[readiness:invalid] ${path} — ${reason} (received=${received})`);
+}
+
+// WindowEventMap is augmented, so `e` is fully typed:
+window.addEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
+// later:
+window.removeEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
+```
+
+`field` and `path` are always equal; `path` exists as a stable alias for
+QA tooling that groups reasons by dot-path.
+
 ## Related tests
 
 - Unit: `src/lib/__tests__/pwa-update-readiness.test.ts`
-- Integration: `src/lib/__tests__/pwa-readiness-invalid-event.test.ts`
-- E2E: `e2e/pwa-readiness-invalid-event.spec.ts`
+- Integration: `src/lib/__tests__/pwa-readiness-invalid-event.test.ts`,
+  `src/lib/__tests__/pwa-readiness-invalid-edge-fields.test.ts`,
+  `src/lib/__tests__/pwa-readiness-invalid-event-batch.test.ts`
+- E2E: `e2e/pwa-readiness-invalid-event.spec.ts`,
+  `e2e/pwa-readiness-invalid-event-order.spec.ts`,
+  `e2e/pwa-readiness-invalid-event-not-emitted-when-valid.spec.ts`
+
