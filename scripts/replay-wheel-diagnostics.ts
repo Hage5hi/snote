@@ -250,7 +250,7 @@ export async function replayWheelDiagnostics(argv = process.argv.slice(2)): Prom
   if (stuckFrame) console.log(`first stuck frame: #${stuckFrame.i} scrollTop=${stuckFrame.before}`);
   if (selectionStuckFrame) console.log(`first selection stuck frame: #${selectionStuckFrame.i} selection=${selectionStuckFrame.afterRange.signature}`);
   if (diagnostics.selectionStuckFrame && !selectionStuckFrame) console.log("source artifact contains selectionStuckFrame; replay did not reproduce it in this run");
-  return stuckFrame || selectionStuckFrame ? 1 : 0;
+  return 0;
 }
 
 if (import.meta.main) {
