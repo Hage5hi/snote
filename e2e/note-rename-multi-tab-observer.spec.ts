@@ -59,9 +59,22 @@ test.describe("multi-tab rename observer", () => {
     })();
     const pollIntervalMs = 500;
     const deadline = Date.now() + observerWindowMs;
-    const timeline: Array<{ t: number; elapsedMs: number; cleaned?: boolean; rowPresent?: boolean; error?: string }> = [];
+    const timeline: Array<{ t: number; elapsedMs: number; cleaned?: boolean; rowPresent?: boolean; error?: string; domA?: string; domB?: string }> = [];
     let firstBreach: { t: number; row: unknown; status: unknown } | null = null;
     let iter = 0;
+    const snapshotDom = async (p: typeof tabA, slug: string) => {
+      try {
+        return await p.evaluate((s) => {
+          const editor = document.querySelector(".cm-content");
+          const editorText = editor ? (editor.textContent ?? "").slice(0, 200) : null;
+          const url = location.pathname;
+          const bodyHasSlug = document.body.innerText.includes(s);
+          return JSON.stringify({ url, editorText, bodyHasSlug });
+        }, slug);
+      } catch (e) {
+        return `dom-error:${e instanceof Error ? e.message : String(e)}`;
+      }
+    };
     while (Date.now() < deadline) {
       const { status, elapsedMs } = await fetchOldSlugCleanupStatusWithReport(
         tabB,
@@ -74,12 +87,16 @@ test.describe("multi-tab rename observer", () => {
       const rowPresent = "database" in (status as object)
         ? (status as { database?: { rowPresent?: boolean } }).database?.rowPresent
         : undefined;
+      const domA = await snapshotDom(tabA, oldSlug);
+      const domB = await snapshotDom(tabB, oldSlug);
       timeline.push({
         t: Date.now(),
         elapsedMs,
         cleaned,
         rowPresent,
         error: "error" in (status as object) ? (status as { error?: string }).error : undefined,
+        domA,
+        domB,
       });
       if (row || rowPresent) {
         firstBreach = { t: Date.now(), row, status };

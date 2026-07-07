@@ -63,6 +63,10 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent }: To
             to="/"
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
             aria-label={t("brand.home")}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              window.open("/", "_blank", "noopener,noreferrer");
+            }}
           >
             <ArrowLeft className="h-4 w-4" />
           </Link>
