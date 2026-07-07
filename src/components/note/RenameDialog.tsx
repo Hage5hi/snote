@@ -12,7 +12,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
-import { renameNote, SLUG_RE } from "@/lib/rename";
+import { prepareRename, finalizeRename, SLUG_RE } from "@/lib/rename";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n/index";
 
