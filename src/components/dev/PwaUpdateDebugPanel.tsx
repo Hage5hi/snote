@@ -141,6 +141,19 @@ export function PwaUpdateDebugPanel() {
     pointerEvents: "auto",
   };
 
+  const statsBlock = (
+    <div
+      data-pwa-debug-stats="invalid-events"
+      data-invalid-total={stats.total}
+      data-invalid-last-minute={stats.lastMinute}
+      data-invalid-last-hour={stats.lastHour}
+      style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.15)", opacity: 0.75 }}
+    >
+      invalid events — total: {stats.total} · 1m: {stats.lastMinute} · 1h: {stats.lastHour}
+      {stats.lastAt ? ` · last: ${Math.round((Date.now() - stats.lastAt) / 1000)}s ago` : ""}
+    </div>
+  );
+
   if (invalid) {
     return (
       <div style={style} data-pwa-debug-panel="invalid" data-invalid-field={invalid.field}>
