@@ -62,7 +62,10 @@ function isSlugAbandoned(slug: string) {
 
 function markSlugAbandoned(slug: string, broadcast: boolean) {
   abandonedSlugs.add(slug);
-  activeProvidersBySlug.get(slug)?.forEach((provider) => provider.markAbandoned());
+  activeProvidersBySlug.get(slug)?.forEach((provider) => {
+    if (broadcast) void provider.broadcastSlugAbandoned();
+    provider.markAbandoned();
+  });
   // Auto-expire the global slug block so a legitimate later reuse can create
   // a fresh empty row. Providers that were active at rename time stay marked
   // abandoned on the instance and can never resurrect the old content.
@@ -220,6 +223,19 @@ export class SupabaseYjsProvider {
     this.abandoned = true;
     this.cancelPendingSnapshot();
     this.pendingUpdates = [];
+  }
+
+  async broadcastSlugAbandoned() {
+    if (!this.channel || !this.connected) return;
+    try {
+      await this.channel.send({
+        type: "broadcast",
+        event: "slug-abandoned",
+        payload: { slug: this.slug },
+      });
+    } catch {
+      /* best-effort cross-tab/device notice */
+    }
   }
 
   private isAbandoned() {
@@ -385,6 +401,10 @@ export class SupabaseYjsProvider {
       } catch (e) {
         console.warn("Bad awareness", e);
       }
+    });
+
+    this.channel.on("broadcast", { event: "slug-abandoned" }, ({ payload }) => {
+      if (payload?.slug === this.slug) this.markAbandoned();
     });
 
     // When a new client joins, request the full state from peers.
