@@ -208,7 +208,7 @@ describe("failed-test artifact links", () => {
   it("renders the one-click download + replay command for a workflow run", () => {
     expect(renderWheelDownloadReplayCommand(parsePlaywrightFailedArtifacts(pwReport)[0], {
       runId: "99", runAttempt: "3", playwrightRetries: "2",
-    })).toBe("PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/download-and-replay-wheel-artifact.ts 99 --project=chromium --retries=2 --attempt=3");
+    })).toBe("PLAYWRIGHT_PROJECT=chromium RETRIES=2 bun run scripts/download-and-replay-wheel-artifact.ts 99 --project=chromium --retries=2 --out-dir=test-results/wheel-replay/chromium-r2 --attempt=3");
   });
 
   it("keeps wheel-diagnostics links schema-version agnostic", () => {
