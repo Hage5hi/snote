@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   prepareRename: vi.fn(),
   clearRenamedSlugLocalState: vi.fn(),
   finalizeRename: vi.fn(),
+  waitForSlugDeletionConfirmed: vi.fn(),
   maybeSingle: vi.fn(),
 }));
 
@@ -33,6 +34,7 @@ vi.mock("@/lib/rename", () => ({
   prepareRename: mocks.prepareRename,
   clearRenamedSlugLocalState: mocks.clearRenamedSlugLocalState,
   finalizeRename: mocks.finalizeRename,
+  waitForSlugDeletionConfirmed: mocks.waitForSlugDeletionConfirmed,
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -66,14 +68,13 @@ describe("RenameDialog", () => {
     mocks.clearRenamedSlugLocalState.mockResolvedValue(undefined);
     mocks.finalizeRename.mockReset();
     mocks.finalizeRename.mockResolvedValue({ deletionConfirmed: false });
+    mocks.waitForSlugDeletionConfirmed.mockReset();
+    mocks.waitForSlugDeletionConfirmed.mockResolvedValue({ deleted: true, snapshot: null });
     mocks.maybeSingle.mockReset();
   });
 
   it("re-checks old slug deletion after finalize before showing a success toast", async () => {
-    mocks.maybeSingle
-      .mockResolvedValueOnce({ data: null, error: null })
-      .mockResolvedValueOnce({ data: { slug: "old-slug" }, error: null })
-      .mockResolvedValueOnce({ data: null, error: null });
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
 
     renderDialog();
     fireEvent.change(screen.getByPlaceholderText("rename.placeholder"), {
@@ -84,13 +85,38 @@ describe("RenameDialog", () => {
 
     await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
 
-    expect(mocks.maybeSingle).toHaveBeenCalledTimes(3);
     expect(mocks.clearRenamedSlugLocalState).toHaveBeenCalledWith("old-slug");
+    expect(mocks.waitForSlugDeletionConfirmed).toHaveBeenCalledWith("old-slug");
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({
         title: "rename.toast_renamed",
         description: "/old-slug → /new-slug",
         variant: undefined,
+      }),
+    );
+  });
+
+  it("shows a destructive warning toast if the old slug still exists after final recheck", async () => {
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    mocks.waitForSlugDeletionConfirmed.mockResolvedValueOnce({
+      deleted: false,
+      snapshot: { slug: "old-slug", char_count: 12, ydoc_state_len: 20, content_len: 12 },
+    });
+
+    renderDialog();
+    fireEvent.change(screen.getByPlaceholderText("rename.placeholder"), {
+      target: { value: "new-slug" },
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "rename.submit" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "rename.submit" }));
+
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "rename.toast_renamed",
+        description: "/old-slug → /new-slug (old slug still present — retry)",
+        variant: "destructive",
       }),
     );
   });

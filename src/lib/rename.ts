@@ -7,13 +7,55 @@
 import { supabase } from "@/integrations/supabase/client";
 import { renamePinned, renameRecent } from "@/lib/recent-notes";
 import { renameShareToken } from "@/lib/share-tokens";
-import { abandonProviderForSlug } from "@/lib/yjs/provider";
+import { abandonProviderForSlug, getSnapshotDebounceMs } from "@/lib/yjs/provider";
 import { evictDoc } from "@/lib/yjs/doc-cache";
 import { clearSnapshots } from "@/lib/snapshots";
 import { IndexeddbPersistence } from "y-indexeddb";
 import * as Y from "yjs";
 
 export const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export type SlugDeletionSnapshot = {
+  slug: string;
+  char_count: number | null;
+  ydoc_state_len: number;
+  content_len: number;
+} | null;
+
+export async function getSlugDeletionSnapshot(slug: string): Promise<SlugDeletionSnapshot> {
+  const { data, error } = await supabase
+    .from("notes")
+    .select("slug, char_count, ydoc_state, content")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    slug: data.slug,
+    char_count: data.char_count ?? null,
+    ydoc_state_len: (data.ydoc_state ?? "").length,
+    content_len: (data.content ?? "").length,
+  };
+}
+
+export async function waitForSlugDeletionConfirmed(
+  slug: string,
+  opts: { timeoutMs?: number; intervalMs?: number; onPresent?: (snapshot: NonNullable<SlugDeletionSnapshot>) => Promise<void> | void } = {},
+): Promise<{ deleted: boolean; snapshot: SlugDeletionSnapshot }> {
+  const timeoutMs = opts.timeoutMs ?? Math.max(getSnapshotDebounceMs() + 1_000, 2_000);
+  const intervalMs = opts.intervalMs ?? 150;
+  const deadline = Date.now() + timeoutMs;
+  let snapshot: SlugDeletionSnapshot = null;
+  while (Date.now() <= deadline) {
+    snapshot = await getSlugDeletionSnapshot(slug);
+    if (snapshot) await opts.onPresent?.(snapshot);
+    await wait(intervalMs);
+  }
+  snapshot = await getSlugDeletionSnapshot(slug);
+  return { deleted: !snapshot, snapshot };
+}
 
 async function clearIndexedDbDoc(slug: string) {
   if (typeof indexedDB === "undefined") return;
@@ -34,18 +76,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | void> {
 }
 
 /** Clear local state that could otherwise rehydrate a slug after it was renamed away. */
-export async function clearRenamedSlugLocalState(oldSlug: string): Promise<void> {
-  abandonProviderForSlug(oldSlug);
-  evictDoc(oldSlug);
+export async function clearSlugLocalCaches(
+  oldSlug: string,
+  opts: { evictDocCache?: boolean; clearIndexedDb?: boolean } = {},
+): Promise<void> {
+  if (opts.evictDocCache !== false) evictDoc(oldSlug);
   try {
     sessionStorage.removeItem(`note-snapshot:${oldSlug}`);
   } catch {
     /* unavailable */
   }
-  void Promise.allSettled([
-    withTimeout(clearIndexedDbDoc(oldSlug), 750),
-    withTimeout(clearSnapshots(oldSlug), 750),
-  ]);
+  const jobs = [withTimeout(clearSnapshots(oldSlug), 750)];
+  if (opts.clearIndexedDb !== false) jobs.push(withTimeout(clearIndexedDbDoc(oldSlug), 750));
+  void Promise.allSettled(jobs);
+}
+
+/** Clear local state that could otherwise rehydrate a slug after it was renamed away. */
+export async function clearRenamedSlugLocalState(oldSlug: string): Promise<void> {
+  abandonProviderForSlug(oldSlug);
+  await clearSlugLocalCaches(oldSlug);
 }
 
 /**
@@ -128,7 +177,7 @@ export async function finalizeRename(
     if (error) throw error;
   };
   await del();
-  await new Promise((r) => setTimeout(r, 750));
+  await wait(Math.max(getSnapshotDebounceMs(), 750));
   try {
     await del();
   } catch {
@@ -139,13 +188,12 @@ export async function finalizeRename(
   renamePinned(oldSlug, newSlug);
   renameShareToken(oldSlug, newSlug);
 
-  // Verify the old row is fully gone (no debounced upsert resurrected it).
-  const { data } = await supabase
-    .from("notes")
-    .select("slug")
-    .eq("slug", oldSlug)
-    .maybeSingle();
-  return { deletionConfirmed: !data };
+  const { deleted } = await waitForSlugDeletionConfirmed(oldSlug, {
+    timeoutMs: Math.max(getSnapshotDebounceMs() + 500, 1_000),
+    intervalMs: 150,
+    onPresent: del,
+  });
+  return { deletionConfirmed: deleted };
 }
 
 /** One-shot rename. UI callers should prefer prepareRename + navigate + finalizeRename. */

@@ -123,7 +123,7 @@ describe("rename lifecycle", () => {
     await provider.destroy();
 
     const finalized = finalizeRename("old-slug", "new-slug");
-    await vi.advanceTimersByTimeAsync(750);
+    await vi.advanceTimersByTimeAsync(3_000);
     await expect(finalized).resolves.toEqual({ deletionConfirmed: true });
 
     await vi.advanceTimersByTimeAsync(1_000);
@@ -132,6 +132,28 @@ describe("rename lifecycle", () => {
     expect(rows.has("old-slug")).toBe(false);
     expect(rows.get("new-slug")?.content).toBe("seed content");
     expect(upserts.filter((row) => row.slug === "old-slug")).toHaveLength(0);
+  });
+
+  it("keeps deleting a late old-slug resurrection during the debounce confirmation window", async () => {
+    await prepareRename("old-slug", "new-slug");
+
+    const finalized = finalizeRename("old-slug", "new-slug");
+    await vi.advanceTimersByTimeAsync(850);
+    rows.set("old-slug", {
+      slug: "old-slug",
+      ydoc_state: "late-state",
+      content: "late content",
+      char_count: 12,
+      tags: [],
+      is_encrypted: false,
+      enc_salt: null,
+      enc_check: null,
+      enc_iterations: 100000,
+    });
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    await expect(finalized).resolves.toEqual({ deletionConfirmed: true });
+    expect(rows.has("old-slug")).toBe(false);
   });
 
   it("clears local Yjs/IndexedDB/session state for the old slug during rename", async () => {

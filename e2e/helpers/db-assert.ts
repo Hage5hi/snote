@@ -3,6 +3,7 @@
 // resurrection, etc.). Uses the anon key — same client seed helpers use.
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Page } from "@playwright/test";
 
 function env(name: string): string {
   const v = process.env[name];
@@ -70,4 +71,49 @@ export async function waitForSlugAbsent(
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   return last;
+}
+
+export type OldSlugPresence = {
+  phase: "db-before-ui" | "ui" | "db-after-ui";
+  db: NoteRowSnapshot;
+  uiTextMatched: boolean;
+  uiText?: string;
+};
+
+export async function verifyOldSlugGoneFromDbAndUi(
+  page: Page,
+  slug: string,
+  opts: WaitForSlugAbsentOptions & {
+    forbiddenText?: string;
+    postRevisitTimeoutMs?: number;
+  } = {},
+): Promise<OldSlugPresence | null> {
+  const beforeUi = await waitForSlugAbsent(slug, opts);
+  if (beforeUi) return { phase: "db-before-ui", db: beforeUi, uiTextMatched: false };
+
+  await page.goto(`/${slug}`);
+  if (opts.forbiddenText) {
+    const editor = page.locator(".cm-content").first();
+    try {
+      await editor.waitFor({ state: "visible", timeout: 5_000 });
+      const uiText = await editor.innerText({ timeout: 2_000 });
+      if (uiText.includes(opts.forbiddenText)) {
+        return {
+          phase: "ui",
+          db: await snapshotSlugRow(slug),
+          uiTextMatched: true,
+          uiText,
+        };
+      }
+    } catch {
+      /* no editor rendered is acceptable for a deleted slug */
+    }
+  }
+
+  const afterUi = await waitForSlugAbsent(slug, {
+    timeoutMs: opts.postRevisitTimeoutMs ?? 3_000,
+    intervalMs: opts.intervalMs,
+  });
+  if (afterUi) return { phase: "db-after-ui", db: afterUi, uiTextMatched: false };
+  return null;
 }

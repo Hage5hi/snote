@@ -11,6 +11,8 @@ const PIXEL_DIFF_RATIO = (() => {
   return Number.isFinite(v) && v >= 0 ? v : 0.02;
 })();
 
+const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false, // language tests touch shared localStorage
@@ -41,7 +43,13 @@ export default defineConfig({
   // CI runs all three; local dev defaults to chromium only.
   projects: (() => {
     const all = [
-      { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+      {
+        name: "chromium",
+        use: {
+          ...devices["Desktop Chrome"],
+          ...(chromiumExecutablePath ? { launchOptions: { executablePath: chromiumExecutablePath } } : {}),
+        },
+      },
       { name: "firefox", use: { ...devices["Desktop Firefox"] } },
       { name: "webkit", use: { ...devices["Desktop Safari"] } },
     ];

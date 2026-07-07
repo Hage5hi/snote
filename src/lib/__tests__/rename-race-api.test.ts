@@ -8,7 +8,7 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { prepareRename, finalizeRename } from "../rename";
-import { SupabaseYjsProvider, unabandonProviderForSlug } from "../yjs/provider";
+import { getSnapshotDebounceMs, SupabaseYjsProvider, unabandonProviderForSlug } from "../yjs/provider";
 
 type NoteRow = {
   slug: string;
@@ -102,7 +102,7 @@ describe("rename race (API-level, no browser)", () => {
 
     await prepareRename("old-slug", "new-slug");
     const finalized = finalizeRename("old-slug", "new-slug");
-    await vi.advanceTimersByTimeAsync(750);
+    await vi.advanceTimersByTimeAsync(getSnapshotDebounceMs() + 2_000);
     await expect(finalized).resolves.toEqual({ deletionConfirmed: true });
 
     // Simulate a debounced snapshot writer firing AFTER finalizeRename.
@@ -134,3 +134,22 @@ describe("rename race (API-level, no browser)", () => {
     }
   });
 });
+
+  it("provider marked abandoned immediately stops queueing updates and snapshots", async () => {
+    const doc = new Y.Doc();
+    const provider = new SupabaseYjsProvider("abandon-test", doc);
+    
+    // 1) Mark as abandoned
+    provider.markAbandoned();
+    
+    // 2) Try to update
+    doc.getText("content").insert(0, "late edit");
+    
+    // 3) Manually trigger saveSnapshot
+    await provider.saveSnapshot();
+    
+    // 4) Assert no upsert happened for this slug
+    expect(upserts.some((u) => u.slug === "abandon-test")).toBe(false);
+    
+    await provider.destroy();
+  });
