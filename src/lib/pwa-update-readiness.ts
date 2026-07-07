@@ -24,10 +24,19 @@ function isStringOrNull(v: unknown): v is string | null {
 }
 
 export type PwaReadinessInvalidReason = {
+  /** Field name that failed validation (e.g. "reloadStrategy" or "<root>"). */
   field: string;
+  /** Alias of `field`, kept for QA/E2E consumers that use dot-path naming. */
+  path: string;
+  /** Human-readable reason the field is invalid. */
   reason: string;
+  /** Runtime typeof / stringified value received. */
   received: string;
 };
+
+function mk(field: string, reason: string, received: string): PwaReadinessInvalidReason {
+  return { field, path: field, reason, received };
+}
 
 /** Returns null when valid; otherwise a single reason describing the first
  *  field that failed the schema. */
