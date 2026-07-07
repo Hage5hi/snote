@@ -79,6 +79,7 @@ export function parseArgs(argv: string[]) {
     else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--list-outputs" || a === "--list-artifacts") args.listOutputs = true;
     else if (a === "--resume" || a === "--idempotent") args.resume = true;
+    else if (a.startsWith("--project=")) args.project = a.slice("--project=".length);
     else if (a.startsWith("--retries=")) args.retries = a.slice("--retries=".length);
     else if (a.startsWith("--base-url=")) args.baseUrl = a.slice("--base-url=".length).replace(/\/$/, "");
     else if (a.startsWith("--out-dir=")) { args.outDir = a.slice("--out-dir=".length); outDirSet = true; }
