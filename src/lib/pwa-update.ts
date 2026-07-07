@@ -9,6 +9,7 @@ import { createElement, type MouseEvent, type ReactNode } from "react";
 import { registerSW } from "virtual:pwa-register";
 import { toast as sonnerToast } from "sonner";
 import { detectLang, dict, STORAGE_KEY, type Lang } from "@/i18n";
+import type { PwaReloadStrategy, PwaUpdateReadinessState } from "@/lib/pwa-update-readiness";
 
 declare const __BUILD_ID__: string;
 const STAMPED_BUILD_ID: string = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
@@ -25,18 +26,16 @@ const RELOAD_FALLBACK_MS = envNum("VITE_PWA_RELOAD_FALLBACK_MS", 2500);
 const TOAST_ID = "pwa-update-toast";
 const PENDING_BUILD_KEY = "pwa-update-pending-build";
 
-type ReloadStrategy = "waiting-sw" | "hard" | null;
+// Single source of truth: extend the shared readiness type so UI/E2E and
+// runtime writer never drift. `lastRemoteBuildId`/`lastAcceptedAt` are
+// required at the writer level (nullable) but optional in the schema.
+type ReloadStrategy = PwaReloadStrategy;
 
-type PwaUpdateDebugState = {
-  currentBuildId: string;
-  pendingBuildId: string | null;
-  updateAvailable: boolean;
-  updateInProgress: boolean;
+type PwaUpdateDebugState = PwaUpdateReadinessState & {
   lastRemoteBuildId: string | null;
-  reloadAttemptCount: number;
-  reloadStrategy: ReloadStrategy;
   lastAcceptedAt: number | null;
 };
+
 
 declare global {
   interface Window {
