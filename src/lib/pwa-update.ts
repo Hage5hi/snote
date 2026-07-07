@@ -327,10 +327,32 @@ export function registerAppUpdater(): void {
     hardReload(pendingBuildId);
   };
 
+  const logLifecycle = (event: string) => {
+    const payload = {
+      event,
+      currentBuildId: getCurrentBuildId(),
+      pendingBuildId: latestRemoteBuildId ?? pendingBuildFromPreviousLoad,
+      reloadStrategy,
+      reloadAttemptCount,
+      updateAvailable,
+      updateInProgress: reloadInProgress,
+      at: new Date().toISOString(),
+    };
+    console.info("[pwa-update:lifecycle]", payload);
+  };
+  // On-demand debug dump for humans (paste `__SNOTE_PWA_UPDATE_DEBUG__()`
+  // into the devtools console to see current vs pending buildId + strategy).
+  (window as unknown as { __SNOTE_PWA_UPDATE_DEBUG__?: () => PwaUpdateDebugState | undefined }).__SNOTE_PWA_UPDATE_DEBUG__ =
+    () => {
+      logLifecycle("manual-dump");
+      return window.__SNOTE_PWA_UPDATE_STATE__;
+    };
+
   const triggerToast = () => {
     updateAvailable = true;
     syncDebugState();
     renderToast();
+    logLifecycle("toast-shown");
   };
 
   syncDebugState();
