@@ -28,9 +28,13 @@ interface TopbarBrandProps {
   provider?: SupabaseYjsProvider | null;
   /** Returns the current decrypted note body. Used by the Copy icon button. */
   getContent: () => string;
+  /** When true, hide the Home arrow. Used by SplitView-embedded panels where
+   *  a single top-level Home button already exists. */
+  hideHome?: boolean;
 }
 
-export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent }: TopbarBrandProps) {
+export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false }: TopbarBrandProps) {
+
   const { t } = useI18n();
 
   const copyUrl = async () => {
@@ -57,24 +61,27 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent }: To
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link
-            to="/"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={t("brand.home")}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              window.open("/", "_blank", "noopener,noreferrer");
-            }}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{t("brand.home")}</TooltipContent>
-      </Tooltip>
+      {!hideHome && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to="/"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={t("brand.home")}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                window.open("/", "_blank", "noopener,noreferrer");
+              }}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t("brand.home")}</TooltipContent>
+        </Tooltip>
+      )}
 
       <div className="flex min-w-0 items-center gap-2">
+
         <Cloud className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <Tooltip>
           <TooltipTrigger asChild>

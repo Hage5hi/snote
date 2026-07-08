@@ -148,7 +148,9 @@ export function Topbar({
               isEncrypted={isEncrypted}
               provider={provider}
               getContent={getContent}
+              hideHome={compact}
             />
+
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {showSceneToggle && (
                 <span className="hidden md:inline-flex">
@@ -211,7 +213,9 @@ export function Topbar({
             isEncrypted={isEncrypted}
             provider={provider}
             getContent={getContent}
+            hideHome={compact}
           />
+
 
           <div className="ml-auto flex items-center gap-1 sm:gap-1.5">
             <WordCountTrigger

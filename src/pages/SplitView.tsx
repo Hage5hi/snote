@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, Navigate, useParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Link2 } from "lucide-react";
@@ -10,85 +10,124 @@ import { useSceneTheme } from "@/hooks/use-scene-theme";
 const NotePage = lazy(() => import("./NotePage"));
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const MIN_PANES = 2;
+const MAX_PANES = 4;
 
 /**
- * SplitView shows two notes side-by-side. Route: /:slugs where slugs = "a+b".
- * Optional sync-scroll keeps the two panels at the same scroll ratio.
+ * SplitView shows 2–4 notes at once. Route: /:slugs where slugs = "a+b",
+ * "a+b+c", or "a+b+c+d". Optional sync-scroll keeps every pane at the same
+ * scroll ratio.
+ *
+ * Layouts:
+ *   2 → left | right
+ *   3 → top row (n1 | n2), bottom row = n3 full width
+ *   4 → 2×2 grid
  */
 export default function SplitView() {
   const { slug = "" } = useParams();
-  const [left, right] = slug.split("+");
+  const rawSlugs = slug.split("+").filter(Boolean);
   const [syncScroll, setSyncScroll] = useState(true);
-  const leftRef = useRef<HTMLDivElement>(null);
-  const rightRef = useRef<HTMLDivElement>(null);
+  // Refs for each pane container; sync-scroll wires their .cm-scroller children.
+  const paneRefs = useRef<Array<HTMLDivElement | null>>([]);
+
+  // Deduplicate: identical slugs on multiple panes cause provider/presence
+  // conflicts. Preserve first-occurrence order.
+  const slugs = useMemo(() => Array.from(new Set(rawSlugs)), [slug]);
 
   useEffect(() => {
     if (!syncScroll) return;
-    const lEl = leftRef.current?.querySelector(".cm-scroller") as HTMLElement | null;
-    const rEl = rightRef.current?.querySelector(".cm-scroller") as HTMLElement | null;
-    if (!lEl || !rEl) return;
+    const scrollers = paneRefs.current
+      .slice(0, slugs.length)
+      .map((el) => el?.querySelector(".cm-scroller") as HTMLElement | null)
+      .filter((el): el is HTMLElement => !!el);
+    if (scrollers.length < 2) return;
 
     let locked = false;
-    const sync = (from: HTMLElement, to: HTMLElement) => () => {
-      if (locked) return;
-      const ratio = from.scrollTop / Math.max(1, from.scrollHeight - from.clientHeight);
-      locked = true;
-      to.scrollTop = ratio * Math.max(1, to.scrollHeight - to.clientHeight);
-      requestAnimationFrame(() => (locked = false));
-    };
-    const onL = sync(lEl, rEl);
-    const onR = sync(rEl, lEl);
-    lEl.addEventListener("scroll", onL);
-    rEl.addEventListener("scroll", onR);
+    const handlers: Array<[HTMLElement, () => void]> = [];
+    for (const src of scrollers) {
+      const handler = () => {
+        if (locked) return;
+        const ratio = src.scrollTop / Math.max(1, src.scrollHeight - src.clientHeight);
+        locked = true;
+        for (const dst of scrollers) {
+          if (dst === src) continue;
+          dst.scrollTop = ratio * Math.max(1, dst.scrollHeight - dst.clientHeight);
+        }
+        requestAnimationFrame(() => (locked = false));
+      };
+      src.addEventListener("scroll", handler);
+      handlers.push([src, handler]);
+    }
     return () => {
-      lEl.removeEventListener("scroll", onL);
-      rEl.removeEventListener("scroll", onR);
+      for (const [el, h] of handlers) el.removeEventListener("scroll", h);
     };
-  }, [syncScroll, left, right]);
+  }, [syncScroll, slugs]);
 
-  if (!SLUG_RE.test(left ?? "") || !SLUG_RE.test(right ?? "")) {
+  // Invalid: wrong count or any slug fails the regex → go home.
+  if (
+    rawSlugs.length < MIN_PANES ||
+    rawSlugs.length > MAX_PANES ||
+    rawSlugs.some((s) => !SLUG_RE.test(s))
+  ) {
     return <Navigate to="/" replace />;
   }
-  // Same slug on both sides causes provider/presence conflicts — collapse to single note.
-  if (left === right) {
-    return <Navigate to={`/${left}`} replace />;
+  // All identical → collapse to single-note route.
+  if (slugs.length === 1) {
+    return <Navigate to={`/${slugs[0]}`} replace />;
+  }
+  // Some duplicates removed → redirect to the canonical unique-slug URL.
+  if (slugs.length !== rawSlugs.length) {
+    return <Navigate to={`/${slugs.join("+")}`} replace />;
   }
 
   return (
-    <SplitViewBody left={left} right={right} syncScroll={syncScroll} setSyncScroll={setSyncScroll} leftRef={leftRef} rightRef={rightRef} />
+    <SplitViewBody
+      slugs={slugs}
+      syncScroll={syncScroll}
+      setSyncScroll={setSyncScroll}
+      paneRefs={paneRefs}
+    />
   );
 }
 
 function SplitViewBody({
-  left,
-  right,
+  slugs,
   syncScroll,
   setSyncScroll,
-  leftRef,
-  rightRef,
+  paneRefs,
 }: {
-  left: string;
-  right: string;
+  slugs: string[];
   syncScroll: boolean;
   setSyncScroll: (v: (b: boolean) => boolean) => void;
-  leftRef: React.RefObject<HTMLDivElement>;
-  rightRef: React.RefObject<HTMLDivElement>;
+  paneRefs: React.MutableRefObject<Array<HTMLDivElement | null>>;
 }) {
   const { scene } = useSceneTheme();
   const hasScene = scene !== "none";
+  const joined = slugs.join("+");
+  const label = slugs.map((s) => `/${s}`).join(" + ");
+  const canonical = `https://snote.lovable.app/${joined}`;
+  const title = `Split view: ${label} — Syrin Notes`;
+  const desc = `Compare ${slugs.length} markdown notes side by side (${label}) with synced scrolling on Syrin Notes.`;
+
+  // Layout: 2 → 2 cols; 3 → 2×2 grid, last spans both cols; 4 → 2×2 grid.
+  const gridClass =
+    slugs.length === 2
+      ? "grid-cols-1 md:grid-cols-2"
+      : "grid-cols-1 md:grid-cols-2 md:grid-rows-2";
+
   return (
     <AppShell className="flex h-svh flex-col">
       <Helmet>
-        <title>{`Split view: /${left} + /${right} — Syrin Notes`}</title>
-        <meta name="description" content={`Compare two markdown notes side by side (/${left} and /${right}) with synced scrolling on Syrin Notes.`} />
-        <link rel="canonical" href={`https://snote.lovable.app/${left}+${right}`} />
+        <title>{title}</title>
+        <meta name="description" content={desc} />
+        <link rel="canonical" href={canonical} />
         {/* eslint-disable-next-line no-restricted-syntax -- SEO control value */}
         <meta name="robots" content="noindex, follow" />
-        <meta property="og:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
-        <meta property="og:description" content={`Compare two markdown notes side by side (/${left} and /${right}) with synced scrolling.`} />
-        <meta property="og:url" content={`https://snote.lovable.app/${left}+${right}`} />
-        <meta name="twitter:title" content={`Split view: /${left} + /${right} — Syrin Notes`} />
-        <meta name="twitter:description" content={`Compare two markdown notes side by side (/${left} and /${right}).`} />
+        <meta property="og:title" content={title} />
+        <meta property="og:description" content={desc} />
+        <meta property="og:url" content={canonical} />
+        <meta name="twitter:title" content={title} />
+        <meta name="twitter:description" content={desc} />
       </Helmet>
       <header
         className={
@@ -106,14 +145,27 @@ function SplitViewBody({
         <Tooltip>
           <TooltipTrigger asChild>
             {/* eslint-disable-next-line no-restricted-syntax -- universal nav icon */}
-            <Link to="/" className="text-muted-foreground hover:text-foreground" aria-label="Home">
+            <Link
+              to="/"
+              className="text-muted-foreground hover:text-foreground"
+              aria-label="Home"
+              onContextMenu={(e) => {
+                e.preventDefault();
+                window.open("/", "_blank", "noopener,noreferrer");
+              }}
+            >
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </TooltipTrigger>
           <TooltipContent side="bottom">Back to home</TooltipContent>
         </Tooltip>
-        <span className="font-mono">
-          /{left} <span className="text-muted-foreground">+</span> /{right}
+        <span className="font-mono truncate">
+          {slugs.map((s, i) => (
+            <span key={`${s}-${i}`}>
+              {i > 0 && <span className="text-muted-foreground"> + </span>}
+              /{s}
+            </span>
+          ))}
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -129,22 +181,44 @@ function SplitViewBody({
           </TooltipTrigger>
           <TooltipContent side="bottom">
             {syncScroll
-              ? "Syncing scroll across both panels. Click to disable."
-              : "Click to enable synced scrolling between the two notes."}
+              ? "Syncing scroll across all panels. Click to disable."
+              : "Click to enable synced scrolling between all notes."}
           </TooltipContent>
         </Tooltip>
       </header>
-      <main className="grid flex-1 min-h-0 grid-cols-1 md:grid-cols-2 divide-y md:divide-x md:divide-y-0 divide-border bg-background">
-        <div ref={leftRef} className="min-h-0 overflow-hidden">
-          <Suspense fallback={<div className="h-full bg-background" />}>
-            <NotePage embedSlug={left} />
-          </Suspense>
-        </div>
-        <div ref={rightRef} className="min-h-0 overflow-hidden">
-          <Suspense fallback={<div className="h-full bg-background" />}>
-            <NotePage embedSlug={right} />
-          </Suspense>
-        </div>
+      <main className={`grid flex-1 min-h-0 bg-background divide-border ${gridClass}`}>
+        {slugs.map((s, i) => {
+          // For 3-pane layout the third pane spans both columns to fill the
+          // bottom row.
+          const spanClass = slugs.length === 3 && i === 2 ? "md:col-span-2" : "";
+          // Borders between panes: right border for left column, bottom border
+          // for top row. Simpler than divide-* which doesn't handle the 3-pane
+          // asymmetric layout.
+          const borderClass = [
+            // vertical divider between columns (all layouts, not on last column)
+            i % 2 === 0 && !(slugs.length === 3 && i === 2) ? "md:border-r md:border-border" : "",
+            // horizontal divider between rows (3/4-pane, top row only)
+            slugs.length >= 3 && i < 2 ? "border-b border-border md:border-b" : "",
+            // mobile stacking: separator between stacked panes
+            i > 0 ? "border-t border-border md:border-t-0" : "",
+          ]
+            .filter(Boolean)
+            .join(" ");
+          return (
+            <div
+              key={`${s}-${i}`}
+              ref={(el) => {
+                paneRefs.current[i] = el;
+              }}
+
+              className={`min-h-0 min-w-0 overflow-hidden ${spanClass} ${borderClass}`}
+            >
+              <Suspense fallback={<div className="h-full bg-background" />}>
+                <NotePage embedSlug={s} />
+              </Suspense>
+            </div>
+          );
+        })}
       </main>
     </AppShell>
   );

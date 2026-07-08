@@ -1,81 +1,38 @@
-## Scope
+## Goals
 
-Three items. #1 is large and touches many layers, so I'm laying it out before touching code.
+1. Right-click on the top-level "Back to home" arrow in Split view opens `/` in a new tab (parity with the single-note Home button).
+2. Remove the redundant per-note Home arrow from each embedded NotePage inside Split view — keep only the single top-level one.
+3. Extend Split view to support 3 and 4 slugs (route `/a+b`, `/a+b+c`, `/a+b+c+d`) with these layouts:
+   - 2 notes → left | right (current)
+   - 3 notes → top row split in two (note 1 | note 2), bottom row = note 3 full width
+   - 4 notes → 2×2 grid
 
-### 1. Remove "Rename slug" and "Duplicate note" entirely
+## Changes
 
-These features are woven through UI, libs, edge functions, tests, and i18n. Plan removes them in dependency order so the app never enters a half-broken state.
+### `src/pages/SplitView.tsx`
+- Parse `slug.split("+")` into an array of 2–4 slugs. Validate each with `SLUG_RE`; redirect to `/` if any invalid or count outside 2..4. Deduplicate consecutive/identical slugs (if all identical → single note redirect; otherwise keep only unique to avoid provider conflicts, redirect to the joined unique path).
+- Replace hard-coded `left`/`right` refs with an array of refs (`useRef<HTMLDivElement[]>`). Update sync-scroll effect to attach listeners across every pair of `.cm-scroller` elements so any pane drives the others (still gated by `syncScroll`).
+- Add `onContextMenu` to the header's `<Link to="/">` that calls `e.preventDefault()` and `window.open("/", "_blank", "noopener,noreferrer")` — matches `TopbarBrand.tsx`.
+- Header slug label shows all slugs joined with ` + `.
+- `<main>` layout driven by count:
+  - 2 → `grid-cols-1 md:grid-cols-2`
+  - 3 → `grid-cols-1 md:grid-cols-2 md:grid-rows-2`, third pane spans `md:col-span-2`
+  - 4 → `grid-cols-1 md:grid-cols-2 md:grid-rows-2`
+- Update Helmet `<title>`, meta description, canonical, and og/twitter tags to use the joined slug list.
 
-**UI (safe to delete outright)**
-- `src/components/note/RenameDialog.tsx`
-- `src/components/note/DuplicateDialog.tsx`
-- `src/components/note/__tests__/RenameDialog.test.tsx`
-- Prune Rename/Duplicate menu items, handlers, state, and shortcuts from:
-  - `src/components/note/topbar/NoteMenu.tsx`
-  - `src/components/note/topbar/Topbar.tsx`
-  - `src/pages/NotePage.tsx` (dialog mounts, keyboard shortcut wiring)
-  - `src/components/CommandPalette.tsx` / `CommandPaletteBody.tsx` (rename/duplicate commands, if present)
-  - `src/components/ShortcutHelp.tsx` (rename/duplicate rows)
+### `src/pages/NotePage.tsx`
+- Add optional prop `embedded?: boolean` (default `false`). When embedded, pass through to `<Topbar embedded />`.
+- Split view passes `embedded` alongside `embedSlug`.
 
-**Library code**
-- Delete `src/lib/rename.ts` and `src/lib/rename-cleanup-status.ts`.
-- `src/lib/recent-notes.ts` — drop `renamePinned` / `renameRecent` exports; keep the rest.
-- `src/lib/share-tokens.ts` — drop `renameShareToken` export.
-- `src/lib/yjs/provider.ts` + `src/lib/yjs/doc-cache.ts` — remove the rename-abandon path (`unabandonProviderForSlug`, abandoned-slug guards, prepare/finalize hooks). The doc cache/provider keep working; only rename-specific branches go.
-- `src/lib/snapshots.ts` — remove rename-related snapshot cancellation only if it's rename-only; keep general snapshot APIs.
+### `src/components/note/topbar/Topbar.tsx` and `TopbarBrand.tsx`
+- Add `embedded?: boolean` prop; forward from `Topbar` → `TopbarBrand`.
+- In `TopbarBrand`, when `embedded` is true, do not render the Home `<Link>` + its tooltip. Everything else (slug copy, copy content, outline, sync indicator, tags) stays.
 
-**Edge functions**
-- Delete `supabase/functions/share-rename/` and `supabase/functions/old-slug-cleanup-status/` (rename-only surfaces).
-- Leave `share-create`, `share-view`, `share-revoke`, `raw`, etc. untouched.
+### Validation
+- Manual: visit `/123+234`, `/a+b+c`, `/a+b+c+d`; verify layouts, single top-level Home button, right-click opens `/` in a new tab, left-click still navigates in place, sync scroll works across all panes.
+- Existing tests unaffected; `e2e/topbar-home-right-click.spec.ts` continues to cover the single-note case.
 
-**i18n**
-- Remove `rename.*` and `dup.*` keys from `src/i18n/index.ts` (all locales).
-- Update `.lintrc-i18n-allowlist.json` if it references any removed keys.
-
-**Tests**
-- Delete rename/duplicate unit tests: `src/lib/__tests__/rename*.test.ts`, `src/components/note/__tests__/RenameDialog.test.tsx`.
-- Delete rename E2E specs: `e2e/note-rename-*.spec.ts`, `e2e/helpers/rename-cleanup.ts`.
-- Trim rename cases from shared specs: `e2e/i18n-dialogs.spec.ts`, `e2e/i18n-toast-regression.spec.ts`, `e2e/helpers/db-assert.ts`, `src/lib/yjs/__tests__/{provider,doc-cache}.test.ts`, `src/lib/__tests__/recent-notes.test.ts`.
-- Leave unrelated `scripts/__tests__/*` (ci-sticky, i18n-allowlist) alone — their "rename"/"duplicate" matches are coincidental (renaming report files, duplicate-audit heuristics).
-
-**Docs**
-- Prune rename/duplicate references from `README.md`, `CLAUDE.md`, `docs/architecture.md`, `docs/known-issues.md`, `CHANGELOG.md` (add a removal entry).
-
-**Verification loop**
-1. `bunx tsgo -p tsconfig.app.json` — no dangling imports.
-2. `bunx vitest run` — unit tests green after removals.
-3. `bunx eslint .` — no unused-var warnings from stripped handlers.
-4. Manual: load a note, confirm the Note menu no longer shows Rename/Duplicate and the app renders normally.
-
-### 2. E2E for stalled SW registration
-
-- New spec `e2e/pwa-update-sw-stall.spec.ts` that:
-  - Uses `installPwaUpdateMock` with poll disabled (`initialPollMs: 10_000_000`) so `__SNOTE_PWA_UPDATE_STATE__.lastRemoteBuildId` never populates.
-  - Calls `waitForPwaUpdaterReady(page, testInfo, 500)` inside `expect(...).rejects.toThrow(/version poller never populated/)`.
-  - After the throw, reads `testInfo.attachments` and asserts one entry is `pwa-updater-not-ready.json` with `lastState`, `swState`, and `timeoutMs` fields.
-- No production code changes needed — this only exercises the existing readiness gate.
-
-### 3. Document the dev PWA debug panel + readiness gate in `e2e/README.md`
-
-Add a new "Dev PWA debug panel" section covering:
-- File: `src/components/dev/PwaUpdateDebugPanel.tsx`, mounted from `src/App.tsx`.
-- Enabled only when `import.meta.env.DEV` is true (`bun run dev`); hidden in preview/prod builds.
-- Reads `window.__SNOTE_PWA_UPDATE_STATE__` every 500ms, so the same values feed the toast, the polling summary, and the panel.
-- Field reference: `current`, `pending`, `strategy` (`waiting-sw` | `hard` | `—`), `attempts`, `inProgress`.
-- Note that the pwa updater short-circuits in Lovable preview, so the panel stays empty there.
-
-And a "Readiness gate" section covering:
-- `waitForPwaUpdaterReady(page, testInfo, timeoutMs=5000)` in `e2e/helpers/pwa-update-mock.ts`.
-- What it waits for (`lastRemoteBuildId`), the default 5s timeout, and how to shorten it in stall tests.
-- On timeout it attaches `pwa-updater-not-ready.json` (schema: `{ lastState, swState: { supported, hasRegistration, active, waiting, installing }, timeoutMs }`) and throws — matching item 2's assertion target.
-
----
-
-## Non-goals / guardrails
-
-- Do not touch unrelated schema-drift, ci-sticky, or i18n-allowlist scripts.
-- Do not alter `src/integrations/supabase/{client,types}.ts` or `supabase/config.toml`.
-- Keep the `notes.slug` column and all other schema untouched — removing the UI is enough; a DB migration is out of scope unless you ask.
-- Recent-notes/pinned-notes storage keys stay backward compatible; only the rename-time mutation helpers are removed.
-
-Reply "go" (or with edits) and I'll execute in the order above.
+## Out of scope
+- No changes to routing beyond the existing `/:slug` dispatcher (still splits on `+`).
+- No new i18n keys; header label stays as raw joined slugs.
+- No changes to business logic in NotePage.
