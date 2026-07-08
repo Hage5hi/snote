@@ -65,5 +65,28 @@ describe("sanitizeUrl", () => {
   it("is case-sensitive for whitelist keys (Foo != foo)", () => {
     const out = sanitizeUrl("/note?Foo=1&foo=2", { allowedParams: ["foo"] });
     expect(out).toBe("/note?foo=2");
+
+  it("fires onStrip with original/sanitized/removed when params are stripped", () => {
+    const onStrip = vi.fn();
+    sanitizeUrl("/note?v=1&foo=bar&extra=2", { allowedParams: ["foo"], onStrip });
+    expect(onStrip).toHaveBeenCalledTimes(1);
+    expect(onStrip.mock.calls[0][0]).toEqual({
+      original: "/note?v=1&foo=bar&extra=2",
+      sanitized: "/note?foo=bar",
+      removed: ["v", "extra"],
+    });
+  });
+
+  it("does not fire onStrip when nothing was stripped", () => {
+    const onStrip = vi.fn();
+    sanitizeUrl("/note?foo=bar", { allowedParams: ["foo"], onStrip });
+    expect(onStrip).not.toHaveBeenCalled();
+  });
+
+  it("respects log:false and stays silent", () => {
+    const spy = vi.spyOn(console, "info").mockImplementation(() => {});
+    sanitizeUrl("/note?v=1", { allowedParams: [], log: false });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
   });
 });
