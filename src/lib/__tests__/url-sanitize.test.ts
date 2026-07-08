@@ -65,6 +65,8 @@ describe("sanitizeUrl", () => {
   it("is case-sensitive for whitelist keys (Foo != foo)", () => {
     const out = sanitizeUrl("/note?Foo=1&foo=2", { allowedParams: ["foo"] });
     expect(out).toBe("/note?foo=2");
+  });
+
 
   it("fires onStrip with original/sanitized/removed when params are stripped", () => {
     const onStrip = vi.fn();
