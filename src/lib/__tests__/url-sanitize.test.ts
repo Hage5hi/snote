@@ -30,7 +30,7 @@ describe("sanitizeUrl", () => {
     expect(out).toBe("https://example.com/note?foo=bar");
   });
 
-  it("returns input unchanged when unparseable", () => {
-    expect(sanitizeUrl("::::not a url::::")).toBe("::::not a url::::");
+  it("handles bare pathnames without an origin", () => {
+    expect(sanitizeUrl("/note?v=1", { allowedParams: [] })).toBe("/note");
   });
 });
