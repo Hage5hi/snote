@@ -209,8 +209,6 @@ function updateDescription(updateInProgress: boolean): ReactNode {
 }
 
 function showUpdateToast(options: {
-  currentBuildId: string;
-  pendingBuildId: string | null;
   updateInProgress: boolean;
   onReload: () => void;
 }): void {
@@ -323,8 +321,6 @@ export function registerAppUpdater(): void {
 
   const renderToast = () => {
     showUpdateToast({
-      currentBuildId: getCurrentBuildId(),
-      pendingBuildId: latestRemoteBuildId ?? pendingBuildFromPreviousLoad,
       updateInProgress: reloadInProgress,
       onReload: reloadNow,
     });
