@@ -41,7 +41,7 @@ specs into one file.
       "reloadStrategy": "hard",         // "waiting-sw" | "hard" | null — which reload path was taken
       "updateAvailable": true,          // poller flag: remote buildId != current
       "updateInProgress": true,         // reloadNow() started, transition not confirmed yet
-      "toastText": "New version available\nCurrent: build-v1\nPending: build-v2" // TOAST value (from DOM)
+      "toastText": "New version available\nReload to get the latest version..." // TOAST value (from DOM; no build IDs)
     }
   ],
   "buildIdMismatches": [ /* subset of samples where pendingBuildId !== currentBuildId */ ]
@@ -54,7 +54,7 @@ specs into one file.
 | ------------------- | ----------------------------------------- | ------ |
 | Polling (in-memory) | `samples[].currentBuildId`                | `window.__SNOTE_PWA_UPDATE_STATE__.currentBuildId` (from `__BUILD_ID__` or E2E override) |
 | Polling (remote)    | `samples[].pendingBuildId`                | Latest `buildId` returned by `/version.json` |
-| Toast (rendered)    | `samples[].toastText`                     | `innerText` of `[data-sonner-toast]`; contains `Current: …` / `Pending: …` lines rendered from the same state |
+| Toast (rendered)    | `samples[].toastText`                     | `innerText` of `[data-sonner-toast]`; user-facing copy only, while build IDs stay in debug state |
 
 A `buildIdMismatchCount > 0` at the end of a run means at least one toast was
 still showing a pending build that hadn't taken effect — usually the smoking

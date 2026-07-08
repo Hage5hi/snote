@@ -53,7 +53,10 @@ describe("registerAppUpdater", () => {
   });
 
   afterEach(() => {
+    (window as unknown as { __SNOTE_PWA_UPDATE_CLEANUP__?: () => void }).__SNOTE_PWA_UPDATE_CLEANUP__?.();
+    delete (window as unknown as { __SNOTE_PWA_UPDATE_CLEANUP__?: () => void }).__SNOTE_PWA_UPDATE_CLEANUP__;
     delete (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__;
+    delete (window as unknown as { __SNOTE_E2E_BUILD_ID__?: string }).__SNOTE_E2E_BUILD_ID__;
   });
 
   it("keeps the toast open until the running buildId actually changes to the remote build", async () => {
@@ -161,5 +164,21 @@ describe("registerAppUpdater", () => {
     expect(toastMock.mock.calls.length).toBeGreaterThan(callsBefore);
     const lastOpts = toastMock.mock.calls.at(-1)![1] as { id: string };
     expect(lastOpts.id).toBe("pwa-update-toast");
+  });
+
+  it("keeps build ids out of the user-facing toast and shows cleanup fallback guidance", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    const lastOpts = toastMock.mock.calls.at(-1)![1] as { description: unknown };
+    const serialized = JSON.stringify(lastOpts.description);
+    expect(serialized).toContain("clear this site's data/cookies");
+    expect(serialized).not.toContain("Current:");
+    expect(serialized).not.toContain("Pending:");
+    expect(serialized).not.toContain("Transition:");
+    expect(serialized).not.toContain("build-a");
+    expect(serialized).not.toContain("build-b");
   });
 });

@@ -25,6 +25,7 @@ const SW_UPDATE_POLL_INTERVAL_MS = envNum("VITE_PWA_SW_POLL_MS", 60 * 1000);
 const RELOAD_FALLBACK_MS = envNum("VITE_PWA_RELOAD_FALLBACK_MS", 2500);
 const TOAST_ID = "pwa-update-toast";
 const PENDING_BUILD_KEY = "pwa-update-pending-build";
+const LEGACY_VERSION_PARAM = "v";
 
 // Single source of truth: extend the shared readiness type so UI/E2E and
 // runtime writer never drift. `lastRemoteBuildId`/`lastAcceptedAt` are
@@ -44,6 +45,7 @@ declare global {
     __SNOTE_E2E_PWA_INITIAL_POLL_MS__?: number;
     __SNOTE_E2E_PWA_POLL_INTERVAL_MS__?: number;
     __SNOTE_PWA_UPDATE_STATE__?: PwaUpdateDebugState;
+    __SNOTE_PWA_UPDATE_CLEANUP__?: () => void;
   }
 }
 
@@ -108,18 +110,53 @@ async function nukeServiceWorkersAndCaches(): Promise<void> {
   }
 }
 
-function hardReload(targetBuildId: string | null): void {
+function cleanCurrentAppUrl(): string {
+  try {
+    const url = new URL(window.location.href);
+    url.searchParams.delete(LEGACY_VERSION_PARAM);
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  }
+}
+
+function scrubLegacyVersionParamFromVisibleUrl(): void {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(LEGACY_VERSION_PARAM)) return;
+    url.searchParams.delete(LEGACY_VERSION_PARAM);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    /* best effort */
+  }
+}
+
+function signalE2EReload(targetBuildId: string | null): boolean {
   if (isE2EUpdateEnabled() && targetBuildId) {
     window.__SNOTE_E2E_BUILD_ID__ = targetBuildId;
     window.dispatchEvent(new CustomEvent("snote:e2e-pwa-hard-reload", { detail: { targetBuildId } }));
-    return;
+    return true;
   }
+  return false;
+}
+
+function reloadCleanUrl(targetBuildId: string | null): void {
+  scrubLegacyVersionParamFromVisibleUrl();
+  if (signalE2EReload(targetBuildId)) return;
   try {
-    const url = new URL(window.location.href);
-    url.searchParams.set("v", targetBuildId ?? String(Date.now()));
-    window.location.replace(url.toString());
+    window.location.replace(cleanCurrentAppUrl());
   } catch {
     window.location.reload();
+  }
+}
+
+async function recoverAndReloadCleanUrl(targetBuildId: string | null): Promise<void> {
+  scrubLegacyVersionParamFromVisibleUrl();
+  if (signalE2EReload(targetBuildId)) return;
+  try {
+    await nukeServiceWorkersAndCaches();
+  } finally {
+    reloadCleanUrl(targetBuildId);
   }
 }
 
@@ -141,29 +178,14 @@ function updateButton(label: string, disabled: boolean, onReload: () => void): R
   );
 }
 
-function updateDescription(
-  currentBuildId: string,
-  pendingBuildId: string | null,
-  updateInProgress: boolean,
-): ReactNode {
+function updateDescription(updateInProgress: boolean): ReactNode {
   const lang = detectLang();
   const bodyKey = updateInProgress ? "update.pending_desc" : "update.description";
   return createElement(
     "div",
     { "data-pwa-update-state": updateInProgress ? "pending" : "available" },
     createElement("div", null, tr(lang, bodyKey)),
-    createElement(
-      "div",
-      {
-        "data-pwa-update-metadata": "true",
-        "data-current-build": currentBuildId,
-        "data-pending-build": pendingBuildId ?? "unknown",
-        style: { marginTop: 6, fontSize: 11, lineHeight: 1.35, opacity: 0.82 },
-      },
-      createElement("div", null, `Current: ${currentBuildId}`),
-      createElement("div", null, `Pending: ${pendingBuildId ?? "unknown"}`),
-      createElement("div", null, `Transition: ${currentBuildId} → ${pendingBuildId ?? "unknown"}`),
-    ),
+    createElement("div", { style: { marginTop: 6, fontSize: 12, lineHeight: 1.35, opacity: 0.82 } }, tr(lang, "update.fallback_cleanup")),
   );
 }
 
@@ -177,7 +199,7 @@ function showUpdateToast(options: {
   const titleKey = options.updateInProgress ? "update.pending_title" : "update.title";
   sonnerToast(tr(lang, titleKey), {
     id: TOAST_ID,
-    description: updateDescription(options.currentBuildId, options.pendingBuildId, options.updateInProgress),
+    description: updateDescription(options.updateInProgress),
     duration: Infinity,
     action: updateButton(tr(lang, "update.btn_reload"), options.updateInProgress, options.onReload),
   });
@@ -197,6 +219,7 @@ function startVersionPoller(
   onCurrent: (remoteBuildId: string) => void,
 ): () => void {
   let stopped = false;
+  let initialTimer: number | undefined;
   let timer: number | undefined;
 
   const check = async () => {
@@ -217,21 +240,31 @@ function startVersionPoller(
 
   const initialDelay = isE2EUpdateEnabled() ? (window.__SNOTE_E2E_PWA_INITIAL_POLL_MS__ ?? 50) : 3000;
   const interval = isE2EUpdateEnabled() ? (window.__SNOTE_E2E_PWA_POLL_INTERVAL_MS__ ?? 250) : VERSION_POLL_INTERVAL_MS;
-  window.setTimeout(check, initialDelay);
-  timer = window.setInterval(check, interval) as unknown as number;
-  document.addEventListener("visibilitychange", () => {
+  const onVisibilityChange = () => {
     if (document.visibilityState === "visible") void check();
-  });
-  window.addEventListener("focus", () => void check());
+  };
+  const onFocus = () => void check();
+
+  initialTimer = window.setTimeout(check, initialDelay) as unknown as number;
+  timer = window.setInterval(check, interval) as unknown as number;
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("focus", onFocus);
 
   return () => {
     stopped = true;
+    if (initialTimer !== undefined) window.clearTimeout(initialTimer);
     if (timer !== undefined) window.clearInterval(timer);
+    document.removeEventListener("visibilitychange", onVisibilityChange);
+    window.removeEventListener("focus", onFocus);
   };
 }
 
 export function registerAppUpdater(): void {
   if (typeof window === "undefined") return;
+  window.__SNOTE_PWA_UPDATE_CLEANUP__?.();
+  window.__SNOTE_PWA_UPDATE_CLEANUP__ = undefined;
+  scrubLegacyVersionParamFromVisibleUrl();
+
   if (import.meta.env.DEV && !isE2EUpdateEnabled()) return;
 
   if (isLovablePreviewHost()) {
@@ -262,6 +295,12 @@ export function registerAppUpdater(): void {
   let reloadInProgress = false;
   let reloadAttemptCount = 0;
   let reloadStrategy: ReloadStrategy = null;
+  const cleanupTasks: Array<() => void> = [];
+  window.__SNOTE_PWA_UPDATE_CLEANUP__ = () => {
+    while (cleanupTasks.length) {
+      cleanupTasks.pop()?.();
+    }
+  };
 
   const renderToast = () => {
     showUpdateToast({
@@ -305,19 +344,21 @@ export function registerAppUpdater(): void {
       logLifecycle("reload-start");
       const fallback = window.setTimeout(() => {
         console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
-        hardReload(pendingBuildId);
+        void recoverAndReloadCleanUrl(pendingBuildId);
       }, RELOAD_FALLBACK_MS);
       let done = false;
       const onCtrl = () => {
         if (done) return;
         done = true;
         window.clearTimeout(fallback);
-        hardReload(pendingBuildId);
+        reloadCleanUrl(pendingBuildId);
       };
       navigator.serviceWorker?.addEventListener("controllerchange", onCtrl, { once: true });
-      void updateSWFn(true).catch(() => {
+      cleanupTasks.push(() => navigator.serviceWorker?.removeEventListener("controllerchange", onCtrl));
+      scrubLegacyVersionParamFromVisibleUrl();
+      void updateSWFn(false).catch(() => {
         window.clearTimeout(fallback);
-        hardReload(pendingBuildId);
+        void recoverAndReloadCleanUrl(pendingBuildId);
       });
       return;
     }
@@ -326,7 +367,7 @@ export function registerAppUpdater(): void {
     syncDebugState();
     console.log("[pwa-update] reload strategy=hard", { currentBuildId: getCurrentBuildId(), pendingBuildId });
     logLifecycle("reload-start");
-    hardReload(pendingBuildId);
+    void recoverAndReloadCleanUrl(pendingBuildId);
   };
 
   const logLifecycle = (event: string) => {
@@ -358,7 +399,7 @@ export function registerAppUpdater(): void {
   };
 
   syncDebugState();
-  startVersionPoller(
+  cleanupTasks.push(startVersionPoller(
     (remoteBuildId) => {
       latestRemoteBuildId = remoteBuildId;
       pendingBuildFromPreviousLoad = remoteBuildId;
@@ -387,7 +428,7 @@ export function registerAppUpdater(): void {
       });
       logLifecycle("transition-complete");
     },
-  );
+  ));
 
   if (!("serviceWorker" in navigator) || isE2EUpdateEnabled()) return;
 
@@ -396,16 +437,23 @@ export function registerAppUpdater(): void {
       if (!registration) return;
       waitingRegistration = registration;
       registration.update().catch(() => {});
-      window.setInterval(() => {
+      const swUpdateTimer = window.setInterval(() => {
         registration.update().catch(() => {});
       }, SW_UPDATE_POLL_INTERVAL_MS);
-      document.addEventListener("visibilitychange", () => {
+      const onVisibilityChange = () => {
         if (document.visibilityState === "visible") {
           registration.update().catch(() => {});
         }
-      });
-      window.addEventListener("focus", () => {
+      };
+      const onFocus = () => {
         registration.update().catch(() => {});
+      };
+      document.addEventListener("visibilitychange", onVisibilityChange);
+      window.addEventListener("focus", onFocus);
+      cleanupTasks.push(() => {
+        window.clearInterval(swUpdateTimer);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
+        window.removeEventListener("focus", onFocus);
       });
     },
     async onNeedRefresh() {
@@ -419,10 +467,16 @@ export function registerAppUpdater(): void {
     },
   });
 
-  window.addEventListener("storage", (e) => {
+  const onStorage = (e: StorageEvent) => {
     if (e.key === STORAGE_KEY && updateAvailable) triggerToast();
-  });
-  window.addEventListener("i18n:lang-changed", () => {
+  };
+  const onLangChanged = () => {
     if (updateAvailable) triggerToast();
+  };
+  window.addEventListener("storage", onStorage);
+  window.addEventListener("i18n:lang-changed", onLangChanged);
+  cleanupTasks.push(() => {
+    window.removeEventListener("storage", onStorage);
+    window.removeEventListener("i18n:lang-changed", onLangChanged);
   });
 }
