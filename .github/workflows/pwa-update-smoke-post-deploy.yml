@@ -85,3 +85,49 @@ jobs:
           path: test-results/
           retention-days: 14
           if-no-files-found: ignore
+      - name: Open GitHub issue on smoke failure
+        if: failure()
+        uses: actions/github-script@v7
+        env:
+          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+          SMOKE_ENVIRONMENT: ${{ env.SMOKE_ENVIRONMENT }}
+        with:
+          script: |
+            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
+            const title = `[pwa-smoke] Update flow regression on ${process.env.SMOKE_ENVIRONMENT} (${process.env.GITHUB_SHA.slice(0, 7)})`;
+            const body = [
+              `PWA update multi-click smoke failed after deploy.`,
+              ``,
+              `- Environment: \`${process.env.SMOKE_ENVIRONMENT}\``,
+              `- Target URL: ${process.env.SMOKE_BASE_URL}`,
+              `- Commit: \`${process.env.GITHUB_SHA}\``,
+              `- Workflow run: ${runUrl}`,
+              ``,
+              `Download artifacts from the run above:`,
+              `- \`pwa-update-smoke-report-run${process.env.GITHUB_RUN_NUMBER}-attempt${process.env.GITHUB_RUN_ATTEMPT}\` — HTML report`,
+              `- \`pwa-update-smoke-artifacts-run${process.env.GITHUB_RUN_NUMBER}-attempt${process.env.GITHUB_RUN_ATTEMPT}\` — traces, videos, \`url-history.json\`, \`regression-screenshot.png\``,
+              ``,
+              `Likely cause: the Update flow re-introduced a \`?v=\` (or other cache-buster) query param on the note URL, or a rogue service worker is rewriting navigations. See \`url-history.json\` for the exact navigation that added the param and the SW registrations snapshot before/after.`,
+            ].join("\n");
+            // Dedupe: reuse the open issue with the same title if it exists.
+            const q = `repo:${process.env.GITHUB_REPOSITORY} is:issue is:open in:title "[pwa-smoke] Update flow regression on ${process.env.SMOKE_ENVIRONMENT}"`;
+            const search = await github.rest.search.issuesAndPullRequests({ q });
+            const existing = search.data.items[0];
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body: `New failure on run ${runUrl}\n\n${body}`,
+              });
+              core.info(`Commented on existing issue #${existing.number}`);
+            } else {
+              const created = await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ["pwa", "smoke-failure", `env:${process.env.SMOKE_ENVIRONMENT}`],
+              });
+              core.info(`Opened issue #${created.data.number}`);
+            }
