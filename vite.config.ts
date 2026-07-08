@@ -66,6 +66,8 @@ export default defineConfig(({ mode }) => ({
       // SW only activates in production builds — preview iframes stay clean.
       devOptions: { enabled: false },
       workbox: {
+        clientsClaim: true,
+        skipWaiting: false,
         globPatterns: ["**/*.{js,css,html,svg,png,webp,woff,woff2,json,ico}"],
         // Exclude heavy lazy-loaded vendors + the markdown preview worker from
         // precache so first install stays light. They still get cached via the

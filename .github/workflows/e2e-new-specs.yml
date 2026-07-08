@@ -77,6 +77,7 @@ jobs:
             e2e/pwa-invalid-stats-csv-rows-per-range.spec.ts \
             e2e/pwa-invalid-stats-many-remount-rounds.spec.ts \
             e2e/split-view-malformed-persistence.spec.ts \
+            e2e/pwa-update-no-url-v-param.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}

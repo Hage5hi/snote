@@ -58,8 +58,11 @@ test("Update toast disappears only after the running buildId changes", async ({ 
 
   const toast = page.getByText("New version available");
   await expect(toast).toBeVisible({ timeout: 5_000 });
-  await expect(page.getByText("Current: build-v1")).toBeVisible();
-  await expect(page.getByText("Pending: build-v2")).toBeVisible();
+  const toastBody = page.locator("[data-pwa-update-state='available']");
+  await expect(toastBody).toContainText("clear this site's data/cookies");
+  await expect(page.getByText(/^Current:/)).toHaveCount(0);
+  await expect(page.getByText(/^Pending:/)).toHaveCount(0);
+  await expect(page.getByText(/^Transition:/)).toHaveCount(0);
   await attachPwaMetadata(testInfo, page, "before-click");
 
   const update = page.getByRole("button", { name: /^Update$/ });
