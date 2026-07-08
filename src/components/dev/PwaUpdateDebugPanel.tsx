@@ -211,7 +211,7 @@ export function PwaUpdateDebugPanel() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `pwa-readiness-invalid-${new Date(now).toISOString().replace(/[:.]/g, "-")}.csv`;
+      a.download = `pwa-readiness-invalid-${statsWindow}-${new Date(now).toISOString().replace(/[:.]/g, "-")}.csv`;
       document.body.appendChild(a);
       a.click();
       a.remove();

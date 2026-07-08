@@ -74,4 +74,27 @@ describe("split-view-persistence", () => {
     expect(got?.count).toBe(3);
     expect(got?.savedAt).toBeGreaterThanOrEqual(before);
   });
+
+  it("rejects mismatched count vs slugs length (out of range)", () => {
+    // count is metadata but loader validates via slugs.length; a payload whose
+    // slugs.length is outside 2..4 must return null even if `count` claims otherwise.
+    window.sessionStorage.setItem(
+      LAST_SPLIT_VIEW_STORAGE_KEY,
+      JSON.stringify({ path: "/a", slugs: ["a"], count: 3, savedAt: 0 }),
+    );
+    expect(loadLastSplitView()).toBeNull();
+    window.sessionStorage.setItem(
+      LAST_SPLIT_VIEW_STORAGE_KEY,
+      JSON.stringify({ path: "/a+b+c+d+e", slugs: ["a", "b", "c", "d", "e"], count: 2, savedAt: 0 }),
+    );
+    expect(loadLastSplitView()).toBeNull();
+  });
+
+  it("rejects payload missing path string", () => {
+    window.sessionStorage.setItem(
+      LAST_SPLIT_VIEW_STORAGE_KEY,
+      JSON.stringify({ slugs: ["a", "b"], count: 2, savedAt: 0 }),
+    );
+    expect(loadLastSplitView()).toBeNull();
+  });
 });

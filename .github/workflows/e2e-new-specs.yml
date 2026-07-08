@@ -71,6 +71,9 @@ jobs:
             e2e/split-view-home-a11y.spec.ts \
             e2e/pwa-invalid-stats-persistence-reload.spec.ts \
             e2e/pwa-invalid-stats-window-switch-reload.spec.ts \
+            e2e/pwa-invalid-stats-nav-remount-no-double-count.spec.ts \
+            e2e/pwa-invalid-stats-cleared-storage-reload.spec.ts \
+            e2e/pwa-invalid-stats-csv-filename.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}
