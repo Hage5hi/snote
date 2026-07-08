@@ -8,6 +8,17 @@ const CACHE_BUSTER_PARAMS = new Set(["v", "ver", "version", "t", "ts", "nocache"
 export interface SanitizeOptions {
   /** Query keys allowed to survive. Everything else is stripped. */
   allowedParams?: Iterable<string>;
+  /**
+   * Optional trace hook fired ONLY when at least one param was stripped.
+   * Receives the original URL, the sanitized URL, and the list of removed
+   * keys (cache-busters + non-whitelisted). Useful for UI/backend logging.
+   */
+  onStrip?: (info: { original: string; sanitized: string; removed: string[] }) => void;
+  /**
+   * When true (default) and `onStrip` is not provided, log stripped params
+   * to the console for post-mortem tracing. Set to false to stay silent.
+   */
+  log?: boolean;
 }
 
 /**
@@ -37,5 +48,17 @@ export function sanitizeUrl(input: string, options: SanitizeOptions = {}): strin
   }
   // Use array (not Set) so duplicate keys are all removed by repeated delete().
   for (const key of keysToDelete) url.searchParams.delete(key);
-  return hadOrigin ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
+  const sanitized = hadOrigin ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
+  if (keysToDelete.length > 0) {
+    if (options.onStrip) {
+      options.onStrip({ original: input, sanitized, removed: keysToDelete });
+    } else if (options.log !== false && typeof console !== "undefined") {
+      console.info("[url-sanitize] stripped query params", {
+        original: input,
+        sanitized,
+        removed: keysToDelete,
+      });
+    }
+  }
+  return sanitized;
 }
