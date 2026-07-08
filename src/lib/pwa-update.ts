@@ -91,7 +91,7 @@ function writeDebugState(next: Partial<PwaUpdateDebugState>): void {
   };
 }
 
-async function nukeServiceWorkersAndCaches(): Promise<void> {
+export async function nukeServiceWorkersAndCaches(): Promise<void> {
   try {
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
