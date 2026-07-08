@@ -144,7 +144,13 @@ function reloadCleanUrl(targetBuildId: string | null): void {
   scrubLegacyVersionParamFromVisibleUrl();
   if (signalE2EReload(targetBuildId)) return;
   try {
-    window.location.replace(cleanCurrentAppUrl());
+    const cleanUrl = cleanCurrentAppUrl();
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (cleanUrl === currentUrl) {
+      window.location.reload();
+    } else {
+      window.location.replace(cleanUrl);
+    }
   } catch {
     window.location.reload();
   }
