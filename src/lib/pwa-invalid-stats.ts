@@ -13,6 +13,13 @@ export const INVALID_STATS_WINDOW_MS: Record<InvalidStatsWindow, number> = {
 /** Retention cap for the timestamps buffer (matches the largest window). */
 export const INVALID_STATS_RETENTION_MS = INVALID_STATS_WINDOW_MS["24h"];
 
+/**
+ * Retention cap for entries persisted to sessionStorage. Prevents unbounded
+ * growth if the app dispatches many invalid events over a long-lived tab.
+ * Only the newest N timestamps are kept.
+ */
+export const INVALID_STATS_MAX_ENTRIES = 5000;
+
 export type InvalidStats = {
   total: number;
   lastMinute: number;
