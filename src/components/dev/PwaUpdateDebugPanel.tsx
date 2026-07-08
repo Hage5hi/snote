@@ -71,20 +71,6 @@ function ensureInvalidListenerInstalled() {
   };
   window.addEventListener(PWA_READINESS_INVALID_EVENT, invalidListenerHandler);
 }
-  if (invalidListenerHandler) return;
-  invalidListenerHandler = () => {
-    const now = Date.now();
-    invalidTotalCount += 1;
-    invalidTimestampsBuffer.push(now);
-    const pruned = pruneInvalidTimestamps(invalidTimestampsBuffer, now);
-    if (pruned.length !== invalidTimestampsBuffer.length) {
-      invalidTimestampsBuffer.length = 0;
-      invalidTimestampsBuffer.push(...pruned);
-    }
-    invalidSubscribers.forEach((fn) => fn());
-  };
-  window.addEventListener(PWA_READINESS_INVALID_EVENT, invalidListenerHandler);
-}
 
 function releaseInvalidListener() {
   invalidListenerRefCount = Math.max(0, invalidListenerRefCount - 1);
