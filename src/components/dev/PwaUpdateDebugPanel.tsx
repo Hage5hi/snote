@@ -15,23 +15,60 @@ import {
   type PwaReadinessInvalidReason,
   type PwaUpdateReadinessState,
 } from "@/lib/pwa-update-readiness";
+import {
+  computeInvalidStats,
+  invalidStatsToCsv,
+  pruneInvalidTimestamps,
+  type InvalidStats,
+  type InvalidStatsWindow,
+} from "@/lib/pwa-invalid-stats";
 
 type PwaUpdateDebugState = PwaUpdateReadinessState;
 
-type InvalidStats = {
-  total: number;
-  lastMinute: number;
-  lastHour: number;
-  lastAt: number | null;
-};
+const WINDOW_OPTIONS: InvalidStatsWindow[] = ["5m", "1h", "24h"];
+
+// Module-level guard so remounts (React StrictMode double-invoke, HMR)
+// cannot double-register the `snote:pwa-readiness-invalid` listener and
+// double-count events into the shared timestamp buffer.
+let invalidListenerRefCount = 0;
+let invalidListenerHandler: ((e: Event) => void) | null = null;
+const invalidTimestampsBuffer: number[] = [];
+let invalidTotalCount = 0;
+const invalidSubscribers = new Set<() => void>();
+
+function ensureInvalidListenerInstalled() {
+  invalidListenerRefCount += 1;
+  if (invalidListenerHandler) return;
+  invalidListenerHandler = () => {
+    const now = Date.now();
+    invalidTotalCount += 1;
+    invalidTimestampsBuffer.push(now);
+    const pruned = pruneInvalidTimestamps(invalidTimestampsBuffer, now);
+    if (pruned.length !== invalidTimestampsBuffer.length) {
+      invalidTimestampsBuffer.length = 0;
+      invalidTimestampsBuffer.push(...pruned);
+    }
+    invalidSubscribers.forEach((fn) => fn());
+  };
+  window.addEventListener(PWA_READINESS_INVALID_EVENT, invalidListenerHandler);
+}
+
+function releaseInvalidListener() {
+  invalidListenerRefCount = Math.max(0, invalidListenerRefCount - 1);
+  if (invalidListenerRefCount === 0 && invalidListenerHandler) {
+    window.removeEventListener(PWA_READINESS_INVALID_EVENT, invalidListenerHandler);
+    invalidListenerHandler = null;
+  }
+}
 
 export function PwaUpdateDebugPanel() {
   const [state, setState] = useState<PwaUpdateDebugState | null>(null);
   const [invalid, setInvalid] = useState<PwaReadinessInvalidReason | null>(null);
   const [collapsed, setCollapsed] = useState(true);
-  const [stats, setStats] = useState<InvalidStats>({ total: 0, lastMinute: 0, lastHour: 0, lastAt: null });
-  const invalidTimestamps = useRef<number[]>([]);
-  const invalidTotal = useRef<number>(0);
+  const [statsWindow, setStatsWindow] = useState<InvalidStatsWindow>("1h");
+  const [stats, setStats] = useState<InvalidStats>(() =>
+    computeInvalidStats(invalidTimestampsBuffer, invalidTotalCount, Date.now(), "1h"),
+  );
   const lastEmitKey = useRef<string | null>(null);
   const lastRawKey = useRef<string | null>(null);
 
@@ -47,8 +84,6 @@ export function PwaUpdateDebugPanel() {
         setInvalid(null);
         return;
       }
-      // Dedupe: only re-process when the raw state actually changes so we
-      // don't spam `snote:pwa-readiness-invalid` every 500ms poll tick.
       let rawKey: string;
       try {
         rawKey = raw === undefined ? "\0undef" : JSON.stringify(raw) ?? "\0nonjson";
@@ -93,36 +128,26 @@ export function PwaUpdateDebugPanel() {
     };
     read();
     const id = window.setInterval(read, 500);
-
-    // Stats: count every `snote:pwa-readiness-invalid` event (from any source,
-    // not just our own emit) so staging can eyeball the frequency.
-    const onInvalid = () => {
-      const now = Date.now();
-      invalidTotal.current += 1;
-      invalidTimestamps.current.push(now);
-      const cutoff = now - 3_600_000;
-      invalidTimestamps.current = invalidTimestamps.current.filter((t) => t >= cutoff);
-    };
-    window.addEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
-    const statsId = window.setInterval(() => {
-      const now = Date.now();
-      const ts = invalidTimestamps.current;
-      const lastMinute = ts.filter((t) => t >= now - 60_000).length;
-      const lastHour = ts.length;
-      setStats({
-        total: invalidTotal.current,
-        lastMinute,
-        lastHour,
-        lastAt: ts.length ? ts[ts.length - 1] : null,
-      });
-    }, 1000);
-
-    return () => {
-      window.clearInterval(id);
-      window.clearInterval(statsId);
-      window.removeEventListener(PWA_READINESS_INVALID_EVENT, onInvalid);
-    };
+    return () => window.clearInterval(id);
   }, []);
+
+  // Stats subscription — uses module-level ref-counted listener so remounts
+  // cannot double-count events into the shared timestamps buffer.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    ensureInvalidListenerInstalled();
+    const recompute = () => {
+      setStats(computeInvalidStats(invalidTimestampsBuffer, invalidTotalCount, Date.now(), statsWindow));
+    };
+    invalidSubscribers.add(recompute);
+    recompute();
+    const tickId = window.setInterval(recompute, 1000);
+    return () => {
+      window.clearInterval(tickId);
+      invalidSubscribers.delete(recompute);
+      releaseInvalidListener();
+    };
+  }, [statsWindow]);
 
   if (!import.meta.env.DEV) return null;
   if (!state && !invalid) return null;
@@ -141,16 +166,78 @@ export function PwaUpdateDebugPanel() {
     pointerEvents: "auto",
   };
 
+  const btnStyle: React.CSSProperties = {
+    background: "transparent",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.25)",
+    borderRadius: 3,
+    padding: "1px 5px",
+    cursor: "pointer",
+    font: "inherit",
+    marginLeft: 4,
+  };
+
+  const activeBtnStyle: React.CSSProperties = { ...btnStyle, background: "rgba(255,255,255,0.18)" };
+
+  const handleExportCsv = () => {
+    try {
+      const now = Date.now();
+      const snapshot = pruneInvalidTimestamps(invalidTimestampsBuffer, now);
+      const csv = invalidStatsToCsv(
+        computeInvalidStats(snapshot, invalidTotalCount, now, statsWindow),
+        snapshot,
+        now,
+      );
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pwa-readiness-invalid-${new Date(now).toISOString().replace(/[:.]/g, "-")}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      console.warn("[pwa] stats CSV export failed", e);
+    }
+  };
+
   const statsBlock = (
     <div
       data-pwa-debug-stats="invalid-events"
       data-invalid-total={stats.total}
       data-invalid-last-minute={stats.lastMinute}
-      data-invalid-last-hour={stats.lastHour}
-      style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.15)", opacity: 0.75 }}
+      data-invalid-window={stats.window}
+      data-invalid-window-count={stats.windowCount}
+      style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.15)", opacity: 0.85 }}
     >
-      invalid events — total: {stats.total} · 1m: {stats.lastMinute} · 1h: {stats.lastHour}
-      {stats.lastAt ? ` · last: ${Math.round((Date.now() - stats.lastAt) / 1000)}s ago` : ""}
+      <div>
+        invalid events — total: {stats.total} · 1m: {stats.lastMinute} · {stats.window}: {stats.windowCount}
+        {stats.lastAt ? ` · last: ${Math.round((Date.now() - stats.lastAt) / 1000)}s ago` : ""}
+      </div>
+      <div style={{ marginTop: 3, display: "flex", alignItems: "center", flexWrap: "wrap" }}>
+        <span style={{ opacity: 0.7 }}>window:</span>
+        {WINDOW_OPTIONS.map((w) => (
+          <button
+            key={w}
+            type="button"
+            data-pwa-debug-stats-window={w}
+            aria-pressed={statsWindow === w}
+            onClick={() => setStatsWindow(w)}
+            style={statsWindow === w ? activeBtnStyle : btnStyle}
+          >
+            {w}
+          </button>
+        ))}
+        <button
+          type="button"
+          data-pwa-debug-stats-export="csv"
+          onClick={handleExportCsv}
+          style={{ ...btnStyle, marginLeft: "auto" }}
+        >
+          export csv
+        </button>
+      </div>
     </div>
   );
 
