@@ -1,0 +1,68 @@
+name: PWA update smoke (post-deploy)
+
+# Runs the multi-click Update smoke against the published site after every
+# deploy. Verifies clicking Update repeatedly still applies the new build
+# and never appends `?v=` to note URLs (the regression that forced users
+# to clear cookies).
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Base URL to smoke-test (defaults to production)"
+        required: false
+        default: "https://snote.lovable.app"
+
+jobs:
+  smoke:
+    name: multi-click Update smoke
+    # deployment_status fires for every state; only run on success.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PLAYWRIGHT_PROJECT: chromium
+      PLAYWRIGHT_RETRIES: "2"
+      # Prefer the deployment target URL when available, fall back to the
+      # workflow_dispatch input, then to production.
+      SMOKE_BASE_URL: >-
+        ${{ github.event.deployment_status.target_url
+            || github.event.inputs.target_url
+            || 'https://snote.lovable.app' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Install Playwright chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Run post-deploy multi-click smoke
+        env:
+          PLAYWRIGHT_BASE_URL: ${{ env.SMOKE_BASE_URL }}
+        run: |
+          echo "Smoke target: $PLAYWRIGHT_BASE_URL"
+          bunx playwright test \
+            e2e/pwa-update-multi-click.spec.ts \
+            e2e/pwa-update-no-url-v-param.spec.ts \
+            --project=chromium \
+            --retries=${PLAYWRIGHT_RETRIES}
+      - name: Upload HTML report (always)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwa-update-smoke-report-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          path: playwright-report/
+          retention-days: 7
+          if-no-files-found: ignore
+      - name: Upload traces & screenshots (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pwa-update-smoke-artifacts-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          path: test-results/
+          retention-days: 14
+          if-no-files-found: ignore
