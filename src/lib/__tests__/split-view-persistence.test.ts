@@ -52,4 +52,26 @@ describe("split-view-persistence", () => {
     );
     expect(loadLastSplitView()).toBeNull();
   });
+
+  it("uses a versioned storage key (v1) so future formats can migrate", () => {
+    expect(LAST_SPLIT_VIEW_STORAGE_KEY).toBe("snote:last-split-view:v1");
+    saveLastSplitView(["a", "b", "c"]);
+    expect(window.sessionStorage.getItem("snote:last-split-view:v1")).not.toBeNull();
+    window.sessionStorage.clear();
+    window.sessionStorage.setItem(
+      "snote:last-split-view:v0",
+      JSON.stringify({ path: "/a+b", slugs: ["a", "b"], count: 2, savedAt: 0 }),
+    );
+    expect(loadLastSplitView()).toBeNull();
+  });
+
+  it("round-trips savedAt timestamp and preserves slug order", () => {
+    const before = Date.now();
+    saveLastSplitView(["z", "a", "m"]);
+    const got = loadLastSplitView();
+    expect(got?.slugs).toEqual(["z", "a", "m"]);
+    expect(got?.path).toBe("/z+a+m");
+    expect(got?.count).toBe(3);
+    expect(got?.savedAt).toBeGreaterThanOrEqual(before);
+  });
 });
