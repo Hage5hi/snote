@@ -110,6 +110,14 @@ function SplitViewBody({
   const title = `Split view: ${label} — Syrin Notes`;
   const desc = `Compare ${slugs.length} markdown notes side by side (${label}) with synced scrolling on Syrin Notes.`;
 
+  // Persist current split path so a future "Return to split view" affordance
+  // (or a quick remount after Home nav) can restore it. sessionStorage only —
+  // this is transient state, not a preference.
+  useEffect(() => {
+    saveLastSplitView(slugs);
+  }, [joined]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
   // Layout: 2 → 2 cols; 3 → 2×2 grid, last spans both cols; 4 → 2×2 grid.
   const gridClass =
     slugs.length === 2
