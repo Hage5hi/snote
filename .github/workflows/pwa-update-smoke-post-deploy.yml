@@ -23,6 +23,16 @@ jobs:
       github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Bind to a GitHub Environment so per-env secrets/URL and required
+    # reviewers apply. Derived from the deployment environment when the
+    # trigger is a deployment_status, else from workflow_dispatch input,
+    # else production.
+    environment:
+      name: >-
+        ${{ github.event.deployment_status.environment
+            || github.event.inputs.environment
+            || 'production' }}
+      url: ${{ env.SMOKE_BASE_URL }}
     env:
       PLAYWRIGHT_PROJECT: chromium
       PLAYWRIGHT_RETRIES: "2"
@@ -32,6 +42,10 @@ jobs:
         ${{ github.event.deployment_status.target_url
             || github.event.inputs.target_url
             || 'https://snote.lovable.app' }}
+      SMOKE_ENVIRONMENT: >-
+        ${{ github.event.deployment_status.environment
+            || github.event.inputs.environment
+            || 'production' }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
