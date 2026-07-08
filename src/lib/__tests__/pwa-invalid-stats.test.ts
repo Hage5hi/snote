@@ -67,4 +67,26 @@ describe("pwa-invalid-stats", () => {
     const eventRows = lines.filter((l) => l.startsWith("event,") && !l.startsWith("event,index"));
     expect(eventRows).toHaveLength(timestamps.length);
   });
+
+  it("savePersistedInvalidStats caps timestamps to INVALID_STATS_MAX_ENTRIES (newest kept)", () => {
+    const store = new Map<string, string>();
+    const storage = {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    };
+    const big = Array.from({ length: INVALID_STATS_MAX_ENTRIES + 250 }, (_, i) => i + 1);
+    savePersistedInvalidStats({ total: big.length, timestamps: big }, storage);
+    const loaded = loadPersistedInvalidStats(storage, INVALID_STATS_MAX_ENTRIES + 500);
+    expect(loaded.timestamps.length).toBeLessThanOrEqual(INVALID_STATS_MAX_ENTRIES);
+    // Newest kept — last entry preserved.
+    expect(loaded.timestamps[loaded.timestamps.length - 1]).toBe(big[big.length - 1]);
+    expect(loaded.total).toBe(big.length);
+  });
+
+  it("loadPersistedInvalidStats returns empty snapshot when JSON is malformed", () => {
+    const store = new Map<string, string>([[INVALID_STATS_STORAGE_KEY, "{not json"]]);
+    const storage = { getItem: (k: string) => store.get(k) ?? null };
+    const loaded = loadPersistedInvalidStats(storage, NOW);
+    expect(loaded).toEqual({ total: 0, timestamps: [] });
+  });
 });
