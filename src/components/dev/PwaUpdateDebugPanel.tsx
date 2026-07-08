@@ -18,7 +18,9 @@ import {
 import {
   computeInvalidStats,
   invalidStatsToCsv,
+  loadPersistedInvalidStats,
   pruneInvalidTimestamps,
+  savePersistedInvalidStats,
   type InvalidStats,
   type InvalidStatsWindow,
 } from "@/lib/pwa-invalid-stats";
