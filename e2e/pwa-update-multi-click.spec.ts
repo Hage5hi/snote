@@ -105,4 +105,28 @@ test("multiple Update clicks apply the new build without adding ?v to the URL", 
     unexpectedQuery,
     `note URL gained unexpected query params after Update clicks: ${unexpectedQuery.join(",")} — full URL: ${page.url()}`,
   ).toEqual([]);
+
+  // Reload once and re-assert the whitelist. Catches the case where a
+  // service worker rewrites navigations on the next load (the exact bug
+  // that forced users to clear cookies).
+  urlHistory.push({ at: Date.now() - t0, url: page.url(), type: "goto" });
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const reloadedUrl = new URL(page.url());
+  const reloadedUnexpected = [...reloadedUrl.searchParams.keys()].filter((k) => !ALLOWED_QUERY.has(k));
+  if (reloadedUnexpected.length > 0 || reloadedUrl.searchParams.has("v")) {
+    await testInfo.attach("url-history-post-reload.json", {
+      body: JSON.stringify(
+        { finalUrl: page.url(), history: urlHistory, reloadedUnexpected, swAfter },
+        null,
+        2,
+      ),
+      contentType: "application/json",
+    });
+  }
+  expect(reloadedUrl.pathname).toBe("/my-note");
+  expect(reloadedUrl.searchParams.has("v"), `reload re-introduced ?v=: ${page.url()}`).toBe(false);
+  expect(
+    reloadedUnexpected,
+    `reload re-introduced unexpected query params: ${reloadedUnexpected.join(",")} — full URL: ${page.url()}`,
+  ).toEqual([]);
 });
