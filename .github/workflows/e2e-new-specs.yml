@@ -34,6 +34,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Install Playwright chromium
         run: bunx playwright install --with-deps chromium
+      - name: PWA update regression unit gate (listener dedup + cleanup scope)
+        run: |
+          bunx vitest run \
+            src/lib/__tests__/pwa-update-listener-dedup.test.ts \
+            src/lib/__tests__/pwa-update-nuke-scope.test.ts \
+            src/lib/__tests__/pwa-invalid-stats.test.ts
       - name: Run new PR-gate specs
         run: |
           bunx playwright test \
