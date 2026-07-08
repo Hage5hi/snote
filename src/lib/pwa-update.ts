@@ -95,7 +95,19 @@ async function nukeServiceWorkersAndCaches(): Promise<void> {
   try {
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
-      await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
+      await Promise.all(
+        regs
+          .filter((r) => {
+            const scriptUrl = r.active?.scriptURL ?? r.waiting?.scriptURL ?? r.installing?.scriptURL ?? "";
+            try {
+              const path = new URL(scriptUrl).pathname;
+              return path === "/sw.js" || path === "/service-worker.js";
+            } catch {
+              return true;
+            }
+          })
+          .map((r) => r.unregister().catch(() => false)),
+      );
     }
   } catch {
     /* ignore */
@@ -103,7 +115,8 @@ async function nukeServiceWorkersAndCaches(): Promise<void> {
   try {
     if (typeof caches !== "undefined") {
       const names = await caches.keys();
-      await Promise.all(names.map((n) => caches.delete(n).catch(() => false)));
+      const appCacheNames = names.filter((name) => /(^|-)precache-v\d+-|(^|-)runtime-|^workbox-/.test(name));
+      await Promise.all(appCacheNames.map((n) => caches.delete(n).catch(() => false)));
     }
   } catch {
     /* ignore */
