@@ -28,9 +28,13 @@ interface TopbarBrandProps {
   provider?: SupabaseYjsProvider | null;
   /** Returns the current decrypted note body. Used by the Copy icon button. */
   getContent: () => string;
+  /** When true, hide the Home arrow. Used by SplitView-embedded panels where
+   *  a single top-level Home button already exists. */
+  hideHome?: boolean;
 }
 
-export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent }: TopbarBrandProps) {
+export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false }: TopbarBrandProps) {
+
   const { t } = useI18n();
 
   const copyUrl = async () => {
