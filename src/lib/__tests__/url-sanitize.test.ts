@@ -33,4 +33,37 @@ describe("sanitizeUrl", () => {
   it("handles bare pathnames without an origin", () => {
     expect(sanitizeUrl("/note?v=1", { allowedParams: [] })).toBe("/note");
   });
+
+  it.each(["V", "Ver", "VERSION", "T", "NoCache", "CacheBust"])(
+    "strips cache-buster param case-insensitively: ?%s=",
+    (key) => {
+      const out = sanitizeUrl(`/note?${key}=1&foo=bar`, { allowedParams: ["foo", key] });
+      expect(out).toBe("/note?foo=bar");
+    },
+  );
+
+  it("preserves the fragment while stripping cache-busters", () => {
+    const out = sanitizeUrl("/note?v=9&foo=bar#heading-2", { allowedParams: ["foo"] });
+    expect(out).toBe("/note?foo=bar#heading-2");
+  });
+
+  it("preserves an empty fragment marker", () => {
+    const out = sanitizeUrl("/note?v=9#", { allowedParams: [] });
+    expect(out).toBe("/note#");
+  });
+
+  it("removes all duplicate occurrences of a cache-buster param", () => {
+    const out = sanitizeUrl("/note?v=1&v=2&v=3&foo=bar", { allowedParams: ["foo"] });
+    expect(out).toBe("/note?foo=bar");
+  });
+
+  it("keeps all duplicate occurrences of a whitelisted param", () => {
+    const out = sanitizeUrl("/note?tag=a&tag=b&v=1", { allowedParams: ["tag"] });
+    expect(out).toBe("/note?tag=a&tag=b");
+  });
+
+  it("is case-sensitive for whitelist keys (Foo != foo)", () => {
+    const out = sanitizeUrl("/note?Foo=1&foo=2", { allowedParams: ["foo"] });
+    expect(out).toBe("/note?foo=2");
+  });
 });
