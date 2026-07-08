@@ -13,6 +13,10 @@ on:
         description: "Base URL to smoke-test (defaults to production)"
         required: false
         default: "https://snote.lovable.app"
+      environment:
+        description: "GitHub Environment name (staging | production)"
+        required: false
+        default: "production"
 
 jobs:
   smoke:
