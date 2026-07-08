@@ -61,24 +61,27 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hide
 
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Link
-            to="/"
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={t("brand.home")}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              window.open("/", "_blank", "noopener,noreferrer");
-            }}
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{t("brand.home")}</TooltipContent>
-      </Tooltip>
+      {!hideHome && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to="/"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={t("brand.home")}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                window.open("/", "_blank", "noopener,noreferrer");
+              }}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t("brand.home")}</TooltipContent>
+        </Tooltip>
+      )}
 
       <div className="flex min-w-0 items-center gap-2">
+
         <Cloud className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         <Tooltip>
           <TooltipTrigger asChild>
