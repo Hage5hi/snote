@@ -4,7 +4,11 @@ import {
   countInWindow,
   invalidStatsToCsv,
   pruneInvalidTimestamps,
+  savePersistedInvalidStats,
+  loadPersistedInvalidStats,
   INVALID_STATS_WINDOW_MS,
+  INVALID_STATS_MAX_ENTRIES,
+  INVALID_STATS_STORAGE_KEY,
 } from "../pwa-invalid-stats";
 
 const NOW = 1_700_000_000_000;
