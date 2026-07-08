@@ -95,7 +95,15 @@ export function savePersistedInvalidStats(
 ): void {
   if (!storage) return;
   try {
-    storage.setItem(INVALID_STATS_STORAGE_KEY, JSON.stringify(snapshot));
+    // Cap the newest-N timestamps to keep the persisted payload bounded.
+    const capped =
+      snapshot.timestamps.length > INVALID_STATS_MAX_ENTRIES
+        ? snapshot.timestamps.slice(snapshot.timestamps.length - INVALID_STATS_MAX_ENTRIES)
+        : snapshot.timestamps;
+    storage.setItem(
+      INVALID_STATS_STORAGE_KEY,
+      JSON.stringify({ total: snapshot.total, timestamps: capped }),
+    );
   } catch {
     /* quota / disabled — ignore */
   }
