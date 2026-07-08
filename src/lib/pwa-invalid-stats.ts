@@ -50,6 +50,50 @@ export function computeInvalidStats(
   };
 }
 
+/** sessionStorage key for short-lived persistence of the invalid-events buffer. */
+export const INVALID_STATS_STORAGE_KEY = "snote:pwa-invalid-stats:v1";
+
+export type PersistedInvalidStats = { total: number; timestamps: number[] };
+
+/** Best-effort read of the persisted stats snapshot. Never throws. */
+export function loadPersistedInvalidStats(
+  storage: Pick<Storage, "getItem"> | null | undefined = typeof sessionStorage !== "undefined"
+    ? sessionStorage
+    : null,
+  now: number = Date.now(),
+): PersistedInvalidStats {
+  const empty: PersistedInvalidStats = { total: 0, timestamps: [] };
+  if (!storage) return empty;
+  try {
+    const raw = storage.getItem(INVALID_STATS_STORAGE_KEY);
+    if (!raw) return empty;
+    const parsed = JSON.parse(raw) as Partial<PersistedInvalidStats> | null;
+    if (!parsed || typeof parsed !== "object") return empty;
+    const total = typeof parsed.total === "number" && Number.isFinite(parsed.total) ? parsed.total : 0;
+    const timestamps = Array.isArray(parsed.timestamps)
+      ? parsed.timestamps.filter((t): t is number => typeof t === "number" && Number.isFinite(t))
+      : [];
+    return { total, timestamps: pruneInvalidTimestamps(timestamps, now) };
+  } catch {
+    return empty;
+  }
+}
+
+/** Best-effort write of the persisted stats snapshot. Never throws. */
+export function savePersistedInvalidStats(
+  snapshot: PersistedInvalidStats,
+  storage: Pick<Storage, "setItem"> | null | undefined = typeof sessionStorage !== "undefined"
+    ? sessionStorage
+    : null,
+): void {
+  if (!storage) return;
+  try {
+    storage.setItem(INVALID_STATS_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    /* quota / disabled — ignore */
+  }
+}
+
 /** Serialize stats + raw timestamps to CSV for staging troubleshooting. */
 export function invalidStatsToCsv(stats: InvalidStats, timestamps: readonly number[], now = Date.now()): string {
   const rows: string[] = [];
