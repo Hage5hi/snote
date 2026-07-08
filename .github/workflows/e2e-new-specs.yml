@@ -62,6 +62,8 @@ jobs:
             e2e/pwa-readiness-invalid-single-emit-per-cycle.spec.ts \
             e2e/pwa-readiness-invalid-dedup-preserves-first-payload.spec.ts \
             e2e/pwa-readiness-invalid-reporter-disabled.spec.ts \
+            e2e/pwa-invalid-stats-remount-no-double-count.spec.ts \
+            e2e/pwa-invalid-stats-csv-export.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}

@@ -18,7 +18,9 @@ import {
 import {
   computeInvalidStats,
   invalidStatsToCsv,
+  loadPersistedInvalidStats,
   pruneInvalidTimestamps,
+  savePersistedInvalidStats,
   type InvalidStats,
   type InvalidStatsWindow,
 } from "@/lib/pwa-invalid-stats";
@@ -34,9 +36,25 @@ let invalidListenerRefCount = 0;
 let invalidListenerHandler: ((e: Event) => void) | null = null;
 const invalidTimestampsBuffer: number[] = [];
 let invalidTotalCount = 0;
+let invalidPersistenceHydrated = false;
 const invalidSubscribers = new Set<() => void>();
 
+function hydrateInvalidPersistenceOnce() {
+  if (invalidPersistenceHydrated) return;
+  invalidPersistenceHydrated = true;
+  if (typeof window === "undefined") return;
+  const snap = loadPersistedInvalidStats();
+  invalidTotalCount = snap.total;
+  invalidTimestampsBuffer.push(...snap.timestamps);
+}
+
+function persistInvalidSnapshot() {
+  if (typeof window === "undefined") return;
+  savePersistedInvalidStats({ total: invalidTotalCount, timestamps: invalidTimestampsBuffer.slice() });
+}
+
 function ensureInvalidListenerInstalled() {
+  hydrateInvalidPersistenceOnce();
   invalidListenerRefCount += 1;
   if (invalidListenerHandler) return;
   invalidListenerHandler = () => {
@@ -48,6 +66,7 @@ function ensureInvalidListenerInstalled() {
       invalidTimestampsBuffer.length = 0;
       invalidTimestampsBuffer.push(...pruned);
     }
+    persistInvalidSnapshot();
     invalidSubscribers.forEach((fn) => fn());
   };
   window.addEventListener(PWA_READINESS_INVALID_EVENT, invalidListenerHandler);
