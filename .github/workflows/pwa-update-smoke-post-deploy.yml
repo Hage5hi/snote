@@ -85,12 +85,66 @@ jobs:
           path: test-results/
           retention-days: 14
           if-no-files-found: ignore
+      - name: Generate regression summary from url-history.json
+        if: failure()
+        id: summary
+        run: |
+          set -eu
+          OUT=/tmp/pwa-smoke-summary.md
+          {
+            echo "## PWA update smoke — regression summary"
+            echo ""
+            echo "- Environment: \`${SMOKE_ENVIRONMENT}\`"
+            echo "- Target: ${SMOKE_BASE_URL}"
+            echo ""
+          } > "$OUT"
+
+          FOUND=0
+          while IFS= read -r -d '' f; do
+            FOUND=1
+            echo "### \`$(basename "$f")\`" >> "$OUT"
+            echo "" >> "$OUT"
+            FINAL=$(jq -r '.finalUrl // "?"' "$f")
+            UNEXP=$(jq -r '(.unexpectedQuery // .reloadedUnexpected // []) | join(", ")' "$f")
+            echo "- Final URL: \`${FINAL}\`" >> "$OUT"
+            echo "- Unexpected query params: \`${UNEXP:-<none>}\`" >> "$OUT"
+            echo "" >> "$OUT"
+            echo "#### Navigation timeline" >> "$OUT"
+            echo "" >> "$OUT"
+            echo "| t (ms) | type | URL |" >> "$OUT"
+            echo "|-------:|------|-----|" >> "$OUT"
+            jq -r '.history[]? | "| \(.at) | \(.type) | `\(.url)` |"' "$f" >> "$OUT"
+            echo "" >> "$OUT"
+            echo "#### Service worker registrations" >> "$OUT"
+            echo "" >> "$OUT"
+            echo "**Before Update clicks:**" >> "$OUT"
+            echo '```json' >> "$OUT"
+            jq '.swBefore // "n/a"' "$f" >> "$OUT"
+            echo '```' >> "$OUT"
+            echo "**After Update clicks:**" >> "$OUT"
+            echo '```json' >> "$OUT"
+            jq '.swAfter // "n/a"' "$f" >> "$OUT"
+            echo '```' >> "$OUT"
+            echo "" >> "$OUT"
+          done < <(find test-results -type f -name 'url-history*.json' -print0 2>/dev/null)
+
+          if [ "$FOUND" = "0" ]; then
+            echo "_No \`url-history*.json\` attachments found — check the HTML report artifact._" >> "$OUT"
+          fi
+
+          cat "$OUT" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "summary_md<<__EOF__"
+            cat "$OUT"
+            echo "__EOF__"
+          } >> "$GITHUB_OUTPUT"
       - name: Open GitHub issue on smoke failure
         if: failure()
         uses: actions/github-script@v7
         env:
           SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
           SMOKE_ENVIRONMENT: ${{ env.SMOKE_ENVIRONMENT }}
+          SUMMARY_MD: ${{ steps.summary.outputs.summary_md }}
         with:
           script: |
             const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
@@ -103,13 +157,14 @@ jobs:
               `- Commit: \`${process.env.GITHUB_SHA}\``,
               `- Workflow run: ${runUrl}`,
               ``,
-              `Download artifacts from the run above:`,
+              `Artifacts on the run above:`,
               `- \`pwa-update-smoke-report-run${process.env.GITHUB_RUN_NUMBER}-attempt${process.env.GITHUB_RUN_ATTEMPT}\` — HTML report`,
-              `- \`pwa-update-smoke-artifacts-run${process.env.GITHUB_RUN_NUMBER}-attempt${process.env.GITHUB_RUN_ATTEMPT}\` — traces, videos, \`url-history.json\`, \`regression-screenshot.png\``,
+              `- \`pwa-update-smoke-artifacts-run${process.env.GITHUB_RUN_NUMBER}-attempt${process.env.GITHUB_RUN_ATTEMPT}\` — traces, videos, \`url-history*.json\`, \`regression-screenshot.png\``,
               ``,
-              `Likely cause: the Update flow re-introduced a \`?v=\` (or other cache-buster) query param on the note URL, or a rogue service worker is rewriting navigations. See \`url-history.json\` for the exact navigation that added the param and the SW registrations snapshot before/after.`,
+              process.env.SUMMARY_MD || "_No summary available._",
+              ``,
+              `Likely cause: Update flow re-introduced a \`?v=\` (or other cache-buster) query param, or a rogue service worker is rewriting navigations.`,
             ].join("\n");
-            // Dedupe: reuse the open issue with the same title if it exists.
             const q = `repo:${process.env.GITHUB_REPOSITORY} is:issue is:open in:title "[pwa-smoke] Update flow regression on ${process.env.SMOKE_ENVIRONMENT}"`;
             const search = await github.rest.search.issuesAndPullRequests({ q });
             const existing = search.data.items[0];
@@ -131,3 +186,13 @@ jobs:
               });
               core.info(`Opened issue #${created.data.number}`);
             }
+      - name: Notify Slack on smoke failure
+        # Only runs when SLACK_WEBHOOK_URL secret is configured; skipped silently otherwise.
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+          TEXT=":rotating_light: *PWA update smoke failed* on \`${SMOKE_ENVIRONMENT}\` (${GITHUB_SHA:0:7})\n<${RUN_URL}|Open run — screenshot + url-history in artifacts>\nTarget: ${SMOKE_BASE_URL}"
+          jq -n --arg text "$TEXT" '{text: $text}' | \
+            curl -sS -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"
