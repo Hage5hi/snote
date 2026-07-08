@@ -47,9 +47,9 @@ describe("sanitizeUrl", () => {
     expect(out).toBe("/note?foo=bar#heading-2");
   });
 
-  it("preserves an empty fragment marker", () => {
+  it("drops an empty fragment marker (matches URL API semantics)", () => {
     const out = sanitizeUrl("/note?v=9#", { allowedParams: [] });
-    expect(out).toBe("/note#");
+    expect(out).toBe("/note");
   });
 
   it("removes all duplicate occurrences of a cache-buster param", () => {
