@@ -228,12 +228,18 @@ export function PwaUpdateDebugPanel() {
       data-invalid-last-minute={stats.lastMinute}
       data-invalid-window={stats.window}
       data-invalid-window-count={stats.windowCount}
+      data-invalid-empty={stats.windowCount === 0 ? "true" : "false"}
       style={{ marginTop: 4, paddingTop: 4, borderTop: "1px solid rgba(255,255,255,0.15)", opacity: 0.85 }}
     >
       <div>
         invalid events — total: {stats.total} · 1m: {stats.lastMinute} · {stats.window}: {stats.windowCount}
         {stats.lastAt ? ` · last: ${Math.round((Date.now() - stats.lastAt) / 1000)}s ago` : ""}
       </div>
+      {stats.windowCount === 0 && (
+        <div data-pwa-debug-stats-empty="true" style={{ marginTop: 2, opacity: 0.6, fontStyle: "italic" }}>
+          no invalid events in the last {stats.window}
+        </div>
+      )}
       <div style={{ marginTop: 3, display: "flex", alignItems: "center", flexWrap: "wrap" }}>
         <span style={{ opacity: 0.7 }}>window:</span>
         {WINDOW_OPTIONS.map((w) => (
