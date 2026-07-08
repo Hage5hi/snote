@@ -62,6 +62,7 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: ${{ env.SMOKE_BASE_URL }}
         run: |
+          echo "Smoke environment: $SMOKE_ENVIRONMENT"
           echo "Smoke target: $PLAYWRIGHT_BASE_URL"
           bunx playwright test \
             e2e/pwa-update-multi-click.spec.ts \
