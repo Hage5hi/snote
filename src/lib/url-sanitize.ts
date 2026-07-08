@@ -31,10 +31,11 @@ export function sanitizeUrl(input: string, options: SanitizeOptions = {}): strin
   }
   const keysToDelete: string[] = [];
   for (const key of url.searchParams.keys()) {
-    if (CACHE_BUSTER_PARAMS.has(key) || !allowed.has(key)) {
+    if (CACHE_BUSTER_PARAMS.has(key.toLowerCase()) || !allowed.has(key)) {
       keysToDelete.push(key);
     }
   }
+  // Use array (not Set) so duplicate keys are all removed by repeated delete().
   for (const key of keysToDelete) url.searchParams.delete(key);
   return hadOrigin ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
 }
