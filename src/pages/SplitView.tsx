@@ -219,7 +219,8 @@ function SplitViewBody({
               ref={(el) => {
                 paneRefs.current[i] = el;
               }}
-
+              data-split-view-pane={i}
+              data-split-view-slug={s}
               className={`min-h-0 min-w-0 overflow-hidden ${spanClass} ${borderClass}`}
             >
               <Suspense fallback={<div className="h-full bg-background" />}>
