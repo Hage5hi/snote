@@ -65,6 +65,11 @@ jobs:
             e2e/pwa-invalid-stats-remount-no-double-count.spec.ts \
             e2e/pwa-invalid-stats-csv-export.spec.ts \
             e2e/split-view-layouts.spec.ts \
+            e2e/split-view-switch-counts.spec.ts \
+            e2e/split-view-back-forward.spec.ts \
+            e2e/split-view-home-right-click.spec.ts \
+            e2e/split-view-home-a11y.spec.ts \
+            e2e/pwa-invalid-stats-persistence-reload.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}
