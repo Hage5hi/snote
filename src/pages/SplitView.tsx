@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AppShell } from "@/components/app/AppShell";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
+import { saveLastSplitView } from "@/lib/split-view-persistence";
 
 const NotePage = lazy(() => import("./NotePage"));
 
