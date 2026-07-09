@@ -96,13 +96,50 @@ jobs:
         run: |
           set -eu
           OUT=/tmp/pwa-smoke-summary.md
+          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
+          ARTIFACT_NAME="pwa-update-smoke-artifacts-run${GITHUB_RUN_NUMBER}-attempt${GITHUB_RUN_ATTEMPT}"
           {
             echo "## PWA update smoke — regression summary"
             echo ""
             echo "- Environment: \`${SMOKE_ENVIRONMENT}\`"
             echo "- Target: ${SMOKE_BASE_URL}"
+            echo "- Run: ${RUN_URL}"
+            echo "- Artifact bundle: \`${ARTIFACT_NAME}\`"
             echo ""
           } > "$OUT"
+
+          # Cache-buster strip events — one row per (spec, iteration, key) so
+          # triage can see immediately WHICH cache-buster key leaked or was
+          # stripped, WHICH run it was, and the exact screenshot path to open.
+          echo "### Cache-buster query param strip events" >> "$OUT"
+          echo "" >> "$OUT"
+          echo "| Spec | Key | Original value | Stripped? | Screenshot |" >> "$OUT"
+          echo "|------|-----|----------------|-----------|------------|" >> "$OUT"
+          STRIP_FOUND=0
+          # Known cache-busters mirrored from src/lib/url-sanitize.ts.
+          BUSTERS='v ver t cb _'
+          while IFS= read -r -d '' f; do
+            SPEC="$(basename "$(dirname "$f")")"
+            SHOT_REL="$(find "$(dirname "$f")" -maxdepth 2 -name 'regression-screenshot*.png' -print -quit 2>/dev/null || true)"
+            SHOT_DISPLAY="${SHOT_REL:-<none>}"
+            for key in $BUSTERS; do
+              # Emit one row per history entry whose URL contains `?key=` or `&key=`.
+              while IFS= read -r row; do
+                [ -z "$row" ] && continue
+                STRIP_FOUND=1
+                echo "| \`${SPEC}\` | \`${key}\` | ${row} | see next reload | \`${SHOT_DISPLAY}\` |" >> "$OUT"
+              done < <(jq -r --arg k "$key" '
+                (.history // [])[]?
+                | .url
+                | select(test("[?&]" + $k + "="))
+                | capture("[?&]" + $k + "=(?<v>[^&#]*)").v
+              ' "$f")
+            done
+          done < <(find test-results -type f -name 'url-history*.json' -print0 2>/dev/null)
+          if [ "$STRIP_FOUND" = "0" ]; then
+            echo "| _no cache-buster keys observed in url-history_ | | | | |" >> "$OUT"
+          fi
+          echo "" >> "$OUT"
 
           FOUND=0
           while IFS= read -r -d '' f; do
