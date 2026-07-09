@@ -3,6 +3,7 @@ import {
   validateDiagnostics,
   DIAGNOSTICS_KIND,
   DIAGNOSTICS_SCHEMA_VERSION,
+  MAX_TELEMETRY_DETAIL_BYTES,
 } from "../lib/diagnostics-schema.js";
 
 const validBundle = () => ({
@@ -128,5 +129,25 @@ describe("validateDiagnostics", () => {
     const r = validateDiagnostics(b);
     expect(r.ok).toBe(false);
     expect(r.errors).toContain("forbidden key present: noteBody");
+  });
+
+  it("rejects telemetry event whose detail exceeds MAX_TELEMETRY_DETAIL_BYTES", () => {
+    const b = validBundle();
+    const bigString = "x".repeat(MAX_TELEMETRY_DETAIL_BYTES + 50);
+    b.telemetry = [{ t: 1, event: "big", detail: { blob: bigString } }];
+    const r = validateDiagnostics(b);
+    expect(r.ok).toBe(false);
+    expect(
+      r.errors.some((e) => e.includes(`telemetry[0].detail exceeds ${MAX_TELEMETRY_DETAIL_BYTES}`)),
+    ).toBe(true);
+  });
+
+  it("accepts telemetry event whose detail is exactly at the byte cap", () => {
+    const b = validBundle();
+    // Fit a payload right under the cap so we prove the boundary works.
+    const pad = "x".repeat(MAX_TELEMETRY_DETAIL_BYTES - `{"pad":""}`.length);
+    b.telemetry = [{ t: 1, event: "edge", detail: { pad } }];
+    const r = validateDiagnostics(b);
+    expect(r).toEqual({ ok: true, errors: [] });
   });
 });
