@@ -250,7 +250,7 @@ export function DiagnosticsPanel() {
       </button>
       {!collapsed && (
         <>
-          <div style={{ marginTop: 4, display: "flex", gap: 8 }}>
+          <div style={{ marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <button
               type="button"
               onClick={() => setEvents([])}
@@ -258,9 +258,43 @@ export function DiagnosticsPanel() {
             >
               clear
             </button>
+            <button
+              type="button"
+              data-diag-export
+              onClick={() => {
+                const payload = {
+                  exportedAt: new Date().toISOString(),
+                  count: events.length,
+                  maxDetailBytes: MAX_EXPORT_DETAIL_BYTES,
+                  events: truncateDiagEventsForExport(events),
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `diagnostics-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+              }}
+              style={{ background: "transparent", border: "1px solid #666", color: "#fff", padding: "2px 6px", cursor: "pointer", font: "inherit" }}
+            >
+              export JSON
+            </button>
+            <select
+              data-diag-filter
+              value={filter}
+              onChange={(ev) => setFilter(ev.target.value as KindFilter)}
+              style={{ background: "#111", border: "1px solid #666", color: "#fff", padding: "1px 4px", font: "inherit" }}
+            >
+              <option value="all">all ({total})</option>
+              <option value="warn">warn ({counts.warn})</option>
+              <option value="error">error ({counts.error})</option>
+              <option value="exception">exception ({counts.exception})</option>
+              <option value="unhandledrejection">rejection ({counts.unhandledrejection})</option>
+              <option value="react">react ({counts.react})</option>
+            </select>
           </div>
           <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
-            {events.map((e) => {
+            {events.filter((e) => filter === "all" || e.kind === filter).map((e) => {
               const isOpen = expandedId === e.id;
               return (
                 <li
