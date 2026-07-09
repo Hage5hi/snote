@@ -6,6 +6,9 @@ export const DIAGNOSTICS_KIND = "syrin-note-sidepanel-diagnostics";
 // v2: adds filename reason-type token + explicit forbidden-key denylist.
 export const DIAGNOSTICS_SCHEMA_VERSION = 2;
 
+// Must match MAX_DETAIL_JSON_BYTES in lib/telemetry.js.
+export const MAX_TELEMETRY_DETAIL_BYTES = 512;
+
 // Keys that must NEVER appear anywhere in the exported bundle. Checked
 // recursively — presence of any of these anywhere is a validation error,
 // not just a soft warning.
@@ -73,7 +76,26 @@ const FIELDS = {
   },
   cspFrameAncestors: { type: "object" },
   messageTimeline: { type: "array" },
-  telemetry: { type: "array" },
+  telemetry: {
+    type: "array",
+    check: (arr) => {
+      // Per-event detail must be bounded — mirrors the 512-byte cap in
+      // telemetry.js so a corrupted/oversized event can't leak into a
+      // diagnostics bundle even if storage was tampered with.
+      for (let i = 0; i < arr.length; i++) {
+        const detail = arr[i]?.detail;
+        if (detail == null) continue;
+        try {
+          if (JSON.stringify(detail).length > MAX_TELEMETRY_DETAIL_BYTES) {
+            return `telemetry[${i}].detail exceeds ${MAX_TELEMETRY_DETAIL_BYTES} bytes`;
+          }
+        } catch {
+          return `telemetry[${i}].detail not serializable`;
+        }
+      }
+      return true;
+    },
+  },
   telemetryEnabled: { type: "boolean" },
   debugLines: { type: "array" },
 };
