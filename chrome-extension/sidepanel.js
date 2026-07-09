@@ -15,21 +15,24 @@ import {
   readTelemetryEnabledAsync,
 } from "./lib/telemetry.js";
 import { validateDiagnostics, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
-
-const APP_ORIGIN = "https://note.syrin.online";
-
-// Versioned handshake protocol. Bump when the message shape changes in a
-// backwards-incompatible way. The app sends its supported version in
-// `syrin:ready.protocol`; missing → v1 (compat for pre-1.3.2 apps).
-const HANDSHAKE_PROTOCOL = 2;
-const MIN_APP_PROTOCOL = 1;
-const MAX_APP_PROTOCOL = 2;
+import {
+  APP_ORIGIN,
+  HANDSHAKE_PROTOCOL,
+  MIN_APP_PROTOCOL,
+  MAX_APP_PROTOCOL,
+  DEFAULT_LOAD_TIMEOUT_MS,
+  MAX_RETRIES,
+} from "./lib/handshake-constants.js";
+import { resolveFallbackReason } from "./lib/fallback-reason.js";
 
 // Two-phase load watchdog. Waits for a real `syrin:ready` handshake from
 // the app. Retries once with cache-buster if it doesn't arrive, so most
 // transient failures (cold SW, Cloudflare bot-check) recover silently.
-const LOAD_TIMEOUT_MS = 12000;
-const MAX_RETRIES = 1;
+// E2E can override via window.__SYRIN_TEST_TIMEOUT_MS for fast fallback specs.
+const LOAD_TIMEOUT_MS =
+  typeof window !== "undefined" && Number.isFinite(window.__SYRIN_TEST_TIMEOUT_MS)
+    ? window.__SYRIN_TEST_TIMEOUT_MS
+    : DEFAULT_LOAD_TIMEOUT_MS;
 const MESSAGE_TIMELINE_MAX = 30;
 
 const iframe = document.getElementById("app");
