@@ -111,11 +111,31 @@ function useDiagnosticsEnabled(): boolean {
   return import.meta.env.DEV || flag === "1" || flag === "true";
 }
 
+const MAX_EXPORT_DETAIL_BYTES = 512;
+
+/** Truncate details for export so downloaded JSON never bloats. Mirrors
+ *  chrome-extension MAX_TELEMETRY_DETAIL_BYTES. Panel keeps raw data. */
+export function truncateDiagEventsForExport(events: DiagEvent[]): DiagEvent[] {
+  return events.map((e) => {
+    const out: DiagEvent = { ...e };
+    for (const key of ["detail", "componentStack"] as const) {
+      const v = out[key];
+      if (typeof v === "string" && v.length > MAX_EXPORT_DETAIL_BYTES) {
+        out[key] = `${v.slice(0, MAX_EXPORT_DETAIL_BYTES)}…[truncated ${v.length - MAX_EXPORT_DETAIL_BYTES}b]`;
+      }
+    }
+    return out;
+  });
+}
+
+type KindFilter = "all" | EventKind;
+
 export function DiagnosticsPanel() {
   const enabled = useDiagnosticsEnabled();
   const [events, setEvents] = useState<DiagEvent[]>([]);
   const [collapsed, setCollapsed] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<KindFilter>("all");
   const originalConsole = useRef<{ warn?: typeof console.warn; error?: typeof console.error }>({});
 
   useEffect(() => {
