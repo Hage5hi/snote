@@ -2,12 +2,18 @@ import { createRoot } from "react-dom/client";
 import { HelmetProvider } from "react-helmet-async";
 import App from "./App.tsx";
 import "./index.css";
+import { postExtensionReady } from "./lib/ext-context";
 
 createRoot(document.getElementById("root")!).render(
   <HelmetProvider>
     <App />
   </HelmetProvider>,
 );
+
+// Tell the Chrome extension side panel we're mounted so it can hide its
+// loader based on real app state, not just iframe.onload. No-op outside
+// the extension.
+queueMicrotask(postExtensionReady);
 
 // Register the PWA service worker and show a persistent toast when a new
 // version is available. Loaded lazily so the SW + workbox-window glue stay

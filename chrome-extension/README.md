@@ -2,7 +2,16 @@
 
 A Manifest V3 Chrome extension that opens [note.syrin.online](https://note.syrin.online) in Chrome's side panel.
 
-## What's new in v1.3.0
+## What's new in v1.3.2
+
+- **Ready handshake** — the panel now waits for a real `syrin:ready` postMessage from the app before hiding the loader, instead of trusting `iframe.onload`. Blank/error pages no longer look "loaded".
+- **Auto-retry + diagnostics fallback** — if neither `load` nor `syrin:ready` arrive within 12 s, the panel retries once with a cache-buster. Only after that does it show the fallback, which now exposes the iframe URL, an `/version.json` HEAD probe result, ready state, retry count, and a **Copy diagnostics** button.
+- **CSP contract enforced by host** — `vercel.json` now sends `Content-Security-Policy: frame-ancestors 'self' chrome-extension://*`, and `scripts/verify-frame-ancestors.sh` runs after every deploy so the header can't silently disappear again.
+- **Manifest hardening** — dropped the `tabs` permission (unused; `windowId` is available without it), added explicit `content_security_policy.extension_pages`, restricted `frame-src` to `note.syrin.online`.
+- **Belt-and-suspenders click handler** — `chrome.action.onClicked` fallback opens the panel when `setPanelBehavior` is refused by policy.
+- **Storage fallback** — `chrome.storage.sync` errors now degrade to `chrome.storage.local` instead of silently loading defaults.
+
+## v1.3.0
 
 - **Unified watercolor "N" logo** — toolbar icons (16/32/48/128) and all Web Store promo assets are generated from the same source file (`icons/source.png`). Run `bash scripts/build-store-assets.sh` to rebuild.
 - **Debug mode** — toggle in Settings. Adds a debug bar at the bottom of the side panel showing `lastSlug`, postMessage acks, origin rejections, and storage writes. Web app honours `localStorage.syrin:debug = "1"` for retry logging.
@@ -46,9 +55,22 @@ cd chrome-extension && nix run nixpkgs#zip -- -r ../public/syrin-note-sidepanel.
 - **Permission justification**:
   - `sidePanel` — required to render the app in the side panel.
   - `storage` — saves your settings (default slug, last-opened note) and syncs them across your signed-in Chrome profiles.
-  - `tabs` — read the active tab's `windowId` so `Alt+S` opens the side panel in the right window. No URL/content access.
 - **Privacy policy URL**: <https://note.syrin.online/privacy>
 - **Category**: Productivity.
+
+## Troubleshooting: "Couldn't load Syrin Note"
+
+The fallback screen means neither the iframe `load` event nor the `syrin:ready`
+handshake arrived within 12 s, twice. To diagnose:
+
+1. Open the fallback's **Diagnostics** section. `App reachable (HEAD)` should be
+   `200 ok`. If not, `note.syrin.online` is unreachable from your network.
+2. Click **Copy diagnostics** and share the JSON — it includes the iframe URL,
+   retry count, ready state, and the last 50 debug lines.
+3. If HEAD is `200 ok` but the panel still fails, check that the host sends
+   `Content-Security-Policy: frame-ancestors 'self' chrome-extension://*`:
+   `curl -sI https://note.syrin.online/ | grep -i frame-ancestors`.
+   `scripts/verify-frame-ancestors.sh` runs this after every deploy.
 
 ### Store assets (generated, in `/mnt/documents/chrome-store/`)
 

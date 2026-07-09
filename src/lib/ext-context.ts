@@ -28,3 +28,26 @@ function detect(): boolean {
 }
 
 export const isExtensionContext = detect();
+
+declare const __BUILD_ID__: string;
+
+/**
+ * Post a `syrin:ready` handshake to the parent frame (the extension side
+ * panel) so it can hide its loader based on real app-mounted state instead
+ * of guessing from `iframe.onload`. Safe no-op outside the extension.
+ *
+ * We target `"*"` because the panel validates `event.origin` on receipt
+ * (it only trusts messages from the app origin). This avoids a
+ * bootstrapping problem where the app doesn't know the extension id.
+ */
+export function postExtensionReady(): void {
+  if (!isExtensionContext) return;
+  if (typeof window === "undefined") return;
+  if (window.parent === window) return;
+  const buildId = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
+  try {
+    window.parent.postMessage({ type: "syrin:ready", buildId }, "*");
+  } catch {
+    // ignore — parent may not be listening yet, panel retry covers this
+  }
+}
