@@ -133,3 +133,23 @@ iframe#app {
   overflow: auto; flex: 1;
 }
 .debug-bar li { padding: 2px 0; white-space: pre-wrap; word-break: break-all; }
+
+.fallback .diag-validation {
+  margin: 6px 0 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.08);
+  border: 1px solid rgba(220, 38, 38, 0.35);
+  word-break: break-word;
+}
+.fallback .diag-telemetry { margin-top: 8px; }
+.fallback .diag-telemetry summary { color: #93c5fd; }
+.fallback .diag-telemetry ol {
+  margin: 6px 0; padding: 0 0 0 16px;
+  max-height: 140px; overflow: auto;
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #e5e5e7;
+}
+.fallback .diag-telemetry li { margin: 2px 0; word-break: break-all; }
+.fallback .diag-telemetry li.empty { color: #71717a; list-style: none; }

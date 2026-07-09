@@ -8,7 +8,13 @@ import {
   expectedFilename,
   validateExport,
 } from "./lib/export-schema.js";
-import { recordTelemetry, readTelemetry } from "./lib/telemetry.js";
+import {
+  recordTelemetry,
+  readTelemetry,
+  clearTelemetry,
+  readTelemetryEnabledAsync,
+} from "./lib/telemetry.js";
+import { validateDiagnostics, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
 
 const APP_ORIGIN = "https://note.syrin.online";
 
@@ -44,6 +50,11 @@ const debugCopy = document.getElementById("debug-copy");
 const debugExport = document.getElementById("debug-export");
 const debugRedact = document.getElementById("debug-redact");
 const debugClear = document.getElementById("debug-clear");
+const diagTelemetryStatus = document.getElementById("diag-telemetry-status");
+const diagTelemetryList = document.getElementById("diag-telemetry-list");
+const diagTelemetryRefresh = document.getElementById("diag-telemetry-refresh");
+const diagTelemetryClear = document.getElementById("diag-telemetry-clear");
+const diagValidation = document.getElementById("diag-validation");
 
 let ready = false;
 let iframeLoaded = false;
@@ -164,6 +175,18 @@ window.addEventListener("message", (event) => {
     pushTimeline("ready", { protocol: appProtocol, buildId, appVersion });
 
     if (appProtocol < MIN_APP_PROTOCOL || appProtocol > MAX_APP_PROTOCOL) {
+      // Ignore stray version-mismatch messages once we're already ready:
+      // the app may remount during a PWA update and briefly re-broadcast
+      // an odd handshake; we must not tear down a working session.
+      if (ready) {
+        dlog("stray version-mismatch after ready, ignored", `proto=${appProtocol}`);
+        recordTelemetry("handshake-version-mismatch-ignored", {
+          appBuildId: buildId,
+          retryCount,
+          detail: { appProtocol, extProtocol: HANDSHAKE_PROTOCOL },
+        });
+        return;
+      }
       versionMismatchReason = `app protocol=${appProtocol} not in [${MIN_APP_PROTOCOL},${MAX_APP_PROTOCOL}] (ext=${HANDSHAKE_PROTOCOL})`;
       dlog("handshake version mismatch", versionMismatchReason);
       recordTelemetry("handshake-version-mismatch", {
@@ -339,14 +362,16 @@ async function showFallback() {
   const head = await probeAppOrigin();
   if (diagHead) diagHead.textContent = head;
   dlog("fallback shown", `head=${head}`);
+  void renderTelemetryList();
 }
 
 async function buildDiagnosticsBundle() {
   const csp = await verifyFrameAncestorsCsp();
-  const telemetry = await readTelemetry();
+  const telemetryEnabled = await readTelemetryEnabledAsync();
+  const telemetry = telemetryEnabled ? await readTelemetry() : [];
   return {
-    kind: "syrin-note-sidepanel-diagnostics",
-    schemaVersion: 1,
+    kind: DIAGNOSTICS_KIND,
+    schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
     at: new Date().toISOString(),
     extensionVersion: extensionVersion(),
     handshake: {
@@ -365,17 +390,36 @@ async function buildDiagnosticsBundle() {
     cspFrameAncestors: csp,
     messageTimeline: messageTimeline.slice(),
     telemetry,
+    telemetryEnabled,
     debugLines: snapshotDebugLog(),
   };
 }
 
+function showDiagnosticsValidationError(errors) {
+  if (!diagValidation) return;
+  if (!errors.length) {
+    diagValidation.hidden = true;
+    diagValidation.textContent = "";
+    return;
+  }
+  diagValidation.hidden = false;
+  diagValidation.textContent = `Diagnostics bundle failed schema validation: ${errors.join("; ")}`;
+  dlog("diagnostics schema invalid", errors.join("; "));
+}
+
 diagCopy?.addEventListener("click", async () => {
   const bundle = await buildDiagnosticsBundle();
+  const verdict = validateDiagnostics(bundle);
+  showDiagnosticsValidationError(verdict.errors);
+  if (!verdict.ok) return;
   navigator.clipboard?.writeText(JSON.stringify(bundle, null, 2)).catch(() => {});
 });
 
 diagDownload?.addEventListener("click", async () => {
   const bundle = await buildDiagnosticsBundle();
+  const verdict = validateDiagnostics(bundle);
+  showDiagnosticsValidationError(verdict.errors);
+  if (!verdict.ok) return;
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -385,6 +429,38 @@ diagDownload?.addEventListener("click", async () => {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+});
+
+async function renderTelemetryList() {
+  if (!diagTelemetryList) return;
+  const enabled = await readTelemetryEnabledAsync();
+  if (diagTelemetryStatus) diagTelemetryStatus.textContent = enabled ? "on" : "off (opted out)";
+  const events = enabled ? await readTelemetry() : [];
+  diagTelemetryList.innerHTML = "";
+  if (!events.length) {
+    const li = document.createElement("li");
+    li.className = "empty";
+    li.textContent = enabled ? "no events yet" : "telemetry disabled";
+    diagTelemetryList.appendChild(li);
+    return;
+  }
+  // Show newest first, cap at 30 for readability.
+  const recent = events.slice(-30).reverse();
+  for (const e of recent) {
+    const li = document.createElement("li");
+    const ts = new Date(e.t).toISOString().slice(11, 19);
+    const detail = e.detail && Object.keys(e.detail).length
+      ? " " + JSON.stringify(e.detail)
+      : "";
+    li.textContent = `${ts}  ${e.event}  retry=${e.retryCount}${detail}`;
+    diagTelemetryList.appendChild(li);
+  }
+}
+
+diagTelemetryRefresh?.addEventListener("click", () => { void renderTelemetryList(); });
+diagTelemetryClear?.addEventListener("click", async () => {
+  clearTelemetry();
+  await renderTelemetryList();
 });
 
 retryBtn?.addEventListener("click", () => {
@@ -413,6 +489,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     updateDebugBarVisibility();
   }
   if (changes.lastSlug) updateDebugLast(changes.lastSlug.newValue);
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes["syrin:telemetryEnabled"] && !fallback.hidden) {
+    void renderTelemetryList();
+  }
 });
 
 iframe.addEventListener("load", () => {

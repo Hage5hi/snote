@@ -1,6 +1,7 @@
 import { isValidSlug } from "./lib/validate-slug.js";
 
 const DEFAULTS = { openMode: "home", defaultSlug: "", debug: false };
+const TELEMETRY_KEY = "syrin:telemetryEnabled";
 
 // Wire up the options form. Exported so tests can call it after mocking
 // chrome.storage. Returns nothing — DOM state is the source of truth.
@@ -9,6 +10,7 @@ export function initOptions() {
   const slugInput = document.getElementById("defaultSlug");
   const slugError = document.getElementById("slugError");
   const debugInput = document.getElementById("debug");
+  const telemetryInput = document.getElementById("telemetryEnabled");
   const saveBtn = document.getElementById("save");
   const status = document.getElementById("status");
 
@@ -46,6 +48,13 @@ export function initOptions() {
     validate();
   });
 
+  // Telemetry opt-in lives in local storage — device-scoped, never synced.
+  if (telemetryInput) {
+    chrome.storage.local.get({ [TELEMETRY_KEY]: true }, (s) => {
+      telemetryInput.checked = !!s[TELEMETRY_KEY];
+    });
+  }
+
   form.addEventListener("change", () => {
     status.textContent = "";
     validate();
@@ -70,6 +79,9 @@ export function initOptions() {
         if (chrome.runtime.lastError) {
           status.textContent = "✗ Save failed";
           return;
+        }
+        if (telemetryInput) {
+          chrome.storage.local.set({ [TELEMETRY_KEY]: !!telemetryInput.checked });
         }
         status.textContent = "✓ Saved";
         setTimeout(() => {
