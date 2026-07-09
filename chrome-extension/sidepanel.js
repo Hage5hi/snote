@@ -176,6 +176,18 @@ window.addEventListener("message", (event) => {
     pushTimeline("ready", { protocol: appProtocol, buildId, appVersion });
 
     if (appProtocol < MIN_APP_PROTOCOL || appProtocol > MAX_APP_PROTOCOL) {
+      // Ignore stray version-mismatch messages once we're already ready:
+      // the app may remount during a PWA update and briefly re-broadcast
+      // an odd handshake; we must not tear down a working session.
+      if (ready) {
+        dlog("stray version-mismatch after ready, ignored", `proto=${appProtocol}`);
+        recordTelemetry("handshake-version-mismatch-ignored", {
+          appBuildId: buildId,
+          retryCount,
+          detail: { appProtocol, extProtocol: HANDSHAKE_PROTOCOL },
+        });
+        return;
+      }
       versionMismatchReason = `app protocol=${appProtocol} not in [${MIN_APP_PROTOCOL},${MAX_APP_PROTOCOL}] (ext=${HANDSHAKE_PROTOCOL})`;
       dlog("handshake version mismatch", versionMismatchReason);
       recordTelemetry("handshake-version-mismatch", {
