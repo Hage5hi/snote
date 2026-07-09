@@ -12,7 +12,6 @@ import {
   recordTelemetry,
   readTelemetry,
   clearTelemetry,
-  isTelemetryEnabled,
   readTelemetryEnabledAsync,
 } from "./lib/telemetry.js";
 import { validateDiagnostics, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
