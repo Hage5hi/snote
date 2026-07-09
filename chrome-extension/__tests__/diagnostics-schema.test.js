@@ -97,4 +97,13 @@ describe("validateDiagnostics", () => {
     expect(r.errors.some((e) => e.includes("handshake.extensionProtocol"))).toBe(true);
     expect(r.errors.some((e) => e.includes("load.iframeSrc"))).toBe(true);
   });
+
+  it("valid bundle contains no forbidden PII keys", () => {
+    const b = validBundle();
+    const json = JSON.stringify(b);
+    const denyList = [/"slug"/i, /"noteBody"/i, /"authToken"/i, /"password"/i, /"email"/i];
+    for (const re of denyList) {
+      expect(json).not.toMatch(re);
+    }
+  });
 });

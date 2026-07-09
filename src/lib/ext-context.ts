@@ -33,7 +33,8 @@ declare const __BUILD_ID__: string;
 
 // Versioned handshake protocol. Bump when the message shape changes in a
 // backwards-incompatible way (extension side enforces MIN/MAX). Keep the
-// value in sync with HANDSHAKE_PROTOCOL in chrome-extension/sidepanel.js.
+// value in sync with HANDSHAKE_PROTOCOL in
+// chrome-extension/lib/handshake-constants.js.
 export const HANDSHAKE_PROTOCOL = 2;
 
 /**
