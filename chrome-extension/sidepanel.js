@@ -14,7 +14,7 @@ import {
   clearTelemetry,
   readTelemetryEnabledAsync,
 } from "./lib/telemetry.js";
-import { validateDiagnostics, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
+import { validateDiagnostics, truncateTelemetryDetails, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
 import {
   APP_ORIGIN,
   HANDSHAKE_PROTOCOL,
