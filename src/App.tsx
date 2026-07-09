@@ -11,6 +11,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { DonateButton } from "./components/DonateButton";
 import { PwaUpdateDebugPanel } from "./components/dev/PwaUpdateDebugPanel";
 import { UrlSanitizeDebugPanel } from "./components/dev/UrlSanitizeDebugPanel";
+import { DiagnosticsPanel, RuntimeErrorBoundary } from "./components/dev/DiagnosticsPanel";
 import { EditorSkeleton } from "./components/note/EditorSkeleton";
 import { I18nProvider } from "./i18n/provider";
 
@@ -86,27 +87,30 @@ const App = () => (
             <DonateButton />
             <PwaUpdateDebugPanel />
             <UrlSanitizeDebugPanel />
-            <Routes>
-              <Route path="/" element={<Home />} />
-              <Route
-                path="/privacy"
-                element={
-                  <Suspense fallback={PlainFallback}>
-                    <Privacy />
-                  </Suspense>
-                }
-              />
-              <Route
-                path="/s/:token"
-                element={
-                  <Suspense fallback={PlainFallback}>
-                    <SharePage />
-                  </Suspense>
-                }
-              />
-              <Route path="/:slug" element={<SlugDispatcher />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <DiagnosticsPanel />
+            <RuntimeErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Home />} />
+                <Route
+                  path="/privacy"
+                  element={
+                    <Suspense fallback={PlainFallback}>
+                      <Privacy />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/s/:token"
+                  element={
+                    <Suspense fallback={PlainFallback}>
+                      <SharePage />
+                    </Suspense>
+                  }
+                />
+                <Route path="/:slug" element={<SlugDispatcher />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </RuntimeErrorBoundary>
           </BrowserRouter>
         </TooltipProvider>
       </QueryClientProvider>
