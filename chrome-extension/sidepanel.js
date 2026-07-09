@@ -14,7 +14,7 @@ import {
   clearTelemetry,
   readTelemetryEnabledAsync,
 } from "./lib/telemetry.js";
-import { validateDiagnostics, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
+import { validateDiagnostics, truncateTelemetryDetails, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
 import {
   APP_ORIGIN,
   HANDSHAKE_PROTOCOL,
@@ -443,7 +443,11 @@ function showDiagnosticsValidationError(errors) {
 }
 
 diagCopy?.addEventListener("click", async () => {
-  const bundle = await buildDiagnosticsBundle();
+  const rawBundle = await buildDiagnosticsBundle();
+  // Copy path uses a truncated clone so oversized telemetry.detail entries
+  // never fail schema validation or bloat the clipboard. The on-screen
+  // panel keeps the untruncated bundle.
+  const bundle = truncateTelemetryDetails(rawBundle);
   const verdict = validateDiagnostics(bundle);
   showDiagnosticsValidationError(verdict.errors);
   if (!verdict.ok) return;
@@ -456,7 +460,7 @@ diagCopy?.addEventListener("click", async () => {
 fallbackCopyDiag?.addEventListener("click", () => diagCopy?.click());
 
 diagDownload?.addEventListener("click", async () => {
-  const bundle = await buildDiagnosticsBundle();
+  const bundle = truncateTelemetryDetails(await buildDiagnosticsBundle());
   const verdict = validateDiagnostics(bundle);
   showDiagnosticsValidationError(verdict.errors);
   if (!verdict.ok) return;
