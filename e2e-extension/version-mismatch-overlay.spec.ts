@@ -1,34 +1,25 @@
-import { test, expect } from "./fixtures/extension";
+import { test, expect, openPanel, sendReady, waitForFallback } from "./fixtures/extension";
 
-// When the app broadcasts a syrin:ready with an unsupported protocol
-// version, the side panel must show the fallback overlay AND populate
-// the prominent #fallback-reason banner with the exact mismatch string
-// (extension protocol range vs app protocol). This is the triage signal
-// users report to us verbatim, so its wording is contract.
+// The overlay's #fallback-reason must render EXACTLY the strings produced
+// by sidepanel.js — those strings are the triage contract users report to
+// us verbatim, so any wording drift must fail loudly.
 
-const APP_ORIGIN = "https://note.syrin.online";
-
-test("handshake version mismatch fills #fallback-reason with exact detail", async ({
+test("version mismatch: reason banner matches exact string from sidepanel.js", async ({
   context,
   extensionId,
 }) => {
-  const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  const panel = await openPanel(context, extensionId);
+  await sendReady(panel, { protocol: 999, buildId: "b-bad", appVersion: "9.9.9" });
+  await waitForFallback(panel);
 
-  await panel.evaluate((origin) => {
-    const ev = new MessageEvent("message", {
-      data: { type: "syrin:ready", protocol: 999, buildId: "b-bad", appVersion: "9.9.9" },
-    });
-    Object.defineProperty(ev, "origin", { value: origin });
-    window.dispatchEvent(ev);
-  }, APP_ORIGIN);
+  const text = (await panel.locator("#fallback-reason").textContent())?.trim();
+  expect(text).toBe(
+    "Handshake protocol mismatch: app protocol=999 not in [1,2] (ext=2)",
+  );
 
-  const reason = panel.locator("#fallback-reason");
-  await expect(reason).toBeVisible();
-  await expect(reason).toContainText("Handshake protocol mismatch");
-  await expect(reason).toContainText("app protocol=999");
-  await expect(reason).toContainText("ext=2");
-
-  // Diagnostics row must mirror the reason for a consistent story.
-  await expect(panel.locator("#diag-ready")).toContainText(/mismatch.*app protocol=999/);
+  // The diagnostics dl row must mirror the reason (single source of truth).
+  const diagReady = (await panel.locator("#diag-ready").textContent())?.trim();
+  expect(diagReady).toBe(
+    "mismatch: app protocol=999 not in [1,2] (ext=2)",
+  );
 });
