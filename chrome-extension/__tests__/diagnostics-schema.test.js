@@ -150,5 +150,47 @@ describe("validateDiagnostics", () => {
     b.telemetry = [{ t: 1, event: "edge", detail: { pad } }];
     const r = validateDiagnostics(b);
     expect(r).toEqual({ ok: true, errors: [] });
+});
+
+describe("truncateTelemetryDetails", () => {
+  const bundleWith = (telemetry) => ({
+    kind: DIAGNOSTICS_KIND,
+    schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
+    at: "2026-07-09T12:00:00.000Z",
+    extensionVersion: "1.3.5",
+    handshake: { extensionProtocol: 2, appProtocol: 2, appBuildId: "a", ready: true, versionMismatch: null },
+    load: { iframeSrc: "https://note.syrin.online/", iframeLoaded: true, retryCount: 0 },
+    cspFrameAncestors: { ok: true, csp: "frame-ancestors 'self' chrome-extension://*", reason: null },
+    messageTimeline: [],
+    telemetry,
+    telemetryEnabled: true,
+    debugLines: [],
   });
+
+  it("truncates oversized detail into a bounded preview object and passes validation", () => {
+    const big = "x".repeat(MAX_TELEMETRY_DETAIL_BYTES + 500);
+    const truncated = truncateTelemetryDetails(bundleWith([{ t: 1, event: "big", detail: { blob: big } }]));
+    const evt = truncated.telemetry[0];
+    expect(evt.detail.truncated).toBe(true);
+    expect(evt.detail.bytes).toBeGreaterThan(MAX_TELEMETRY_DETAIL_BYTES);
+    expect(evt.detail.limit).toBe(MAX_TELEMETRY_DETAIL_BYTES);
+    expect(JSON.stringify(evt.detail).length).toBeLessThanOrEqual(MAX_TELEMETRY_DETAIL_BYTES);
+    expect(validateDiagnostics(truncated).ok).toBe(true);
+  });
+
+  it("leaves in-range details untouched (no distortion of the panel data)", () => {
+    const original = bundleWith([{ t: 1, event: "ok", detail: { k: "v" } }]);
+    const truncated = truncateTelemetryDetails(original);
+    expect(truncated.telemetry[0]).toBe(original.telemetry[0]);
+    expect(truncated.telemetry[0].detail).toEqual({ k: "v" });
+  });
+
+  it("returns a new bundle object without mutating the input (panel keeps raw data)", () => {
+    const big = "y".repeat(MAX_TELEMETRY_DETAIL_BYTES + 100);
+    const original = bundleWith([{ t: 1, event: "big", detail: { blob: big } }]);
+    const before = JSON.stringify(original);
+    truncateTelemetryDetails(original);
+    expect(JSON.stringify(original)).toBe(before);
+  });
+});
 });
