@@ -292,6 +292,29 @@ export function DiagnosticsPanel() {
               <option value="unhandledrejection">rejection ({counts.unhandledrejection})</option>
               <option value="react">react ({counts.react})</option>
             </select>
+            {(["warn", "error", "exception"] as const).map((k) => {
+              const active = filter === k;
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  data-diag-quickfilter={k}
+                  data-active={active}
+                  onClick={() => setFilter(active ? "all" : k)}
+                  style={{
+                    background: active ? KIND_COLORS[k] : "transparent",
+                    color: active ? "#000" : KIND_COLORS[k],
+                    border: `1px solid ${KIND_COLORS[k]}`,
+                    padding: "1px 6px",
+                    cursor: "pointer",
+                    font: "inherit",
+                    borderRadius: 3,
+                  }}
+                >
+                  {k} {counts[k]}
+                </button>
+              );
+            })}
           </div>
           <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
             {events.filter((e) => filter === "all" || e.kind === filter).map((e) => {
