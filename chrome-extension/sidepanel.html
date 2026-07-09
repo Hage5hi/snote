@@ -31,9 +31,17 @@
           <dt>App reachable (HEAD)</dt><dd id="diag-head">—</dd>
           <dt>Ready handshake</dt><dd id="diag-ready">not received</dd>
           <dt>Retry count</dt><dd id="diag-retries">0</dd>
+          <dt>Telemetry</dt><dd id="diag-telemetry-status">on</dd>
         </dl>
         <button id="diag-copy" type="button" class="secondary">Copy diagnostics</button>
         <button id="diag-download" type="button" class="secondary">Download diagnostics JSON</button>
+        <p id="diag-validation" class="diag-validation" hidden></p>
+        <details class="diag-telemetry">
+          <summary>Recent telemetry events</summary>
+          <ol id="diag-telemetry-list"><li class="empty">no events yet</li></ol>
+          <button id="diag-telemetry-refresh" type="button" class="secondary">Refresh</button>
+          <button id="diag-telemetry-clear" type="button" class="secondary">Clear</button>
+        </details>
       </details>
       <noscript>
         <a href="https://note.syrin.online">Open Syrin Note</a>
