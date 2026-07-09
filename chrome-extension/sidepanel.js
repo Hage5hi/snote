@@ -51,6 +51,11 @@ const debugCopy = document.getElementById("debug-copy");
 const debugExport = document.getElementById("debug-export");
 const debugRedact = document.getElementById("debug-redact");
 const debugClear = document.getElementById("debug-clear");
+const diagTelemetryStatus = document.getElementById("diag-telemetry-status");
+const diagTelemetryList = document.getElementById("diag-telemetry-list");
+const diagTelemetryRefresh = document.getElementById("diag-telemetry-refresh");
+const diagTelemetryClear = document.getElementById("diag-telemetry-clear");
+const diagValidation = document.getElementById("diag-validation");
 
 let ready = false;
 let iframeLoaded = false;
