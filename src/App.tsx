@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import { CommandPalette } from "./components/CommandPalette";
 import { DonateButton } from "./components/DonateButton";
 import { PwaUpdateDebugPanel } from "./components/dev/PwaUpdateDebugPanel";
+import { UrlSanitizeDebugPanel } from "./components/dev/UrlSanitizeDebugPanel";
 import { EditorSkeleton } from "./components/note/EditorSkeleton";
 import { I18nProvider } from "./i18n/provider";
 
@@ -84,6 +85,7 @@ const App = () => (
             <CommandPalette />
             <DonateButton />
             <PwaUpdateDebugPanel />
+            <UrlSanitizeDebugPanel />
             <Routes>
               <Route path="/" element={<Home />} />
               <Route
