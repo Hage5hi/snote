@@ -351,6 +351,7 @@ async function showFallback() {
   const head = await probeAppOrigin();
   if (diagHead) diagHead.textContent = head;
   dlog("fallback shown", `head=${head}`);
+  void renderTelemetryList();
 }
 
 async function buildDiagnosticsBundle() {
