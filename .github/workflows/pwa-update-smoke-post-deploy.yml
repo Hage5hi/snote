@@ -56,6 +56,11 @@ jobs:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
+      - name: Verify frame-ancestors CSP header on target
+        # Contract check: the app MUST send `frame-ancestors 'self'
+        # chrome-extension://*`, otherwise the Chrome extension side panel
+        # can't embed it (users see "Couldn't load Syrin Note").
+        run: bash scripts/verify-frame-ancestors.sh "$SMOKE_BASE_URL"
       - name: Install Playwright chromium
         run: bunx playwright install --with-deps chromium
       - name: Run post-deploy multi-click smoke

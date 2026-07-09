@@ -29,11 +29,24 @@ function refreshBadgeFromStorage() {
   }
 }
 
+// Track whether setPanelBehavior succeeded. When it does, Chrome opens the
+// side panel automatically on toolbar-icon click. If it rejects (older
+// channels, enterprise policy), we fall back to opening manually from
+// action.onClicked so the icon never becomes a dead click.
+let panelBehaviorReady = false;
+
 chrome.runtime.onInstalled.addListener(() => {
   try {
     chrome.sidePanel
       .setPanelBehavior({ openPanelOnActionClick: true })
-      .catch((err) => console.error("[syrin-note] setPanelBehavior failed", err));
+      .then(() => {
+        panelBehaviorReady = true;
+        dlog("setPanelBehavior ok");
+      })
+      .catch((err) => {
+        panelBehaviorReady = false;
+        console.error("[syrin-note] setPanelBehavior failed", err);
+      });
   } catch (err) {
     console.error("[syrin-note] sidePanel API unavailable", err);
   }
@@ -49,6 +62,24 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.openMode) {
     applyBadge(changes.openMode.newValue ?? "home");
   }
+});
+
+async function openPanelForWindow(windowId) {
+  if (windowId == null) return;
+  try {
+    await chrome.sidePanel.open({ windowId });
+  } catch (err) {
+    console.error("[syrin-note] sidePanel.open failed", err?.message || err);
+  }
+}
+
+// Belt-and-suspenders: if setPanelBehavior didn't take, manually open the
+// panel on toolbar click. Safe when it did take too — Chrome silently
+// coalesces the second open() call.
+chrome.action.onClicked.addListener(async (tab) => {
+  if (panelBehaviorReady) return;
+  dlog("action.onClicked fallback");
+  await openPanelForWindow(tab?.windowId ?? null);
 });
 
 // Alt+S → open side panel in current window.
@@ -68,7 +99,7 @@ chrome.commands.onCommand.addListener(async (command) => {
       return;
     }
     dlog("Alt+S → open side panel windowId=", windowId);
-    await chrome.sidePanel.open({ windowId });
+    await openPanelForWindow(windowId);
   } catch (err) {
     console.error("[syrin-note] open side panel failed", err?.message || err);
   }

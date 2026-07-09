@@ -23,6 +23,17 @@
       <h1>Couldn't load Syrin Note</h1>
       <p>The side panel can't embed the app right now. You can open it in a new tab instead.</p>
       <button id="open-tab" type="button">Open in new tab</button>
+      <button id="retry-load" type="button" class="secondary">Retry</button>
+      <details class="diag">
+        <summary>Diagnostics</summary>
+        <dl>
+          <dt>Iframe URL</dt><dd id="diag-url">—</dd>
+          <dt>App reachable (HEAD)</dt><dd id="diag-head">—</dd>
+          <dt>Ready handshake</dt><dd id="diag-ready">not received</dd>
+          <dt>Retry count</dt><dd id="diag-retries">0</dd>
+        </dl>
+        <button id="diag-copy" type="button" class="secondary">Copy diagnostics</button>
+      </details>
       <noscript>
         <a href="https://note.syrin.online">Open Syrin Note</a>
       </noscript>

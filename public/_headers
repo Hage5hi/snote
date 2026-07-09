@@ -1,12 +1,18 @@
 # Cloudflare Pages / Netlify-style headers config.
-# Lighthouse Speed report: "Use efficient cache lifetimes" (~754 KiB savings).
 #
+# SOURCE OF TRUTH FOR PROD: vercel.json. This file is only honoured by
+# Cloudflare Pages / Netlify — the production host is Vercel + Cloudflare,
+# which ignores _headers. Keep both in sync (esp. the CSP frame-ancestors
+# entry that lets the Chrome extension embed the app in its side panel).
+#
+# Lighthouse Speed report: "Use efficient cache lifetimes" (~754 KiB savings).
 # Vite's hashed asset filenames (e.g. index-BHPmQ4m1.js) are content-addressed
 # and never overwritten, so they're safe to mark immutable for a year.
 # index.html itself must NOT be cached, otherwise users would never see new
 # deploys until forcing a refresh. The service worker, its loader, the web
 # manifest, and the version.json heartbeat must also stay no-cache so update
 # detection works on every reload.
+
 
 /*
   Content-Security-Policy: frame-ancestors 'self' chrome-extension://*
