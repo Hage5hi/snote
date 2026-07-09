@@ -460,7 +460,7 @@ diagCopy?.addEventListener("click", async () => {
 fallbackCopyDiag?.addEventListener("click", () => diagCopy?.click());
 
 diagDownload?.addEventListener("click", async () => {
-  const bundle = await buildDiagnosticsBundle();
+  const bundle = truncateTelemetryDetails(await buildDiagnosticsBundle());
   const verdict = validateDiagnostics(bundle);
   showDiagnosticsValidationError(verdict.errors);
   if (!verdict.ok) return;
