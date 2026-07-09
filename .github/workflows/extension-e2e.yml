@@ -39,6 +39,10 @@ jobs:
         # must match public/syrin-note-sidepanel.zip.manifest.json AND
         # chrome-extension/manifest.json. Blocks merges that ship a stale zip.
         run: bash scripts/verify-extension-zip.sh
+      - name: Extension security audit
+        # Fails on high/critical npm advisories, ESLint errors in the
+        # extension source, or manifest permissions outside the whitelist.
+        run: bash scripts/audit-extension.sh
       - name: Install Playwright browsers (Chromium only)
         run: bunx playwright install --with-deps chromium
       - name: Run extension E2E under xvfb
