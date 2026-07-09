@@ -433,6 +433,11 @@ diagCopy?.addEventListener("click", async () => {
   navigator.clipboard?.writeText(JSON.stringify(bundle, null, 2)).catch(() => {});
 });
 
+// Prominent one-click copy from the fallback overlay (avoids expanding
+// the details block for triage). Delegates to the same handler as the
+// diagnostics-section copy button.
+fallbackCopyDiag?.addEventListener("click", () => diagCopy?.click());
+
 diagDownload?.addEventListener("click", async () => {
   const bundle = await buildDiagnosticsBundle();
   const verdict = validateDiagnostics(bundle);
