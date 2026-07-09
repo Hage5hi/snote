@@ -1,6 +1,6 @@
 {
   "$comment": "Drift guard for the shipped extension zip. Regenerate this file whenever public/syrin-note-sidepanel.zip is rebuilt (see scripts/verify-extension-zip.sh). CI runs the same script and fails if any field drifts.",
-  "version": "1.3.2",
-  "bytes": 346064,
-  "sha256": "c77e79c818fb30b40970e61879fc425a916955b09488303dca42db37e482989d"
+  "version": "1.3.3",
+  "bytes": 343111,
+  "sha256": "9be9c778da7336fe6a49e9770e5b45203b450fcb9dcfb1a275611fd178a44e49"
 }
