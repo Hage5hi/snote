@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateDiagnostics,
+  truncateTelemetryDetails,
   DIAGNOSTICS_KIND,
   DIAGNOSTICS_SCHEMA_VERSION,
   MAX_TELEMETRY_DETAIL_BYTES,
