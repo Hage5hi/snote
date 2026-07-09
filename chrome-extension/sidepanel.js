@@ -330,7 +330,15 @@ async function probeAppOrigin() {
   }
 }
 
-async function verifyFrameAncestorsCsp() {
+let cachedCspProbe = null;
+let cachedCspProbeAt = 0;
+const CSP_CACHE_TTL_MS = 5000;
+
+async function verifyFrameAncestorsCsp({ force = false } = {}) {
+  if (!force && cachedCspProbe && Date.now() - cachedCspProbeAt < CSP_CACHE_TTL_MS) {
+    return cachedCspProbe;
+  }
+  let result;
   try {
     const res = await fetch(`${APP_ORIGIN}/`, {
       method: "GET",
@@ -339,15 +347,17 @@ async function verifyFrameAncestorsCsp() {
       mode: "cors",
     });
     const csp = res.headers.get("content-security-policy") || "";
-    if (!csp) return { ok: false, csp: null, reason: "no CSP header" };
-    if (!/frame-ancestors/i.test(csp)) return { ok: false, csp, reason: "missing frame-ancestors" };
-    if (!/chrome-extension:\/\//i.test(csp)) {
-      return { ok: false, csp, reason: "frame-ancestors excludes chrome-extension://" };
-    }
-    return { ok: true, csp, reason: null };
+    if (!csp) result = { ok: false, csp: null, reason: "no CSP header" };
+    else if (!/frame-ancestors/i.test(csp)) result = { ok: false, csp, reason: "missing frame-ancestors" };
+    else if (!/chrome-extension:\/\//i.test(csp))
+      result = { ok: false, csp, reason: "frame-ancestors excludes chrome-extension://" };
+    else result = { ok: true, csp, reason: null };
   } catch (err) {
-    return { ok: false, csp: null, reason: `fetch failed: ${err?.message || err}` };
+    result = { ok: false, csp: null, reason: `fetch failed: ${err?.message || err}` };
   }
+  cachedCspProbe = result;
+  cachedCspProbeAt = Date.now();
+  return result;
 }
 
 async function showFallback() {
@@ -366,17 +376,14 @@ async function showFallback() {
   if (diagHead) diagHead.textContent = "checking…";
   const head = await probeAppOrigin();
   if (diagHead) diagHead.textContent = head;
-  // Prominent one-line reason banner so the user sees the exact failure
-  // (handshake mismatch, CSP block, or timeout) without expanding diagnostics.
   const csp = await verifyFrameAncestorsCsp();
-  let reason = null;
-  if (versionMismatchReason) {
-    reason = `Handshake protocol mismatch: ${versionMismatchReason}`;
-  } else if (!csp.ok) {
-    reason = `App CSP blocks embedding: ${csp.reason || "frame-ancestors invalid"}`;
-  } else if (!ready) {
-    reason = `App never sent syrin:ready after ${retryCount} retry(ies). App reachable = ${head}.`;
-  }
+  const reason = resolveFallbackReason({
+    versionMismatchReason,
+    csp,
+    ready,
+    retryCount,
+    appReachable: head,
+  });
   if (fallbackReason) {
     fallbackReason.hidden = !reason;
     fallbackReason.textContent = reason || "";
