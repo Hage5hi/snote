@@ -1,4 +1,4 @@
-import { test, expect, APP_ORIGIN, openPanel, sendReady, waitForFallback } from "./fixtures/extension";
+import { test, expect, openPanel, sendReady, waitForFallback } from "./fixtures/extension";
 
 // Clicking the prominent "Copy diagnostics" button on the fallback overlay
 // must copy a JSON payload to the clipboard that passes the same schema
@@ -60,7 +60,4 @@ test("Copy diagnostics puts schema-valid JSON on the clipboard", async ({
 
   // Validation error banner must NOT be visible when schema is valid.
   await expect(panel.locator("#diag-validation")).toBeHidden();
-
-  // Silence unused-import lint.
-  expect(APP_ORIGIN).toContain("syrin");
 });

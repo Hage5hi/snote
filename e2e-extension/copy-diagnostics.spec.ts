@@ -1,4 +1,4 @@
-import { test, expect, APP_ORIGIN, openPanel, sendReady, waitForFallback } from "./fixtures/extension";
+import { test, expect, openPanel, sendReady, waitForFallback } from "./fixtures/extension";
 import { readFileSync } from "node:fs";
 
 // Clicking "Download diagnostics JSON" in the fallback overlay must produce
