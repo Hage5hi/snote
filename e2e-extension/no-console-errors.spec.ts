@@ -2,11 +2,28 @@ import { test, expect } from "./fixtures/extension";
 
 // Regression guard: rapid open/close of the side panel and reloads must
 // never produce a runtime JS exception, an unhandled promise rejection,
-// or a console.error from our own code. If a stray postMessage or a
-// handshake edge case ever throws, this spec fails immediately with the
-// captured message so we don't have to reproduce it by hand.
+// or a console.error from our own code. Uses deterministic readiness
+// waits (loader hidden after ready, fallback stays hidden) instead of
+// arbitrary sleeps so it's stable on slow CI runners.
 
 const APP_ORIGIN = "https://note.syrin.online";
+
+async function sendReady(
+  panel: import("@playwright/test").Page,
+  protocol: number,
+  buildId: string,
+) {
+  await panel.evaluate(
+    ({ origin, protocol, buildId }) => {
+      const ev = new MessageEvent("message", {
+        data: { type: "syrin:ready", protocol, buildId, appVersion: "test" },
+      });
+      Object.defineProperty(ev, "origin", { value: origin });
+      window.dispatchEvent(ev);
+    },
+    { origin: APP_ORIGIN, protocol, buildId },
+  );
+}
 
 test("no console errors or exceptions during rapid open/close + reload", async ({
   context,
@@ -21,24 +38,28 @@ test("no console errors or exceptions during rapid open/close + reload", async (
     panel.on("console", (msg) => {
       if (msg.type() === "error") errors.push(`console.error[${i}]: ${msg.text()}`);
     });
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-    // Send a valid ready so the panel converges before we tear it down.
-    await panel.evaluate((origin) => {
-      const ev = new MessageEvent("message", {
-        data: { type: "syrin:ready", protocol: 2, buildId: `b${Math.random()}`, appVersion: "test" },
-      });
-      Object.defineProperty(ev, "origin", { value: origin });
-      window.dispatchEvent(ev);
-    }, APP_ORIGIN);
-    await panel.reload();
-    // Send a stray odd-protocol message after ready — must be ignored, not thrown.
-    await panel.evaluate((origin) => {
-      const ev = new MessageEvent("message", {
-        data: { type: "syrin:ready", protocol: 999, buildId: "stray" },
-      });
-      Object.defineProperty(ev, "origin", { value: origin });
-      window.dispatchEvent(ev);
-    }, APP_ORIGIN);
+
+    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`, {
+      waitUntil: "domcontentloaded",
+    });
+    // Wait for the panel's message listener to be wired up — the loader
+    // node exists only after sidepanel.js runs.
+    await expect(panel.locator("#loader")).toBeVisible();
+
+    await sendReady(panel, 2, `b${i}-a`);
+    // Deterministic readiness signal: loader gains .hidden class, fallback stays hidden.
+    await expect(panel.locator("#loader")).toHaveClass(/hidden/);
+    await expect(panel.locator("#fallback")).toBeHidden();
+
+    await panel.reload({ waitUntil: "domcontentloaded" });
+    await expect(panel.locator("#loader")).toBeVisible();
+    await sendReady(panel, 2, `b${i}-b`);
+    await expect(panel.locator("#loader")).toHaveClass(/hidden/);
+
+    // Stray odd-protocol ready must be ignored — panel must stay ready.
+    await sendReady(panel, 999, "stray");
+    await expect(panel.locator("#fallback")).toBeHidden();
+
     await panel.close();
   };
 
