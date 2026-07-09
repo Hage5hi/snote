@@ -8,7 +8,14 @@ import {
   expectedFilename,
   validateExport,
 } from "./lib/export-schema.js";
-import { recordTelemetry, readTelemetry } from "./lib/telemetry.js";
+import {
+  recordTelemetry,
+  readTelemetry,
+  clearTelemetry,
+  isTelemetryEnabled,
+  readTelemetryEnabledAsync,
+} from "./lib/telemetry.js";
+import { validateDiagnostics, DIAGNOSTICS_KIND, DIAGNOSTICS_SCHEMA_VERSION } from "./lib/diagnostics-schema.js";
 
 const APP_ORIGIN = "https://note.syrin.online";
 
