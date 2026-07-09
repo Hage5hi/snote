@@ -35,6 +35,8 @@ const MESSAGE_TIMELINE_MAX = 30;
 const iframe = document.getElementById("app");
 const loader = document.getElementById("loader");
 const fallback = document.getElementById("fallback");
+const fallbackReason = document.getElementById("fallback-reason");
+const fallbackCopyDiag = document.getElementById("fallback-copy-diag");
 const openTab = document.getElementById("open-tab");
 const retryBtn = document.getElementById("retry-load");
 const diagUrl = document.getElementById("diag-url");
@@ -361,7 +363,23 @@ async function showFallback() {
   if (diagHead) diagHead.textContent = "checking…";
   const head = await probeAppOrigin();
   if (diagHead) diagHead.textContent = head;
-  dlog("fallback shown", `head=${head}`);
+  // Prominent one-line reason banner so the user sees the exact failure
+  // (handshake mismatch, CSP block, or timeout) without expanding diagnostics.
+  const csp = await verifyFrameAncestorsCsp();
+  let reason = null;
+  if (versionMismatchReason) {
+    reason = `Handshake protocol mismatch: ${versionMismatchReason}`;
+  } else if (!csp.ok) {
+    reason = `App CSP blocks embedding: ${csp.reason || "frame-ancestors invalid"}`;
+  } else if (!ready) {
+    reason = `App never sent syrin:ready after ${retryCount} retry(ies). App reachable = ${head}.`;
+  }
+  if (fallbackReason) {
+    fallbackReason.hidden = !reason;
+    fallbackReason.textContent = reason || "";
+  }
+  if (fallbackCopyDiag) fallbackCopyDiag.hidden = false;
+  dlog("fallback shown", `head=${head} reason=${reason ?? "none"}`);
   void renderTelemetryList();
 }
 
@@ -414,6 +432,11 @@ diagCopy?.addEventListener("click", async () => {
   if (!verdict.ok) return;
   navigator.clipboard?.writeText(JSON.stringify(bundle, null, 2)).catch(() => {});
 });
+
+// Prominent one-click copy from the fallback overlay (avoids expanding
+// the details block for triage). Delegates to the same handler as the
+// diagnostics-section copy button.
+fallbackCopyDiag?.addEventListener("click", () => diagCopy?.click());
 
 diagDownload?.addEventListener("click", async () => {
   const bundle = await buildDiagnosticsBundle();

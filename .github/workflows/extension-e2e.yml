@@ -71,6 +71,20 @@ jobs:
           path: test-results/
           retention-days: 14
           if-no-files-found: ignore
+      - name: Upload extension build artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          # Ships the exact extension source + zipped bundle that failed CI so
+          # we can side-load the same build locally and reproduce runtime bugs
+          # without rebuilding from the commit SHA.
+          name: extension-build-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          path: |
+            chrome-extension/
+            public/syrin-note-sidepanel.zip
+            public/syrin-note-sidepanel.zip.manifest.json
+          retention-days: 14
+          if-no-files-found: ignore
 
   store-assets:
     # Regenerates the Chrome Web Store screenshots, tile, marquee, promo and
