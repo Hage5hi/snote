@@ -61,6 +61,8 @@ export function readTelemetryEnabledAsync() {
  *   detail: Record<string, string | number | boolean | null>,
  * }} TelemetryEvent */
 
+const MAX_DETAIL_JSON_BYTES = 512;
+
 function safeDetail(detail) {
   // Whitelist primitives only. Strings are truncated so a rogue caller
   // can't stuff a full URL / slug in accidentally.
@@ -74,6 +76,15 @@ function safeDetail(detail) {
     } else {
       out[k] = String(v).slice(0, 120);
     }
+  }
+  // Ring-buffer bloat guard: if the serialized detail is oversized,
+  // drop the payload rather than write megabytes to chrome.storage.local.
+  try {
+    if (JSON.stringify(out).length > MAX_DETAIL_JSON_BYTES) {
+      return { _truncated: true, keys: Object.keys(out).slice(0, 8).join(",").slice(0, 120) };
+    }
+  } catch {
+    return { _truncated: true };
   }
   return out;
 }
