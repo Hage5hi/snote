@@ -111,11 +111,31 @@ function useDiagnosticsEnabled(): boolean {
   return import.meta.env.DEV || flag === "1" || flag === "true";
 }
 
+const MAX_EXPORT_DETAIL_BYTES = 512;
+
+/** Truncate details for export so downloaded JSON never bloats. Mirrors
+ *  chrome-extension MAX_TELEMETRY_DETAIL_BYTES. Panel keeps raw data. */
+export function truncateDiagEventsForExport(events: DiagEvent[]): DiagEvent[] {
+  return events.map((e) => {
+    const out: DiagEvent = { ...e };
+    for (const key of ["detail", "componentStack"] as const) {
+      const v = out[key];
+      if (typeof v === "string" && v.length > MAX_EXPORT_DETAIL_BYTES) {
+        out[key] = `${v.slice(0, MAX_EXPORT_DETAIL_BYTES)}…[truncated ${v.length - MAX_EXPORT_DETAIL_BYTES}b]`;
+      }
+    }
+    return out;
+  });
+}
+
+type KindFilter = "all" | EventKind;
+
 export function DiagnosticsPanel() {
   const enabled = useDiagnosticsEnabled();
   const [events, setEvents] = useState<DiagEvent[]>([]);
   const [collapsed, setCollapsed] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [filter, setFilter] = useState<KindFilter>("all");
   const originalConsole = useRef<{ warn?: typeof console.warn; error?: typeof console.error }>({});
 
   useEffect(() => {
@@ -230,7 +250,7 @@ export function DiagnosticsPanel() {
       </button>
       {!collapsed && (
         <>
-          <div style={{ marginTop: 4, display: "flex", gap: 8 }}>
+          <div style={{ marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             <button
               type="button"
               onClick={() => setEvents([])}
@@ -238,9 +258,43 @@ export function DiagnosticsPanel() {
             >
               clear
             </button>
+            <button
+              type="button"
+              data-diag-export
+              onClick={() => {
+                const payload = {
+                  exportedAt: new Date().toISOString(),
+                  count: events.length,
+                  maxDetailBytes: MAX_EXPORT_DETAIL_BYTES,
+                  events: truncateDiagEventsForExport(events),
+                };
+                const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+                const a = document.createElement("a");
+                a.href = URL.createObjectURL(blob);
+                a.download = `diagnostics-${Date.now()}.json`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+              }}
+              style={{ background: "transparent", border: "1px solid #666", color: "#fff", padding: "2px 6px", cursor: "pointer", font: "inherit" }}
+            >
+              export JSON
+            </button>
+            <select
+              data-diag-filter
+              value={filter}
+              onChange={(ev) => setFilter(ev.target.value as KindFilter)}
+              style={{ background: "#111", border: "1px solid #666", color: "#fff", padding: "1px 4px", font: "inherit" }}
+            >
+              <option value="all">all ({total})</option>
+              <option value="warn">warn ({counts.warn})</option>
+              <option value="error">error ({counts.error})</option>
+              <option value="exception">exception ({counts.exception})</option>
+              <option value="unhandledrejection">rejection ({counts.unhandledrejection})</option>
+              <option value="react">react ({counts.react})</option>
+            </select>
           </div>
           <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
-            {events.map((e) => {
+            {events.filter((e) => filter === "all" || e.kind === filter).map((e) => {
               const isOpen = expandedId === e.id;
               return (
                 <li
