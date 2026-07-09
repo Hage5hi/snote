@@ -3,6 +3,7 @@ import {
   validateDiagnostics,
   DIAGNOSTICS_KIND,
   DIAGNOSTICS_SCHEMA_VERSION,
+  MAX_TELEMETRY_DETAIL_BYTES,
 } from "../lib/diagnostics-schema.js";
 
 const validBundle = () => ({
