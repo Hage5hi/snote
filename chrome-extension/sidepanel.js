@@ -443,7 +443,11 @@ function showDiagnosticsValidationError(errors) {
 }
 
 diagCopy?.addEventListener("click", async () => {
-  const bundle = await buildDiagnosticsBundle();
+  const rawBundle = await buildDiagnosticsBundle();
+  // Copy path uses a truncated clone so oversized telemetry.detail entries
+  // never fail schema validation or bloat the clipboard. The on-screen
+  // panel keeps the untruncated bundle.
+  const bundle = truncateTelemetryDetails(rawBundle);
   const verdict = validateDiagnostics(bundle);
   showDiagnosticsValidationError(verdict.errors);
   if (!verdict.ok) return;
