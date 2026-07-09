@@ -421,6 +421,12 @@ async function buildDiagnosticsBundle() {
     telemetry,
     telemetryEnabled,
     debugLines: snapshotDebugLog(),
+    // Test-only injection hook: lets Playwright specs exercise the
+    // validator's forbidden-key denylist end-to-end without needing
+    // real PII in the bundle. Non-string / unrecognized values are ignored.
+    ...(typeof window !== "undefined" && typeof window.__SYRIN_TEST_INJECT_FORBIDDEN_KEY__ === "string"
+      ? { [window.__SYRIN_TEST_INJECT_FORBIDDEN_KEY__]: "injected-by-test" }
+      : {}),
   };
 }
 
