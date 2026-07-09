@@ -21,8 +21,15 @@ export function UrlSanitizeDebugPanel() {
   const [info, setInfo] = useState<StripInfo | null>(null);
   const [collapsed, setCollapsed] = useState(false);
 
+  // Enable when running in dev, OR when the explicit env flag is on
+  // (VITE_DEBUG_URL_SANITIZE_PANEL=1|true). The explicit flag lets us opt
+  // in from a production preview build without shipping the panel to real
+  // production users by default.
+  const flag = import.meta.env.VITE_DEBUG_URL_SANITIZE_PANEL;
+  const enabled = import.meta.env.DEV || flag === "1" || flag === "true";
+
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
+    if (!enabled) return;
     const original = `${location.pathname}${location.search}${location.hash}`;
     let captured: StripInfo | null = null;
     sanitizeUrl(original, {
@@ -32,9 +39,9 @@ export function UrlSanitizeDebugPanel() {
       },
     });
     setInfo(captured);
-  }, [location.pathname, location.search, location.hash]);
+  }, [enabled, location.pathname, location.search, location.hash]);
 
-  if (!import.meta.env.DEV) return null;
+  if (!enabled) return null;
   if (!info) return null;
 
   const style: React.CSSProperties = {
