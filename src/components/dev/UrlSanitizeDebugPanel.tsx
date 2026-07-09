@@ -11,38 +11,40 @@ import { sanitizeUrl } from "@/lib/url-sanitize";
 const NOTE_ALLOWED_PARAMS = ["foo", "tag", "q", "page"];
 
 interface StripInfo {
+  at: number;
   original: string;
   sanitized: string;
   removed: string[];
 }
 
+const MAX_HISTORY = 20;
+
 export function UrlSanitizeDebugPanel() {
   const location = useLocation();
-  const [info, setInfo] = useState<StripInfo | null>(null);
+  const [history, setHistory] = useState<StripInfo[]>([]);
   const [collapsed, setCollapsed] = useState(false);
 
-  // Enable when running in dev, OR when the explicit env flag is on
-  // (VITE_DEBUG_URL_SANITIZE_PANEL=1|true). The explicit flag lets us opt
-  // in from a production preview build without shipping the panel to real
-  // production users by default.
   const flag = import.meta.env.VITE_DEBUG_URL_SANITIZE_PANEL;
   const enabled = import.meta.env.DEV || flag === "1" || flag === "true";
 
   useEffect(() => {
     if (!enabled) return;
     const original = `${location.pathname}${location.search}${location.hash}`;
-    let captured: StripInfo | null = null;
     sanitizeUrl(original, {
       allowedParams: NOTE_ALLOWED_PARAMS,
       onStrip: (i) => {
-        captured = i;
+        const event: StripInfo = { at: Date.now(), ...i };
+        // Structured trace event — mirrors what the panel renders so it can
+        // be grepped from console logs or captured by Playwright.
+        // eslint-disable-next-line no-console
+        console.info("[url-sanitize:event]", event);
+        setHistory((prev) => [event, ...prev].slice(0, MAX_HISTORY));
       },
     });
-    setInfo(captured);
   }, [enabled, location.pathname, location.search, location.hash]);
 
   if (!enabled) return null;
-  if (!info) return null;
+  if (history.length === 0) return null;
 
   const style: React.CSSProperties = {
     position: "fixed",
@@ -54,25 +56,35 @@ export function UrlSanitizeDebugPanel() {
     font: "11px/1.4 ui-monospace,monospace",
     padding: "6px 8px",
     borderRadius: 4,
-    maxWidth: 360,
+    maxWidth: 420,
+    maxHeight: "50vh",
+    overflow: "auto",
     pointerEvents: "auto",
   };
 
   return (
-    <div style={style} data-url-sanitize-debug-panel="true" data-removed-count={info.removed.length}>
+    <div style={style} data-url-sanitize-debug-panel="true" data-event-count={history.length}>
       <button
         type="button"
         onClick={() => setCollapsed((c) => !c)}
         style={{ background: "transparent", color: "#ffb", border: 0, padding: 0, cursor: "pointer", font: "inherit" }}
       >
-        [url] stripped {info.removed.length} param(s) {collapsed ? "▸" : "▾"}
+        [url] {history.length} strip event(s) {collapsed ? "▸" : "▾"}
       </button>
       {!collapsed && (
-        <div style={{ marginTop: 4, opacity: 0.9, wordBreak: "break-all" }}>
-          <div><span style={{ opacity: 0.6 }}>original:</span> {info.original}</div>
-          <div><span style={{ opacity: 0.6 }}>sanitized:</span> {info.sanitized}</div>
-          <div><span style={{ opacity: 0.6 }}>removed:</span> {info.removed.join(", ")}</div>
-        </div>
+        <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
+          {history.map((info, idx) => (
+            <li
+              key={`${info.at}-${idx}`}
+              data-strip-event
+              style={{ marginTop: 4, paddingTop: 4, borderTop: idx === 0 ? 0 : "1px solid rgba(255,255,255,0.15)", wordBreak: "break-all" }}
+            >
+              <div><span style={{ opacity: 0.6 }}>original:</span> {info.original}</div>
+              <div><span style={{ opacity: 0.6 }}>sanitized:</span> {info.sanitized}</div>
+              <div><span style={{ opacity: 0.6 }}>removed:</span> {info.removed.join(", ")}</div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
