@@ -9,7 +9,7 @@ const validBundle = () => ({
   kind: DIAGNOSTICS_KIND,
   schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
   at: "2026-07-09T12:00:00.000Z",
-  extensionVersion: "1.3.3",
+  extensionVersion: "1.3.5",
   handshake: {
     extensionProtocol: 2,
     appProtocol: 2,

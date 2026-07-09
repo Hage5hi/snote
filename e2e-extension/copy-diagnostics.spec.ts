@@ -34,7 +34,12 @@ test("Download diagnostics JSON contains only sanitized keys with fixture-pinned
     panel.locator("#diag-download").click(),
   ]);
 
-  expect(download.suggestedFilename()).toMatch(/^syrin-note-diagnostics-.*\.json$/);
+  // Filename must be: syrin-note-diagnostics-<reasonType>-<isoTs>.json
+  // For this fixture (protocol=999) reasonType is "mismatch". Timestamp
+  // segment: 4-digit year, dashes replacing `:` and `.`, ending in Z.
+  expect(download.suggestedFilename()).toMatch(
+    /^syrin-note-diagnostics-mismatch-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/,
+  );
   const filePath = await download.path();
   expect(filePath).toBeTruthy();
   const bundle = JSON.parse(readFileSync(filePath!, "utf8"));
@@ -46,7 +51,7 @@ test("Download diagnostics JSON contains only sanitized keys with fixture-pinned
 
   // Fixture-pinned values.
   expect(bundle.kind).toBe("syrin-note-sidepanel-diagnostics");
-  expect(bundle.schemaVersion).toBe(1);
+  expect(bundle.schemaVersion).toBe(2);
   expect(bundle.handshake.extensionProtocol).toBe(2);
   expect(bundle.handshake.appProtocol).toBe(999);
   expect(bundle.handshake.appBuildId).toBe("fixture-bad");

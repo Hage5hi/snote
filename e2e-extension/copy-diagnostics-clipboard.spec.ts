@@ -41,7 +41,7 @@ test("Copy diagnostics puts schema-valid JSON on the clipboard", async ({
   for (const k of required) expect(bundle, `missing ${k}`).toHaveProperty(k);
 
   expect(bundle.kind).toBe("syrin-note-sidepanel-diagnostics");
-  expect(bundle.schemaVersion).toBe(1);
+  expect(bundle.schemaVersion).toBe(2);
   expect(typeof bundle.extensionVersion).toBe("string");
   expect(Number.isNaN(Date.parse(bundle.at))).toBe(false);
   expect(typeof bundle.handshake.extensionProtocol).toBe("number");
