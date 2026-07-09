@@ -3,7 +3,42 @@
 // Hand-rolled tiny validator — see export-schema.js for the same pattern.
 
 export const DIAGNOSTICS_KIND = "syrin-note-sidepanel-diagnostics";
-export const DIAGNOSTICS_SCHEMA_VERSION = 1;
+// v2: adds filename reason-type token + explicit forbidden-key denylist.
+export const DIAGNOSTICS_SCHEMA_VERSION = 2;
+
+// Keys that must NEVER appear anywhere in the exported bundle. Checked
+// recursively — presence of any of these anywhere is a validation error,
+// not just a soft warning.
+export const FORBIDDEN_KEYS = Object.freeze([
+  "slug",
+  "lastSlug",
+  "noteBody",
+  "content",
+  "userEmail",
+  "authToken",
+  "accessToken",
+  "password",
+  "sessionId",
+]);
+
+function findForbiddenKey(value, seen = new WeakSet()) {
+  if (!value || typeof value !== "object") return null;
+  if (seen.has(value)) return null;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const hit = findForbiddenKey(item, seen);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  for (const key of Object.keys(value)) {
+    if (FORBIDDEN_KEYS.includes(key)) return key;
+    const hit = findForbiddenKey(value[key], seen);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 const FIELDS = {
   kind: { type: "string", const: DIAGNOSTICS_KIND },
@@ -72,5 +107,7 @@ export function validateDiagnostics(payload) {
       if (r !== true) errors.push(`field ${key}: ${r}`);
     }
   }
+  const leaked = findForbiddenKey(payload);
+  if (leaked) errors.push(`forbidden key present: ${leaked}`);
   return { ok: errors.length === 0, errors };
 }

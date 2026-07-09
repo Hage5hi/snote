@@ -24,6 +24,7 @@ import {
   MAX_RETRIES,
 } from "./lib/handshake-constants.js";
 import { resolveFallbackReason } from "./lib/fallback-reason.js";
+import { diagnosticsReasonType } from "./lib/diagnostics-reason-type.js";
 
 // Two-phase load watchdog. Waits for a real `syrin:ready` handshake from
 // the app. Retries once with cache-buster if it doesn't arrive, so most
@@ -453,11 +454,19 @@ diagDownload?.addEventListener("click", async () => {
   const verdict = validateDiagnostics(bundle);
   showDiagnosticsValidationError(verdict.errors);
   if (!verdict.ok) return;
+  const reasonType = diagnosticsReasonType({
+    versionMismatchReason: bundle.handshake.versionMismatch,
+    csp: bundle.cspFrameAncestors,
+    ready: bundle.handshake.ready,
+  });
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `syrin-note-diagnostics-${bundle.at.replace(/[:.]/g, "-")}.json`;
+  // Filename: syrin-note-diagnostics-<reasonType>-<isoTimestamp>.json
+  // Reason token comes first after the prefix so grouped listings sort by
+  // failure class. Timestamp uses `-` in place of `:` / `.` for filesystems.
+  a.download = `syrin-note-diagnostics-${reasonType}-${bundle.at.replace(/[:.]/g, "-")}.json`;
   document.body.appendChild(a);
   a.click();
   a.remove();
