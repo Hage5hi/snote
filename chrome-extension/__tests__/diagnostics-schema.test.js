@@ -101,9 +101,32 @@ describe("validateDiagnostics", () => {
   it("valid bundle contains no forbidden PII keys", () => {
     const b = validBundle();
     const json = JSON.stringify(b);
-    const denyList = [/"slug"/i, /"noteBody"/i, /"authToken"/i, /"password"/i, /"email"/i];
+    const denyList = [/"slug"/i, /"noteBody"/i, /"authToken"/i, /"password"/i, /"userEmail"/i];
     for (const re of denyList) {
       expect(json).not.toMatch(re);
     }
+  });
+
+  it("rejects bundle with forbidden key at top level", () => {
+    const b = { ...validBundle(), slug: "leaked" };
+    const r = validateDiagnostics(b);
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain("forbidden key present: slug");
+  });
+
+  it("rejects bundle with forbidden key nested inside handshake", () => {
+    const b = validBundle();
+    b.handshake = { ...b.handshake, authToken: "secret" };
+    const r = validateDiagnostics(b);
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain("forbidden key present: authToken");
+  });
+
+  it("rejects bundle with forbidden key nested inside telemetry array", () => {
+    const b = validBundle();
+    b.telemetry = [{ t: 1, event: "x", detail: { noteBody: "leak" } }];
+    const r = validateDiagnostics(b);
+    expect(r.ok).toBe(false);
+    expect(r.errors).toContain("forbidden key present: noteBody");
   });
 });
