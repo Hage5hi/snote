@@ -480,6 +480,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.lastSlug) updateDebugLast(changes.lastSlug.newValue);
 });
 
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes["syrin:telemetryEnabled"] && !fallback.hidden) {
+    void renderTelemetryList();
+  }
+});
+
 iframe.addEventListener("load", () => {
   iframeLoaded = true;
   pushTimeline("iframe-load-event", null);
