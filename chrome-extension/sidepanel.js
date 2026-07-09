@@ -8,16 +8,23 @@ import {
   expectedFilename,
   validateExport,
 } from "./lib/export-schema.js";
+import { recordTelemetry, readTelemetry } from "./lib/telemetry.js";
 
 const APP_ORIGIN = "https://note.syrin.online";
 
-// Two-phase load watchdog. `LOAD_TIMEOUT_MS` waits for a real
-// `syrin:ready` handshake from the app (posted from src/lib/ext-context.ts).
-// If it doesn't arrive, we retry once with a cache-buster before falling
-// back — most transient failures (cold SW, Cloudflare bot-check) recover
-// on the retry, so the fallback screen means something is actually wrong.
+// Versioned handshake protocol. Bump when the message shape changes in a
+// backwards-incompatible way. The app sends its supported version in
+// `syrin:ready.protocol`; missing → v1 (compat for pre-1.3.2 apps).
+const HANDSHAKE_PROTOCOL = 2;
+const MIN_APP_PROTOCOL = 1;
+const MAX_APP_PROTOCOL = 2;
+
+// Two-phase load watchdog. Waits for a real `syrin:ready` handshake from
+// the app. Retries once with cache-buster if it doesn't arrive, so most
+// transient failures (cold SW, Cloudflare bot-check) recover silently.
 const LOAD_TIMEOUT_MS = 12000;
 const MAX_RETRIES = 1;
+const MESSAGE_TIMELINE_MAX = 30;
 
 const iframe = document.getElementById("app");
 const loader = document.getElementById("loader");
@@ -29,6 +36,7 @@ const diagHead = document.getElementById("diag-head");
 const diagReady = document.getElementById("diag-ready");
 const diagRetries = document.getElementById("diag-retries");
 const diagCopy = document.getElementById("diag-copy");
+const diagDownload = document.getElementById("diag-download");
 const debugBar = document.getElementById("debug-bar");
 const debugLast = document.getElementById("debug-last");
 const debugLog = document.getElementById("debug-log");
@@ -45,6 +53,20 @@ let lastSavedSlug = "";
 let currentSrc = "";
 let cachedSettings = null;
 let readyBuildId = null;
+let readyAppProtocol = null;
+let versionMismatchReason = null;
+const messageTimeline = []; // {t, kind, detail}
+
+function pushTimeline(kind, detail) {
+  messageTimeline.push({ t: Date.now(), kind, detail: detail ?? null });
+  while (messageTimeline.length > MESSAGE_TIMELINE_MAX) messageTimeline.shift();
+}
+
+function extensionVersion() {
+  return (
+    (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown"
+  );
+}
 
 function renderDebugLine(line) {
   if (!debugLog) return;
@@ -66,17 +88,12 @@ function updateDebugLast(slug) {
 
 onDebugLog(renderDebugLine);
 
-// Build the export payload — shared by download and copy paths so any
-// redaction the user requested is applied identically across export
-// surfaces (download .json, copy to clipboard).
 function buildExportPayload() {
-  const manifestVersion =
-    (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown";
   const exportedAt = new Date().toISOString();
   const raw = {
     kind: EXPORT_KIND,
     version: EXPORT_VERSION,
-    extensionVersion: manifestVersion,
+    extensionVersion: extensionVersion(),
     exportedAt,
     lastSlug: lastSavedSlug || null,
     iframeSrc: iframe?.src || null,
@@ -115,9 +132,7 @@ debugExport?.addEventListener("click", () => {
       dlog("export blocked: schema invalid", verdict.errors.join("; "));
       return;
     }
-    const blob = new Blob([JSON.stringify(payload, null, 2)], {
-      type: "application/json",
-    });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -135,19 +150,47 @@ debugExport?.addEventListener("click", () => {
 // Listener attached BEFORE iframe.src to avoid races.
 window.addEventListener("message", (event) => {
   if (event.origin !== APP_ORIGIN) {
+    pushTimeline("origin-rejected", { origin: event.origin });
     dlog("origin rejected", event.origin);
     return;
   }
   const data = event.data;
   if (!data || typeof data !== "object") return;
 
-  // App-mounted handshake — the real signal that the app is running,
-  // not just that the iframe network request completed.
   if (data.type === "syrin:ready") {
+    const appProtocol = Number.isFinite(data.protocol) ? data.protocol : 1;
+    const buildId = typeof data.buildId === "string" ? data.buildId : null;
+    const appVersion = typeof data.appVersion === "string" ? data.appVersion : null;
+    pushTimeline("ready", { protocol: appProtocol, buildId, appVersion });
+
+    if (appProtocol < MIN_APP_PROTOCOL || appProtocol > MAX_APP_PROTOCOL) {
+      versionMismatchReason = `app protocol=${appProtocol} not in [${MIN_APP_PROTOCOL},${MAX_APP_PROTOCOL}] (ext=${HANDSHAKE_PROTOCOL})`;
+      dlog("handshake version mismatch", versionMismatchReason);
+      recordTelemetry("handshake-version-mismatch", {
+        appBuildId: buildId,
+        retryCount,
+        detail: {
+          appProtocol,
+          extProtocol: HANDSHAKE_PROTOCOL,
+          appVersion,
+          extVersion: extensionVersion(),
+        },
+      });
+      showFallback();
+      clearWatchdog();
+      return;
+    }
+
     if (!ready) {
       ready = true;
-      readyBuildId = typeof data.buildId === "string" ? data.buildId : null;
-      dlog("ready received", `buildId=${readyBuildId ?? "?"}`);
+      readyBuildId = buildId;
+      readyAppProtocol = appProtocol;
+      dlog("ready received", `buildId=${buildId ?? "?"} proto=${appProtocol}`);
+      recordTelemetry("handshake-ok", {
+        appBuildId: buildId,
+        retryCount,
+        detail: { appProtocol, extProtocol: HANDSHAKE_PROTOCOL },
+      });
       hideLoaderAndFallback();
       clearWatchdog();
     }
@@ -155,6 +198,7 @@ window.addEventListener("message", (event) => {
   }
 
   if (data.type === "syrin:slug" && isValidSlug(data.slug)) {
+    pushTimeline("slug", { len: data.slug.length });
     try {
       event.source?.postMessage({ type: "syrin:ack", slug: data.slug }, event.origin);
       dlog("ack sent", data.slug);
@@ -184,9 +228,11 @@ function loadDefaultsWithFallback(cb) {
   try {
     chrome.storage.sync.get(defaults, (settings) => {
       if (chrome.runtime.lastError) {
-        // Enterprise policy or corrupt sync — fall back to local storage
-        // so users don't get a silently-broken panel.
         dlog("storage.sync unavailable, using local", chrome.runtime.lastError.message);
+        recordTelemetry("storage-sync-fallback", {
+          retryCount,
+          detail: { reason: chrome.runtime.lastError.message },
+        });
         chrome.storage.local.get(defaults, (local) => cb(local || defaults));
         return;
       }
@@ -219,9 +265,11 @@ function armWatchdog() {
     if (retryCount < MAX_RETRIES) {
       retryCount += 1;
       dlog("watchdog fired, retrying", `attempt=${retryCount}`);
+      recordTelemetry("retry-attempted", { retryCount, detail: { iframeLoaded } });
       loadIframe(cachedSettings, /*isRetry*/ true);
     } else {
       dlog("watchdog fired, showing fallback", `retries=${retryCount}`);
+      recordTelemetry("fallback-shown", { retryCount, detail: { iframeLoaded } });
       showFallback();
     }
   }, LOAD_TIMEOUT_MS);
@@ -235,6 +283,7 @@ function loadIframe(settings, isRetry = false) {
     ? `${base}${base.includes("?") ? "&" : "?"}retry=${retryCount}&_=${Date.now()}`
     : base;
   dlog(isRetry ? "reloading" : "loading", currentSrc);
+  pushTimeline(isRetry ? "iframe-retry" : "iframe-load", { retryCount });
   iframe.src = currentSrc;
   armWatchdog();
 }
@@ -253,35 +302,94 @@ async function probeAppOrigin() {
   }
 }
 
+async function verifyFrameAncestorsCsp() {
+  try {
+    const res = await fetch(`${APP_ORIGIN}/`, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "omit",
+      mode: "cors",
+    });
+    const csp = res.headers.get("content-security-policy") || "";
+    if (!csp) return { ok: false, csp: null, reason: "no CSP header" };
+    if (!/frame-ancestors/i.test(csp)) return { ok: false, csp, reason: "missing frame-ancestors" };
+    if (!/chrome-extension:\/\//i.test(csp)) {
+      return { ok: false, csp, reason: "frame-ancestors excludes chrome-extension://" };
+    }
+    return { ok: true, csp, reason: null };
+  } catch (err) {
+    return { ok: false, csp: null, reason: `fetch failed: ${err?.message || err}` };
+  }
+}
+
 async function showFallback() {
   loader.hidden = true;
   iframe.hidden = true;
   fallback.hidden = false;
   if (diagUrl) diagUrl.textContent = currentSrc || "(none)";
   if (diagRetries) diagRetries.textContent = String(retryCount);
-  if (diagReady) diagReady.textContent = ready ? "received" : "not received";
+  if (diagReady) {
+    diagReady.textContent = versionMismatchReason
+      ? `mismatch: ${versionMismatchReason}`
+      : ready
+      ? "received"
+      : "not received";
+  }
   if (diagHead) diagHead.textContent = "checking…";
   const head = await probeAppOrigin();
   if (diagHead) diagHead.textContent = head;
   dlog("fallback shown", `head=${head}`);
 }
 
-diagCopy?.addEventListener("click", () => {
-  const diag = {
-    iframeSrc: currentSrc,
-    retryCount,
-    readyReceived: ready,
-    readyBuildId,
-    iframeLoaded,
-    appReachable: diagHead?.textContent || "unknown",
+async function buildDiagnosticsBundle() {
+  const csp = await verifyFrameAncestorsCsp();
+  const telemetry = await readTelemetry();
+  return {
+    kind: "syrin-note-sidepanel-diagnostics",
+    schemaVersion: 1,
     at: new Date().toISOString(),
+    extensionVersion: extensionVersion(),
+    handshake: {
+      extensionProtocol: HANDSHAKE_PROTOCOL,
+      appProtocol: readyAppProtocol,
+      appBuildId: readyBuildId,
+      ready,
+      versionMismatch: versionMismatchReason,
+    },
+    load: {
+      iframeSrc: currentSrc,
+      iframeLoaded,
+      retryCount,
+      appReachable: diagHead?.textContent || "unknown",
+    },
+    cspFrameAncestors: csp,
+    messageTimeline: messageTimeline.slice(),
+    telemetry,
     debugLines: snapshotDebugLog(),
   };
-  navigator.clipboard?.writeText(JSON.stringify(diag, null, 2)).catch(() => {});
+}
+
+diagCopy?.addEventListener("click", async () => {
+  const bundle = await buildDiagnosticsBundle();
+  navigator.clipboard?.writeText(JSON.stringify(bundle, null, 2)).catch(() => {});
+});
+
+diagDownload?.addEventListener("click", async () => {
+  const bundle = await buildDiagnosticsBundle();
+  const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `syrin-note-diagnostics-${bundle.at.replace(/[:.]/g, "-")}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 });
 
 retryBtn?.addEventListener("click", () => {
   retryCount = 0;
+  versionMismatchReason = null;
   fallback.hidden = true;
   iframe.hidden = false;
   loader.classList.remove("hidden");
@@ -289,7 +397,6 @@ retryBtn?.addEventListener("click", () => {
   loadIframe(cachedSettings, /*isRetry*/ true);
 });
 
-// Read user settings, then load the iframe.
 loadDefaultsWithFallback((settings) => {
   cachedSettings = settings;
   setDebug(settings.debug);
@@ -310,10 +417,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 iframe.addEventListener("load", () => {
   iframeLoaded = true;
+  pushTimeline("iframe-load-event", null);
   dlog("iframe load event");
-  // Do NOT hide the loader yet — wait for `syrin:ready` from the app so
-  // we don't declare success on a blank/error page. The watchdog will
-  // cover apps that don't post the handshake (older builds, non-app URL).
 });
 
 openTab.addEventListener("click", () => {

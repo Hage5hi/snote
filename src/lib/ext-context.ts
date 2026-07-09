@@ -31,6 +31,11 @@ export const isExtensionContext = detect();
 
 declare const __BUILD_ID__: string;
 
+// Versioned handshake protocol. Bump when the message shape changes in a
+// backwards-incompatible way (extension side enforces MIN/MAX). Keep the
+// value in sync with HANDSHAKE_PROTOCOL in chrome-extension/sidepanel.js.
+export const HANDSHAKE_PROTOCOL = 2;
+
 /**
  * Post a `syrin:ready` handshake to the parent frame (the extension side
  * panel) so it can hide its loader based on real app-mounted state instead
@@ -46,7 +51,15 @@ export function postExtensionReady(): void {
   if (window.parent === window) return;
   const buildId = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
   try {
-    window.parent.postMessage({ type: "syrin:ready", buildId }, "*");
+    window.parent.postMessage(
+      {
+        type: "syrin:ready",
+        protocol: HANDSHAKE_PROTOCOL,
+        buildId,
+        appVersion: buildId,
+      },
+      "*",
+    );
   } catch {
     // ignore — parent may not be listening yet, panel retry covers this
   }
