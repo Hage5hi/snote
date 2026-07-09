@@ -9,6 +9,36 @@ export const DIAGNOSTICS_SCHEMA_VERSION = 2;
 // Must match MAX_DETAIL_JSON_BYTES in lib/telemetry.js.
 export const MAX_TELEMETRY_DETAIL_BYTES = 512;
 
+// Returns a shallow-cloned bundle whose telemetry[].detail entries are
+// truncated to fit MAX_TELEMETRY_DETAIL_BYTES so the Copy / Download
+// diagnostics buttons ALWAYS produce a schema-valid payload, even if
+// some telemetry event slipped past the storage-side cap. The original
+// bundle (used by the on-screen panel) is left untouched — this is the
+// only path that mutates detail.
+export function truncateTelemetryDetails(bundle) {
+  if (!bundle || !Array.isArray(bundle.telemetry)) return bundle;
+  const telemetry = bundle.telemetry.map((evt) => {
+    if (!evt || evt.detail == null) return evt;
+    let serialized;
+    try {
+      serialized = JSON.stringify(evt.detail);
+    } catch {
+      return { ...evt, detail: { truncated: true, reason: "not-serializable" } };
+    }
+    if (serialized.length <= MAX_TELEMETRY_DETAIL_BYTES) return evt;
+    return {
+      ...evt,
+      detail: {
+        truncated: true,
+        bytes: serialized.length,
+        limit: MAX_TELEMETRY_DETAIL_BYTES,
+        preview: serialized.slice(0, MAX_TELEMETRY_DETAIL_BYTES - 64),
+      },
+    };
+  });
+  return { ...bundle, telemetry };
+}
+
 // Keys that must NEVER appear anywhere in the exported bundle. Checked
 // recursively — presence of any of these anywhere is a validation error,
 // not just a soft warning.
