@@ -7,7 +7,50 @@
 // Export Diagnostics button.
 
 const KEY = "syrin:telemetry";
+const ENABLED_KEY = "syrin:telemetryEnabled";
 const MAX_EVENTS = 100;
+
+// Telemetry defaults to ON but can be opted out via the options page.
+// Setting is stored in chrome.storage.local (device-scoped, not synced,
+// to keep the opt-out local and free of any cross-device leakage).
+let cachedEnabled = true;
+try {
+  chrome.storage?.local?.get?.({ [ENABLED_KEY]: true }, (s) => {
+    cachedEnabled = !!s[ENABLED_KEY];
+  });
+  chrome.storage?.onChanged?.addListener?.((changes, area) => {
+    if (area === "local" && changes[ENABLED_KEY]) {
+      cachedEnabled = !!changes[ENABLED_KEY].newValue;
+    }
+  });
+} catch {
+  /* not in extension context */
+}
+
+export function isTelemetryEnabled() {
+  return cachedEnabled;
+}
+
+export function setTelemetryEnabled(enabled) {
+  cachedEnabled = !!enabled;
+  try {
+    chrome.storage.local.set({ [ENABLED_KEY]: cachedEnabled });
+  } catch {
+    /* ignore */
+  }
+}
+
+export function readTelemetryEnabledAsync() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get({ [ENABLED_KEY]: true }, (s) => {
+        resolve(!!s[ENABLED_KEY]);
+      });
+    } catch {
+      resolve(true);
+    }
+  });
+}
 
 /** @typedef {{
  *   t: number,
@@ -36,6 +79,7 @@ function safeDetail(detail) {
 }
 
 export function recordTelemetry(event, meta = {}) {
+  if (!cachedEnabled) return;
   const entry = {
     t: Date.now(),
     event: String(event).slice(0, 40),
