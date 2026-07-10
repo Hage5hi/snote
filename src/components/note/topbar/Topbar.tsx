@@ -149,6 +149,7 @@ export function Topbar({
               provider={provider}
               getContent={getContent}
               hideHome={compact}
+              onOpenHistory={() => setHistoryOpen(true)}
             />
 
             <div className="ml-auto flex shrink-0 items-center gap-1">
