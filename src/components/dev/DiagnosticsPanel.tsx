@@ -112,6 +112,13 @@ function useDiagnosticsEnabled(): boolean {
 }
 
 const MAX_EXPORT_DETAIL_BYTES = 512;
+export const DIAG_EXPORT_SCHEMA_VERSION = 1;
+
+/** Filename: `diagnostics-<iso>.json` with `:`/`.` replaced so it's FS-safe. */
+export function diagExportFilename(now: Date = new Date()): string {
+  const safe = now.toISOString().replace(/[:.]/g, "-");
+  return `diagnostics-${safe}.json`;
+}
 
 /** Truncate details for export so downloaded JSON never bloats. Mirrors
  *  chrome-extension MAX_TELEMETRY_DETAIL_BYTES. Panel keeps raw data. */
@@ -136,6 +143,7 @@ export function DiagnosticsPanel() {
   const [collapsed, setCollapsed] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [filter, setFilter] = useState<KindFilter>("all");
+  const [query, setQuery] = useState("");
   const originalConsole = useRef<{ warn?: typeof console.warn; error?: typeof console.error }>({});
 
   useEffect(() => {
@@ -262,8 +270,10 @@ export function DiagnosticsPanel() {
               type="button"
               data-diag-export
               onClick={() => {
+                const now = new Date();
                 const payload = {
-                  exportedAt: new Date().toISOString(),
+                  schemaVersion: DIAG_EXPORT_SCHEMA_VERSION,
+                  exportedAt: now.toISOString(),
                   count: events.length,
                   maxDetailBytes: MAX_EXPORT_DETAIL_BYTES,
                   events: truncateDiagEventsForExport(events),
@@ -271,7 +281,7 @@ export function DiagnosticsPanel() {
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
                 const a = document.createElement("a");
                 a.href = URL.createObjectURL(blob);
-                a.download = `diagnostics-${Date.now()}.json`;
+                a.download = diagExportFilename(now);
                 a.click();
                 URL.revokeObjectURL(a.href);
               }}
@@ -315,9 +325,28 @@ export function DiagnosticsPanel() {
                 </button>
               );
             })}
+            <input
+              data-diag-search
+              type="search"
+              value={query}
+              onChange={(ev) => setQuery(ev.target.value)}
+              placeholder="search message/detail/stack"
+              style={{ background: "#111", border: "1px solid #666", color: "#fff", padding: "1px 4px", font: "inherit", flex: "1 1 140px", minWidth: 100 }}
+            />
           </div>
           <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
-            {events.filter((e) => filter === "all" || e.kind === filter).map((e) => {
+            {events
+              .filter((e) => filter === "all" || e.kind === filter)
+              .filter((e) => {
+                const q = query.trim().toLowerCase();
+                if (!q) return true;
+                return (
+                  e.message.toLowerCase().includes(q) ||
+                  (e.detail?.toLowerCase().includes(q) ?? false) ||
+                  (e.componentStack?.toLowerCase().includes(q) ?? false)
+                );
+              })
+              .map((e) => {
               const isOpen = expandedId === e.id;
               return (
                 <li
