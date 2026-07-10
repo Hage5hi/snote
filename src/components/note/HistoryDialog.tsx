@@ -63,6 +63,7 @@ export function HistoryDialog({
   const [diffA, setDiffA] = useState<string>("");
   const [diffB, setDiffB] = useState<string>("");
   const [range, setRange] = useState<"all" | "day" | "week" | "month">("all");
+  const [kind, setKind] = useState<"all" | SnapshotKind>("all");
 
   const rangeMs: Record<typeof range, number | null> = {
     all: null,
@@ -70,11 +71,7 @@ export function HistoryDialog({
     week: 7 * 24 * 3600_000,
     month: 30 * 24 * 3600_000,
   };
-  const now = Date.now();
-  const filteredItems = items.filter((s) => {
-    const w = rangeMs[range];
-    return w == null || now - s.ts <= w;
-  });
+  const filteredItems = filterSnapshots(items, { rangeMs: rangeMs[range], kind });
 
   const handleClear = async () => {
     const ok = window.confirm(t("history.confirm_clear", { n: items.length }));
