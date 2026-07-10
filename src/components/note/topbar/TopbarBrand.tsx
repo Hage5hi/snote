@@ -91,12 +91,12 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hide
                 type="button"
                 onClick={onOpenHistory}
                 className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                aria-label={t("note.menu.history")}
+                aria-label={t("history.tooltip")}
               >
                 <Cloud className="h-3.5 w-3.5" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">{t("note.menu.history")}</TooltipContent>
+            <TooltipContent side="bottom">{t("history.tooltip")}</TooltipContent>
           </Tooltip>
         ) : (
           <Cloud className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
