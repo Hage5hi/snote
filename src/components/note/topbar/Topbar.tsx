@@ -215,6 +215,7 @@ export function Topbar({
             provider={provider}
             getContent={getContent}
             hideHome={compact}
+            onOpenHistory={() => setHistoryOpen(true)}
           />
 
 
