@@ -177,20 +177,35 @@ export function HistoryDialog({
 
             <TabsContent value="list">
               <div className="flex items-center justify-between gap-2 py-2">
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{t("history.filter_range")}</span>
-                  <select
-                    value={range}
-                    onChange={(e) => setRange(e.target.value as typeof range)}
-                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
-                    data-history-range-filter
-                  >
-                    <option value="all">{t("history.range.all")}</option>
-                    <option value="day">{t("history.range.day")}</option>
-                    <option value="week">{t("history.range.week")}</option>
-                    <option value="month">{t("history.range.month")}</option>
-                  </select>
-                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{t("history.filter_range")}</span>
+                    <select
+                      value={range}
+                      onChange={(e) => setRange(e.target.value as typeof range)}
+                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                      data-history-range-filter
+                    >
+                      <option value="all">{t("history.range.all")}</option>
+                      <option value="day">{t("history.range.day")}</option>
+                      <option value="week">{t("history.range.week")}</option>
+                      <option value="month">{t("history.range.month")}</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{t("history.filter_kind")}</span>
+                    <select
+                      value={kind}
+                      onChange={(e) => setKind(e.target.value as typeof kind)}
+                      className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                      data-history-kind-filter
+                    >
+                      <option value="all">{t("history.kind.all")}</option>
+                      <option value="periodic">{t("history.kind.periodic")}</option>
+                      <option value="sudden_delete">{t("history.kind.sudden_delete")}</option>
+                    </select>
+                  </label>
+                </div>
                 <Button
                   variant="ghost"
                   size="sm"
