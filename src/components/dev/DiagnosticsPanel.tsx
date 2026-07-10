@@ -270,8 +270,10 @@ export function DiagnosticsPanel() {
               type="button"
               data-diag-export
               onClick={() => {
+                const now = new Date();
                 const payload = {
-                  exportedAt: new Date().toISOString(),
+                  schemaVersion: DIAG_EXPORT_SCHEMA_VERSION,
+                  exportedAt: now.toISOString(),
                   count: events.length,
                   maxDetailBytes: MAX_EXPORT_DETAIL_BYTES,
                   events: truncateDiagEventsForExport(events),
@@ -279,7 +281,7 @@ export function DiagnosticsPanel() {
                 const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
                 const a = document.createElement("a");
                 a.href = URL.createObjectURL(blob);
-                a.download = `diagnostics-${Date.now()}.json`;
+                a.download = diagExportFilename(now);
                 a.click();
                 URL.revokeObjectURL(a.href);
               }}
