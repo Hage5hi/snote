@@ -31,9 +31,11 @@ interface TopbarBrandProps {
   /** When true, hide the Home arrow. Used by SplitView-embedded panels where
    *  a single top-level Home button already exists. */
   hideHome?: boolean;
+  /** Click handler for the cloud icon → opens the local history dialog. */
+  onOpenHistory?: () => void;
 }
 
-export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false }: TopbarBrandProps) {
+export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false, onOpenHistory }: TopbarBrandProps) {
 
   const { t } = useI18n();
 
