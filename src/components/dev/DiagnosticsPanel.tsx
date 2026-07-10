@@ -154,6 +154,7 @@ export function filterDiagEvents(
         (e.componentStack?.toLowerCase().includes(q) ?? false)
       );
     });
+}
 
 type KindFilter = "all" | EventKind;
 
