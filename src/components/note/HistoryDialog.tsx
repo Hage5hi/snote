@@ -62,6 +62,27 @@ export function HistoryDialog({
   const [tab, setTab] = useState<"list" | "diff">("list");
   const [diffA, setDiffA] = useState<string>("");
   const [diffB, setDiffB] = useState<string>("");
+  const [range, setRange] = useState<"all" | "day" | "week" | "month">("all");
+
+  const rangeMs: Record<typeof range, number | null> = {
+    all: null,
+    day: 24 * 3600_000,
+    week: 7 * 24 * 3600_000,
+    month: 30 * 24 * 3600_000,
+  };
+  const now = Date.now();
+  const filteredItems = items.filter((s) => {
+    const w = rangeMs[range];
+    return w == null || now - s.ts <= w;
+  });
+
+  const handleClear = async () => {
+    const ok = window.confirm(t("history.confirm_clear", { n: items.length }));
+    if (!ok) return;
+    await clearSnapshots(slug);
+    setItems([]);
+    toast({ title: t("history.toast_cleared") });
+  };
 
   useEffect(() => {
     if (!open) return;
