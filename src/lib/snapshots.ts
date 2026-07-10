@@ -34,8 +34,10 @@ export interface Snapshot {
   kind?: SnapshotKind;
 }
 
-export function normalizeSnapshotKind(k: SnapshotKind | undefined): SnapshotKind {
-  return k ?? "periodic";
+const VALID_KINDS: readonly SnapshotKind[] = ["periodic", "sudden_delete"];
+
+export function normalizeSnapshotKind(k: unknown): SnapshotKind {
+  return (VALID_KINDS as readonly unknown[]).includes(k) ? (k as SnapshotKind) : "periodic";
 }
 
 export interface SnapshotFilter {
