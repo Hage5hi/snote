@@ -143,6 +143,7 @@ export function DiagnosticsPanel() {
   const [collapsed, setCollapsed] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [filter, setFilter] = useState<KindFilter>("all");
+  const [query, setQuery] = useState("");
   const originalConsole = useRef<{ warn?: typeof console.warn; error?: typeof console.error }>({});
 
   useEffect(() => {
