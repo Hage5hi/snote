@@ -112,6 +112,13 @@ function useDiagnosticsEnabled(): boolean {
 }
 
 const MAX_EXPORT_DETAIL_BYTES = 512;
+export const DIAG_EXPORT_SCHEMA_VERSION = 1;
+
+/** Filename: `diagnostics-<iso>.json` with `:`/`.` replaced so it's FS-safe. */
+export function diagExportFilename(now: Date = new Date()): string {
+  const safe = now.toISOString().replace(/[:.]/g, "-");
+  return `diagnostics-${safe}.json`;
+}
 
 /** Truncate details for export so downloaded JSON never bloats. Mirrors
  *  chrome-extension MAX_TELEMETRY_DETAIL_BYTES. Panel keeps raw data. */
