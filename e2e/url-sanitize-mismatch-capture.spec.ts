@@ -58,5 +58,28 @@ test.describe("url-sanitize mismatch capture", () => {
     };
     expect(evt.original).not.toBe(evt.sanitized);
     expect(evt.removed).toEqual(expect.arrayContaining(["v", "ver", "t", "cb"]));
+
+    // Attach a small artifact bundle (JSON) summarising the mismatch so the
+    // Playwright HTML report links screenshot + trace + bundle together.
+    const bundle = {
+      title: testInfo.title,
+      screenshot: shotPath,
+      reason: {
+        original: evt.original,
+        sanitized: evt.sanitized,
+        removed: evt.removed,
+      },
+    };
+    await testInfo.attach("url-sanitize-mismatch-bundle.json", {
+      body: Buffer.from(JSON.stringify(bundle, null, 2)),
+      contentType: "application/json",
+    });
+
+    // Verify the attachments were actually recorded on this test result — a
+    // regression that drops screenshot/trace attachments would fail here
+    // rather than silently producing empty triage artifacts.
+    const names = testInfo.attachments.map((a) => a.name);
+    expect(names).toContain("url-sanitize-mismatch-screenshot");
+    expect(names).toContain("url-sanitize-mismatch-bundle.json");
   });
 });
