@@ -147,6 +147,7 @@ export async function maybeSaveSnapshot(slug: string, content: string): Promise<
     charCount: content.length,
     preview: content.slice(0, PREVIEW_LEN),
     content,
+    kind: "periodic",
   });
   return true;
 }
