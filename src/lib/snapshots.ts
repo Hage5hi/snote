@@ -167,6 +167,7 @@ export async function recordOnSuddenDelete(slug: string, prevContent: string): P
     charCount: prevContent.length,
     preview: prevContent.slice(0, PREVIEW_LEN),
     content: prevContent,
+    kind: "sudden_delete",
   });
   return true;
 }
