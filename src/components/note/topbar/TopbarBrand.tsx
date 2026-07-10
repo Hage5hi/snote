@@ -31,9 +31,11 @@ interface TopbarBrandProps {
   /** When true, hide the Home arrow. Used by SplitView-embedded panels where
    *  a single top-level Home button already exists. */
   hideHome?: boolean;
+  /** Click handler for the cloud icon → opens the local history dialog. */
+  onOpenHistory?: () => void;
 }
 
-export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false }: TopbarBrandProps) {
+export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false, onOpenHistory }: TopbarBrandProps) {
 
   const { t } = useI18n();
 
@@ -82,7 +84,23 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hide
 
       <div className="flex min-w-0 items-center gap-2">
 
-        <Cloud className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        {onOpenHistory ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                onClick={onOpenHistory}
+                className="flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                aria-label={t("history.tooltip")}
+              >
+                <Cloud className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{t("history.tooltip")}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <Cloud className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <button
