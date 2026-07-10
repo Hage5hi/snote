@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { listSnapshots, type Snapshot } from "@/lib/snapshots";
+import { listSnapshots, clearSnapshots, type Snapshot } from "@/lib/snapshots";
+import { Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { SnapshotDiff } from "./SnapshotDiff";
 import { useI18n } from "@/i18n/index";
@@ -61,6 +62,27 @@ export function HistoryDialog({
   const [tab, setTab] = useState<"list" | "diff">("list");
   const [diffA, setDiffA] = useState<string>("");
   const [diffB, setDiffB] = useState<string>("");
+  const [range, setRange] = useState<"all" | "day" | "week" | "month">("all");
+
+  const rangeMs: Record<typeof range, number | null> = {
+    all: null,
+    day: 24 * 3600_000,
+    week: 7 * 24 * 3600_000,
+    month: 30 * 24 * 3600_000,
+  };
+  const now = Date.now();
+  const filteredItems = items.filter((s) => {
+    const w = rangeMs[range];
+    return w == null || now - s.ts <= w;
+  });
+
+  const handleClear = async () => {
+    const ok = window.confirm(t("history.confirm_clear", { n: items.length }));
+    if (!ok) return;
+    await clearSnapshots(slug);
+    setItems([]);
+    toast({ title: t("history.toast_cleared") });
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -157,9 +179,35 @@ export function HistoryDialog({
             </TabsList>
 
             <TabsContent value="list">
+              <div className="flex items-center justify-between gap-2 py-2">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{t("history.filter_range")}</span>
+                  <select
+                    value={range}
+                    onChange={(e) => setRange(e.target.value as typeof range)}
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    data-history-range-filter
+                  >
+                    <option value="all">{t("history.range.all")}</option>
+                    <option value="day">{t("history.range.day")}</option>
+                    <option value="week">{t("history.range.week")}</option>
+                    <option value="month">{t("history.range.month")}</option>
+                  </select>
+                </label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClear}
+                  className="text-destructive hover:text-destructive"
+                  data-history-clear
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t("history.clear")}
+                </Button>
+              </div>
               <ScrollArea className="max-h-[55vh]">
                 <ul className="divide-y divide-border">
-                  {items.map((snap) => (
+                  {filteredItems.map((snap) => (
                     <li key={snap.id} className="flex items-start gap-3 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-2">
