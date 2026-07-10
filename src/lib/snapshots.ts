@@ -18,6 +18,12 @@ const MAX_SNAPSHOTS = 10;
 const MIN_DIFF_CHARS = 50;
 const PREVIEW_LEN = 200;
 
+/**
+ * Which code path created a snapshot. Legacy rows written before this field
+ * existed are treated as `"periodic"` on read.
+ */
+export type SnapshotKind = "periodic" | "sudden_delete";
+
 export interface Snapshot {
   id?: number;
   slug: string;
@@ -25,6 +31,35 @@ export interface Snapshot {
   charCount: number;
   preview: string;
   content: string;
+  kind?: SnapshotKind;
+}
+
+export function normalizeSnapshotKind(k: SnapshotKind | undefined): SnapshotKind {
+  return k ?? "periodic";
+}
+
+export interface SnapshotFilter {
+  /** Time window in ms; null = all time. */
+  rangeMs?: number | null;
+  /** "all" or a specific kind. */
+  kind?: "all" | SnapshotKind;
+  /** Reference "now" for range comparison. Defaults to `Date.now()`. */
+  now?: number;
+}
+
+/**
+ * Pure filter used by both the UI and unit tests, so what the panel shows
+ * always matches what the tests assert.
+ */
+export function filterSnapshots(items: Snapshot[], opts: SnapshotFilter = {}): Snapshot[] {
+  const now = opts.now ?? Date.now();
+  const rangeMs = opts.rangeMs ?? null;
+  const kind = opts.kind ?? "all";
+  return items.filter((s) => {
+    if (rangeMs != null && now - s.ts > rangeMs) return false;
+    if (kind !== "all" && normalizeSnapshotKind(s.kind) !== kind) return false;
+    return true;
+  });
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
