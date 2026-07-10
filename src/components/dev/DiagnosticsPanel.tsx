@@ -356,17 +356,7 @@ export function DiagnosticsPanel() {
             />
           </div>
           <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
-            {events
-              .filter((e) => filter === "all" || e.kind === filter)
-              .filter((e) => {
-                const q = query.trim().toLowerCase();
-                if (!q) return true;
-                return (
-                  e.message.toLowerCase().includes(q) ||
-                  (e.detail?.toLowerCase().includes(q) ?? false) ||
-                  (e.componentStack?.toLowerCase().includes(q) ?? false)
-                );
-              })
+            {filterDiagEvents(events, { kind: filter, query })
               .map((e) => {
               const isOpen = expandedId === e.id;
               return (
