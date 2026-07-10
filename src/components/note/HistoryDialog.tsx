@@ -179,9 +179,35 @@ export function HistoryDialog({
             </TabsList>
 
             <TabsContent value="list">
+              <div className="flex items-center justify-between gap-2 py-2">
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>{t("history.filter_range")}</span>
+                  <select
+                    value={range}
+                    onChange={(e) => setRange(e.target.value as typeof range)}
+                    className="rounded-md border border-border bg-background px-2 py-1 text-xs"
+                    data-history-range-filter
+                  >
+                    <option value="all">{t("history.range.all")}</option>
+                    <option value="day">{t("history.range.day")}</option>
+                    <option value="week">{t("history.range.week")}</option>
+                    <option value="month">{t("history.range.month")}</option>
+                  </select>
+                </label>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClear}
+                  className="text-destructive hover:text-destructive"
+                  data-history-clear
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t("history.clear")}
+                </Button>
+              </div>
               <ScrollArea className="max-h-[55vh]">
                 <ul className="divide-y divide-border">
-                  {items.map((snap) => (
+                  {filteredItems.map((snap) => (
                     <li key={snap.id} className="flex items-start gap-3 py-3">
                       <div className="min-w-0 flex-1">
                         <div className="flex items-baseline gap-2">
