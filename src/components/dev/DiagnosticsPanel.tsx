@@ -325,9 +325,28 @@ export function DiagnosticsPanel() {
                 </button>
               );
             })}
+            <input
+              data-diag-search
+              type="search"
+              value={query}
+              onChange={(ev) => setQuery(ev.target.value)}
+              placeholder="search message/detail/stack"
+              style={{ background: "#111", border: "1px solid #666", color: "#fff", padding: "1px 4px", font: "inherit", flex: "1 1 140px", minWidth: 100 }}
+            />
           </div>
           <ul style={{ margin: "4px 0 0", padding: 0, listStyle: "none" }}>
-            {events.filter((e) => filter === "all" || e.kind === filter).map((e) => {
+            {events
+              .filter((e) => filter === "all" || e.kind === filter)
+              .filter((e) => {
+                const q = query.trim().toLowerCase();
+                if (!q) return true;
+                return (
+                  e.message.toLowerCase().includes(q) ||
+                  (e.detail?.toLowerCase().includes(q) ?? false) ||
+                  (e.componentStack?.toLowerCase().includes(q) ?? false)
+                );
+              })
+              .map((e) => {
               const isOpen = expandedId === e.id;
               return (
                 <li
