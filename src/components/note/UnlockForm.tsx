@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,8 @@ interface UnlockFormProps {
 
 export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFormProps) {
   const { t } = useI18n();
+  const location = useLocation();
+  const routerTarget = `${location.key}\u0000${location.pathname}\u0000${location.search}\u0000${location.hash}`;
   const [pass, setPass] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,6 +25,14 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
   const requestGenerationRef = useRef(0);
   const targetRef = useRef({ slug, salt, check, iterations });
   const onUnlockRef = useRef(onUnlock);
+  const routerTargetRef = useRef(routerTarget);
+
+  const cancelPending = useCallback(() => {
+    requestGenerationRef.current += 1;
+    setPass("");
+    setBusy(false);
+    setError(null);
+  }, []);
 
   useLayoutEffect(() => {
     onUnlockRef.current = onUnlock;
@@ -42,21 +52,21 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
 
   useLayoutEffect(() => {
     mountedRef.current = true;
-    const cancelForNavigation = () => {
-      requestGenerationRef.current += 1;
-      setPass("");
-      setBusy(false);
-      setError(null);
-    };
-    window.addEventListener("hashchange", cancelForNavigation);
-    window.addEventListener("popstate", cancelForNavigation);
+    window.addEventListener("hashchange", cancelPending);
+    window.addEventListener("popstate", cancelPending);
     return () => {
-      window.removeEventListener("hashchange", cancelForNavigation);
-      window.removeEventListener("popstate", cancelForNavigation);
+      window.removeEventListener("hashchange", cancelPending);
+      window.removeEventListener("popstate", cancelPending);
       mountedRef.current = false;
       requestGenerationRef.current += 1;
     };
-  }, []);
+  }, [cancelPending]);
+
+  useLayoutEffect(() => {
+    if (routerTargetRef.current === routerTarget) return;
+    routerTargetRef.current = routerTarget;
+    cancelPending();
+  }, [routerTarget, cancelPending]);
 
   useEffect(() => {
     setPass("");
@@ -72,34 +82,44 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
     const requestLocation = window.location.pathname
       + window.location.search
       + window.location.hash;
+    let expectedLocation = requestLocation;
     const isCurrentRequestAt = (expectedLocation: string) => mountedRef.current
       && requestGenerationRef.current === requestGeneration
       && window.location.pathname + window.location.search + window.location.hash
         === expectedLocation;
+    const cancelIfStale = (locationToCheck: string) => {
+      if (isCurrentRequestAt(locationToCheck)) return false;
+      if (
+        mountedRef.current
+        && requestGenerationRef.current === requestGeneration
+      ) {
+        cancelPending();
+      }
+      return true;
+    };
     setBusy(true);
     setError(null);
     try {
       const key = await deriveKey(submittedPass, salt, iterations);
-      if (!isCurrentRequestAt(requestLocation)) return;
+      if (cancelIfStale(requestLocation)) return;
       const ok = await verifyCheck(key, check);
-      if (!isCurrentRequestAt(requestLocation)) return;
+      if (cancelIfStale(requestLocation)) return;
       if (!ok) {
         setError(t("unlock.wrong_key"));
         setBusy(false);
         return;
       }
-      if (!isCurrentRequestAt(requestLocation)) return;
-      let expectedLocation = requestLocation;
+      if (cancelIfStale(requestLocation)) return;
       try {
         expectedLocation = `${window.location.pathname}${window.location.search}#${encodeURIComponent(submittedPass)}`;
         history.replaceState(null, "", expectedLocation);
       } catch {
         expectedLocation = requestLocation;
       }
-      if (!isCurrentRequestAt(expectedLocation)) return;
+      if (cancelIfStale(expectedLocation)) return;
       onUnlockRef.current(key);
     } catch (err) {
-      if (!isCurrentRequestAt(requestLocation)) return;
+      if (cancelIfStale(expectedLocation)) return;
       console.error(err);
       setError(t("unlock.decrypt_error"));
       setBusy(false);
