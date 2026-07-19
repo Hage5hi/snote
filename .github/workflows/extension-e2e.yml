@@ -19,6 +19,10 @@ on:
       - ".github/workflows/extension-e2e.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # NOTE: To require this check before merging into `main`, mark the
   # "chrome-extension E2E" job as a required status check in
