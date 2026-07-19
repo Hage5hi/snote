@@ -44,7 +44,12 @@ Deno.serve(async (req) => {
     return json({ error: "new key must be between 12 and 1024 characters" }, 400);
   }
 
-  const passHash = await hashAdminPass(newPass);
+  let passHash: string;
+  try {
+    passHash = await hashAdminPass(newPass);
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
+  }
   const { error } = await supabase.from("admin_config").upsert({
     id: 1,
     pass_hash: passHash,
