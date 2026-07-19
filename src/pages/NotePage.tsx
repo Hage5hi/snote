@@ -214,9 +214,15 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           setResolvedEncTarget(requestTarget);
           return;
         }
-        const hashKey = window.location.hash.startsWith("#")
-          ? decodeURIComponent(window.location.hash.slice(1))
-          : "";
+        let hashKey = "";
+        if (window.location.hash.startsWith("#")) {
+          try {
+            hashKey = decodeURIComponent(window.location.hash.slice(1));
+          } catch {
+            // Malformed fragments cannot be keys; keep the encrypted gate
+            // closed and fall through to the manual unlock form.
+          }
+        }
         if (hashKey && meta.salt && meta.check) {
           try {
             const key = await deriveKey(hashKey, meta.salt, iterationsFor(meta.iterations));
