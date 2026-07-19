@@ -11,7 +11,9 @@ const corsHeaders = {
     "authorization, x-admin-session, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
-const SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
+// Admin maintenance must accept every locator already persisted by the
+// legacy note-meta contract, including dots and 65-80 character slugs.
+const SLUG_RE = /^[A-Za-z0-9._-]{1,80}$/;
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
