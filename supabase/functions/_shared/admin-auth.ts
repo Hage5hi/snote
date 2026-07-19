@@ -9,8 +9,14 @@ export type AdminSessionAuthorization =
   | { status: "unavailable" };
 
 export type AdminPassVerification =
-  | { available: true; valid: boolean }
+  | { available: true; valid: true; credentialEpoch: number }
+  | { available: true; valid: false }
   | { available: false; valid: false };
+
+type CredentialMaterialRow = {
+  pass_hash?: unknown;
+  credential_epoch?: unknown;
+};
 
 function jsonResponse(
   body: unknown,
@@ -144,24 +150,33 @@ export async function verifyAdminPass(
   input: string,
 ): Promise<AdminPassVerification> {
   try {
-    const { data, error } = await supabase
-      .from("admin_config")
-      .select("pass_hash")
-      .eq("id", 1)
-      .maybeSingle();
+    const { data, error } = await supabase.rpc("admin_credential_material");
     if (error) return { available: false, valid: false };
 
-    const storedHash = typeof data?.pass_hash === "string" ? data.pass_hash : "";
-    if (storedHash) {
-      return { available: true, valid: await bcrypt.compare(input, storedHash) };
+    const row: CredentialMaterialRow | undefined = Array.isArray(data)
+      ? (data[0] as CredentialMaterialRow | undefined)
+      : (data as CredentialMaterialRow | undefined);
+    const credentialEpoch = Number(row?.credential_epoch);
+    if (!Number.isSafeInteger(credentialEpoch) || credentialEpoch < 1) {
+      return { available: false, valid: false };
     }
+
+    const storedHash = typeof row?.pass_hash === "string" ? row.pass_hash : "";
+    if (storedHash) {
+      const valid = await bcrypt.compare(input, storedHash);
+      return valid
+        ? { available: true, valid: true, credentialEpoch }
+        : { available: true, valid: false };
+    }
+
+    const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
+    if (!expected) return { available: false, valid: false };
+    return constantTimeEqual(input, expected)
+      ? { available: true, valid: true, credentialEpoch }
+      : { available: true, valid: false };
   } catch {
     return { available: false, valid: false };
   }
-
-  const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
-  if (!expected) return { available: false, valid: false };
-  return { available: true, valid: constantTimeEqual(input, expected) };
 }
 
 export async function hashAdminPass(input: string): Promise<string> {
