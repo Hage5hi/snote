@@ -30,8 +30,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e-pr:
-    name: e2e-pr
+  e2e:
+    name: playwright e2e (${{ matrix.browser }})
     runs-on: ubuntu-latest
     timeout-minutes: 75
     strategy:
