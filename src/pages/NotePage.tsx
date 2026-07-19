@@ -67,7 +67,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // side-by-side. Instead, the preview toggle swaps the visible pane between
   // editor and rendered markdown. `showPreview` keeps the same semantic
   // meaning ("user wants to see the preview") and is the only piece of state
-  // we need — layout logic below derives both modes from it.
+  // we need â€” layout logic below derives both modes from it.
   const narrow = useNarrowViewport();
   const showEditorPane = !narrow || !showPreview;
   const showPreviewPane = showPreview;
@@ -84,13 +84,13 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
 
-  // Mount Y.Doc IMMEDIATELY (synchronously) — no waiting on enc-meta or any
+  // Mount Y.Doc IMMEDIATELY (synchronously) â€” no waiting on enc-meta or any
   // fetch. The doc-cache returns the previously-warm doc when navigating
   // back so re-opens are essentially free.
   const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
 
   // Provider is bound to (slug, doc, encryption mode). Bumping `providerEpoch`
-  // on any encryption-mode flip forces a full teardown + rebuild — no stale
+  // on any encryption-mode flip forces a full teardown + rebuild â€” no stale
   // instance can survive a lock/unlock and write in the wrong mode.
   const [providerEpoch, setProviderEpoch] = useState(0);
   const provider = useMemo(
@@ -121,7 +121,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const navigate = useNavigate();
 
   // Ctrl/Cmd+Click on a `[[slug]]` token in the editor dispatches this event.
-  // Skip in embed (SplitView) mode — otherwise both panels would navigate and
+  // Skip in embed (SplitView) mode â€” otherwise both panels would navigate and
   // push duplicate history entries.
   useEffect(() => {
     if (embedSlug) return;
@@ -138,7 +138,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   useEink();
 
   // Encryption phases: "loading" (waiting on enc-meta), "needs-key", "ready".
-  // Editor mounts during "loading" too — only the network sync is gated.
+  // Editor/Preview and network sync stay unmounted until the gate is ready.
   const [encPhase, setEncPhase] = useState<"loading" | "needs-key" | "ready">("loading");
   const [encMeta, setEncMeta] = useState<EncMeta>({
     isEncrypted: false,
@@ -180,7 +180,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         rowExists: !!data,
       };
       setEncMeta((prev) => {
-        // Encryption mode flipped since last fetch — force a provider rebuild.
+        // Encryption mode flipped since last fetch â€” force a provider rebuild.
         if (prev.isEncrypted !== meta.isEncrypted) {
           setProviderEpoch((n) => n + 1);
         }
@@ -221,7 +221,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   // When inside the Syrin Note Chrome extension side panel, tell the host
   // which slug we're on so it can remember the last-opened note. We retry
-  // up to 3 times (1s apart) if the host doesn't ack within 500ms — covers
+  // up to 3 times (1s apart) if the host doesn't ack within 500ms â€” covers
   // the race where the side panel's listener attaches after our first post.
   useEffect(() => {
     if (!isExtensionContext || !validSlug || embedSlug) return;
@@ -259,7 +259,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const sendOnce = () => {
       try {
         window.parent.postMessage({ type: "syrin:slug", slug }, targetOrigin);
-        dlog("posted slug", slug, "→", targetOrigin, "attempt", attempts + 1);
+        dlog("posted slug", slug, "â†’", targetOrigin, "attempt", attempts + 1);
       } catch (err) {
         dlog("post failed", err);
       }
@@ -305,7 +305,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       setUsers(list);
     });
 
-    // Phase 2.2 — toast on `recovered` (DB had updates we didn't on reconnect).
+    // Phase 2.2 â€” toast on `recovered` (DB had updates we didn't on reconnect).
     // Conflict events are surfaced by SyncIndicator's pill+popover, not a toast.
     const unsubSync = provider.onSyncEvent((ev) => {
       if (ev.type === "recovered") {
@@ -408,8 +408,46 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   if (!doc || !provider) return null;
   const getContent = () => doc.getText("content").toString();
 
-  // SplitView wraps each panel — render the workspace without the global topbar.
-  // SplitView wraps each panel — render compact topbar + editor (+ preview if toggled).
+  // This gate deliberately precedes both render branches. In particular,
+  // SplitView's embedded branch must never mount Editor/Preview behind an
+  // overlay while encryption metadata or a decryption key is unavailable.
+  if (encPhase !== "ready") {
+    const gate = encPhase === "needs-key" ? (
+      <UnlockForm
+        slug={slug}
+        salt={encMeta.salt!}
+        check={encMeta.check!}
+        iterations={iterationsFor(encMeta.iterations)}
+        onUnlock={(key) => {
+          setEncryption({
+            encrypt: (b) => encryptBytes(key, b),
+            decrypt: (b) => decryptBytes(key, b),
+          });
+          setEncPhase("ready");
+        }}
+      />
+    ) : (
+      <div
+        className="flex h-full items-center justify-center"
+        aria-busy="true"
+        aria-live="polite"
+      >
+        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      </div>
+    );
+
+    if (embedSlug) {
+      return <div className="h-full min-h-0 bg-background">{gate}</div>;
+    }
+    return (
+      <AppShell className="flex h-svh flex-col">
+        <main className="flex flex-1 min-h-0 items-center justify-center">{gate}</main>
+      </AppShell>
+    );
+  }
+
+  // SplitView wraps each panel â€” render the workspace without the global topbar.
+  // SplitView wraps each panel â€” render compact topbar + editor (+ preview if toggled).
   // Compact topbar hides app-wide toggles (zen, theme, settings) but keeps
   // per-note actions (preview toggle, lock, share, rename, status, presence).
   if (embedSlug) {
@@ -460,11 +498,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     );
   }
 
-  const showUnlockOverlay = encPhase === "needs-key";
-
   const noteUrl = `https://syrin.online/${slug}`;
-  const noteTitle = `${slug} — Syrin Notes`;
-  const noteDesc = `Note "${slug}" on Syrin Notes — realtime markdown, autosave, synced across devices.`;
+  const noteTitle = `${slug} â€” Syrin Notes`;
+  const noteDesc = `Note "${slug}" on Syrin Notes â€” realtime markdown, autosave, synced across devices.`;
 
   return (
     <AppShell className="flex h-svh flex-col">
@@ -535,35 +571,6 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           </div>
         )}
 
-        {showUnlockOverlay && (
-          <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/95 backdrop-blur-sm">
-            <UnlockForm
-              slug={slug}
-              salt={encMeta.salt!}
-              check={encMeta.check!}
-              iterations={iterationsFor(encMeta.iterations)}
-              onUnlock={(key) => {
-                setEncryption({
-                  encrypt: (b) => encryptBytes(key, b),
-                  decrypt: (b) => decryptBytes(key, b),
-                });
-                setEncPhase("ready");
-              }}
-            />
-          </div>
-        )}
-
-        {encPhase === "loading" && (
-          <div
-            className="absolute inset-0 z-40 flex items-center justify-center bg-background/70 backdrop-blur-sm"
-            aria-busy="true"
-            aria-live="polite"
-            // Swallow pointer events so no keystrokes/clicks reach the editor
-            // while the provider is being (re)built after a lock/unlock.
-          >
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        )}
       </main>
 
       <OutlineSidebar doc={doc} onJump={(line) => editorRef.current?.jumpToLine(line)} />
@@ -581,3 +588,4 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     </AppShell>
   );
 }
+
