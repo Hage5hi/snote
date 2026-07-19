@@ -302,11 +302,21 @@ function normalizePath(p) {
 function parseRoute(pathname) {
   pathname = normalizeContainmentPath(pathname);
   if (pathname === "/" || pathname === "") return { kind: "home" };
-  const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
+  let parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length >= 2 && isSharePrefix(parts[0])) {
     // Containment is deliberately independent of the legacy token regex.
     // Malformed, future-format, or re-encoded capabilities must never fall
     // through to origin redirects, metadata, caches, or raw-path logs.
+    return { kind: "share" };
+  }
+
+  // Resolve traversal only after checking the decoded route as written. A
+  // capability path must stay contained even if trailing dot segments would
+  // otherwise normalize `/s/<token>/../../asset.js` into an asset or note.
+  pathname = resolveContainmentDotSegments(pathname);
+  if (pathname === "/" || pathname === "") return { kind: "home" };
+  parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
+  if (parts.length >= 2 && isSharePrefix(parts[0])) {
     return { kind: "share" };
   }
   if (parts.length === 1) {
@@ -336,7 +346,7 @@ function normalizeContainmentPath(pathname) {
   value = value.replace(/%(?:25)*(?:2f|5c)/gi, "/");
   value = value.replace(/%(?:25)*2e/gi, ".");
   value = value.replace(/\\/g, "/");
-  return resolveContainmentDotSegments(normalizePath(value));
+  return normalizePath(value);
 }
 
 function resolveContainmentDotSegments(pathname) {
