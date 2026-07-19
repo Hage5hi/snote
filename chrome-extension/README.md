@@ -9,7 +9,7 @@ A Manifest V3 Chrome extension that opens [note.syrin.online](https://note.syrin
 - **CSP contract enforced by host** — `vercel.json` now sends `Content-Security-Policy: frame-ancestors 'self' chrome-extension://*`, and `scripts/verify-frame-ancestors.sh` runs after every deploy so the header can't silently disappear again.
 - **Manifest hardening** — dropped the `tabs` permission (unused; `windowId` is available without it), added explicit `content_security_policy.extension_pages`, restricted `frame-src` to `note.syrin.online`.
 - **Belt-and-suspenders click handler** — `chrome.action.onClicked` fallback opens the panel when `setPanelBehavior` is refused by policy.
-- **Storage fallback** — `chrome.storage.sync` errors now degrade to `chrome.storage.local` instead of silently loading defaults.
+- **Storage failure behavior** — `chrome.storage.sync` errors use safe defaults; note locators are not mirrored into device-local storage.
 
 ## v1.3.0
 
@@ -54,7 +54,7 @@ cd chrome-extension && nix run nixpkgs#zip -- -r ../public/syrin-note-sidepanel.
 - **Single purpose**: "Open Syrin Note in Chrome's side panel."
 - **Permission justification**:
   - `sidePanel` — required to render the app in the side panel.
-  - `storage` — saves your settings (default slug, last-opened note) and syncs them across your signed-in Chrome profiles.
+  - `storage` — syncs settings and the last-opened locator across signed-in Chrome profiles, and keeps the diagnostics opt-in/events device-local. If sync is unavailable, the panel uses safe defaults.
 - **Privacy policy URL**: <https://note.syrin.online/privacy>
 - **Category**: Productivity.
 
@@ -65,8 +65,9 @@ handshake arrived within 12 s, twice. To diagnose:
 
 1. Open the fallback's **Diagnostics** section. `App reachable (HEAD)` should be
    `200 ok`. If not, `note.syrin.online` is unreachable from your network.
-2. Click **Copy diagnostics** and share the JSON — it includes the iframe URL,
-   retry count, ready state, and the last 50 debug lines.
+2. Click **Copy diagnostics** and share the JSON — it includes only the app
+   origin/route classification, retry count, ready state, and redacted debug
+   lines; note locators and URL paths are removed.
 3. If HEAD is `200 ok` but the panel still fails, check that the host sends
    `Content-Security-Policy: frame-ancestors 'self' chrome-extension://*`:
    `curl -sI https://note.syrin.online/ | grep -i frame-ancestors`.

@@ -55,7 +55,7 @@ v1.1.0 added the Settings page and Alt+S shortcut.)
 
 **sidePanel** — required to render the Syrin Note app inside Chrome's side panel via `sidepanel.html`.
 
-**storage** — saves the user's Settings (default slug, open mode, debug toggle) and last-opened note locator to `chrome.storage.sync`. `chrome.storage.local` is used as a device-local fallback and for optional reliability diagnostics. Events older than 7 days are discarded the next time diagnostics are read or written; if the extension is dormant, expired entries can remain until then. Diagnostics are never uploaded automatically.
+**storage** — saves the user's Settings (default slug, open mode, debug toggle) and last-opened note locator to `chrome.storage.sync`. If sync is unavailable, the panel uses safe defaults rather than copying locators into device-local storage. `chrome.storage.local` stores the diagnostics opt-in and optional reliability diagnostics. Events older than 7 days are discarded the next time diagnostics are read or written; if the extension is dormant, expired entries can remain until then. Diagnostics are never uploaded automatically.
 
 **Host permissions**: none. The extension does not request access to any website.
 

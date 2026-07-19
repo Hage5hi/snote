@@ -47,12 +47,14 @@ export default function Privacy() {
           </li>
           <li>
             <strong>storage</strong> — stores the open mode, default or last
-            note locator, and debug setting in <code>chrome.storage.sync</code>,
-            with <code>chrome.storage.local</code> as a device-local fallback.
+            note locator, and debug setting in <code>chrome.storage.sync</code>.
+            If sync is unavailable, the panel uses safe defaults rather
+            than copying those locators into device-local storage.
           </li>
         </ul>
         <p>
-          Device-local diagnostics also use <code>chrome.storage.local</code>.
+          The diagnostics opt-in and device-local diagnostics use{" "}
+          <code>chrome.storage.local</code>.
            They contain bounded event names and technical status fields, not note
            content or full URLs. They are never uploaded automatically, can be
            disabled, or cleared in Settings. Events older than 7 days are

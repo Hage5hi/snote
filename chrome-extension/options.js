@@ -69,26 +69,42 @@ export function initOptions() {
     if (!validate()) return;
     const mode = currentMode();
     const slug = slugInput.value.trim();
-    chrome.storage.sync.set(
-      {
-        openMode: mode,
-        defaultSlug: mode === "slug" ? slug : "",
-        debug: !!debugInput.checked,
-      },
-      () => {
+    const syncedSettings = {
+      openMode: mode,
+      defaultSlug: mode === "slug" ? slug : "",
+      debug: !!debugInput.checked,
+    };
+
+    const saveSyncedSettings = () => {
+      chrome.storage.sync.set(syncedSettings, () => {
         if (chrome.runtime.lastError) {
           status.textContent = "✗ Save failed";
           return;
-        }
-        if (telemetryInput) {
-          chrome.storage.local.set({ [TELEMETRY_KEY]: !!telemetryInput.checked });
         }
         status.textContent = "✓ Saved";
         setTimeout(() => {
           if (status.textContent === "✓ Saved") status.textContent = "";
         }, 2500);
-      },
-    );
+      });
+    };
+
+    // The telemetry preference is device-local and must remain writable even
+    // when Chrome Sync is unavailable. Persist it before the independent sync
+    // write instead of nesting it in the sync-success callback.
+    if (telemetryInput) {
+      chrome.storage.local.set(
+        { [TELEMETRY_KEY]: !!telemetryInput.checked },
+        () => {
+          if (chrome.runtime.lastError) {
+            status.textContent = "✗ Save failed";
+            return;
+          }
+          saveSyncedSettings();
+        },
+      );
+    } else {
+      saveSyncedSettings();
+    }
   });
 }
 
