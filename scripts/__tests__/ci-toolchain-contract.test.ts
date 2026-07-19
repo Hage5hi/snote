@@ -14,7 +14,6 @@ const workflows = new Map(
 const allWorkflows = [...workflows.values()].join("\n");
 const ci = workflows.get(".github/workflows/ci.yml")!;
 const workflowStructure = workflows.get(".github/workflows/workflow-structure.yml")!;
-const e2eWorkflow = workflows.get(".github/workflows/e2e.yml")!;
 const extensionWorkflow = workflows.get(".github/workflows/extension-e2e.yml")!;
 const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
@@ -143,8 +142,15 @@ describe("CI toolchain contract", () => {
   });
 
   it("keeps one stable PR E2E check context", () => {
-    expect(e2eWorkflow).toContain("\n  e2e-pr:\n");
-    const e2ePrJob = e2eWorkflow.slice(e2eWorkflow.indexOf("\n  e2e-pr:\n"));
+    const e2ePrWorkflows = [...workflows]
+      .filter(([, workflow]) => workflow.includes("\n  e2e-pr:\n"))
+      .map(([path]) => path);
+    expect(e2ePrWorkflows).toEqual([".github/workflows/e2e-new-specs.yml"]);
+
+    const e2ePrWorkflow = workflows.get(e2ePrWorkflows[0])!;
+    const e2ePrJob = e2ePrWorkflow.slice(
+      e2ePrWorkflow.indexOf("\n  e2e-pr:\n"),
+    );
     expect(e2ePrJob).toMatch(/^\s{4}name:\s*e2e-pr\s*$/m);
   });
 
