@@ -9,6 +9,12 @@ function source(path: string): string {
 }
 
 describe("immediate containment contracts", () => {
+  it("lets admins delete every persisted legacy slug accepted by note metadata", () => {
+    const adminDelete = source("supabase/functions/admin-delete/index.ts");
+
+    expect(adminDelete).toContain("const SLUG_RE = /^[A-Za-z0-9._-]{1,80}$/;");
+  });
+
   it("revokes public note deletion in a forward-only migration", () => {
     const historical = source(
       "supabase/migrations/20260420041258_01f4e8f4-7ae1-49f4-a144-14f107a60c09.sql",
