@@ -45,14 +45,19 @@ jobs:
       - name: Lint
         run: bun run lint
       - name: Typecheck app
+        if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.app.json
       - name: Typecheck node config
+        if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.node.json
       - name: Typecheck scripts, e2e and tool configs
+        if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.tools.json
       - name: Unit tests
+        if: success() || failure()
         run: bun run test
       - name: Unit test coverage
+        if: success() || failure()
         run: bun run test:coverage
       # Dedicated visibility for the schema-drift-view.sh CLI unit tests
       # so a failure in flag parsing / --dry-run / --file / --viewer /
@@ -2197,7 +2202,9 @@ jobs:
             echo "| \`sticky-artifacts-manifest\` (\`sticky-artifacts-manifest/v1\`) | \`reports/_ci/sticky-artifacts-manifest.json\` | [open run artifacts]($RUN_URL) |"
             echo "| \`sticky-validate-summary\` (\`sticky-validate-summary/v1\`) | \`reports/_ci/sticky-validate-summary.json\` | [open run artifacts]($RUN_URL) |"
           } >> "$GITHUB_STEP_SUMMARY"
-      - run: bun run build:check
+      - name: Build
+        if: success() || failure()
+        run: bun run build:check
 
 
 
