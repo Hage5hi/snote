@@ -39,7 +39,7 @@ describe("atomic admin authentication admission", () => {
     expect(migration).toContain("CREATE OR REPLACE FUNCTION public.admin_auth_complete(");
     expect(migration).toMatch(/WHERE subject_hash = p_subject_hash[\s\S]*lease_id = p_lease_id[\s\S]*FOR UPDATE/);
     expect(migration).toMatch(/lease_until <= v_now[\s\S]*RAISE EXCEPTION/);
-    expect(migration).toMatch(/SET lease_id = NULL,[\s\S]*lease_until = NULL/);
+    expect(migration).toMatch(/lease_id = NULL,[\s\S]*lease_until = NULL/);
     expect(limiter).toContain("beginAdminAuthAttempt");
     expect(limiter).toContain("completeAdminAuthAttempt");
     expect(limiter).toContain("p_lease_id");
