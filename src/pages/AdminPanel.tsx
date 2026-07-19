@@ -246,7 +246,7 @@ export default function AdminPanel() {
         <Link to="/" className="text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
         </Link>
-        <h1 className="font-semibold">Admin Â· {total} note</h1>
+        <h1 className="font-semibold">Admin · {total} note</h1>
         <div className="ml-auto flex items-center gap-2">
           <Button size="sm" variant="ghost" onClick={runCleanup} disabled={loading}>
             <Sparkles className="h-3.5 w-3.5" />
@@ -278,7 +278,7 @@ export default function AdminPanel() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               // eslint-disable-next-line no-restricted-syntax -- internal admin-only UI
-              placeholder="Search by slug or contentâ€¦"
+              placeholder="Search by slug or content…"
               className="border-0 focus-visible:ring-0"
             />
           </div>
@@ -349,9 +349,9 @@ export default function AdminPanel() {
                   <Link to={`/${note.slug}`} target="_blank" className="font-mono text-sm hover:underline">
                     /{note.slug}
                   </Link>
-                  {note.is_encrypted && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">ðŸ”’</span>}
+                  {note.is_encrypted && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">🔒</span>}
                   <span className="ml-auto text-[11px] text-muted-foreground">
-                    {note.char_count} chars Â· {new Date(note.updated_at).toLocaleString()}
+                    {note.char_count} chars · {new Date(note.updated_at).toLocaleString()}
                   </span>
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
