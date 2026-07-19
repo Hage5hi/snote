@@ -301,24 +301,16 @@ function normalizePath(p) {
 
 function parseRoute(pathname) {
   pathname = normalizeContainmentPath(pathname);
-  if (pathname === "/" || pathname === "") return { kind: "home" };
-  let parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length >= 2 && isSharePrefix(parts[0])) {
+  if (traversesShareRoute(pathname)) {
     // Containment is deliberately independent of the legacy token regex.
-    // Malformed, future-format, or re-encoded capabilities must never fall
-    // through to origin redirects, metadata, caches, or raw-path logs.
+    // Once resolution reaches `/s/<token>`, later traversal cannot erase the
+    // sensitivity of the raw path or let it reach redirects, caches, or logs.
     return { kind: "share" };
   }
-
-  // Resolve traversal only after checking the decoded route as written. A
-  // capability path must stay contained even if trailing dot segments would
-  // otherwise normalize `/s/<token>/../../asset.js` into an asset or note.
+  if (pathname === "/" || pathname === "") return { kind: "home" };
   pathname = resolveContainmentDotSegments(pathname);
   if (pathname === "/" || pathname === "") return { kind: "home" };
-  parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length >= 2 && isSharePrefix(parts[0])) {
-    return { kind: "share" };
-  }
+  const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length === 1) {
     let slug = parts[0];
     try { slug = decodeURIComponent(slug); } catch { /* ignore */ }
@@ -347,6 +339,20 @@ function normalizeContainmentPath(pathname) {
   value = value.replace(/%(?:25)*2e/gi, ".");
   value = value.replace(/\\/g, "/");
   return normalizePath(value);
+}
+
+function traversesShareRoute(pathname) {
+  const segments = [];
+  for (const segment of pathname.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+    if (segments.length >= 2 && isSharePrefix(segments[0])) return true;
+  }
+  return false;
 }
 
 function resolveContainmentDotSegments(pathname) {
