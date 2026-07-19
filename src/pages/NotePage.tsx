@@ -57,6 +57,11 @@ type EncMeta = {
   rowExists: boolean;
 };
 
+type EncGateTarget = {
+  slug: string;
+  metaVersion: number;
+};
+
 export default function NotePage({ embedSlug }: NotePageProps) {
   const params = useParams();
   const slug = embedSlug ?? params.slug ?? "";
@@ -153,6 +158,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // Bumped by the hashchange listener so the meta-fetch effect re-runs when
   // the encryption key in the URL fragment changes (lock/unlock flows).
   const [metaVersion, setMetaVersion] = useState(0);
+  const [resolvedEncTarget, setResolvedEncTarget] = useState<EncGateTarget | null>(null);
+  const encTargetIsCurrent = resolvedEncTarget?.slug === slug
+    && resolvedEncTarget.metaVersion === metaVersion;
   useEffect(() => {
     const onHash = () => setMetaVersion((n) => n + 1);
     window.addEventListener("hashchange", onHash);
@@ -191,6 +199,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       if (!meta.isEncrypted) {
         setEncryption(null);
         setEncPhase("ready");
+        setResolvedEncTarget({ slug, metaVersion });
         return;
       }
       const hashKey = window.location.hash.startsWith("#")
@@ -206,6 +215,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
               decrypt: (b) => decryptBytes(key, b),
             });
             setEncPhase("ready");
+            setResolvedEncTarget({ slug, metaVersion });
             return;
           }
         } catch (e) {
@@ -213,6 +223,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         }
       }
       setEncPhase("needs-key");
+      setResolvedEncTarget({ slug, metaVersion });
     })();
     return () => {
       cancelled = true;
@@ -284,7 +295,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   // Mount IDB + connect provider once enc decision is made.
   useEffect(() => {
-    if (!validSlug || !doc || !provider || encPhase !== "ready") return;
+    if (!validSlug || !doc || !provider || encPhase !== "ready" || !encTargetIsCurrent) return;
     provider.setEncryption(encryption);
     provider.setExpectedEncrypted(encMeta.isEncrypted);
 
@@ -402,7 +413,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       // Doc itself stays warm in cache for fast re-open; only release.
       releaseDoc(slug);
     };
-  }, [slug, validSlug, doc, provider, embedSlug, encPhase, encryption, encMeta.isEncrypted, encMeta.ydocState, encMeta.rowExists]);
+  }, [slug, validSlug, doc, provider, embedSlug, encPhase, encTargetIsCurrent, encryption, encMeta.isEncrypted, encMeta.ydocState, encMeta.rowExists]);
 
   if (!validSlug) return <Navigate to="/" replace />;
   if (!doc || !provider) return null;
@@ -411,8 +422,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // This gate deliberately precedes both render branches. In particular,
   // SplitView's embedded branch must never mount Editor/Preview behind an
   // overlay while encryption metadata or a decryption key is unavailable.
-  if (encPhase !== "ready") {
-    const gate = encPhase === "needs-key" ? (
+  const visibleEncPhase = encTargetIsCurrent ? encPhase : "loading";
+  if (visibleEncPhase !== "ready") {
+    const gate = visibleEncPhase === "needs-key" ? (
       <UnlockForm
         slug={slug}
         salt={encMeta.salt!}
