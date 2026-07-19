@@ -301,14 +301,18 @@ function normalizePath(p) {
 function parseRoute(pathname) {
   if (pathname === "/" || pathname === "") return { kind: "home" };
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length === 2 && parts[0] === "s") {
+  if (parts.length === 2) {
+    let prefix;
     let token;
     try {
+      prefix = decodeURIComponent(parts[0]);
       token = decodeURIComponent(parts[1]);
     } catch {
       return null;
     }
-    if (TOKEN_RE.test(token)) return { kind: "share" };
+    if (prefix.toLowerCase() === "s" && TOKEN_RE.test(token)) {
+      return { kind: "share" };
+    }
   }
   if (parts.length === 1) {
     let slug = parts[0];
