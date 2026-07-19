@@ -67,7 +67,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // side-by-side. Instead, the preview toggle swaps the visible pane between
   // editor and rendered markdown. `showPreview` keeps the same semantic
   // meaning ("user wants to see the preview") and is the only piece of state
-  // we need â€” layout logic below derives both modes from it.
+  // we need — layout logic below derives both modes from it.
   const narrow = useNarrowViewport();
   const showEditorPane = !narrow || !showPreview;
   const showPreviewPane = showPreview;
@@ -84,13 +84,13 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
 
-  // Mount Y.Doc IMMEDIATELY (synchronously) â€” no waiting on enc-meta or any
+  // Mount Y.Doc IMMEDIATELY (synchronously) — no waiting on enc-meta or any
   // fetch. The doc-cache returns the previously-warm doc when navigating
   // back so re-opens are essentially free.
   const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
 
   // Provider is bound to (slug, doc, encryption mode). Bumping `providerEpoch`
-  // on any encryption-mode flip forces a full teardown + rebuild â€” no stale
+  // on any encryption-mode flip forces a full teardown + rebuild — no stale
   // instance can survive a lock/unlock and write in the wrong mode.
   const [providerEpoch, setProviderEpoch] = useState(0);
   const provider = useMemo(
@@ -121,7 +121,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const navigate = useNavigate();
 
   // Ctrl/Cmd+Click on a `[[slug]]` token in the editor dispatches this event.
-  // Skip in embed (SplitView) mode â€” otherwise both panels would navigate and
+  // Skip in embed (SplitView) mode — otherwise both panels would navigate and
   // push duplicate history entries.
   useEffect(() => {
     if (embedSlug) return;
@@ -180,7 +180,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         rowExists: !!data,
       };
       setEncMeta((prev) => {
-        // Encryption mode flipped since last fetch â€” force a provider rebuild.
+        // Encryption mode flipped since last fetch — force a provider rebuild.
         if (prev.isEncrypted !== meta.isEncrypted) {
           setProviderEpoch((n) => n + 1);
         }
@@ -221,7 +221,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
   // When inside the Syrin Note Chrome extension side panel, tell the host
   // which slug we're on so it can remember the last-opened note. We retry
-  // up to 3 times (1s apart) if the host doesn't ack within 500ms â€” covers
+  // up to 3 times (1s apart) if the host doesn't ack within 500ms — covers
   // the race where the side panel's listener attaches after our first post.
   useEffect(() => {
     if (!isExtensionContext || !validSlug || embedSlug) return;
@@ -259,7 +259,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const sendOnce = () => {
       try {
         window.parent.postMessage({ type: "syrin:slug", slug }, targetOrigin);
-        dlog("posted slug", slug, "â†’", targetOrigin, "attempt", attempts + 1);
+        dlog("posted slug", slug, "→", targetOrigin, "attempt", attempts + 1);
       } catch (err) {
         dlog("post failed", err);
       }
@@ -305,7 +305,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       setUsers(list);
     });
 
-    // Phase 2.2 â€” toast on `recovered` (DB had updates we didn't on reconnect).
+    // Phase 2.2 — toast on `recovered` (DB had updates we didn't on reconnect).
     // Conflict events are surfaced by SyncIndicator's pill+popover, not a toast.
     const unsubSync = provider.onSyncEvent((ev) => {
       if (ev.type === "recovered") {
@@ -446,8 +446,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     );
   }
 
-  // SplitView wraps each panel â€” render the workspace without the global topbar.
-  // SplitView wraps each panel â€” render compact topbar + editor (+ preview if toggled).
+  // SplitView wraps each panel — render the workspace without the global topbar.
+  // SplitView wraps each panel — render compact topbar + editor (+ preview if toggled).
   // Compact topbar hides app-wide toggles (zen, theme, settings) but keeps
   // per-note actions (preview toggle, lock, share, rename, status, presence).
   if (embedSlug) {
@@ -499,8 +499,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   }
 
   const noteUrl = `https://syrin.online/${slug}`;
-  const noteTitle = `${slug} â€” Syrin Notes`;
-  const noteDesc = `Note "${slug}" on Syrin Notes â€” realtime markdown, autosave, synced across devices.`;
+  const noteTitle = `${slug} — Syrin Notes`;
+  const noteDesc = `Note "${slug}" on Syrin Notes — realtime markdown, autosave, synced across devices.`;
 
   return (
     <AppShell className="flex h-svh flex-col">
@@ -588,4 +588,3 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     </AppShell>
   );
 }
-
