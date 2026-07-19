@@ -11,11 +11,19 @@ on:
     paths:
       - "chrome-extension/**"
       - "e2e-extension/**"
+      - "package.json"
+      - "bun.lock"
+      - "scripts/audit-extension.sh"
+      - "scripts/verify-extension-zip.sh"
       - ".github/workflows/extension-e2e.yml"
   pull_request:
     paths:
       - "chrome-extension/**"
       - "e2e-extension/**"
+      - "package.json"
+      - "bun.lock"
+      - "scripts/audit-extension.sh"
+      - "scripts/verify-extension-zip.sh"
       - ".github/workflows/extension-e2e.yml"
   workflow_dispatch:
 
