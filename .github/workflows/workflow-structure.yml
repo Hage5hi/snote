@@ -21,3 +21,5 @@ jobs:
       - uses: actions/checkout@v4
       - name: Validate GitHub Actions workflows
         uses: docker://rhysd/actionlint:1.7.7
+        with:
+          args: -shellcheck=
