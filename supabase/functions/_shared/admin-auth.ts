@@ -76,17 +76,21 @@ export async function getAdminSubjectHash(
   const secretBytes = new TextEncoder().encode(secret);
   if (secretBytes.byteLength < 32) return { ok: false };
 
-  const key = await crypto.subtle.importKey("raw",
-    secretBytes,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("HMAC",
-    key,
-    new TextEncoder().encode(rawIp),
-  );
-  return { ok: true, subjectHash: bytesToHex(new Uint8Array(signature)) };
+  try {
+    const key = await crypto.subtle.importKey("raw",
+      secretBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    const signature = await crypto.subtle.sign("HMAC",
+      key,
+      new TextEncoder().encode(rawIp),
+    );
+    return { ok: true, subjectHash: bytesToHex(new Uint8Array(signature)) };
+  } catch {
+    return { ok: false };
+  }
 }
 
 export async function sha256Hex(value: string): Promise<string> {
@@ -107,19 +111,23 @@ export async function authorizeAdminSession(
   const token = req.headers.get("x-admin-session")?.trim() ?? "";
   if (!SESSION_TOKEN_RE.test(token)) return { status: "unauthorized" };
 
-  const tokenHash = await sha256Hex(token);
-  const { data, error } = await supabase.rpc("admin_session_validate", {
-    p_token_hash: tokenHash,
-    p_subject_hash: subject.subjectHash,
-  });
-  if (error) return { status: "unavailable" };
-  if (data !== true) return { status: "unauthorized" };
+  try {
+    const tokenHash = await sha256Hex(token);
+    const { data, error } = await supabase.rpc("admin_session_validate", {
+      p_token_hash: tokenHash,
+      p_subject_hash: subject.subjectHash,
+    });
+    if (error) return { status: "unavailable" };
+    if (data !== true) return { status: "unauthorized" };
 
-  return {
-    status: "authorized",
-    subjectHash: subject.subjectHash,
-    tokenHash,
-  };
+    return {
+      status: "authorized",
+      subjectHash: subject.subjectHash,
+      tokenHash,
+    };
+  } catch {
+    return { status: "unavailable" };
+  }
 }
 
 function constantTimeEqual(a: string, b: string): boolean {
