@@ -26,6 +26,7 @@ const CRAWLER_UA = /(facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot
 
 const SLUG_RE = /^[a-zA-Z0-9._-]{1,80}$/;
 const TOKEN_RE = /^[a-zA-Z0-9_-]{8,128}$/;
+const SHARE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
 // Rate limit (in-memory per-isolate). Token bucket đơn giản.
 // Ghi chú: Mỗi colo/isolate giữ state riêng, không 100% chính xác toàn cầu,
@@ -169,7 +170,7 @@ export default {
     const rl = rateLimit(ip, ua);
     if (!rl.ok) {
       logEvent(env, "warn", "rate_limited", {
-        ip, ua, path: url.pathname, group: rl.group, scope: rl.reason,
+        group: rl.group, scope: rl.reason,
         retryAfter: rl.retryAfter,
       });
       return new Response("Too Many Requests", {
@@ -184,15 +185,25 @@ export default {
       });
     }
 
-    // Chuẩn hoá pathname (strip trailing slash, lowercase host đã xong)
+    // Resolve share routes before redirects, cache access, or metadata lookup.
+    // Even a trailing slash must not echo the capability-bearing path back in
+    // a Location header or create a second cache key.
     const normalizedPath = normalizePath(url.pathname);
+    const route = parseRoute(normalizedPath);
+    if (route?.kind === "share") {
+      logEvent(env, "info", "prerender", {
+        kind: "share", status: 200, group: rl.group,
+      });
+      return renderGenericShareHtml();
+    }
+
+    // Chuẩn hoá pathname (strip trailing slash, lowercase host đã xong)
     if (normalizedPath !== url.pathname) {
       const redir = new URL(url);
       redir.pathname = normalizedPath;
       return Response.redirect(redir.toString(), 301);
     }
 
-    const route = parseRoute(normalizedPath);
     if (!route) return passThrough(request, env);
 
     // Edge cache theo full URL
@@ -200,7 +211,7 @@ export default {
     const cacheKey = new Request(url.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) {
-      logEvent(env, "info", "cache_hit", { ip, ua, path: url.pathname });
+      logEvent(env, "info", "cache_hit", { kind: route.kind, group: rl.group });
       return cached;
     }
 
@@ -246,7 +257,7 @@ export default {
       });
 
       logEvent(env, "info", "prerender", {
-        ip, ua, path: url.pathname, kind: route.kind,
+        kind: route.kind, group: rl.group,
         status, found: !!meta.found, encrypted: !!isEncrypted,
         ms: Date.now() - t0,
       });
@@ -258,7 +269,9 @@ export default {
       return response;
     } catch (err) {
       logEvent(env, "error", "prerender_failed", {
-        ip, ua, path: url.pathname, error: String(err), ms: Date.now() - t0,
+        kind: route.kind,
+        errorName: err instanceof Error ? err.name : "unknown",
+        ms: Date.now() - t0,
       });
       return passThrough(request, env);
     }
@@ -281,7 +294,7 @@ function parseRoute(pathname) {
   if (pathname === "/" || pathname === "") return { kind: "home" };
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length === 2 && parts[0] === "s" && TOKEN_RE.test(parts[1])) {
-    return { kind: "share", token: parts[1] };
+    return { kind: "share" };
   }
   if (parts.length === 1) {
     let slug = parts[0];
@@ -293,9 +306,8 @@ function parseRoute(pathname) {
 
 async function fetchNoteMeta(route, env) {
   if (route.kind === "home") return { found: true, kind: "home" };
-  const qs = route.kind === "share"
-    ? `token=${encodeURIComponent(route.token)}`
-    : `slug=${encodeURIComponent(route.slug)}`;
+  if (route.kind !== "note") throw new TypeError("metadata route must be home or note");
+  const qs = `slug=${encodeURIComponent(route.slug)}`;
   const endpoint = `https://${env.SUPABASE_PROJECT}.functions.supabase.co/note-meta?${qs}`;
   const res = await fetch(endpoint, {
     headers: {
@@ -332,7 +344,7 @@ function renderHtml(meta, url, env) {
   let robots = "index, follow";
   let ogType = "website";
 
-  if (meta.kind === "note" || meta.kind === "share") {
+  if (meta.kind === "note") {
     if (meta.found) {
       title = `Syrin Notes — /${meta.slug}`;
       ogType = "article";
@@ -382,6 +394,45 @@ function renderHtml(meta, url, env) {
 <p><a href="${U}">Mở trên Syrin Notes</a></p>
 </body>
 </html>`;
+}
+
+function renderGenericShareHtml() {
+  const title = "Shared note — Syrin Notes";
+  const description = "Open a private, revocable shared note on Syrin Notes.";
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>${title}</title>
+<meta name="description" content="${description}" />
+<meta name="robots" content="${SHARE_ROBOTS}" />
+<meta name="googlebot" content="${SHARE_ROBOTS}" />
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${description}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Syrin Notes" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="${title}" />
+<meta name="twitter:description" content="${description}" />
+</head>
+<body>
+<h1>${title}</h1>
+<p>${description}</p>
+<p><a href="/">Open Syrin Notes</a></p>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "cdn-cache-control": "no-store",
+      "x-robots-tag": SHARE_ROBOTS,
+      vary: "User-Agent",
+    },
+  });
 }
 
 function renderRobotsTxt(env) {
