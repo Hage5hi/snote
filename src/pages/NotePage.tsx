@@ -159,6 +159,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // the encryption key in the URL fragment changes (lock/unlock flows).
   const [metaVersion, setMetaVersion] = useState(0);
   const [resolvedEncTarget, setResolvedEncTarget] = useState<EncGateTarget | null>(null);
+  const currentEncTargetRef = useRef<EncGateTarget>({ slug, metaVersion });
+  currentEncTargetRef.current = { slug, metaVersion };
   const encTargetIsCurrent = resolvedEncTarget?.slug === slug
     && resolvedEncTarget.metaVersion === metaVersion;
   useEffect(() => {
@@ -172,6 +174,10 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     if (!validSlug) return;
     setEncPhase("loading");
     let cancelled = false;
+    const requestTarget: EncGateTarget = { slug, metaVersion };
+    const isCurrentRequest = () => !cancelled
+      && currentEncTargetRef.current.slug === requestTarget.slug
+      && currentEncTargetRef.current.metaVersion === requestTarget.metaVersion;
     (async () => {
       try {
         const { data, error } = await supabase
@@ -179,7 +185,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           .select("is_encrypted, enc_salt, enc_check, enc_iterations, ydoc_state")
           .eq("slug", slug)
           .maybeSingle();
-        if (cancelled) return;
+        if (!isCurrentRequest()) return;
         if (error) {
           console.warn("Encryption metadata query failed");
           return;
@@ -202,9 +208,10 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
 
         if (!meta.isEncrypted) {
+          if (!isCurrentRequest()) return;
           setEncryption(null);
           setEncPhase("ready");
-          setResolvedEncTarget({ slug, metaVersion });
+          setResolvedEncTarget(requestTarget);
           return;
         }
         const hashKey = window.location.hash.startsWith("#")
@@ -213,24 +220,28 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         if (hashKey && meta.salt && meta.check) {
           try {
             const key = await deriveKey(hashKey, meta.salt, iterationsFor(meta.iterations));
+            if (!isCurrentRequest()) return;
             const ok = await verifyCheck(key, meta.check);
+            if (!isCurrentRequest()) return;
             if (ok) {
               setEncryption({
                 encrypt: (b) => encryptBytes(key, b),
                 decrypt: (b) => decryptBytes(key, b),
               });
               setEncPhase("ready");
-              setResolvedEncTarget({ slug, metaVersion });
+              setResolvedEncTarget(requestTarget);
               return;
             }
           } catch (e) {
+            if (!isCurrentRequest()) return;
             console.warn("derive failed", e);
           }
         }
+        if (!isCurrentRequest()) return;
         setEncPhase("needs-key");
-        setResolvedEncTarget({ slug, metaVersion });
+        setResolvedEncTarget(requestTarget);
       } catch {
-        if (!cancelled) console.warn("Encryption metadata query failed");
+        if (isCurrentRequest()) console.warn("Encryption metadata query failed");
       }
     })();
     return () => {
@@ -439,6 +450,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         check={encMeta.check!}
         iterations={iterationsFor(encMeta.iterations)}
         onUnlock={(key) => {
+          const currentTarget = currentEncTargetRef.current;
+          if (currentTarget.slug !== slug || currentTarget.metaVersion !== metaVersion) return;
+          if (resolvedEncTarget?.slug !== slug || resolvedEncTarget.metaVersion !== metaVersion) return;
           setEncryption({
             encrypt: (b) => encryptBytes(key, b),
             decrypt: (b) => decryptBytes(key, b),
