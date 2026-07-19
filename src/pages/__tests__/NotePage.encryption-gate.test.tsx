@@ -1,6 +1,6 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import { BrowserRouter, MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import NotePage from "../NotePage";
@@ -383,6 +383,55 @@ describe("NotePage encryption gate", () => {
     expect(harness.deriveKey).not.toHaveBeenCalled();
     expect(harness.editorRender).not.toHaveBeenCalled();
     expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("closes an unlocked note when React Router removes its key", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: {
+        is_encrypted: true,
+        enc_salt: "salt-secret",
+        enc_check: "check-secret",
+        enc_iterations: 1000,
+        ydoc_state: "ciphertext-secret",
+      },
+    });
+    harness.deriveKey.mockResolvedValue({} as CryptoKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    window.history.replaceState(null, "", "/secret#key");
+
+    function BrowserNoteHarness() {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button type="button" onClick={() => navigate("/secret")}>remove-note-key</button>
+          <Routes>
+            <Route path="/:slug" element={<NotePage />} />
+          </Routes>
+        </>
+      );
+    }
+
+    const view = render(
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <BrowserNoteHarness />
+      </BrowserRouter>,
+    );
+    await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
+
+    fireEvent.click(view.getByRole("button", { name: "remove-note-key" }));
+
+    expect(window.location.hash).toBe("");
+    expect(view.queryByTestId("editor")).not.toBeInTheDocument();
+    expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+    expect(view.getByLabelText("Loading encryption metadata")).toBeInTheDocument();
+
+    // Let the replacement metadata request settle so the test cannot leak
+    // post-assertion React updates into the next case.
+    await waitFor(() =>
+      expect(
+        view.getByRole("dialog", { name: "Unlock encrypted note secret" }),
+      ).toBeInTheDocument(),
+    );
   });
 
   it("ignores a manual unlock that finishes after the form target changes", async () => {
