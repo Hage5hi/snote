@@ -11,11 +11,11 @@ export interface DiagEvent {
   kind: EventKind;
   message: string;
   detail?: string;
-  /** React componentStack from ErrorBoundary — top-most frame first. */
+  /** React componentStack from ErrorBoundary â€” top-most frame first. */
   componentStack?: string;
 }
 
-const MAX_EXPORT_DETAIL_BYTES = 512;
+export const MAX_EXPORT_DETAIL_BYTES = 512;
 export const DIAG_EXPORT_SCHEMA_VERSION = 1;
 
 /** Filename: `diagnostics-<iso>.json` with `:`/`.` replaced so it's FS-safe. */
@@ -33,7 +33,7 @@ export function truncateDiagEventsForExport(events: DiagEvent[]): DiagEvent[] {
       const value = out[key];
       if (typeof value === "string" && value.length > MAX_EXPORT_DETAIL_BYTES) {
         out[key] =
-          `${value.slice(0, MAX_EXPORT_DETAIL_BYTES)}…[truncated ${value.length - MAX_EXPORT_DETAIL_BYTES}b]`;
+          `${value.slice(0, MAX_EXPORT_DETAIL_BYTES)}â€¦[truncated ${value.length - MAX_EXPORT_DETAIL_BYTES}b]`;
       }
     }
     return out;
@@ -59,3 +59,4 @@ export function filterDiagEvents(
       );
     });
 }
+
