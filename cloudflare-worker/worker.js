@@ -24,7 +24,7 @@
 // Teams, Outlook/Office, Google-Read-Aloud, Google-Site-Verification,
 // PetalBot, Yeti (Naver), SeznamBot, Qwantify, MojeekBot, AhrefsBot,
 // SemrushBot, archive.org_bot, ia_archiver, Snapcrawler, Tumblr, Flipboard.
-const CRAWLER_UA = /(facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|Discordbot|WhatsApp|TelegramBot|Pinterest|pinterestbot|redditbot|Applebot|Googlebot|Google-Read-Aloud|Google-Site-Verification|Google-InspectionTool|bingbot|DuckDuckBot|YandexBot|Baiduspider|SkypeUriPreview|vkShare|W3C_Validator|Embedly|Iframely|nuzzel|outbrain|quora link preview|XING-contenttabreceiver|TikTokBot|Bytespider|Snapchat|SnapchatAds|Snapcrawler|Mastodon|Pleroma|Misskey|Threads|Bluesky|Notionbot|Trello|Asana|MicrosoftPreview|Teams|Outlook|Office|Zalo|LINE|Viber|KakaoTalk|iMessageLinkPreview|MetaInspector|Tumblr|Flipboard|PetalBot|Yeti|SeznamBot|Qwantify|MojeekBot|AhrefsBot|SemrushBot|archive\.org_bot|ia_archiver|YisouSpider|Sogou|360Spider|MJ12bot|DotBot|HeadlessChrome)/i;
+const CRAWLER_UA = /(facebookexternalhit|Facebot|meta-externalagent|meta-externalfetcher|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|Discordbot|WhatsApp|TelegramBot|Pinterest|pinterestbot|redditbot|Applebot|Googlebot|Google-Read-Aloud|Google-Site-Verification|Google-InspectionTool|bingbot|DuckDuckBot|YandexBot|Baiduspider|SkypeUriPreview|vkShare|W3C_Validator|Embedly|Iframely|nuzzel|outbrain|quora link preview|XING-contenttabreceiver|TikTokBot|Bytespider|Snapchat|SnapchatAds|Snapcrawler|Mastodon|Pleroma|Misskey|Threads|Bluesky|Notionbot|Trello|Asana|MicrosoftPreview|Teams|Outlook|Office|Zalo|LINE|Viber|KakaoTalk|iMessageLinkPreview|MetaInspector|Tumblr|Flipboard|PetalBot|Yeti|SeznamBot|Qwantify|MojeekBot|AhrefsBot|SemrushBot|archive\.org_bot|ia_archiver|YisouSpider|Sogou|360Spider|MJ12bot|DotBot|HeadlessChrome)/i;
 
 const SLUG_RE = /^[a-zA-Z0-9._-]{1,80}$/;
 const SHARE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
@@ -51,7 +51,7 @@ const RL_BOT_MAX = {                // override theo nhóm bot
 
 // Map UA → nhóm bot (thứ tự quan trọng, match đầu tiên thắng).
 const BOT_GROUPS = [
-  ["facebook",  /facebookexternalhit|facebot|metainspector/i],
+  ["facebook",  /facebookexternalhit|facebot|meta-external(agent|fetcher)|metainspector/i],
   ["slack",     /slack/i],
   ["linkedin",  /linkedinbot/i],
   ["twitter",   /twitterbot/i],
@@ -163,8 +163,7 @@ export default {
     // Classify capability-bearing share paths before asset passthrough or host
     // redirects. A token may legitimately look like a filename or be followed
     // by nested path data, and neither case may reach the origin.
-    const normalizedPath = normalizePath(url.pathname);
-    const route = parseRoute(normalizedPath);
+    const route = parseRoute(url.pathname);
     if (isCrawler && route?.kind === "share") {
       logEvent(env, "info", "prerender", {
         kind: "share", status: 200,
@@ -300,6 +299,7 @@ function normalizePath(p) {
 }
 
 function parseRoute(pathname) {
+  pathname = normalizeContainmentPath(pathname);
   if (pathname === "/" || pathname === "") return { kind: "home" };
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length >= 2 && isSharePrefix(parts[0])) {
@@ -314,6 +314,27 @@ function parseRoute(pathname) {
     if (SLUG_RE.test(slug)) return { kind: "note", slug };
   }
   return null;
+}
+
+function normalizeContainmentPath(pathname) {
+  let value = pathname || "/";
+
+  // Decode a bounded number of mixed encodings, then collapse arbitrarily
+  // repeated standard encodings of path separators. This normalization is
+  // only for security classification; the raw path is never logged or echoed.
+  for (let pass = 0; pass < 8; pass += 1) {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(value);
+    } catch {
+      break;
+    }
+    if (decoded === value) break;
+    value = decoded;
+  }
+  value = value.replace(/%(?:25)*(?:2f|5c)/gi, "/");
+  value = value.replace(/\\/g, "/");
+  return normalizePath(value);
 }
 
 function isSharePrefix(value) {
