@@ -112,7 +112,8 @@ describe("immediate containment contracts", () => {
 
     const session = source("supabase/functions/admin-session/index.ts");
     expect(session).toContain("crypto.getRandomValues");
-    expect(session).toContain('.from("admin_sessions")');
+    expect(session).toContain('.rpc("admin_session_issue"');
+    expect(session).not.toContain('.from("admin_sessions").insert');
     expect(session).toContain('"Cache-Control": "no-store"');
     expect(session).toContain("ADMIN_SESSION_TTL_MINUTES");
 
