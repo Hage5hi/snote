@@ -144,4 +144,3 @@ describe("NotePage encryption gate", () => {
     expect(harness.previewRender).not.toHaveBeenCalled();
   });
 });
-
