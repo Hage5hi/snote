@@ -50,11 +50,15 @@ Deno.serve(async (req) => {
   } catch {
     return serviceUnavailableResponse(corsHeaders);
   }
-  const { error } = await supabase.from("admin_config").upsert({
-    id: 1,
-    pass_hash: passHash,
-    updated_at: new Date().toISOString(),
-  });
-  return error ? serviceUnavailableResponse(corsHeaders) : json({ ok: true }, 200);
+  try {
+    const { error } = await supabase.rpc("admin_pass_rotate", {
+      p_pass_hash: passHash,
+    });
+    if (error) return serviceUnavailableResponse(corsHeaders);
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
+  }
+
+  return json({ ok: true }, 200);
 });
 
