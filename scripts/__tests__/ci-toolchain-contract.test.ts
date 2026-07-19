@@ -124,9 +124,15 @@ describe("CI toolchain contract", () => {
     expect(qualityJob).toContain("name: quality");
     expect(qualityJob).toContain(ACTIONLINT_IMAGE);
     expect(qualityJob).toContain("persist-credentials: false");
-    expect(qualityJob).toMatch(/^\s*-\s+run:\s*bun run test\s*$/m);
-    expect(qualityJob).toMatch(/^\s*-\s+run:\s*bun run test:coverage\s*$/m);
-    expect(qualityJob).toMatch(/^\s*-\s+run:\s*bun run build:check\s*$/m);
+    expect(qualityJob).toMatch(
+      /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run test[ \t]*$/m,
+    );
+    expect(qualityJob).toMatch(
+      /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run test:coverage[ \t]*$/m,
+    );
+    expect(qualityJob).toMatch(
+      /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run build:check[ \t]*$/m,
+    );
     expect(qualityJob).toContain(
       "bunx playwright test --list --project=chromium",
     );
