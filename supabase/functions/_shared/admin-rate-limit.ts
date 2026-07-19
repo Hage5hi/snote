@@ -34,11 +34,15 @@ export async function checkAdminLockout(
   supabase: SupabaseClient,
   subjectHash: string,
 ): Promise<LockoutResult> {
-  const { data, error } = await supabase.rpc("admin_auth_check", {
-    p_subject_hash: subjectHash,
-  });
-  if (error) return { available: false, allowed: false };
-  return parseGate(data);
+  try {
+    const { data, error } = await supabase.rpc("admin_auth_check", {
+      p_subject_hash: subjectHash,
+    });
+    if (error) return { available: false, allowed: false };
+    return parseGate(data);
+  } catch {
+    return { available: false, allowed: false };
+  }
 }
 
 export async function recordAdminAuthAttempt(
@@ -46,12 +50,16 @@ export async function recordAdminAuthAttempt(
   subjectHash: string,
   success: boolean,
 ): Promise<LockoutResult> {
-  const { data, error } = await supabase.rpc("admin_auth_record", {
-    p_subject_hash: subjectHash,
-    p_success: success,
-  });
-  if (error) return { available: false, allowed: false };
-  return parseGate(data);
+  try {
+    const { data, error } = await supabase.rpc("admin_auth_record", {
+      p_subject_hash: subjectHash,
+      p_success: success,
+    });
+    if (error) return { available: false, allowed: false };
+    return parseGate(data);
+  } catch {
+    return { available: false, allowed: false };
+  }
 }
 
 export function lockoutResponse(
