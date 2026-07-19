@@ -30,13 +30,15 @@ function parseGate(data: unknown): LockoutResult {
   return { available: true, allowed: false, retryAfterSeconds };
 }
 
-export async function checkAdminLockout(
+export async function beginAdminAuthAttempt(
   supabase: SupabaseClient,
   subjectHash: string,
+  leaseId: string,
 ): Promise<LockoutResult> {
   try {
-    const { data, error } = await supabase.rpc("admin_auth_check", {
+    const { data, error } = await supabase.rpc("admin_auth_begin", {
       p_subject_hash: subjectHash,
+      p_lease_id: leaseId,
     });
     if (error) return { available: false, allowed: false };
     return parseGate(data);
@@ -45,14 +47,16 @@ export async function checkAdminLockout(
   }
 }
 
-export async function recordAdminAuthAttempt(
+export async function completeAdminAuthAttempt(
   supabase: SupabaseClient,
   subjectHash: string,
+  leaseId: string,
   success: boolean,
 ): Promise<LockoutResult> {
   try {
-    const { data, error } = await supabase.rpc("admin_auth_record", {
+    const { data, error } = await supabase.rpc("admin_auth_complete", {
       p_subject_hash: subjectHash,
+      p_lease_id: leaseId,
       p_success: success,
     });
     if (error) return { available: false, allowed: false };
