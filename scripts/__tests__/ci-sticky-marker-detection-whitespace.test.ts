@@ -69,9 +69,7 @@ describe("sticky comment marker detection — whitespace & newline tolerance", (
   });
 
   it("non-string input is rejected, never throws", () => {
-    // @ts-expect-error — adversarial input
     expect(hasStickyMarker(undefined)).toBe(false);
-    // @ts-expect-error — adversarial input
     expect(hasStickyMarker(null)).toBe(false);
   });
 });

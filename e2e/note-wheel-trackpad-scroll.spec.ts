@@ -121,7 +121,9 @@ test.use({
   viewport: { width: 1280, height: 900 },
   deviceScaleFactor: 1,
   colorScheme: "light",
-  reducedMotion: "reduce",
+});
+test.beforeEach(async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
 });
 
 async function seedLongNote(page: import("@playwright/test").Page) {

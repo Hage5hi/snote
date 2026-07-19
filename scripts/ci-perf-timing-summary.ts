@@ -17,7 +17,13 @@
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 type PwAnnot = { type: string; description?: string };
-type PwTest = { title: string; projectName?: string; annotations?: PwAnnot[]; results?: Array<{ duration?: number; status?: string }> };
+type PwResult = {
+  duration?: number;
+  status?: string;
+  retry?: number;
+  attachments?: Array<{ name?: string; path?: string }>;
+};
+type PwTest = { title: string; projectName?: string; annotations?: PwAnnot[]; results?: PwResult[] };
 type PwSpec = { title: string; file: string; tests: PwTest[] };
 type PwSuite = { title?: string; specs?: PwSpec[]; suites?: PwSuite[] };
 type PwReport = { suites?: PwSuite[] };
@@ -78,7 +84,7 @@ export function parsePlaywrightFailedArtifacts(report: PwReport): FailedTestArti
   const out: FailedTestArtifacts[] = [];
   for (const spec of walk(report.suites)) {
     for (const t of spec.tests) {
-      for (const result of (t.results ?? []) as Array<{ status?: string; retry?: number; attachments?: Array<{ name?: string; path?: string }> }>) {
+      for (const result of t.results ?? []) {
         if (result.status === "passed" || result.status === "skipped") continue;
         const attachments = (result.attachments ?? [])
           .filter((a) => a.path && (/trace\.zip$/.test(a.path) || /\.(png|json)$/.test(a.path)))

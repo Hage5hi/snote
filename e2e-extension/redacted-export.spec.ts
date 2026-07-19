@@ -23,7 +23,8 @@ test.describe("debug export — redaction & schema", () => {
   }) => {
     const page = context.pages().find((p) => p.url().includes(extensionId))!;
     const result = await page.evaluate(async () => {
-      const { redactPayload } = await import("./lib/redact.js");
+      const redactModule = "./lib/redact.js";
+      const { redactPayload } = await import(redactModule);
       const raw = {
         kind: "syrin-note-debug-log",
         version: 1,
@@ -44,7 +45,7 @@ test.describe("debug export — redaction & schema", () => {
           },
         ],
       };
-      const out = (await import("./lib/redact.js")).redactPayload(raw);
+      const out = redactPayload(raw);
       return out;
     });
 
@@ -72,9 +73,11 @@ test.describe("debug export — redaction & schema", () => {
   }) => {
     const page = context.pages().find((p) => p.url().includes(extensionId))!;
     const out = await page.evaluate(async () => {
-      const { redactPayload } = await import("./lib/redact.js");
+      const redactModule = "./lib/redact.js";
+      const exportSchemaModule = "./lib/export-schema.js";
+      const { redactPayload } = await import(redactModule);
       const { validateExport, expectedFilename, isExpectedFilename } = await import(
-        "./lib/export-schema.js"
+        exportSchemaModule
       );
       const ts = "2026-06-21T12:34:56.789Z";
       const raw = {

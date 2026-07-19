@@ -24,7 +24,6 @@ interface ChromeMock {
   runtime: { lastError: { message: string } | null };
 }
 
-// @ts-expect-error - plain JS module
 import { initOptions } from "../options.js";
 
 let stored: Record<string, unknown> = {};

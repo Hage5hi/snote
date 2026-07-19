@@ -21,7 +21,9 @@ function prevCsvRow(file: string, failureReason: string): string {
 
 async function runInspect(argv: string[]): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn("bun", ["run", "scripts/inspect-focus-trap.ts", ...argv], { encoding: "utf8" as never });
+    const child = spawn("bun", ["run", "scripts/inspect-focus-trap.ts", ...argv], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     let stdout = ""; let stderr = "";
     child.stdout!.on("data", (d) => { stdout += d.toString(); });
     child.stderr!.on("data", (d) => { stderr += d.toString(); });

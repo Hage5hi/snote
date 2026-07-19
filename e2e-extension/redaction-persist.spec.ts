@@ -1,5 +1,13 @@
 import { test, expect } from "./fixtures/extension";
 
+declare const chrome: {
+  storage: {
+    sync: {
+      set(items: Record<string, unknown>, callback: () => void): void;
+    };
+  };
+};
+
 // Toggle redaction on, reload the side panel, confirm the checkbox is
 // still checked and a fresh export validates as a redacted payload.
 test.describe("debug export — toggle persistence", () => {
@@ -29,9 +37,11 @@ test.describe("debug export — toggle persistence", () => {
     // Build a payload via the same modules the exporter uses and assert
     // schema + filename look right for the persisted-on state.
     const res = await page.evaluate(async () => {
-      const { redactPayload } = await import("./lib/redact.js");
+      const redactModule = "./lib/redact.js";
+      const exportSchemaModule = "./lib/export-schema.js";
+      const { redactPayload } = await import(redactModule);
       const { validateExport, expectedFilename } = await import(
-        "./lib/export-schema.js"
+        exportSchemaModule
       );
       const ts = new Date().toISOString();
       const raw = {

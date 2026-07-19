@@ -25,7 +25,6 @@ function emitVersionJson() {
     name: "emit-version-json",
     apply: "build" as const,
     generateBundle() {
-      // @ts-expect-error rollup plugin context typing not imported here
       this.emitFile({
         type: "asset",
         fileName: "version.json",

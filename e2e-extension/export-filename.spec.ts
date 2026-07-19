@@ -17,8 +17,9 @@ test.describe("debug export — filename contract", () => {
         const page = context.pages().find((p) => p.url().includes(extensionId))!;
         const res = await page.evaluate(
           async ({ version, redacted }) => {
+            const exportSchemaModule = "./lib/export-schema.js";
             const { expectedFilename, isExpectedFilename, validateExport } = await import(
-              "./lib/export-schema.js"
+              exportSchemaModule
             );
             const ts = new Date().toISOString();
             const name = expectedFilename({ redacted, isoTimestamp: ts });

@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-// @ts-expect-error - plain JS module
 import { buildSrc, badgeForMode, DEFAULT_APP_ORIGIN } from "../lib/build-src.js";
 
 describe("buildSrc", () => {
@@ -38,7 +37,7 @@ describe("buildSrc", () => {
   });
 
   it("unknown mode → root fallback", () => {
-    expect(buildSrc({ openMode: "garbage" as any, defaultSlug: "x" })).toBe(
+    expect(buildSrc({ openMode: "garbage", defaultSlug: "x" })).toBe(
       `${DEFAULT_APP_ORIGIN}/?from=ext`,
     );
   });

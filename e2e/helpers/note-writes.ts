@@ -6,7 +6,7 @@
 // Also provides a unique-slug helper so seeded notes never collide across
 // parallel CI jobs / matrix workers.
 
-import type { Page, Request } from "@playwright/test";
+import type { Page, Request as PlaywrightRequest } from "@playwright/test";
 
 export type NoteWrite = { source: string; method: string; url: string };
 
@@ -40,7 +40,7 @@ export function isNoteWriteRequest(method: string, url: string): boolean {
 export async function trackNoteWrites(page: Page): Promise<() => Promise<NoteWrite[]>> {
   const networkWrites: NoteWrite[] = [];
 
-  page.on("request", (req: Request) => {
+  page.on("request", (req: PlaywrightRequest) => {
     if (isNoteWriteRequest(req.method(), req.url())) {
       networkWrites.push({ source: "network", method: req.method(), url: normalizeNoteUrl(req.url()) });
     }
@@ -70,14 +70,14 @@ export async function trackNoteWrites(page: Page): Promise<() => Promise<NoteWri
     const origFetch = window.fetch.bind(window);
     window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
       const url =
-        typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       const method = (
-        init?.method || (input instanceof Request ? input.method : "GET")
+        init?.method || (input instanceof globalThis.Request ? input.method : "GET")
       ).toUpperCase();
       if (isNote(url) && MUT.has(method)) {
         w.__noteWrites.push({ source: "fetch-wrap", method, url: norm(url) });
       }
-      return origFetch(input as RequestInfo, init);
+      return origFetch(input, init);
     };
   });
 

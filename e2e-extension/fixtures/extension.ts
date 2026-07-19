@@ -42,7 +42,6 @@ export const expect = test.expect;
 
 // Helper: run a snippet inside the service worker.
 export async function inSW<T>(sw: Worker, fn: () => Promise<T> | T): Promise<T> {
-  // @ts-expect-error - evaluate signature
   return sw.evaluate(fn);
 }
 

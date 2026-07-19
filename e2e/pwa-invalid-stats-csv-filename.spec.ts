@@ -2,8 +2,8 @@
 // range so users can distinguish exports taken at different windows.
 import { test, expect } from "@playwright/test";
 
-for (const window of ["5m", "1h", "24h"] as const) {
-  test(`CSV export filename includes selected window (${window})`, async ({ page }) => {
+for (const range of ["5m", "1h", "24h"] as const) {
+  test(`CSV export filename includes selected window (${range})`, async ({ page }) => {
     await page.addInitScript(() => {
       (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: unknown }).__SNOTE_PWA_UPDATE_STATE__ = {
         currentBuildId: "build-a",
@@ -39,10 +39,10 @@ for (const window of ["5m", "1h", "24h"] as const) {
       { timeout: 3_000 },
     );
 
-    await page.locator(`[data-pwa-debug-stats-window='${window}']`).click();
+    await page.locator(`[data-pwa-debug-stats-window='${range}']`).click();
     await expect(page.locator("[data-pwa-debug-stats='invalid-events']")).toHaveAttribute(
       "data-invalid-window",
-      window,
+      range,
     );
 
     const [download] = await Promise.all([
@@ -51,6 +51,6 @@ for (const window of ["5m", "1h", "24h"] as const) {
     ]);
 
     const name = download.suggestedFilename();
-    expect(name).toMatch(new RegExp(`^pwa-readiness-invalid-${window}-.+\\.csv$`));
+    expect(name).toMatch(new RegExp(`^pwa-readiness-invalid-${range}-.+\\.csv$`));
   });
 }

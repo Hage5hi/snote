@@ -439,7 +439,7 @@ function main() {
     // Test hook: force an invalid payload to exercise the failure branch.
     const toCheck = process.env.SCHEMA_DRIFT_DIFF_FORCE_INVALID ? { totals: "nope" } : payload;
     const result = validateJsonPayload(toCheck, schemaPath);
-    if (!result.ok) {
+    if (result.ok === false) {
       const ajvErrors = (result.errors as Array<Record<string, unknown>> | null) ?? [];
       const expectedChecklist = [
         "totals", "added", "removed", "changed", "matchedAnchors",

@@ -50,7 +50,7 @@ describe("focus-trap-inspect JSON Schemas — negative cases", () => {
     expect(report(bad)).toBe(false);
     const constErr = findConstErr(report.errors, "/schemaVersion");
     expect(constErr, "expected a const violation on /schemaVersion").toBeDefined();
-    expect((constErr as { params: { allowedValue: string } }).params.allowedValue).toBe("1.0.0");
+    expect(constErr?.params.allowedValue).toBe("1.0.0");
   });
 
   it("rejects --diff-json-out missing required keys and mistyped rows", () => {

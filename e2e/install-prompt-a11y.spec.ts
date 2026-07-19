@@ -89,8 +89,8 @@ test("keyboard opens install-as-app dialog and moves focus inside", async ({ pag
   for (let i = 0; i < count; i++) {
     const label = await stepBtns.nth(i).getAttribute("aria-label");
     expect(
-      [dict.en["install.step_completed"], dict.en["install.step_mark"]].includes(
-        label ?? "",
+      [dict.en["install.step_completed"], dict.en["install.step_mark"]].some(
+        (expectedLabel) => expectedLabel === label,
       ),
       `step ${i} aria-label "${label}"`,
     ).toBe(true);

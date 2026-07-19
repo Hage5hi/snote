@@ -1,5 +1,13 @@
 import { test, expect } from "./fixtures/extension";
 
+declare const chrome: {
+  storage: {
+    sync: {
+      set(items: Record<string, unknown>, callback: () => void): void;
+    };
+  };
+};
+
 // Both export surfaces (download + copy-to-clipboard) must apply
 // redaction consistently. The copy path historically dumped the raw text
 // of the log list — this spec guards the parity contract.
@@ -22,7 +30,8 @@ test.describe("debug export — copy path parity", () => {
 
     // Seed a debug line containing a sensitive token.
     await page.evaluate(async () => {
-      const { dlog } = await import("./lib/debug.js");
+      const debugModule = "./lib/debug.js";
+      const { dlog } = await import(debugModule);
       dlog("ack sent", "my-secret-note-slug");
     });
 
@@ -64,7 +73,8 @@ test.describe("debug export — copy path parity", () => {
     await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
     await page.waitForSelector("#debug-copy");
     await page.evaluate(async () => {
-      const { dlog } = await import("./lib/debug.js");
+      const debugModule = "./lib/debug.js";
+      const { dlog } = await import(debugModule);
       dlog("ack sent", "plain-slug-xyz");
     });
 

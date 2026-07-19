@@ -29,6 +29,8 @@ const BUNDLES = [
   { name: "sticky-fuzz-failures", subdir: "sticky-fuzz-failures" },
 ] as const;
 
+type BundleName = (typeof BUNDLES)[number]["name"];
+
 const HELP = `ci-sticky-generate-artifacts-manifest — scan a folder and emit a sticky-artifacts-manifest/v1
 
 USAGE
@@ -53,7 +55,7 @@ interface Args {
   out: string | null;
   runUrl: string;
   base: string | null;
-  bundles: string[];
+  bundles: BundleName[];
   pretty: boolean;
   help: boolean;
 }
@@ -64,7 +66,7 @@ function parseArgs(argv: string[]): Args {
     runUrl: process.env.GITHUB_RUN_URL ?? "",
     base: null, bundles: [], pretty: false, help: false,
   };
-  const known = new Set(BUNDLES.map((b) => b.name));
+  const known = new Set<string>(BUNDLES.map((b) => b.name));
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "-h" || a === "--help") out.help = true;
@@ -79,7 +81,8 @@ function parseArgs(argv: string[]): Args {
           `unknown --bundle value: ${JSON.stringify(v)} (expected one of ${[...known].map((b) => JSON.stringify(b)).join(", ")})`,
         );
       }
-      if (!out.bundles.includes(v)) out.bundles.push(v);
+      const bundle = v as BundleName;
+      if (!out.bundles.includes(bundle)) out.bundles.push(bundle);
     }
     else if (a === "--pretty") out.pretty = true;
     else throw new Error(`unknown flag: ${a}`);
@@ -179,7 +182,6 @@ export async function runGenerateManifest(argv: string[]): Promise<number> {
 const isEntrypoint =
   typeof process !== "undefined" &&
   typeof import.meta !== "undefined" &&
-  // @ts-expect-error import.meta.main is Bun-specific; falsy elsewhere.
   (import.meta.main === true ||
     (process.argv[1] && process.argv[1].endsWith("ci-sticky-generate-artifacts-manifest.ts")));
 

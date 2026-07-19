@@ -564,7 +564,6 @@ async function main(argv: string[], env: NodeJS.ProcessEnv): Promise<number> {
 const isEntrypoint =
   typeof process !== "undefined" &&
   typeof import.meta !== "undefined" &&
-  // @ts-expect-error import.meta.main is Bun-specific; falsy elsewhere.
   (import.meta.main === true ||
     (process.argv[1] && process.argv[1].endsWith("ci-sticky-pr-comment-upsert.ts")));
 

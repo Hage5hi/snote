@@ -52,7 +52,10 @@ const SHAPES: Shape[] = [
 
 test.describe.configure({ mode: "parallel" });
 test.describe("CodeMirror — reduced-motion selection + auto-scroll", () => {
-  test.use({ colorScheme: "dark", reducedMotion: "reduce" });
+  test.use({ colorScheme: "dark" });
+  test.beforeEach(async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+  });
 
   for (const shape of SHAPES) {
     const slug = `reduced-motion-${shape.name}-${Date.now()}`;
