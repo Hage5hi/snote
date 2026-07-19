@@ -36,7 +36,7 @@ describe("SharePage crawler metadata", () => {
       /const isCurrentRequest[\s\S]*currentShareToken\.current === requestToken/,
     );
     expect(onUnlock).toMatch(
-      /const generation = requestGeneration\.current;[\s\S]*const requestToken = token;/,
+      /state\.kind !== "needs-key" \|\| state\.token !== token[\s\S]*const lockedState = state;[\s\S]*const requestToken = lockedState\.token;/,
     );
     expect(onUnlock).toMatch(
       /await decryptBytes[\s\S]*if \(!isCurrentRequest\(generation, requestToken\)\) return;[\s\S]*setState\(\{ kind: "ready"/,
