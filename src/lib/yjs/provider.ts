@@ -49,7 +49,7 @@ export type Encryption = {
 /**
  * Slugs marked as "abandoned" (e.g. renamed away). Any provider whose slug
  * is in this set will silently drop pending snapshot writes and skip the
- * final flush on destroy â€” this prevents the just-deleted row from being
+ * final flush on destroy — this prevents the just-deleted row from being
  * resurrected by a debounced upsert or beacon after rename.
  */
 const abandonedSlugs = new Set<string>();
@@ -224,16 +224,16 @@ export class SupabaseYjsProvider {
   // join and again on every auto-reconnect. We treat reconnects specially:
   // peer broadcasts that happened while we were offline are NOT replayed by
   // Supabase Realtime, so we re-read the DB snapshot to pick up anything
-  // other clients persisted in the meantime â€” otherwise our next
+  // other clients persisted in the meantime — otherwise our next
   // `saveSnapshot` would overwrite their work.
   private hasSubscribedOnce = false;
-  // Phase 2.5 â€” broadcast batching. Local updates accumulate here and are
+  // Phase 2.5 — broadcast batching. Local updates accumulate here and are
   // merged via Y.mergeUpdates then flushed once per animation frame. This
-  // collapses 30+ keystrokes/s into â‰¤60 broadcast messages/s without
+  // collapses 30+ keystrokes/s into ≤60 broadcast messages/s without
   // affecting durability (snapshot debounce is unchanged).
   private pendingUpdates: Uint8Array[] = [];
   private flushScheduled = false;
-  // Safety valve â€” if rAF is starved (background tab) and the queue grows
+  // Safety valve — if rAF is starved (background tab) and the queue grows
   // beyond this, flush eagerly to avoid unbounded memory.
   private static readonly MAX_PENDING_UPDATES = 50;
   // Dev-only counters for verifying batching behavior. Tree-shaken in prod
@@ -253,8 +253,8 @@ export class SupabaseYjsProvider {
     this.awareness = new Awareness(doc);
     this.awareness.clientID = this.clientId;
     this.encryption = encryption ?? null;
-    // Bug A fix â€” listen to native online/offline events so the indicator
-    // flips to "offline" instantly instead of waiting ~13â€“20s for the
+    // Bug A fix — listen to native online/offline events so the indicator
+    // flips to "offline" instantly instead of waiting ~13–20s for the
     // Realtime channel to time out. We only act on "offline" here; the
     // "online" event is left to the channel SUBSCRIBED callback so we don't
     // emit a false-positive "online" before the WebSocket actually
@@ -387,7 +387,7 @@ export class SupabaseYjsProvider {
           }
         }
       } catch {
-        // sessionStorage unavailable â€” ignore.
+        // sessionStorage unavailable — ignore.
       }
     }
 
@@ -479,7 +479,7 @@ export class SupabaseYjsProvider {
         this.hasSubscribedOnce = true;
         if (wasOffline) {
           this.emitSync({ type: "online" });
-          // Bug B fix â€” flush any pending local edits that piled up while
+          // Bug B fix — flush any pending local edits that piled up while
           // offline. Without this, `pendingBytes` stays > 0 and the stale
           // `lastError` (e.g. "Failed to fetch") never clears until the
           // user types again. A successful saveSnapshot emits
@@ -550,7 +550,7 @@ export class SupabaseYjsProvider {
       const before = Y.encodeStateVector(this.doc);
       Y.applyUpdate(this.doc, update, "remote-snapshot");
       const after = Y.encodeStateVector(this.doc);
-      // Cheap byte-wise compare â€” state vectors are deterministic per state.
+      // Cheap byte-wise compare — state vectors are deterministic per state.
       let changed = before.byteLength !== after.byteLength;
       if (!changed) {
         for (let i = 0; i < before.byteLength; i++) {
@@ -575,7 +575,7 @@ export class SupabaseYjsProvider {
     if (this.destroyed || this.isAbandoned()) return;
     if (origin === "remote" || origin === "remote-snapshot") return;
     this.updateCount++;
-    // Counter only â€” no event emit. UI polls `getPendingBytes()` (Phase 2.2)
+    // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
     // to avoid render storms when typing fast (~30 keystrokes/s).
     this.pendingBytes += update.byteLength;
     this.queueBroadcast(update);
@@ -585,7 +585,7 @@ export class SupabaseYjsProvider {
   private queueBroadcast(update: Uint8Array) {
     if (this.destroyed || this.isAbandoned()) return;
     this.pendingUpdates.push(update);
-    // Eager flush if rAF starved (background tab) â€” bounds memory.
+    // Eager flush if rAF starved (background tab) — bounds memory.
     if (this.pendingUpdates.length >= SupabaseYjsProvider.MAX_PENDING_UPDATES) {
       this.flushBroadcasts();
       return;
@@ -644,7 +644,7 @@ export class SupabaseYjsProvider {
       event: "y-update",
       payload: { update: bytesToBase64(bytes) },
     });
-    // Counter only â€” no event emit. UI polls `getLastBroadcastAt()`.
+    // Counter only — no event emit. UI polls `getLastBroadcastAt()`.
     this.lastBroadcastAt = Date.now();
   }
 
@@ -692,7 +692,7 @@ export class SupabaseYjsProvider {
       if (this.encryption) {
         try {
           stateBytes = await this.encryption.encrypt(state);
-          // Server is zero-knowledge â€” never expose plaintext or true length.
+          // Server is zero-knowledge — never expose plaintext or true length.
           storedContent = "";
           storedCount = 0;
           storedTags = [];
@@ -720,7 +720,7 @@ export class SupabaseYjsProvider {
         this.emitSync({ type: "error", message: error.message ?? String(error) });
       } else {
         this.lastSnapshotAt = Date.now();
-        // Durable persistence achieved â€” clear the pending counter and notify.
+        // Durable persistence achieved — clear the pending counter and notify.
         this.pendingBytes = 0;
         this.emitSync({ type: "synced-durable" });
       }
@@ -818,4 +818,3 @@ export class SupabaseYjsProvider {
     if (activeForSlug?.size === 0) activeProvidersBySlug.delete(this.slug);
   }
 }
-
