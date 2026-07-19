@@ -27,17 +27,14 @@ const MAX_PANES = 4;
  */
 export default function SplitView() {
   const { slug = "" } = useParams();
-  const { t } = useI18n();
   const [syncScroll, setSyncScroll] = useState(true);
   // Refs for each pane container; sync-scroll wires their .cm-scroller children.
   const paneRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   // Deduplicate: identical slugs on multiple panes cause provider/presence
   // conflicts. Preserve first-occurrence order.
-  const slugs = useMemo(
-    () => Array.from(new Set(slug.split("+").filter(Boolean))),
-    [slug],
-  );
+  const rawSlugs = useMemo(() => slug.split("+").filter(Boolean), [slug]);
+  const slugs = useMemo(() => Array.from(new Set(rawSlugs)), [rawSlugs]);
 
   useEffect(() => {
     if (!syncScroll) return;
@@ -107,6 +104,7 @@ function SplitViewBody({
   paneRefs: React.MutableRefObject<Array<HTMLDivElement | null>>;
 }) {
   const { scene } = useSceneTheme();
+  const { t } = useI18n();
   const hasScene = scene !== "none";
   const joined = slugs.join("+");
   const label = slugs.map((s) => `/${s}`).join(" + ");
