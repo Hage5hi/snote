@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -19,27 +19,64 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
   const [pass, setPass] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(false);
+  const requestGenerationRef = useRef(0);
+  const targetRef = useRef({ slug, salt, check, iterations });
+  const onUnlockRef = useRef(onUnlock);
+  onUnlockRef.current = onUnlock;
+
+  if (
+    targetRef.current.slug !== slug
+    || targetRef.current.salt !== salt
+    || targetRef.current.check !== check
+    || targetRef.current.iterations !== iterations
+  ) {
+    targetRef.current = { slug, salt, check, iterations };
+    requestGenerationRef.current += 1;
+  }
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestGenerationRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    setPass("");
+    setBusy(false);
+    setError(null);
+  }, [slug, salt, check, iterations]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pass.trim()) return;
+    const requestGeneration = ++requestGenerationRef.current;
+    const isCurrentRequest = () => mountedRef.current
+      && requestGenerationRef.current === requestGeneration;
     setBusy(true);
     setError(null);
     try {
       const key = await deriveKey(pass, salt, iterations);
+      if (!isCurrentRequest()) return;
       const ok = await verifyCheck(key, check);
+      if (!isCurrentRequest()) return;
       if (!ok) {
         setError(t("unlock.wrong_key"));
         setBusy(false);
         return;
       }
+      if (!isCurrentRequest()) return;
       try {
         history.replaceState(null, "", `${window.location.pathname}#${encodeURIComponent(pass)}`);
       } catch {
         // ignore
       }
-      onUnlock(key);
+      if (!isCurrentRequest()) return;
+      onUnlockRef.current(key);
     } catch (err) {
+      if (!isCurrentRequest()) return;
       console.error(err);
       setError(t("unlock.decrypt_error"));
       setBusy(false);
