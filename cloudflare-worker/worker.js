@@ -163,6 +163,7 @@ export default {
     // Classify capability-bearing share paths before asset passthrough or host
     // redirects. A token may legitimately look like a filename or be followed
     // by nested path data, and neither case may reach the origin.
+    const normalizedPath = normalizePath(url.pathname);
     const route = parseRoute(url.pathname);
     if (isCrawler && route?.kind === "share") {
       logEvent(env, "info", "prerender", {
@@ -333,8 +334,22 @@ function normalizeContainmentPath(pathname) {
     value = decoded;
   }
   value = value.replace(/%(?:25)*(?:2f|5c)/gi, "/");
+  value = value.replace(/%(?:25)*2e/gi, ".");
   value = value.replace(/\\/g, "/");
-  return normalizePath(value);
+  return resolveContainmentDotSegments(normalizePath(value));
+}
+
+function resolveContainmentDotSegments(pathname) {
+  const segments = [];
+  for (const segment of pathname.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return `/${segments.join("/")}`;
 }
 
 function isSharePrefix(value) {
