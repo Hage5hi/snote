@@ -18,6 +18,7 @@ describe("truncateDiagEventsForExport", () => {
     ]);
     expect(out.detail!.length).toBeLessThan(600);
     expect(out.detail).toContain("[truncated");
+    expect(out.detail).toBe(`${"x".repeat(MAX_EXPORT_DETAIL_BYTES)}…[truncated 1488b]`);
     expect(out.componentStack).toContain("[truncated");
   });
 
