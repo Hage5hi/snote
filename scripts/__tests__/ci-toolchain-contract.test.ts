@@ -1,0 +1,95 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+
+const EXPECTED_BUN_VERSION = "1.2.22";
+const WORKFLOW_FILES = [
+  ".github/workflows/ci.yml",
+  ".github/workflows/e2e-new-specs.yml",
+  ".github/workflows/e2e.yml",
+  ".github/workflows/extension-e2e.yml",
+  ".github/workflows/pwa-update-smoke-post-deploy.yml",
+  ".github/workflows/schema-guard.yml",
+] as const;
+
+const workflows = new Map(
+  WORKFLOW_FILES.map((path) => [path, readFileSync(path, "utf8")]),
+);
+const allWorkflows = [...workflows.values()].join("\n");
+const ci = workflows.get(".github/workflows/ci.yml")!;
+const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+  packageManager?: string;
+  scripts: Record<string, string>;
+  devDependencies: Record<string, string>;
+  overrides?: Record<string, string>;
+};
+const toolsConfig = JSON.parse(readFileSync("tsconfig.tools.json", "utf8")) as {
+  compilerOptions?: { strict?: boolean };
+  include?: string[];
+};
+
+describe("CI toolchain contract", () => {
+  it("pins one Bun version in package metadata and every workflow", () => {
+    expect(packageJson.packageManager).toBe(`bun@${EXPECTED_BUN_VERSION}`);
+
+    let setupCount = 0;
+    for (const [path, workflow] of workflows) {
+      const lines = workflow.split(/\r?\n/);
+      lines.forEach((line, index) => {
+        if (!line.includes("oven-sh/setup-bun@v2")) return;
+        setupCount += 1;
+        expect(
+          lines.slice(index, index + 4).join("\n"),
+          `${path} setup-bun step must pin Bun ${EXPECTED_BUN_VERSION}`,
+        ).toMatch(new RegExp(`bun-version:\\s*["']?${EXPECTED_BUN_VERSION.replaceAll(".", "\\.")}["']?(?:\\s|})`));
+      });
+    }
+
+    expect(setupCount).toBeGreaterThan(0);
+    expect(allWorkflows).not.toMatch(/bun-version:\s*latest\b/);
+  });
+
+  it("uses bun.lock in every workflow path and cache key", () => {
+    expect(allWorkflows).not.toContain("bun.lockb");
+  });
+
+  it("keeps Vitest and its V8 coverage provider on 3.2.4", () => {
+    expect(packageJson.devDependencies.vitest.replace(/^\^/, "")).toBe("3.2.4");
+    expect(packageJson.devDependencies["@vitest/coverage-v8"]).toBe("3.2.4");
+    expect(packageJson.scripts["test:coverage"]).toBe("vitest run --coverage");
+  });
+
+  it("runs explicit app, node and tools TypeScript projects", () => {
+    expect(ci).not.toMatch(/bunx tsc --noEmit\s*$/m);
+    for (const project of ["app", "node", "tools"]) {
+      expect(ci).toContain(`bunx tsc --noEmit -p tsconfig.${project}.json`);
+    }
+  });
+
+  it("covers scripts, e2e and TypeScript config files without enabling strict globally", () => {
+    expect(toolsConfig.compilerOptions?.strict).toBe(false);
+    expect(toolsConfig.include).toEqual(
+      expect.arrayContaining([
+        "scripts/**/*.ts",
+        "e2e/**/*.ts",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "playwright.config.ts",
+        "tailwind.config.ts",
+      ]),
+    );
+  });
+
+  it("removes only the known incompatible broad overrides", () => {
+    for (const name of ["ajv", "esbuild", "glob", "minimatch"]) {
+      expect(packageJson.overrides).not.toHaveProperty(name);
+    }
+  });
+
+  it("represents lint, unit, coverage, build and workflow-structure gates", () => {
+    expect(ci).toContain("bun run lint");
+    expect(ci).toContain("bun run test");
+    expect(ci).toContain("bun run test:coverage");
+    expect(ci).toContain("bun run build:check");
+    expect(ci).toMatch(/\bactionlint\b/);
+  });
+});
