@@ -34,6 +34,9 @@ END
 $$;
 
 TRUNCATE TABLE public.admin_auth_attempts;
+ALTER TABLE public.admin_auth_attempts
+  ADD CONSTRAINT admin_auth_attempts_subject_hash_format
+  CHECK (subject_hash ~ '^[0-9a-f]{64}$');
 COMMENT ON COLUMN public.admin_auth_attempts.subject_hash IS
   'HMAC-SHA-256 of the gateway-verified client address; never a raw IP';
 
