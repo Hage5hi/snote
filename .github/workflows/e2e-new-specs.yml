@@ -21,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  e2e-new-specs:
-    name: playwright e2e (new specs)
+  e2e-pr:
+    name: e2e-pr
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
