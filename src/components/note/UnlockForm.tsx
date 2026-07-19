@@ -40,9 +40,19 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
     }
   }, [slug, salt, check, iterations]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     mountedRef.current = true;
+    const cancelForNavigation = () => {
+      requestGenerationRef.current += 1;
+      setPass("");
+      setBusy(false);
+      setError(null);
+    };
+    window.addEventListener("hashchange", cancelForNavigation);
+    window.addEventListener("popstate", cancelForNavigation);
     return () => {
+      window.removeEventListener("hashchange", cancelForNavigation);
+      window.removeEventListener("popstate", cancelForNavigation);
       mountedRef.current = false;
       requestGenerationRef.current += 1;
     };
