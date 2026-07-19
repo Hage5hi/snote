@@ -53,10 +53,13 @@ export default function Privacy() {
         </ul>
         <p>
           Device-local diagnostics also use <code>chrome.storage.local</code>.
-          They contain bounded event names and technical status fields, not note
-          content or full URLs. They are never uploaded automatically, can be
-          disabled or cleared in Settings, and are retained for up to 7 days.
-          Synced settings remain until you clear extension data or uninstall the
+           They contain bounded event names and technical status fields, not note
+           content or full URLs. They are never uploaded automatically, can be
+           disabled, or cleared in Settings. Events older than 7 days are
+           discarded the next time diagnostics are read or written. If the
+           extension is not used, expired entries can remain on the device until
+           that next use.
+           Synced settings remain until you clear extension data or uninstall the
           extension, subject to Chrome sync behavior.
         </p>
         <p>
