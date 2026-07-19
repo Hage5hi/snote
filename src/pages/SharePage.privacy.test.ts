@@ -53,6 +53,10 @@ describe("SharePage crawler metadata", () => {
       resolve(process.cwd(), "src/components/note/UnlockForm.tsx"),
       "utf8",
     );
+    const noteSource = readFileSync(
+      resolve(process.cwd(), "src/pages/NotePage.tsx"),
+      "utf8",
+    );
 
     expect(shareSource).toMatch(
       /useLayoutEffect\(\(\) => \{[\s\S]*committedTargetRef\.current =/,
@@ -65,6 +69,9 @@ describe("SharePage crawler metadata", () => {
     );
     expect(unlockSource).toMatch(
       /useLayoutEffect\(\(\) => \{\s*mountedRef\.current = true;[\s\S]*mountedRef\.current = false;/,
+    );
+    expect(noteSource).toMatch(
+      /useLayoutEffect\(\(\) => \{\s*currentEncTargetRef\.current = \{ slug, metaVersion \};\s*\}, \[slug, metaVersion\]\);/,
     );
   });
 
