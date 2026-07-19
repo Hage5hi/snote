@@ -7,10 +7,11 @@ import path from "node:path";
 
 const OUT_DIR = path.resolve("test-results", "url-sanitize-mismatch");
 
-test.describe("url-sanitize mismatch capture", () => {
-  // Force trace on for this suite regardless of global "retain-on-failure".
-  test.use({ trace: "on" });
+// Force trace on regardless of the global "retain-on-failure" default.
+// Playwright requires test.use() at file scope rather than inside describe().
+test.use({ trace: "on" });
 
+test.describe("url-sanitize mismatch capture", () => {
   test("mismatch: captures screenshot, trace, and asserts stripped reason", async ({
     page,
   }, testInfo) => {
