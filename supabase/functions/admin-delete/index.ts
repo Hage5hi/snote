@@ -1,108 +1,73 @@
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import bcrypt from "https://esm.sh/bcryptjs@2.4.3";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
-  checkAdminLockout,
-  getClientIp,
-  lockoutResponse,
-  recordAdminAuthAttempt,
-} from "../_shared/admin-rate-limit.ts";
+  adminAuthResponse,
+  authorizeAdminSession,
+  serviceUnavailableResponse,
+} from "../_shared/admin-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-admin-session, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+const SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-async function verifyPass(supabase: SupabaseClient, input: string): Promise<boolean> {
-  const { data } = await supabase
-    .from("admin_config")
-    .select("pass_hash")
-    .eq("id", 1)
-    .maybeSingle();
-  const storedHash = typeof data?.pass_hash === "string" ? data.pass_hash : "";
-  if (storedHash) {
-    try { return await bcrypt.compare(input, storedHash); } catch { return false; }
-  }
-  const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
-  if (!expected) return false;
-  return constantTimeEqual(input, expected);
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl || !serviceRoleKey) return serviceUnavailableResponse(corsHeaders);
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const authorization = await authorizeAdminSession(req, supabase);
+  if (authorization.status !== "authorized") {
+    return adminAuthResponse(authorization, corsHeaders);
   }
 
-  try {
-    const body = await req.json().catch(() => ({}));
-    const passphrase = String(body?.passphrase ?? "");
-    const slugs: unknown = body?.slugs;
-    const all = body?.all === true;
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    const ip = getClientIp(req);
-    const gate = await checkAdminLockout(supabase, ip);
-    if (!gate.allowed) return lockoutResponse(gate.retryAfterSeconds, corsHeaders);
-
-    const ok = await verifyPass(supabase, passphrase);
-    await recordAdminAuthAttempt(supabase, ip, ok);
-    if (!ok) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (all) {
-      const { error, count } = await supabase
-        .from("notes")
-        .delete({ count: "exact" })
-        .gte("created_at", "1970-01-01");
-      if (error) throw error;
-      return new Response(JSON.stringify({ deleted: count ?? 0 }), {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    if (!Array.isArray(slugs) || slugs.length === 0) {
-      return new Response(JSON.stringify({ error: "slugs[] required" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const cleaned = slugs.filter((s): s is string => typeof s === "string");
+  const body = await req.json().catch(() => ({}));
+  if (body?.all === true) {
     const { error, count } = await supabase
       .from("notes")
       .delete({ count: "exact" })
-      .in("slug", cleaned);
-    if (error) throw error;
-
-    return new Response(JSON.stringify({ deleted: count ?? 0 }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  } catch (e) {
-    console.error("admin-delete error", e);
-    return new Response(JSON.stringify({ error: String(e) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      .gte("created_at", "1970-01-01");
+    return error
+      ? serviceUnavailableResponse(corsHeaders)
+      : json({ deleted: count ?? 0 }, 200);
   }
+
+  if (!Array.isArray(body?.slugs) || body.slugs.length === 0) {
+    return json({ error: "slugs[] required" }, 400);
+  }
+  const slugs = [
+    ...new Set(
+      body.slugs.filter(
+        (value: unknown): value is string =>
+          typeof value === "string" && SLUG_RE.test(value),
+      ),
+    ),
+  ].slice(0, 500);
+  if (slugs.length === 0) return json({ error: "valid slugs[] required" }, 400);
+
+  const { error, count } = await supabase
+    .from("notes")
+    .delete({ count: "exact" })
+    .in("slug", slugs);
+  return error
+    ? serviceUnavailableResponse(corsHeaders)
+    : json({ deleted: count ?? 0 }, 200);
 });
+
