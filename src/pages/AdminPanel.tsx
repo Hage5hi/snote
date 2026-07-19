@@ -139,6 +139,7 @@ export default function AdminPanel() {
         setGate("allowed");
         void fetchList(opaqueToken, "", fragmentTag);
       } catch {
+        fragmentPassphrase = "";
         if (cancelled) return;
         sessionStorage.removeItem(SESSION_TOKEN_KEY);
         setGate("denied");
