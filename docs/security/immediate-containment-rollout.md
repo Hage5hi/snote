@@ -13,6 +13,11 @@ without the explicit checkpoint below.
 3. Provision `ADMIN_RATE_LIMIT_HMAC_SECRET` with at least 32 random bytes and
    set `ADMIN_SESSION_TTL_MINUTES` between 5 and 30 (default: 15). Do not reuse
    the admin passphrase as the HMAC secret.
+4. Inventory every live share hostname and direct origin alias, including
+   `note.syrin.online`, `syrin.online`, `www.syrin.online`, and
+   `snote.lovable.app`. Route each public hostname through the generic share
+   response, or make the alias non-public/disabled.
+   Do not advance while any public alias can bypass the generic share response.
 
 ## Migration and deployment order
 
@@ -23,20 +28,32 @@ without the explicit checkpoint below.
 2. Apply `20260522000000_admin_rate_limit.sql` if it is not already recorded.
 3. Apply `20260719000000_security_immediate_containment.sql`. Confirm public
    DELETE is revoked, old raw-IP limiter rows were purged, admission and pass
-   rotation RPCs are executable only by `service_role`, and `admin_sessions` is
-   service-role-only.
+   rotation RPCs are executable only by `service_role`, and
+   `admin_auth_state`, `admin_credential_material`, `admin_session_issue`, and
+   `admin_sessions` are service-role-only.
 4. Deploy `admin-session`, `admin-list`, `admin-delete`, `admin-rotate`, and
    `cleanup` while their public routes remain disabled. Smoke-test concurrent
    wrong passes, DB-error `503`, session expiry, logout revocation, subject
-   binding, and rotation revocation on staging.
+   binding, rotation revocation, and both login-before-rotation and
+   rotation-before-login interleavings on staging. A verification begun with
+   an old credential epoch must never issue a session after rotation.
 5. Enable the replacement admin and cleanup endpoints only after those smoke
    tests pass. The passphrase body contract must remain unavailable.
 6. Deploy the `share-rename` tombstone. Verify it returns `410` and `no-store`
    without initializing a database client, then purge cached responses for the
    retired endpoint.
-7. Deploy the generic share Worker before purging `/s/*` cache entries. Verify
-   raw, percent-encoded, uppercase, `www`, and trailing-slash share paths return
-   the same token-free, `no-store`, non-indexable crawler response.
+7. Deploy the generic share Worker first so no live Worker depends on the old
+   `note-meta?token=` resolver. Then deploy the slug-only `note-meta` token
+   tombstone and purge both `/s/*` HTML cache entries and every Supabase/CDN/
+   intermediary entry for `note-meta?token=*`. If wildcard purge is not
+   available, keep share rollout blocked through the verified maximum expiry
+   of the old `s-maxage=300, stale-while-revalidate=3600` responses. Prove an
+   unauthenticated token query cannot receive an old cached slug. Verify raw,
+   percent-encoded, uppercase, and trailing-slash share paths on
+   `note.syrin.online`, the apex, and `www` return the same token-free,
+   `no-store`, non-indexable crawler response. Verify `snote.lovable.app` is
+   non-public/disabled or has equivalent origin-side containment before the
+   purge. Do not advance while any public alias can bypass the generic share response.
 8. Deploy the SPA and extension containment changes. Verify encryption gates,
    bounded Realtime events, locale-only language selection, privacy copy, and
    stalled PWA updates before advancing beyond staging.
