@@ -16,23 +16,28 @@ without the explicit checkpoint below.
 
 ## Migration and deployment order
 
-1. Apply `20260522000000_admin_rate_limit.sql`.
-2. Apply `20260719000000_security_immediate_containment.sql`. Confirm public
+1. Disable or tombstone the legacy admin and cleanup Edge endpoints at the
+   gateway before changing SQL. Verify the old passphrase-body endpoints are
+   unreachable or return fail-closed `503`; do not rely on their baseline
+   limiter after the `ip` column is renamed.
+2. Apply `20260522000000_admin_rate_limit.sql` if it is not already recorded.
+3. Apply `20260719000000_security_immediate_containment.sql`. Confirm public
    DELETE is revoked, old raw-IP limiter rows were purged, admission and pass
    rotation RPCs are executable only by `service_role`, and `admin_sessions` is
    service-role-only.
-3. Deploy the `share-rename` tombstone. Verify it returns `410` and `no-store`
+4. Deploy `admin-session`, `admin-list`, `admin-delete`, `admin-rotate`, and
+   `cleanup` while their public routes remain disabled. Smoke-test concurrent
+   wrong passes, DB-error `503`, session expiry, logout revocation, subject
+   binding, and rotation revocation on staging.
+5. Enable the replacement admin and cleanup endpoints only after those smoke
+   tests pass. The passphrase body contract must remain unavailable.
+6. Deploy the `share-rename` tombstone. Verify it returns `410` and `no-store`
    without initializing a database client, then purge cached responses for the
    retired endpoint.
-4. Deploy `admin-session` and smoke-test concurrent wrong passes, DB-error
-   `503`, session expiry, logout revocation, and subject binding.
-5. Deploy `admin-list`, `admin-delete`, `admin-rotate`, and `cleanup` together;
-   the passphrase body contract is removed by this step. Confirm a successful
-   rotation revokes every existing admin session and requires a fresh login.
-6. Deploy the generic share Worker before purging `/s/*` cache entries. Verify
+7. Deploy the generic share Worker before purging `/s/*` cache entries. Verify
    raw, percent-encoded, uppercase, `www`, and trailing-slash share paths return
    the same token-free, `no-store`, non-indexable crawler response.
-7. Deploy the SPA and extension containment changes. Verify encryption gates,
+8. Deploy the SPA and extension containment changes. Verify encryption gates,
    bounded Realtime events, locale-only language selection, privacy copy, and
    stalled PWA updates before advancing beyond staging.
 
