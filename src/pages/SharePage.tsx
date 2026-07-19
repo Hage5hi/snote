@@ -14,6 +14,8 @@ import { AppShell } from "@/components/app/AppShell";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
+const SHARE_CANONICAL_URL = "https://note.syrin.online/s";
+const SHARE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
 type ShareViewResponse = {
   content: string;
@@ -141,11 +143,12 @@ export default function SharePage() {
       <title>Shared note — Syrin Notes</title>
       {/* eslint-disable no-restricted-syntax -- crawler-facing SEO copy (page is noindex) */}
       <meta name="description" content="View a shared markdown note in read-only mode on Syrin Notes. Private link, revocable anytime." />
-      <link rel="canonical" href={`https://snote.lovable.app/s/${token}`} />
-      <meta name="robots" content="noindex, nofollow" />
+      <link rel="canonical" href={SHARE_CANONICAL_URL} />
+      <meta name="robots" content={SHARE_ROBOTS} />
+      <meta name="googlebot" content={SHARE_ROBOTS} />
       <meta property="og:title" content="Shared note — Syrin Notes" />
       <meta property="og:description" content="A markdown note shared in read-only mode. Private link, revocable." />
-      <meta property="og:url" content={`https://snote.lovable.app/s/${token}`} />
+      <meta property="og:url" content={SHARE_CANONICAL_URL} />
       <meta name="twitter:title" content="Shared note — Syrin Notes" />
       <meta name="twitter:description" content="A markdown note shared in read-only mode." />
       {/* eslint-enable no-restricted-syntax */}
