@@ -14,6 +14,7 @@ const workflows = new Map(
 const allWorkflows = [...workflows.values()].join("\n");
 const ci = workflows.get(".github/workflows/ci.yml")!;
 const workflowStructure = workflows.get(".github/workflows/workflow-structure.yml")!;
+const extensionWorkflow = workflows.get(".github/workflows/extension-e2e.yml")!;
 const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   packageManager?: string;
@@ -118,7 +119,21 @@ describe("CI toolchain contract", () => {
     expect(qualityJob).toContain(
       "bunx playwright test --list --project=chromium",
     );
-    expect(allWorkflows).not.toContain("docker://rhysd/actionlint:1.7.7");
+    const actionlintImages =
+      allWorkflows.match(/docker:\/\/rhysd\/actionlint[^\s]*/g) ?? [];
+    expect(actionlintImages.length).toBeGreaterThan(0);
+    expect(new Set(actionlintImages)).toEqual(new Set([ACTIONLINT_IMAGE]));
+  });
+
+  it("runs extension verification when its dependencies or audit scripts change", () => {
+    for (const path of [
+      "package.json",
+      "bun.lock",
+      "scripts/audit-extension.sh",
+      "scripts/verify-extension-zip.sh",
+    ]) {
+      expect(extensionWorkflow.split(`- \"${path}\"`).length - 1).toBe(2);
+    }
   });
 
   it("uses the audit command supported by pinned Bun", () => {
