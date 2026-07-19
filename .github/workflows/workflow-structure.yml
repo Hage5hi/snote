@@ -63,6 +63,9 @@ jobs:
       - name: Typecheck scripts, e2e and extension TypeScript
         if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.tools.json
+      - name: Collect Playwright tests
+        if: success() || failure()
+        run: bunx playwright test --list --project=chromium
       - name: Verify CI toolchain contract
         if: success() || failure()
         run: bunx vitest run scripts/__tests__/ci-toolchain-contract.test.ts
