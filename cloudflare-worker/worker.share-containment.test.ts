@@ -89,7 +89,11 @@ describe("share crawler containment", () => {
             expect(response.headers.get("cache-control")).toBe("no-store");
             expect(response.headers.get("cdn-cache-control")).toBe("no-store");
             expect(response.headers.get("x-robots-tag")).toBe(ROBOTS);
+            expect(response.headers.get("referrer-policy")).toBe("no-referrer");
             expect(body).toContain(`<meta name="robots" content="${ROBOTS}"`);
+            expect(body).toContain(
+              '<meta name="referrer" content="no-referrer"',
+            );
             expect(observable).not.toContain(TOKEN);
             expect(observable).not.toContain(ENCODED_TOKEN);
             expect(observable).not.toContain(PRIVATE_SLUG);
