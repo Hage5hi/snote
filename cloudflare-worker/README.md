@@ -73,6 +73,7 @@ request ──▶ crawler + /s/*? ──yes──▶ generic no-store; không me
    name = "syrin-prerender"
    main = "worker.js"
    compatibility_date = "2024-11-01"
+   workers_dev = false
 
    routes = [
      { pattern = "note.syrin.online/*", zone_name = "syrin.online" },
@@ -84,7 +85,21 @@ request ──▶ crawler + /s/*? ──yes──▶ generic no-store; không me
    ORIGIN_HOST = "snote.lovable.app"
    SUPABASE_PROJECT = "onfzjmfjldsbthchssfr"
    SITE_URL = "https://note.syrin.online"
+
+   [observability]
+   enabled = true
+   head_sampling_rate = 1
+
+   [observability.logs]
+   invocation_logs = false
    ```
+
+   Dùng file `wrangler.toml` đã commit làm nguồn cấu hình triển khai. Không bật
+   lại invocation logs: Cloudflare ghi method và request URL vào loại log này,
+   trong khi URL share cũ còn chứa capability. Chỉ custom JSON logs đã được
+   sanitize trong `worker.js` mới được phép. Trước khi deploy, kiểm tra thêm
+   Workers Logs, Tail Workers, Workers Logpush và HTTP request datasets của zone
+   để chắc chắn không pipeline nào giữ raw `/s/*` path.
 
 4. **Set secret** (cả hai đều bắt buộc):
    ```bash
