@@ -36,7 +36,9 @@ describe("immediate containment contracts", () => {
     expect(migration).toMatch(
       /CREATE OR REPLACE FUNCTION public\.admin_auth_record/i,
     );
-    expect(migration).toMatch(/ON CONFLICT \(ip\) DO UPDATE/i);
+    expect(migration).toMatch(/ON CONFLICT \(subject_hash\) DO UPDATE/i);
+    expect(migration).toMatch(/RENAME COLUMN ip TO subject_hash/i);
+    expect(migration).toMatch(/TRUNCATE TABLE public\.admin_auth_attempts/i);
     expect(migration).toMatch(/SECURITY DEFINER/i);
     expect(migration).toMatch(
       /REVOKE ALL ON FUNCTION public\.admin_auth_record[\s\S]*FROM PUBLIC, anon, authenticated/i,
@@ -64,10 +66,11 @@ describe("immediate containment contracts", () => {
     }
   });
 
-  it("derives a privacy-preserving client key only from one trusted IP header", () => {
+  it("derives a privacy-preserving client key only from strict provider X-Forwarded-For", () => {
     const auth = source("supabase/functions/_shared/admin-auth.ts");
-    expect(auth).toContain('headers.get("cf-connecting-ip")');
-    expect(auth).not.toContain("x-forwarded-for");
+    expect(auth).toContain('headers.get("x-forwarded-for")');
+    expect(auth).toContain('rawIp.includes(",")');
+    expect(auth).not.toContain("cf-connecting-ip");
     expect(auth).not.toContain("x-real-ip");
     expect(auth).toContain('Deno.env.get("ADMIN_RATE_LIMIT_HMAC_SECRET")');
     expect(auth).toContain('crypto.subtle.importKey("raw"');
