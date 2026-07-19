@@ -141,5 +141,6 @@ Sai secret → 403. Note mã hoá → không trả `snippet`.
 - Đổi domain: cập nhật `SITE_URL` và `routes` trong `wrangler.toml`.
 - Xoay secret: `wrangler secret put NOTE_META_SECRET` ở Cloudflare và
   cập nhật cùng value trong Lovable Cloud → Settings → Secrets.
-- Bypass tạm thời: tắt route Worker trong Cloudflare dashboard, traffic
-  trở lại pass-through 100%.
+- Rollback must keep generic `/s/*` containment active. Có thể tắt riêng phần
+  prerender metadata/cache, nhưng phải giữ một Worker/token-free origin handler
+  cho `/s/*`; nếu không, vô hiệu hóa mọi public alias thay vì pass-through.
