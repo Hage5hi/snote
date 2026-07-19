@@ -22,6 +22,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  MAX_EXPORT_DETAIL_BYTES,
   DIAG_EXPORT_SCHEMA_VERSION,
   diagExportFilename,
   filterDiagEvents,
