@@ -20,6 +20,21 @@ vi.mock("sonner", () => ({
   toast: Object.assign(toastMock, { dismiss: dismissMock }),
 }));
 
+vi.mock("@/i18n", () => ({
+  detectLang: () => "en",
+  STORAGE_KEY: "lang",
+  dict: {
+    en: {
+      "update.title": "New version available",
+      "update.pending_title": "Update pending",
+      "update.pending_desc": "Applying the update.",
+      "update.description": "Reload for the latest version.",
+      "update.fallback_cleanup": "If this still fails, clear this site's data/cookies.",
+      "update.btn_reload": "Update",
+    },
+  },
+}));
+
 async function fresh() {
   vi.resetModules();
   return await import("../pwa-update");
@@ -36,6 +51,42 @@ function respondVersion(buildId: string) {
 
 async function flush(ms = 30) {
   await new Promise((r) => setTimeout(r, ms));
+}
+
+function installServiceWorkerHarness(
+  updateSW: (reload?: boolean) => Promise<void>,
+) {
+  const unregister = vi.fn(async () => true);
+  const registration = {
+    active: { scriptURL: "https://note.syrin.online/sw.js" },
+    waiting: {},
+    installing: null,
+    update: vi.fn(async () => {}),
+    unregister,
+  } as unknown as ServiceWorkerRegistration;
+  const serviceWorker = {
+    getRegistrations: vi.fn(async () => [registration]),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  };
+  const deleteCache = vi.fn(async () => true);
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: serviceWorker,
+  });
+  Object.defineProperty(navigator, "onLine", {
+    configurable: true,
+    value: false,
+  });
+  Object.defineProperty(globalThis, "caches", {
+    configurable: true,
+    value: {
+      keys: vi.fn(async () => ["workbox-runtime", "precache-v1-assets"]),
+      delete: deleteCache,
+    },
+  });
+  registerSWMock.mockReturnValue(updateSW);
+  return { registration, unregister, deleteCache };
 }
 
 describe("registerAppUpdater", () => {
@@ -57,6 +108,61 @@ describe("registerAppUpdater", () => {
     delete (window as unknown as { __SNOTE_PWA_UPDATE_CLEANUP__?: () => void }).__SNOTE_PWA_UPDATE_CLEANUP__;
     delete (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__;
     delete (window as unknown as { __SNOTE_E2E_BUILD_ID__?: string }).__SNOTE_E2E_BUILD_ID__;
+    Reflect.deleteProperty(navigator, "serviceWorker");
+    Reflect.deleteProperty(globalThis, "caches");
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    vi.unstubAllEnvs();
+    vi.useRealTimers();
+  });
+
+  it("preserves the active offline worker and caches when the waiting worker rejects", async () => {
+    vi.stubEnv("DEV", false);
+    (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = false;
+    respondVersion("build-b");
+    const updateSW = vi.fn(async () => {
+      throw new Error("waiting worker rejected");
+    });
+    const { registration, unregister, deleteCache } = installServiceWorkerHarness(updateSW);
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    const opts = registerSWMock.mock.calls[0][0];
+    opts.onRegisteredSW?.("/sw.js", registration);
+    await opts.onNeedRefresh?.();
+
+    const toastOptions = toastMock.mock.calls.at(-1)![1] as {
+      action: { props: { onClick: (event: Event) => void } };
+    };
+    toastOptions.action.props.onClick({ preventDefault: () => {} } as Event);
+    await flush(20);
+
+    expect(updateSW).toHaveBeenCalledWith(false);
+    expect(unregister).not.toHaveBeenCalled();
+    expect(deleteCache).not.toHaveBeenCalled();
+  });
+
+  it("preserves the active offline worker and caches when activation stalls", async () => {
+    vi.useFakeTimers();
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_PWA_RELOAD_FALLBACK_MS", "25");
+    (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = false;
+    respondVersion("build-b");
+    const updateSW = vi.fn(() => new Promise<void>(() => {}));
+    const { registration, unregister, deleteCache } = installServiceWorkerHarness(updateSW);
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    const opts = registerSWMock.mock.calls[0][0];
+    opts.onRegisteredSW?.("/sw.js", registration);
+    await opts.onNeedRefresh?.();
+
+    const toastOptions = toastMock.mock.calls.at(-1)![1] as {
+      action: { props: { onClick: (event: Event) => void } };
+    };
+    toastOptions.action.props.onClick({ preventDefault: () => {} } as Event);
+    await vi.advanceTimersByTimeAsync(25);
+
+    expect(updateSW).toHaveBeenCalledWith(false);
+    expect(unregister).not.toHaveBeenCalled();
+    expect(deleteCache).not.toHaveBeenCalled();
   });
 
   it("keeps the toast open until the running buildId actually changes to the remote build", async () => {
@@ -86,7 +192,7 @@ describe("registerAppUpdater", () => {
     await flush(80);
 
     dismissMock.mockClear();
-    // Reload attempt but buildId did NOT change — poller keeps seeing mismatch.
+    // Reload attempt but buildId did NOT change â€” poller keeps seeing mismatch.
     await flush(80);
     expect(dismissMock).not.toHaveBeenCalled();
     const state = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: { currentBuildId: string; updateAvailable: boolean } }).__SNOTE_PWA_UPDATE_STATE__;
@@ -182,3 +288,4 @@ describe("registerAppUpdater", () => {
     expect(serialized).not.toContain("build-b");
   });
 });
+
