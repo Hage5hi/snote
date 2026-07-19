@@ -14,7 +14,7 @@ export const test = base.extend<{
   serviceWorker: Worker;
 }>({
   // eslint-disable-next-line no-empty-pattern
-  context: async ({}, use) => {
+  context: async ({}, provide) => {
     const extPath = path.resolve(__dirname, "..", "..", "chrome-extension");
     const ctx = await chromium.launchPersistentContext("", {
       headless: false,
@@ -24,17 +24,17 @@ export const test = base.extend<{
         "--no-first-run",
       ],
     });
-    await use(ctx);
+    await provide(ctx);
     await ctx.close();
   },
-  serviceWorker: async ({ context }, use) => {
+  serviceWorker: async ({ context }, provide) => {
     let [sw] = context.serviceWorkers();
     if (!sw) sw = await context.waitForEvent("serviceworker");
-    await use(sw);
+    await provide(sw);
   },
-  extensionId: async ({ serviceWorker }, use) => {
+  extensionId: async ({ serviceWorker }, provide) => {
     const id = new URL(serviceWorker.url()).host;
-    await use(id);
+    await provide(id);
   },
 });
 
