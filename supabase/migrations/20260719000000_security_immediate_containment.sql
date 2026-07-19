@@ -37,8 +37,17 @@ TRUNCATE TABLE public.admin_auth_attempts;
 ALTER TABLE public.admin_auth_attempts
   ADD CONSTRAINT admin_auth_attempts_subject_hash_format
   CHECK (subject_hash ~ '^[0-9a-f]{64}$');
+ALTER TABLE public.admin_auth_attempts
+  ADD COLUMN lease_id text,
+  ADD COLUMN lease_until timestamptz,
+  ADD CONSTRAINT admin_auth_attempts_lease_id_format
+    CHECK (lease_id IS NULL OR lease_id ~ '^[0-9a-f]{64}$'),
+  ADD CONSTRAINT admin_auth_attempts_lease_pair
+    CHECK ((lease_id IS NULL) = (lease_until IS NULL));
 COMMENT ON COLUMN public.admin_auth_attempts.subject_hash IS
   'HMAC-SHA-256 of the gateway-verified client address; never a raw IP';
+COMMENT ON COLUMN public.admin_auth_attempts.lease_id IS
+  'Random single-use admission lease; permits at most one bcrypt verification per subject';
 
 REVOKE ALL ON TABLE public.admin_auth_attempts FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.admin_auth_attempts TO service_role;
@@ -59,40 +68,11 @@ GRANT SELECT, INSERT, DELETE ON TABLE public.admin_sessions TO service_role;
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at
   ON public.admin_sessions (expires_at);
 
-CREATE OR REPLACE FUNCTION public.admin_auth_check(p_subject_hash text)
-RETURNS TABLE(allowed boolean, retry_after_seconds integer)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-  v_locked_until timestamptz;
-  v_now timestamptz := statement_timestamp();
-BEGIN
-  IF p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$' THEN
-    RETURN QUERY SELECT false, 1800;
-    RETURN;
-  END IF;
-
-  SELECT attempts.locked_until
-    INTO v_locked_until
-    FROM public.admin_auth_attempts AS attempts
-   WHERE attempts.subject_hash = p_subject_hash;
-
-  IF v_locked_until IS NOT NULL AND v_locked_until > v_now THEN
-    RETURN QUERY SELECT
-      false,
-      GREATEST(1, CEIL(EXTRACT(EPOCH FROM (v_locked_until - v_now)))::integer);
-    RETURN;
-  END IF;
-
-  RETURN QUERY SELECT true, 0;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION public.admin_auth_record(
+-- Atomically reserve the one bcrypt verification slot for a subject. A short
+-- lease recovers automatically if an Edge invocation dies before completion.
+CREATE OR REPLACE FUNCTION public.admin_auth_begin(
   p_subject_hash text,
-  p_success boolean
+  p_lease_id text
 )
 RETURNS TABLE(allowed boolean, retry_after_seconds integer)
 LANGUAGE plpgsql
@@ -101,17 +81,13 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_locked_until timestamptz;
+  v_lease_until timestamptz;
+  v_blocked_until timestamptz;
   v_now timestamptz := statement_timestamp();
 BEGIN
-  IF p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$' THEN
+  IF p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$'
+     OR p_lease_id IS NULL OR p_lease_id !~ '^[0-9a-f]{64}$' THEN
     RETURN QUERY SELECT false, 1800;
-    RETURN;
-  END IF;
-
-  IF p_success THEN
-    DELETE FROM public.admin_auth_attempts
-     WHERE subject_hash = p_subject_hash;
-    RETURN QUERY SELECT true, 0;
     RETURN;
   END IF;
 
@@ -119,31 +95,127 @@ BEGIN
     subject_hash,
     failure_count,
     first_failure_at,
-    locked_until
+    locked_until,
+    lease_id,
+    lease_until
   ) VALUES (
     p_subject_hash,
-    1,
+    0,
     v_now,
-    NULL
+    NULL,
+    p_lease_id,
+    v_now + interval '30 seconds'
   )
   ON CONFLICT (subject_hash) DO UPDATE
   SET failure_count = CASE
-        WHEN attempts.locked_until > v_now THEN attempts.failure_count
-        WHEN attempts.first_failure_at <= v_now - interval '15 minutes' THEN 1
-        ELSE attempts.failure_count + 1
+        WHEN attempts.first_failure_at <= v_now - interval '15 minutes' THEN 0
+        ELSE attempts.failure_count
       END,
       first_failure_at = CASE
-        WHEN attempts.locked_until > v_now THEN attempts.first_failure_at
         WHEN attempts.first_failure_at <= v_now - interval '15 minutes' THEN v_now
         ELSE attempts.first_failure_at
       END,
       locked_until = CASE
-        WHEN attempts.locked_until > v_now THEN attempts.locked_until
-        WHEN attempts.first_failure_at <= v_now - interval '15 minutes' THEN NULL
-        WHEN attempts.failure_count + 1 >= 10 THEN v_now + interval '30 minutes'
-        ELSE NULL
-      END
-  RETURNING attempts.locked_until INTO v_locked_until;
+        WHEN attempts.locked_until <= v_now THEN NULL
+        ELSE attempts.locked_until
+      END,
+      lease_id = p_lease_id,
+      lease_until = v_now + interval '30 seconds'
+  WHERE (attempts.locked_until IS NULL OR attempts.locked_until <= v_now)
+    AND (attempts.lease_until IS NULL OR attempts.lease_until <= v_now)
+  RETURNING attempts.locked_until, attempts.lease_until
+    INTO v_locked_until, v_lease_until;
+
+  IF FOUND THEN
+    RETURN QUERY SELECT true, 0;
+    RETURN;
+  END IF;
+
+  SELECT attempts.locked_until, attempts.lease_until
+    INTO v_locked_until, v_lease_until
+    FROM public.admin_auth_attempts AS attempts
+   WHERE attempts.subject_hash = p_subject_hash;
+
+  v_blocked_until := GREATEST(
+    COALESCE(v_locked_until, v_now),
+    COALESCE(v_lease_until, v_now)
+  );
+  RETURN QUERY SELECT
+    false,
+    LEAST(
+      1800,
+      GREATEST(1, CEIL(EXTRACT(EPOCH FROM (v_blocked_until - v_now)))::integer)
+    );
+END;
+$$;
+
+-- Complete exactly the active lease under a row lock. No correct result can
+-- erase concurrent failures because another verification cannot be admitted
+-- until this lease is cleared or expires.
+CREATE OR REPLACE FUNCTION public.admin_auth_complete(
+  p_subject_hash text,
+  p_lease_id text,
+  p_success boolean
+)
+RETURNS TABLE(allowed boolean, retry_after_seconds integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_failure_count integer;
+  v_first_failure_at timestamptz;
+  v_lease_until timestamptz;
+  v_locked_until timestamptz;
+  v_now timestamptz := statement_timestamp();
+BEGIN
+  IF p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$'
+     OR p_lease_id IS NULL OR p_lease_id !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'admin auth lease unavailable';
+  END IF;
+
+  SELECT attempts.failure_count, attempts.first_failure_at, attempts.lease_until
+    INTO v_failure_count, v_first_failure_at, v_lease_until
+    FROM public.admin_auth_attempts AS attempts
+   WHERE subject_hash = p_subject_hash
+     AND lease_id = p_lease_id
+   FOR UPDATE;
+
+  IF NOT FOUND OR v_lease_until IS NULL OR v_lease_until <= v_now THEN
+    RAISE EXCEPTION 'admin auth lease unavailable';
+  END IF;
+
+  IF p_success THEN
+    DELETE FROM public.admin_auth_attempts
+     WHERE subject_hash = p_subject_hash
+       AND lease_id = p_lease_id;
+    RETURN QUERY SELECT true, 0;
+    RETURN;
+  END IF;
+
+  IF v_first_failure_at <= v_now - interval '15 minutes' THEN
+    v_failure_count := 1;
+    v_first_failure_at := v_now;
+  ELSE
+    v_failure_count := v_failure_count + 1;
+  END IF;
+  v_locked_until := CASE
+    WHEN v_failure_count >= 10 THEN v_now + interval '30 minutes'
+    ELSE NULL
+  END;
+
+  UPDATE public.admin_auth_attempts
+     SET failure_count = v_failure_count,
+         first_failure_at = v_first_failure_at,
+         locked_until = v_locked_until,
+         lease_id = NULL,
+         lease_until = NULL
+   WHERE subject_hash = p_subject_hash
+     AND lease_id = p_lease_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'admin auth lease unavailable';
+  END IF;
 
   IF v_locked_until IS NOT NULL AND v_locked_until > v_now THEN
     RETURN QUERY SELECT
@@ -193,19 +265,21 @@ AS $$
      AND subject_hash = p_subject_hash;
 $$;
 
-REVOKE ALL ON FUNCTION public.admin_auth_check(text)
+DROP FUNCTION IF EXISTS public.admin_auth_check(text);
+DROP FUNCTION IF EXISTS public.admin_auth_record(text, boolean);
+
+REVOKE ALL ON FUNCTION public.admin_auth_begin(text, text)
   FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.admin_auth_record(text, boolean)
+REVOKE ALL ON FUNCTION public.admin_auth_complete(text, text, boolean)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_validate(text, text)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_revoke(text, text)
   FROM PUBLIC, anon, authenticated;
 
-GRANT EXECUTE ON FUNCTION public.admin_auth_check(text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.admin_auth_record(text, boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_auth_begin(text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_auth_complete(text, text, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_validate(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_revoke(text, text) TO service_role;
 
 COMMIT;
-
