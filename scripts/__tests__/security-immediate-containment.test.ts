@@ -168,6 +168,9 @@ describe("immediate containment contracts", () => {
     const rollout = source("docs/security/immediate-containment-rollout.md");
 
     expect(worker).toContain("note.syrin.online/*");
+    expect(worker).toContain(
+      'env.SITE_URL || "https://note.syrin.online"',
+    );
     expect(readme).toContain(
       '{ pattern = "note.syrin.online/*", zone_name = "syrin.online" }',
     );
