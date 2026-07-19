@@ -18,14 +18,23 @@ without the explicit checkpoint below.
 
 1. Apply `20260522000000_admin_rate_limit.sql`.
 2. Apply `20260719000000_security_immediate_containment.sql`. Confirm public
-   DELETE is revoked, old raw-IP limiter rows were purged, the atomic RPCs are
-   executable only by `service_role`, and `admin_sessions` is service-role-only.
-3. Deploy `admin-session` and smoke-test wrong-pass concurrency, DB-error 503,
-   session expiry, logout revocation, and subject binding.
-4. Deploy `admin-list`, `admin-delete`, `admin-rotate`, and `cleanup` together;
-   the passphrase body contract is removed by this step.
-5. Deploy the SPA client, then tombstone `share-rename` and purge any cached
-   responses for the old endpoint.
+   DELETE is revoked, old raw-IP limiter rows were purged, admission and pass
+   rotation RPCs are executable only by `service_role`, and `admin_sessions` is
+   service-role-only.
+3. Deploy the `share-rename` tombstone. Verify it returns `410` and `no-store`
+   without initializing a database client, then purge cached responses for the
+   retired endpoint.
+4. Deploy `admin-session` and smoke-test concurrent wrong passes, DB-error
+   `503`, session expiry, logout revocation, and subject binding.
+5. Deploy `admin-list`, `admin-delete`, `admin-rotate`, and `cleanup` together;
+   the passphrase body contract is removed by this step. Confirm a successful
+   rotation revokes every existing admin session and requires a fresh login.
+6. Deploy the generic share Worker before purging `/s/*` cache entries. Verify
+   raw, percent-encoded, uppercase, `www`, and trailing-slash share paths return
+   the same token-free, `no-store`, non-indexable crawler response.
+7. Deploy the SPA and extension containment changes. Verify encryption gates,
+   bounded Realtime events, locale-only language selection, privacy copy, and
+   stalled PWA updates before advancing beyond staging.
 
 No function in this sequence logs a passphrase, session token, locator, or raw
 client address.
@@ -37,4 +46,3 @@ DELETE policy and table privilege revoked. Do not recreate `USING (true)` or
 restore direct anonymous DELETE. Restore application availability from the
 verified checkpoint only after incident review; session/limiter tables may be
 discarded because they contain no note content.
-
