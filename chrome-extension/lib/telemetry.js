@@ -9,6 +9,7 @@
 const KEY = "syrin:telemetry";
 const ENABLED_KEY = "syrin:telemetryEnabled";
 const MAX_EVENTS = 100;
+export const TELEMETRY_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Telemetry defaults to ON but can be opted out via the options page.
 // Setting is stored in chrome.storage.local (device-scoped, not synced,
@@ -89,6 +90,12 @@ function safeDetail(detail) {
   return out;
 }
 
+function pruneExpired(events, now = Date.now()) {
+  if (!Array.isArray(events)) return [];
+  const cutoff = now - TELEMETRY_TTL_MS;
+  return events.filter((item) => Number.isFinite(item?.t) && item.t >= cutoff);
+}
+
 export function recordTelemetry(event, meta = {}) {
   if (!cachedEnabled) return;
   const entry = {
@@ -102,7 +109,7 @@ export function recordTelemetry(event, meta = {}) {
   };
   try {
     chrome.storage.local.get({ [KEY]: [] }, (state) => {
-      const next = Array.isArray(state[KEY]) ? state[KEY] : [];
+      const next = pruneExpired(state[KEY], entry.t);
       next.push(entry);
       while (next.length > MAX_EVENTS) next.shift();
       chrome.storage.local.set({ [KEY]: next });
@@ -116,7 +123,12 @@ export function readTelemetry() {
   return new Promise((resolve) => {
     try {
       chrome.storage.local.get({ [KEY]: [] }, (state) => {
-        resolve(Array.isArray(state[KEY]) ? state[KEY] : []);
+        const stored = Array.isArray(state[KEY]) ? state[KEY] : [];
+        const current = pruneExpired(stored);
+        if (current.length !== stored.length) {
+          chrome.storage.local.set({ [KEY]: current });
+        }
+        resolve(current);
       });
     } catch {
       resolve([]);
