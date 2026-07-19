@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const EXPECTED_BUN_VERSION = "1.3.14";
+const ACTIONLINT_IMAGE =
+  "docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9";
 const WORKFLOW_FILES = readdirSync(".github/workflows")
   .filter((name) => /\.ya?ml$/.test(name))
   .map((name) => `.github/workflows/${name}`);
@@ -50,7 +52,7 @@ describe("CI toolchain contract", () => {
   });
 
   it("keeps Vitest and its V8 coverage provider on 3.2.4", () => {
-    expect(packageJson.devDependencies.vitest.replace(/^\^/, "")).toBe("3.2.4");
+    expect(packageJson.devDependencies.vitest).toBe("3.2.4");
     expect(packageJson.devDependencies["@vitest/coverage-v8"]).toBe("3.2.4");
     expect(packageJson.scripts["test:coverage"]).toBe("vitest run --coverage");
   });
@@ -101,10 +103,22 @@ describe("CI toolchain contract", () => {
     }
   });
 
-  it("lists Playwright tests in the stable quality gate", () => {
-    expect(workflowStructure).toContain(
+  it("keeps one always-present stable quality gate", () => {
+    expect(workflowStructure).toMatch(
+      /^  pull_request:\s*\n  workflow_dispatch:/m,
+    );
+    expect(workflowStructure).not.toMatch(/^  actionlint:/m);
+
+    const qualityJob = workflowStructure.slice(
+      workflowStructure.indexOf("\n  quality:"),
+    );
+    expect(qualityJob).toContain("name: quality");
+    expect(qualityJob).toContain(ACTIONLINT_IMAGE);
+    expect(qualityJob).toContain("persist-credentials: false");
+    expect(qualityJob).toContain(
       "bunx playwright test --list --project=chromium",
     );
+    expect(allWorkflows).not.toContain("docker://rhysd/actionlint:1.7.7");
   });
 
   it("uses the audit command supported by pinned Bun", () => {
