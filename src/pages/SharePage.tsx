@@ -28,11 +28,11 @@ type ShareViewResponse = {
 };
 
 type ViewState =
-  | { kind: "loading" }
-  | { kind: "notfound" }
-  | { kind: "error"; message: string }
-  | { kind: "ready"; doc: Y.Doc }
-  | { kind: "needs-key"; salt: string; check: string; iterations: number; ydocState: string };
+  | { kind: "loading"; token: string }
+  | { kind: "notfound"; token: string }
+  | { kind: "error"; token: string; message: string }
+  | { kind: "ready"; token: string; doc: Y.Doc }
+  | { kind: "needs-key"; token: string; salt: string; check: string; iterations: number; ydocState: string };
 
 function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
   const doc = new Y.Doc();
@@ -54,12 +54,15 @@ function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
 export default function SharePage() {
   const { token = "" } = useParams();
   const valid = TOKEN_RE.test(token);
-  const [state, setState] = useState<ViewState>({ kind: "loading" });
+  const [state, setState] = useState<ViewState>({ kind: "loading", token });
   const requestGeneration = useRef(0);
+  const currentShareToken = useRef(token);
+  currentShareToken.current = token;
   const { t } = useI18n();
 
   const isCurrentRequest = (generation: number, requestToken: string) =>
-    requestGeneration.current === generation && token === requestToken;
+    requestGeneration.current === generation
+    && currentShareToken.current === requestToken;
 
   useEffect(() => {
     document.title = `Syrin Notes — ${t("share.title_suffix")}`;
@@ -71,7 +74,7 @@ export default function SharePage() {
   useEffect(() => {
     if (!valid) {
       requestGeneration.current += 1;
-      setState({ kind: "notfound" });
+      setState({ kind: "notfound", token });
       return;
     }
     const generation = ++requestGeneration.current;
@@ -80,26 +83,26 @@ export default function SharePage() {
     const isCurrent = () =>
       !cancelled &&
       requestGeneration.current === generation &&
-      token === requestToken;
-    setState({ kind: "loading" });
+      currentShareToken.current === requestToken;
+    setState({ kind: "loading", token: requestToken });
     (async () => {
       const { data, error } = await supabase.functions.invoke<ShareViewResponse>(
         "share-view",
-        { body: { token } },
+        { body: { token: requestToken } },
       );
       if (!isCurrent()) return;
       if (error || !data) {
-        setState({ kind: "notfound" });
+        setState({ kind: "notfound", token: requestToken });
         return;
       }
 
       if (!data.is_encrypted) {
-        setState({ kind: "ready", doc: hydrateDoc(data.ydoc_state, data.content) });
+        setState({ kind: "ready", token: requestToken, doc: hydrateDoc(data.ydoc_state, data.content) });
         return;
       }
 
       if (!data.enc_salt || !data.enc_check) {
-        setState({ kind: "error", message: t("share.missing_salt") });
+        setState({ kind: "error", token: requestToken, message: t("share.missing_salt") });
         return;
       }
 
@@ -118,7 +121,7 @@ export default function SharePage() {
             if (!isCurrent()) return;
             const doc = new Y.Doc();
             Y.applyUpdate(doc, pt);
-            setState({ kind: "ready", doc });
+            setState({ kind: "ready", token: requestToken, doc });
             return;
           }
         } catch (e) {
@@ -130,6 +133,7 @@ export default function SharePage() {
       if (isCurrent()) {
         setState({
           kind: "needs-key",
+          token: requestToken,
           salt: data.enc_salt,
           check: data.enc_check,
           iterations,
@@ -146,20 +150,20 @@ export default function SharePage() {
   }, [token, valid, t]);
 
   const onUnlock = async (key: CryptoKey) => {
-    if (state.kind !== "needs-key") return;
+    if (state.kind !== "needs-key" || state.token !== token) return;
     const generation = requestGeneration.current;
-    const requestToken = token;
     const lockedState = state;
+    const requestToken = lockedState.token;
     try {
       const pt = await decryptBytes(key, base64ToBytes(lockedState.ydocState));
       if (!isCurrentRequest(generation, requestToken)) return;
       const doc = new Y.Doc();
       Y.applyUpdate(doc, pt);
-      setState({ kind: "ready", doc });
+      setState({ kind: "ready", token: requestToken, doc });
     } catch (e) {
       if (!isCurrentRequest(generation, requestToken)) return;
       console.error("share: manual decrypt failed", e);
-      setState({ kind: "error", message: t("share.decrypt_failed") });
+      setState({ kind: "error", token: requestToken, message: t("share.decrypt_failed") });
     }
   };
 
@@ -180,7 +184,9 @@ export default function SharePage() {
     </Helmet>
   );
 
-  if (state.kind === "loading") return <>{head}<EditorSkeleton /></>;
+  if (state.token !== token || state.kind === "loading") {
+    return <>{head}<EditorSkeleton /></>;
+  }
 
   if (state.kind === "notfound") {
     return (
