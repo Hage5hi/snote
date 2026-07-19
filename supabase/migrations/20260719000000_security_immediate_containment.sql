@@ -72,6 +72,38 @@ GRANT SELECT, INSERT, DELETE ON TABLE public.admin_sessions TO service_role;
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at
   ON public.admin_sessions (expires_at);
 
+-- A singleton credential epoch binds password verification to session issue.
+-- It is independent of admin_config so the environment-passphrase fallback is
+-- also invalidated by the first database-backed rotation.
+CREATE TABLE IF NOT EXISTS public.admin_auth_state (
+  id smallint PRIMARY KEY CHECK (id = 1),
+  credential_epoch bigint NOT NULL DEFAULT 1 CHECK (credential_epoch > 0),
+  updated_at timestamptz NOT NULL DEFAULT statement_timestamp()
+);
+INSERT INTO public.admin_auth_state (id, credential_epoch)
+VALUES (1, 1)
+ON CONFLICT (id) DO NOTHING;
+
+ALTER TABLE public.admin_auth_state ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.admin_auth_state FROM PUBLIC, anon, authenticated;
+GRANT SELECT, UPDATE ON TABLE public.admin_auth_state TO service_role;
+
+-- Read the persisted password material (or NULL for the environment fallback)
+-- and its epoch from one MVCC snapshot. Separate reads would let rotation pair
+-- an old fallback-password verification with the new epoch.
+CREATE OR REPLACE FUNCTION public.admin_credential_material()
+RETURNS TABLE(pass_hash text, credential_epoch bigint)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  SELECT config.pass_hash, state.credential_epoch
+    FROM public.admin_auth_state AS state
+    LEFT JOIN public.admin_config AS config ON config.id = 1
+   WHERE state.id = 1;
+$$;
+
 -- Atomically reserve the one bcrypt verification slot for a subject. A short
 -- lease recovers automatically if an Edge invocation dies before completion.
 CREATE OR REPLACE FUNCTION public.admin_auth_begin(
@@ -269,6 +301,48 @@ AS $$
      AND subject_hash = p_subject_hash;
 $$;
 
+-- Session creation and password rotation lock the same singleton row. If
+-- issuance wins, a later rotation deletes the new session; if rotation wins,
+-- the stale verified epoch cannot issue anything.
+CREATE OR REPLACE FUNCTION public.admin_session_issue(
+  p_token_hash text,
+  p_subject_hash text,
+  p_expires_at timestamptz,
+  p_credential_epoch bigint
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_credential_epoch bigint;
+  v_now timestamptz := statement_timestamp();
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$'
+     OR p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$'
+     OR p_expires_at IS NULL OR p_expires_at <= v_now
+     OR p_expires_at > v_now + interval '30 minutes'
+     OR p_credential_epoch IS NULL OR p_credential_epoch < 1 THEN
+    RAISE EXCEPTION 'admin session issue unavailable';
+  END IF;
+
+  SELECT state.credential_epoch
+    INTO v_credential_epoch
+    FROM public.admin_auth_state AS state
+   WHERE state.id = 1
+   FOR UPDATE;
+
+  IF NOT FOUND OR v_credential_epoch <> p_credential_epoch THEN
+    RAISE EXCEPTION 'admin session issue unavailable';
+  END IF;
+
+  INSERT INTO public.admin_sessions (token_hash, subject_hash, expires_at)
+  VALUES (p_token_hash, p_subject_hash, p_expires_at);
+END;
+$$;
+
 -- Rotate the persisted pass hash and revoke every outstanding session in one
 -- database transaction. The caller's session is intentionally revoked too,
 -- forcing a fresh exchange with the new passphrase.
@@ -286,11 +360,25 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_consumed_token_hash text;
+  v_credential_epoch bigint;
 BEGIN
   IF p_pass_hash IS NULL
      OR p_pass_hash !~ '^\$2[aby]\$12\$[./A-Za-z0-9]{53}$'
      OR p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$'
      OR p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'admin pass rotation unavailable';
+  END IF;
+
+  -- Serialize against session issuance and other rotations before consuming
+  -- the caller. This avoids both old-password login minting and rotate/rotate
+  -- last-writer-wins races.
+  SELECT state.credential_epoch
+    INTO v_credential_epoch
+    FROM public.admin_auth_state AS state
+   WHERE state.id = 1
+   FOR UPDATE;
+
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'admin pass rotation unavailable';
   END IF;
 
@@ -313,6 +401,11 @@ BEGIN
     SET pass_hash = EXCLUDED.pass_hash,
         updated_at = EXCLUDED.updated_at;
 
+  UPDATE public.admin_auth_state
+     SET credential_epoch = credential_epoch + 1,
+         updated_at = statement_timestamp()
+   WHERE id = 1;
+
   DELETE FROM public.admin_sessions;
 END;
 $$;
@@ -324,17 +417,23 @@ REVOKE ALL ON FUNCTION public.admin_auth_begin(text, text)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_auth_complete(text, text, boolean)
   FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_credential_material()
+  FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_validate(text, text)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_revoke(text, text)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_session_issue(text, text, timestamptz, bigint)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_pass_rotate(text, text, text)
   FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.admin_auth_begin(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_auth_complete(text, text, boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_credential_material() TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_validate(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_revoke(text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_session_issue(text, text, timestamptz, bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_pass_rotate(text, text, text) TO service_role;
 
 COMMIT;
