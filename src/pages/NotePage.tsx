@@ -173,57 +173,65 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     setEncPhase("loading");
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("notes")
-        .select("is_encrypted, enc_salt, enc_check, enc_iterations, ydoc_state")
-        .eq("slug", slug)
-        .maybeSingle();
-      if (cancelled) return;
-      const meta: EncMeta = {
-        isEncrypted: !!data?.is_encrypted,
-        salt: data?.enc_salt ?? null,
-        check: data?.enc_check ?? null,
-        iterations: data?.enc_iterations ?? null,
-        ydocState: data?.ydoc_state ?? null,
-        rowExists: !!data,
-      };
-      setEncMeta((prev) => {
-        // Encryption mode flipped since last fetch — force a provider rebuild.
-        if (prev.isEncrypted !== meta.isEncrypted) {
-          setProviderEpoch((n) => n + 1);
+      try {
+        const { data, error } = await supabase
+          .from("notes")
+          .select("is_encrypted, enc_salt, enc_check, enc_iterations, ydoc_state")
+          .eq("slug", slug)
+          .maybeSingle();
+        if (cancelled) return;
+        if (error) {
+          console.warn("Encryption metadata query failed");
+          return;
         }
-        return meta;
-      });
-
-
-      if (!meta.isEncrypted) {
-        setEncryption(null);
-        setEncPhase("ready");
-        setResolvedEncTarget({ slug, metaVersion });
-        return;
-      }
-      const hashKey = window.location.hash.startsWith("#")
-        ? decodeURIComponent(window.location.hash.slice(1))
-        : "";
-      if (hashKey && meta.salt && meta.check) {
-        try {
-          const key = await deriveKey(hashKey, meta.salt, iterationsFor(meta.iterations));
-          const ok = await verifyCheck(key, meta.check);
-          if (ok) {
-            setEncryption({
-              encrypt: (b) => encryptBytes(key, b),
-              decrypt: (b) => decryptBytes(key, b),
-            });
-            setEncPhase("ready");
-            setResolvedEncTarget({ slug, metaVersion });
-            return;
+        const meta: EncMeta = {
+          isEncrypted: !!data?.is_encrypted,
+          salt: data?.enc_salt ?? null,
+          check: data?.enc_check ?? null,
+          iterations: data?.enc_iterations ?? null,
+          ydocState: data?.ydoc_state ?? null,
+          rowExists: !!data,
+        };
+        setEncMeta((prev) => {
+          // Encryption mode flipped since last fetch — force a provider rebuild.
+          if (prev.isEncrypted !== meta.isEncrypted) {
+            setProviderEpoch((n) => n + 1);
           }
-        } catch (e) {
-          console.warn("derive failed", e);
+          return meta;
+        });
+
+
+        if (!meta.isEncrypted) {
+          setEncryption(null);
+          setEncPhase("ready");
+          setResolvedEncTarget({ slug, metaVersion });
+          return;
         }
+        const hashKey = window.location.hash.startsWith("#")
+          ? decodeURIComponent(window.location.hash.slice(1))
+          : "";
+        if (hashKey && meta.salt && meta.check) {
+          try {
+            const key = await deriveKey(hashKey, meta.salt, iterationsFor(meta.iterations));
+            const ok = await verifyCheck(key, meta.check);
+            if (ok) {
+              setEncryption({
+                encrypt: (b) => encryptBytes(key, b),
+                decrypt: (b) => decryptBytes(key, b),
+              });
+              setEncPhase("ready");
+              setResolvedEncTarget({ slug, metaVersion });
+              return;
+            }
+          } catch (e) {
+            console.warn("derive failed", e);
+          }
+        }
+        setEncPhase("needs-key");
+        setResolvedEncTarget({ slug, metaVersion });
+      } catch {
+        if (!cancelled) console.warn("Encryption metadata query failed");
       }
-      setEncPhase("needs-key");
-      setResolvedEncTarget({ slug, metaVersion });
     })();
     return () => {
       cancelled = true;
