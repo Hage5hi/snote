@@ -232,6 +232,9 @@ export default function AdminPanel() {
     setTotal(0);
     setTopTags([]);
     setSelected(new Set());
+    setSearch("");
+    setTagFilter("");
+    setConfirmOpen(null);
     setRotateOpen(false);
   };
 
@@ -411,4 +414,3 @@ export default function AdminPanel() {
     </div>
   );
 }
-
