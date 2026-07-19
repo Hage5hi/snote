@@ -37,7 +37,11 @@ afterEach(() => {
 });
 
 describe("share crawler containment", () => {
-  for (const hostname of ["syrin.online", "www.syrin.online"]) {
+  for (const hostname of [
+    "note.syrin.online",
+    "syrin.online",
+    "www.syrin.online",
+  ]) {
     for (const suffix of ["", "/"]) {
       for (const prefix of SHARE_PREFIXES) {
         for (const tokenPath of [TOKEN, ENCODED_TOKEN]) {
