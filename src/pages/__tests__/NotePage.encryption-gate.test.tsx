@@ -532,8 +532,10 @@ describe("NotePage encryption gate", () => {
       expect(harness.deriveKey).toHaveBeenCalledWith("key-one", "salt-auto", 1),
     );
 
-    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#key-two`);
-    window.dispatchEvent(new Event("hashchange"));
+    act(() => {
+      window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#key-two`);
+      window.dispatchEvent(new Event("hashchange"));
+    });
     await waitFor(() =>
       expect(harness.deriveKey).toHaveBeenCalledWith("key-two", "salt-auto", 1),
     );
@@ -565,8 +567,10 @@ describe("NotePage encryption gate", () => {
     void staleUnlock({} as CryptoKey);
     await waitFor(() => expect(harness.decryptBytes).toHaveBeenCalled());
 
-    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#newer-key`);
-    window.dispatchEvent(new Event("hashchange"));
+    act(() => {
+      window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#newer-key`);
+      window.dispatchEvent(new Event("hashchange"));
+    });
     await waitFor(() =>
       expect(harness.deriveKey).toHaveBeenCalledWith("newer-key", "salt-manual", 1),
     );
