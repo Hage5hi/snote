@@ -128,10 +128,11 @@ Deno.serve(async (req) => {
     const expiresAt = new Date(
       Date.now() + sessionTtlMinutes() * 60 * 1000,
     ).toISOString();
-    const { error } = await supabase.from("admin_sessions").insert({
-      token_hash: tokenHash,
-      subject_hash: subject.subjectHash,
-      expires_at: expiresAt,
+    const { error } = await supabase.rpc("admin_session_issue", {
+      p_token_hash: tokenHash,
+      p_subject_hash: subject.subjectHash,
+      p_expires_at: expiresAt,
+      p_credential_epoch: verified.credentialEpoch,
     });
     if (error) return serviceUnavailableResponse(corsHeaders);
 
@@ -140,4 +141,3 @@ Deno.serve(async (req) => {
     return serviceUnavailableResponse(corsHeaders);
   }
 });
-
