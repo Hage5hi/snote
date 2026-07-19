@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -157,6 +157,27 @@ describe("NotePage encryption gate", () => {
 
     expect(harness.editorRender).not.toHaveBeenCalled();
     expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the encryption metadata query returns an error", async () => {
+    type FailedMetaResponse = { data: null; error: { message: string } };
+    let resolveMeta!: (response: FailedMetaResponse) => void;
+    const failedMeta = new Promise<FailedMetaResponse>((resolve) => {
+      resolveMeta = resolve;
+    });
+    harness.metaForSlug.mockReturnValue(failedMeta);
+
+    renderEmbedded();
+    await waitFor(() => expect(harness.metaForSlug).toHaveBeenCalledWith("secret"));
+    await act(async () => {
+      resolveMeta({ data: null, error: { message: "metadata unavailable" } });
+      await failedMeta;
+    });
+
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    expect(harness.previewRender).not.toHaveBeenCalled();
+    expect(harness.idbConstruct).not.toHaveBeenCalled();
+    expect(harness.providerConnect).not.toHaveBeenCalled();
   });
 
   it("closes the gate synchronously when an embedded note changes", async () => {
