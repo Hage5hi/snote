@@ -8,9 +8,9 @@ import {
   verifyAdminPass,
 } from "../_shared/admin-auth.ts";
 import {
-  checkAdminLockout,
+  beginAdminAuthAttempt,
+  completeAdminAuthAttempt,
   lockoutResponse,
-  recordAdminAuthAttempt,
 } from "../_shared/admin-rate-limit.ts";
 
 const corsHeaders = {
@@ -36,6 +36,13 @@ function createSessionToken(): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function createAdmissionLeaseId(): string {
+  return Array.from(
+    crypto.getRandomValues(new Uint8Array(32)),
+    (value) => value.toString(16).padStart(2, "0"),
+  ).join("");
 }
 
 function sessionTtlMinutes(): number {
@@ -81,18 +88,30 @@ Deno.serve(async (req) => {
   const subject = await getAdminSubjectHash(req);
   if (!subject.ok) return serviceUnavailableResponse(corsHeaders);
 
-  const gate = await checkAdminLockout(supabase, subject.subjectHash);
+  const body = await req.json().catch(() => ({}));
+  const passphrase = String(body?.passphrase ?? "").slice(0, 1024);
+  let leaseId: string;
+  try {
+    leaseId = createAdmissionLeaseId();
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
+  }
+
+  const gate = await beginAdminAuthAttempt(
+    supabase,
+    subject.subjectHash,
+    leaseId,
+  );
   if (!gate.available) return serviceUnavailableResponse(corsHeaders);
   if (!gate.allowed) return lockoutResponse(gate.retryAfterSeconds, corsHeaders);
 
-  const body = await req.json().catch(() => ({}));
-  const passphrase = String(body?.passphrase ?? "").slice(0, 1024);
   const verified = await verifyAdminPass(supabase, passphrase);
   if (!verified.available) return serviceUnavailableResponse(corsHeaders);
 
-  const recorded = await recordAdminAuthAttempt(
+  const recorded = await completeAdminAuthAttempt(
     supabase,
     subject.subjectHash,
+    leaseId,
     verified.valid,
   );
   if (!recorded.available) return serviceUnavailableResponse(corsHeaders);
@@ -101,6 +120,7 @@ Deno.serve(async (req) => {
       ? json({ error: "unauthorized" }, 401)
       : lockoutResponse(recorded.retryAfterSeconds, corsHeaders);
   }
+  if (!recorded.allowed) return serviceUnavailableResponse(corsHeaders);
 
   try {
     const sessionToken = createSessionToken();
