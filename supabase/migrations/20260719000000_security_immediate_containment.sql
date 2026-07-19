@@ -1,6 +1,10 @@
 -- Immediate containment. Apply only after a verified PITR/backup checkpoint and
 -- after 20260522000000_admin_rate_limit.sql. Edge consumers must be deployed
 -- only after this migration succeeds.
+-- CUTOVER SAFETY: Disable or tombstone the legacy admin and cleanup Edge endpoints before applying this migration.
+-- Their baseline limiter still queries the old `ip` column and fails open when
+-- that query errors; do not leave those bundles reachable while this migration
+-- renames the column to `subject_hash`.
 
 BEGIN;
 
