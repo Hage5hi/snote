@@ -26,6 +26,7 @@
     "target": "ES2022",
     "types": [
       "node",
+      "vite/client",
       "vitest/globals"
     ]
   },

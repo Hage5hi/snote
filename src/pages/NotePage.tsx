@@ -402,7 +402,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       // Doc itself stays warm in cache for fast re-open; only release.
       releaseDoc(slug);
     };
-  }, [slug, validSlug, doc, provider, embedSlug, encPhase, encryption, encMeta.ydocState, encMeta.rowExists]);
+  }, [slug, validSlug, doc, provider, embedSlug, encPhase, encryption, encMeta.isEncrypted, encMeta.ydocState, encMeta.rowExists]);
 
   if (!validSlug) return <Navigate to="/" replace />;
   if (!doc || !provider) return null;

@@ -36,7 +36,6 @@ export function UrlSanitizeDebugPanel() {
         const event: StripInfo = { at: Date.now(), ...i };
         // Structured trace event — mirrors what the panel renders so it can
         // be grepped from console logs or captured by Playwright.
-        // eslint-disable-next-line no-console
         console.info("[url-sanitize:event]", event);
         setHistory((prev) => [event, ...prev].slice(0, MAX_HISTORY));
       },

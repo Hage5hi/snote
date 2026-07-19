@@ -64,7 +64,6 @@ let acquireHitCount = 0;
 let acquireMissCount = 0;
 function log(event: string, detail?: Record<string, unknown>) {
   if (!debugEnabled) return;
-  // eslint-disable-next-line no-console
   console.debug(`[doc-cache] ${event}`, { MAX, IDLE_MS, size: cache.size, destroyed: destroyCount, ...detail });
 }
 

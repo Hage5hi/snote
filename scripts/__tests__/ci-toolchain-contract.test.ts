@@ -40,7 +40,7 @@ describe("CI toolchain contract", () => {
         expect(
           lines.slice(index, index + 4).join("\n"),
           `${path} setup-bun step must pin Bun ${EXPECTED_BUN_VERSION}`,
-        ).toMatch(new RegExp(`bun-version:\\s*["']?${EXPECTED_BUN_VERSION.replaceAll(".", "\\.")}["']?(?:\\s|})`));
+        ).toMatch(new RegExp(`bun-version:\\s*["']?${EXPECTED_BUN_VERSION.replaceAll(".", "\\.")}["']?(?:\\s|}|$)`));
       });
     }
 
@@ -136,9 +136,9 @@ describe("CI toolchain contract", () => {
     }
   });
 
-  it("uses the audit command supported by pinned Bun", () => {
-    expect(extensionAudit).toContain("bun pm scan");
-    expect(extensionAudit).not.toMatch(/bun(?: pm)? audit/);
+  it("selects the audit command supported by pinned Bun", () => {
+    expect(extensionAudit).toContain("bun audit --prod --audit-level=high");
+    expect(extensionAudit).not.toMatch(/bun pm (?:audit|scan)/);
   });
 
   it("represents lint, unit, coverage, build and workflow-structure gates", () => {

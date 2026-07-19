@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, act, cleanup } from "@testing-library/react";
-import { DiagnosticsPanel, truncateDiagEventsForExport } from "@/components/dev/DiagnosticsPanel";
+import { DiagnosticsPanel } from "@/components/dev/DiagnosticsPanel";
+import { truncateDiagEventsForExport } from "@/components/dev/diagnostics-utils";
 
 describe("truncateDiagEventsForExport", () => {
   it("truncates oversized detail and componentStack to 512 bytes", () => {

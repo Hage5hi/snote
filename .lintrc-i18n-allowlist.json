@@ -13,6 +13,11 @@
       "notes": "Aria landmark for the outline nav; not user-facing copy."
     },
     {
+      "file": "src/components/dev/DiagnosticsPanel.tsx",
+      "reason": "internal dev-only UI",
+      "notes": "Developer diagnostics tooling is intentionally English-only."
+    },
+    {
       "file": "src/pages/AdminPanel.tsx",
       "reason": "internal admin-only UI",
       "notes": "Admin tooling is English-only by policy."
@@ -36,11 +41,6 @@
       "file": "src/pages/SplitView.tsx",
       "reason": "SEO control value",
       "notes": "Crawler-facing meta robots; not human copy."
-    },
-    {
-      "file": "src/pages/SplitView.tsx",
-      "reason": "universal nav icon",
-      "notes": "Universal back-arrow glyph label."
     }
   ]
 }

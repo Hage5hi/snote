@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AppShell } from "@/components/app/AppShell";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { saveLastSplitView } from "@/lib/split-view-persistence";
+import { useI18n } from "@/i18n";
 
 const NotePage = lazy(() => import("./NotePage"));
 
@@ -26,14 +27,17 @@ const MAX_PANES = 4;
  */
 export default function SplitView() {
   const { slug = "" } = useParams();
-  const rawSlugs = slug.split("+").filter(Boolean);
+  const { t } = useI18n();
   const [syncScroll, setSyncScroll] = useState(true);
   // Refs for each pane container; sync-scroll wires their .cm-scroller children.
   const paneRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   // Deduplicate: identical slugs on multiple panes cause provider/presence
   // conflicts. Preserve first-occurrence order.
-  const slugs = useMemo(() => Array.from(new Set(rawSlugs)), [slug]);
+  const slugs = useMemo(
+    () => Array.from(new Set(slug.split("+").filter(Boolean))),
+    [slug],
+  );
 
   useEffect(() => {
     if (!syncScroll) return;
@@ -153,11 +157,10 @@ function SplitViewBody({
       >
         <Tooltip>
           <TooltipTrigger asChild>
-            {/* eslint-disable-next-line no-restricted-syntax -- universal nav icon */}
             <Link
               to="/"
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Home"
+              aria-label={t("brand.home")}
               onContextMenu={(e) => {
                 e.preventDefault();
                 window.open("/", "_blank", "noopener,noreferrer");
@@ -166,7 +169,7 @@ function SplitViewBody({
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Back to home</TooltipContent>
+          <TooltipContent side="bottom">{t("share.back_home_aria")}</TooltipContent>
         </Tooltip>
         <span className="font-mono truncate">
           {slugs.map((s, i) => (

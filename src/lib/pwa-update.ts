@@ -236,9 +236,6 @@ function startVersionPoller(
   onCurrent: (remoteBuildId: string) => void,
 ): () => void {
   let stopped = false;
-  let initialTimer: number | undefined;
-  let timer: number | undefined;
-
   const check = async () => {
     if (stopped) return;
     try {
@@ -262,15 +259,15 @@ function startVersionPoller(
   };
   const onFocus = () => void check();
 
-  initialTimer = window.setTimeout(check, initialDelay) as unknown as number;
-  timer = window.setInterval(check, interval) as unknown as number;
+  const initialTimer = window.setTimeout(check, initialDelay) as unknown as number;
+  const timer = window.setInterval(check, interval) as unknown as number;
   document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("focus", onFocus);
 
   return () => {
     stopped = true;
-    if (initialTimer !== undefined) window.clearTimeout(initialTimer);
-    if (timer !== undefined) window.clearInterval(timer);
+    window.clearTimeout(initialTimer);
+    window.clearInterval(timer);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     window.removeEventListener("focus", onFocus);
   };

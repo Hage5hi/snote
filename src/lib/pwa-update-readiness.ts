@@ -195,7 +195,6 @@ export function installPwaReadinessInvalidReporter(opts: {
     opts.sink ??
     ((detail) => {
       try {
-        // eslint-disable-next-line no-console
         console.warn("[pwa-readiness-invalid]", detail);
       } catch {
         /* ignore */

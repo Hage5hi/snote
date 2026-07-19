@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
@@ -20,7 +20,7 @@ import { VitePWA } from "vite-plugin-pwa";
 // onNeedRefresh yet (or the user has SW disabled entirely).
 const BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-function emitVersionJson() {
+function emitVersionJson(): Plugin {
   return {
     name: "emit-version-json",
     apply: "build" as const,
