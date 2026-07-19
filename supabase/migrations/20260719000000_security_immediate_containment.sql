@@ -268,8 +268,11 @@ $$;
 -- Rotate the persisted pass hash and revoke every outstanding session in one
 -- database transaction. The caller's session is intentionally revoked too,
 -- forcing a fresh exchange with the new passphrase.
+DROP FUNCTION IF EXISTS public.admin_pass_rotate(text);
 CREATE OR REPLACE FUNCTION public.admin_pass_rotate(
-  p_pass_hash text
+  p_pass_hash text,
+  p_token_hash text,
+  p_subject_hash text
 )
 RETURNS void
 LANGUAGE plpgsql
@@ -277,9 +280,26 @@ VOLATILE
 SECURITY DEFINER
 SET search_path = public, pg_temp
 AS $$
+DECLARE
+  v_consumed_token_hash text;
 BEGIN
   IF p_pass_hash IS NULL
-     OR p_pass_hash !~ '^\$2[aby]\$12\$[./A-Za-z0-9]{53}$' THEN
+     OR p_pass_hash !~ '^\$2[aby]\$12\$[./A-Za-z0-9]{53}$'
+     OR p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$'
+     OR p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'admin pass rotation unavailable';
+  END IF;
+
+  -- DELETE takes a row lock. Exactly one concurrent caller can consume this
+  -- live session; a stale or already-consumed request fails before any hash
+  -- update occurs.
+  DELETE FROM public.admin_sessions
+   WHERE token_hash = p_token_hash
+     AND subject_hash = p_subject_hash
+     AND expires_at > statement_timestamp()
+  RETURNING token_hash INTO v_consumed_token_hash;
+
+  IF NOT FOUND THEN
     RAISE EXCEPTION 'admin pass rotation unavailable';
   END IF;
 
@@ -304,13 +324,13 @@ REVOKE ALL ON FUNCTION public.admin_session_validate(text, text)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_revoke(text, text)
   FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.admin_pass_rotate(text)
+REVOKE ALL ON FUNCTION public.admin_pass_rotate(text, text, text)
   FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.admin_auth_begin(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_auth_complete(text, text, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_validate(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_revoke(text, text) TO service_role;
-GRANT EXECUTE ON FUNCTION public.admin_pass_rotate(text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_pass_rotate(text, text, text) TO service_role;
 
 COMMIT;
