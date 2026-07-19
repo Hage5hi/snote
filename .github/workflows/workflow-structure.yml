@@ -24,6 +24,10 @@ on:
       - "chrome-extension/**/*.ts"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -38,8 +42,8 @@ jobs:
         with:
           args: -shellcheck=
 
-  quality-fast:
-    name: Fast lint, typecheck and CI contract
+  quality:
+    name: quality
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
