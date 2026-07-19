@@ -38,7 +38,7 @@ on:
         options: ["false", "true"]
 
 concurrency:
-  group: schema-guard-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
