@@ -136,5 +136,28 @@ describe("immediate containment contracts", () => {
     expect(rotate).toContain('"x-admin-session"');
     expect(rotate).not.toContain("currentPass");
   });
-});
 
+  it("keeps legacy fail-open admin endpoints disabled across the schema transition", () => {
+    const rollout = source("docs/security/immediate-containment-rollout.md");
+    const migration = source(
+      "supabase/migrations/20260719000000_security_immediate_containment.sql",
+    );
+
+    const disableLegacyAt = rollout.indexOf(
+      "Disable or tombstone the legacy admin and cleanup Edge endpoints",
+    );
+    const applyContainmentAt = rollout.indexOf(
+      "Apply `20260719000000_security_immediate_containment.sql`",
+    );
+    const enableReplacementAt = rollout.indexOf(
+      "Enable the replacement admin and cleanup endpoints",
+    );
+
+    expect(disableLegacyAt).toBeGreaterThan(-1);
+    expect(applyContainmentAt).toBeGreaterThan(disableLegacyAt);
+    expect(enableReplacementAt).toBeGreaterThan(applyContainmentAt);
+    expect(migration).toContain(
+      "Disable or tombstone the legacy admin and cleanup Edge endpoints before applying this migration",
+    );
+  });
+});
