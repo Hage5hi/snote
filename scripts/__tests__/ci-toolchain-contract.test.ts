@@ -91,7 +91,7 @@ describe("CI toolchain contract", () => {
       "@tootallnate/once",
       "brace-expansion",
     ]) {
-      expect(packageJson.overrides).not.toHaveProperty(name);
+      expect(packageJson.overrides ?? {}).not.toHaveProperty(name);
     }
   });
 
@@ -124,9 +124,9 @@ describe("CI toolchain contract", () => {
     expect(qualityJob).toContain("name: quality");
     expect(qualityJob).toContain(ACTIONLINT_IMAGE);
     expect(qualityJob).toContain("persist-credentials: false");
-    expect(qualityJob).toMatch(/^\s*run:\s*bun run test\s*$/m);
-    expect(qualityJob).toMatch(/^\s*run:\s*bun run test:coverage\s*$/m);
-    expect(qualityJob).toMatch(/^\s*run:\s*bun run build:check\s*$/m);
+    expect(qualityJob).toMatch(/^\s*-\s+run:\s*bun run test\s*$/m);
+    expect(qualityJob).toMatch(/^\s*-\s+run:\s*bun run test:coverage\s*$/m);
+    expect(qualityJob).toMatch(/^\s*-\s+run:\s*bun run build:check\s*$/m);
     expect(qualityJob).toContain(
       "bunx playwright test --list --project=chromium",
     );
@@ -138,7 +138,8 @@ describe("CI toolchain contract", () => {
 
   it("keeps one stable PR E2E check context", () => {
     expect(e2eWorkflow).toContain("\n  e2e-pr:\n");
-    expect(e2eWorkflow).toMatch(/\n  e2e-pr:\n(?:.|\n)*?\n    name: e2e-pr\n/);
+    const e2ePrJob = e2eWorkflow.slice(e2eWorkflow.indexOf("\n  e2e-pr:\n"));
+    expect(e2ePrJob).toMatch(/^\s{4}name:\s*e2e-pr\s*$/m);
   });
 
   it("runs extension verification when its dependencies or audit scripts change", () => {
