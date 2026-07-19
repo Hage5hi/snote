@@ -29,6 +29,7 @@ const ENCODED_SEPARATOR_PATHS = [
   `x/%252e%252e/s%252F${TOKEN}.js`,
   `s/${TOKEN}/%252e%252e/%252e%252e/asset.js`,
   `s/${TOKEN}/%252e%252e/%252e%252e/public-note`,
+  `x/%252e%252e/s/${TOKEN}/%252e%252e/%252e%252e/asset.js`,
 ] as const;
 const META_CRAWLERS = [
   "meta-externalagent/1.1",
