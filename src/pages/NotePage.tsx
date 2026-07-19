@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
-import { Navigate, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Editor, type EditorHandle } from "@/components/note/Editor";
@@ -64,6 +64,7 @@ type EncGateTarget = {
 
 export default function NotePage({ embedSlug }: NotePageProps) {
   const params = useParams();
+  const location = useLocation();
   const slug = embedSlug ?? params.slug ?? "";
   const validSlug = SLUG_RE.test(slug);
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
@@ -160,14 +161,44 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const [metaVersion, setMetaVersion] = useState(0);
   const [resolvedEncTarget, setResolvedEncTarget] = useState<EncGateTarget | null>(null);
   const currentEncTargetRef = useRef<EncGateTarget>({ slug, metaVersion });
-  currentEncTargetRef.current = { slug, metaVersion };
+  const observedHashRef = useRef(window.location.hash);
+  const routerTarget = `${location.key}\u0000${location.pathname}\u0000${location.search}\u0000${location.hash}`;
+  const routerTargetRef = useRef(routerTarget);
   const encTargetIsCurrent = resolvedEncTarget?.slug === slug
     && resolvedEncTarget.metaVersion === metaVersion;
-  useEffect(() => {
-    const onHash = () => setMetaVersion((n) => n + 1);
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+
+  const observeHash = useCallback((nextHash: string) => {
+    if (observedHashRef.current === nextHash) return;
+    observedHashRef.current = nextHash;
+    setMetaVersion((n) => n + 1);
   }, []);
+
+  // Commit request identity only after React commits this render. Mutating the
+  // ref during render lets an abandoned concurrent render invalidate the
+  // still-mounted note's in-flight encryption request.
+  useLayoutEffect(() => {
+    currentEncTargetRef.current = { slug, metaVersion };
+  }, [slug, metaVersion]);
+
+  useLayoutEffect(() => {
+    const syncHash = () => observeHash(window.location.hash);
+    window.addEventListener("hashchange", syncHash);
+    window.addEventListener("popstate", syncHash);
+    // Close the commit-to-subscription race by reconciling once immediately.
+    syncHash();
+    return () => {
+      window.removeEventListener("hashchange", syncHash);
+      window.removeEventListener("popstate", syncHash);
+    };
+  }, [observeHash]);
+
+  // React Router navigation can change/remove a fragment through
+  // history.pushState(), which does not emit hashchange or popstate.
+  useLayoutEffect(() => {
+    if (routerTargetRef.current === routerTarget) return;
+    routerTargetRef.current = routerTarget;
+    observeHash(location.hash);
+  }, [routerTarget, location.hash, observeHash]);
 
   // Single combined fetch: enc-meta + ydoc_state in one round-trip.
   useEffect(() => {
@@ -459,6 +490,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           const currentTarget = currentEncTargetRef.current;
           if (currentTarget.slug !== slug || currentTarget.metaVersion !== metaVersion) return;
           if (resolvedEncTarget?.slug !== slug || resolvedEncTarget.metaVersion !== metaVersion) return;
+          // UnlockForm writes the adopted key with history.replaceState(), so
+          // no navigation event will update our observer. Adopt it here
+          // without starting another metadata request; a later removal must
+          // still be detected and close the gate.
+          observedHashRef.current = window.location.hash;
           setEncryption({
             encrypt: (b) => encryptBytes(key, b),
             decrypt: (b) => decryptBytes(key, b),
