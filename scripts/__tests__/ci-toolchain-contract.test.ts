@@ -148,6 +148,9 @@ describe("CI toolchain contract", () => {
     expect(e2ePrWorkflows).toEqual([".github/workflows/e2e-new-specs.yml"]);
 
     const e2ePrWorkflow = workflows.get(e2ePrWorkflows[0])!;
+    expect(e2ePrWorkflow).toMatch(
+      /^  pull_request:\s*\n  workflow_dispatch:/m,
+    );
     const e2ePrJob = e2ePrWorkflow.slice(
       e2ePrWorkflow.indexOf("\n  e2e-pr:\n"),
     );
