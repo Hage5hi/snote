@@ -26,6 +26,7 @@ const ENCODED_SEPARATOR_PATHS = [
   `s%255C${TOKEN}`,
   `s%2F${TOKEN}.js`,
   `%2Fs/${TOKEN}/asset.css`,
+  `x/%252e%252e/s%252F${TOKEN}.js`,
 ] as const;
 const META_CRAWLERS = [
   "meta-externalagent/1.1",
@@ -122,6 +123,32 @@ async function expectContainedShare({
 }
 
 describe("share crawler containment", () => {
+  it("still prerenders a normal note crawler request", async () => {
+    const doubles = installWorkerDoubles();
+
+    const response = await worker.fetch(
+      new Request("https://note.syrin.online/public-note", {
+        headers: {
+          "cf-connecting-ip": "203.0.113.250",
+          "user-agent": "Slackbot-LinkExpanding 1.0",
+        },
+      }),
+      {
+        ORIGIN_HOST: "snote.lovable.app",
+        SITE_URL: "https://note.syrin.online",
+        SUPABASE_PROJECT: "example",
+        SUPABASE_ANON_KEY: "anon",
+        NOTE_META_SECRET: "secret",
+      },
+      { waitUntil: doubles.waitUntil },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(PRIVATE_SLUG);
+    expect(doubles.metadataFetch).toHaveBeenCalledTimes(1);
+    expect(doubles.waitUntil).toHaveBeenCalledTimes(1);
+  });
+
   let caseIndex = 0;
   for (const hostname of [
     "note.syrin.online",
