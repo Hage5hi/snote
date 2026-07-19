@@ -863,11 +863,9 @@ jobs:
         if: always()
         continue-on-error: true
         shell: bash
-        run: |
-          if [ "${{ failure() }}" = "true" ]; then
-            export PI_CI_PREFLIGHT_ANNOTATIONS=true
-          fi
-          scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-atomic atomic
+        env:
+          PI_CI_PREFLIGHT_ANNOTATIONS: ${{ job.status == 'failure' && 'true' || 'false' }}
+        run: scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-atomic atomic
 
       - name: generate extracted-tree manifest for validator upload (MATRIX=atomic)
         # Runs on every outcome — including when tarball extraction itself
@@ -1713,11 +1711,9 @@ jobs:
         if: always()
         continue-on-error: true
         shell: bash
-        run: |
-          if [ "${{ failure() }}" = "true" ]; then
-            export PI_CI_PREFLIGHT_ANNOTATIONS=true
-          fi
-          scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-stress stress
+        env:
+          PI_CI_PREFLIGHT_ANNOTATIONS: ${{ job.status == 'failure' && 'true' || 'false' }}
+        run: scripts/ci/pi-ci-preflight-status-summary.sh /tmp/pi-ci-stress stress
 
       - name: generate extracted-tree manifest for validator upload (MATRIX=stress)
         # Runs on every outcome — including when tarball extraction itself
