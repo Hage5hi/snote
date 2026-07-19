@@ -18,4 +18,25 @@ describe("SharePage crawler metadata", () => {
     expect(source).not.toContain("snote.lovable.app");
     expect(source).not.toMatch(/(?:canonical|og:url)[^\n]*\$\{token\}/);
   });
+
+  it("rejects stale manual decrypt results after the share token changes", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./SharePage.tsx", import.meta.url)),
+      "utf8",
+    );
+    const onUnlockAt = source.indexOf("const onUnlock = async");
+    const headAt = source.indexOf("const head =", onUnlockAt);
+    const onUnlock = source.slice(onUnlockAt, headAt);
+
+    expect(source).toContain("const requestGeneration = useRef(0);");
+    expect(onUnlock).toMatch(
+      /const generation = requestGeneration\.current;[\s\S]*const requestToken = token;/,
+    );
+    expect(onUnlock).toMatch(
+      /await decryptBytes[\s\S]*if \(!isCurrentRequest\(generation, requestToken\)\) return;[\s\S]*setState\(\{ kind: "ready"/,
+    );
+    expect(onUnlock).toMatch(
+      /catch[\s\S]*if \(!isCurrentRequest\(generation, requestToken\)\) return;[\s\S]*setState\(\{ kind: "error"/,
+    );
+  });
 });
