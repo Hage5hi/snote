@@ -161,4 +161,22 @@ describe("immediate containment contracts", () => {
       "Disable or tombstone the legacy admin and cleanup Edge endpoints before applying this migration",
     );
   });
+
+  it("covers every canonical share host and blocks direct-origin bypass before rollout", () => {
+    const worker = source("cloudflare-worker/worker.js");
+    const readme = source("cloudflare-worker/README.md");
+    const rollout = source("docs/security/immediate-containment-rollout.md");
+
+    expect(worker).toContain("note.syrin.online/*");
+    expect(readme).toContain(
+      '{ pattern = "note.syrin.online/*", zone_name = "syrin.online" }',
+    );
+    expect(readme).toContain("SITE_URL = \"https://note.syrin.online\"");
+    expect(rollout).toContain("Inventory every live share hostname and direct origin alias");
+    expect(rollout).toContain("note.syrin.online");
+    expect(rollout).toContain("snote.lovable.app");
+    expect(rollout).toContain(
+      "Do not advance while any public alias can bypass the generic share response",
+    );
+  });
 });
