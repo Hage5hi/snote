@@ -89,6 +89,14 @@ function installServiceWorkerHarness(
   return { registration, unregister, deleteCache };
 }
 
+function silenceJsdomReloadWarning() {
+  const original = console.error.bind(console);
+  return vi.spyOn(console, "error").mockImplementation((first, ...rest) => {
+    if (String(first).includes("Not implemented: navigation")) return;
+    original(first, ...rest);
+  });
+}
+
 describe("registerAppUpdater", () => {
   beforeEach(() => {
     registerSWMock.mockReset();
@@ -113,9 +121,11 @@ describe("registerAppUpdater", () => {
     Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     vi.unstubAllEnvs();
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("preserves the active offline worker and caches when the waiting worker rejects", async () => {
+    const navigationWarning = silenceJsdomReloadWarning();
     vi.stubEnv("DEV", false);
     (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = false;
     respondVersion("build-b");
@@ -138,9 +148,11 @@ describe("registerAppUpdater", () => {
     expect(updateSW).toHaveBeenCalledWith(false);
     expect(unregister).not.toHaveBeenCalled();
     expect(deleteCache).not.toHaveBeenCalled();
+    navigationWarning.mockRestore();
   });
 
   it("preserves the active offline worker and caches when activation stalls", async () => {
+    const navigationWarning = silenceJsdomReloadWarning();
     vi.useFakeTimers();
     vi.stubEnv("DEV", false);
     vi.stubEnv("VITE_PWA_RELOAD_FALLBACK_MS", "25");
@@ -163,6 +175,7 @@ describe("registerAppUpdater", () => {
     expect(updateSW).toHaveBeenCalledWith(false);
     expect(unregister).not.toHaveBeenCalled();
     expect(deleteCache).not.toHaveBeenCalled();
+    navigationWarning.mockRestore();
   });
 
   it("keeps the toast open until the running buildId actually changes to the remote build", async () => {
