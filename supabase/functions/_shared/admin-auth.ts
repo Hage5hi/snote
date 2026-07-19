@@ -143,20 +143,20 @@ export async function verifyAdminPass(
   supabase: SupabaseClient,
   input: string,
 ): Promise<AdminPassVerification> {
-  const { data, error } = await supabase
-    .from("admin_config")
-    .select("pass_hash")
-    .eq("id", 1)
-    .maybeSingle();
-  if (error) return { available: false, valid: false };
+  try {
+    const { data, error } = await supabase
+      .from("admin_config")
+      .select("pass_hash")
+      .eq("id", 1)
+      .maybeSingle();
+    if (error) return { available: false, valid: false };
 
-  const storedHash = typeof data?.pass_hash === "string" ? data.pass_hash : "";
-  if (storedHash) {
-    try {
+    const storedHash = typeof data?.pass_hash === "string" ? data.pass_hash : "";
+    if (storedHash) {
       return { available: true, valid: await bcrypt.compare(input, storedHash) };
-    } catch {
-      return { available: false, valid: false };
     }
+  } catch {
+    return { available: false, valid: false };
   }
 
   const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
