@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router-dom";
 import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Eye } from "lucide-react";
 import * as Y from "yjs";
@@ -59,26 +59,39 @@ function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
 
 export default function SharePage() {
   const { token = "" } = useParams();
+  const location = useLocation();
   const valid = TOKEN_RE.test(token);
-  const [navigationHash, setNavigationHash] = useState(
+  const [currentHash, setCurrentHash] = useState(
     () => window.location.hash,
   );
+  const [externalHashRevision, setExternalHashRevision] = useState(0);
   const [state, setState] = useState<ViewState>(() => ({
     kind: "loading",
     token,
-    targetHash: navigationHash,
+    targetHash: currentHash,
     generation: 0,
   }));
   const requestGeneration = useRef(0);
-  const committedTargetRef = useRef({ token, targetHash: navigationHash });
+  const currentHashRef = useRef(currentHash);
+  const committedTargetRef = useRef({ token, targetHash: currentHash });
+  const routerTarget = `${location.key}\u0000${location.pathname}\u0000${location.search}\u0000${location.hash}`;
+  const routerTargetRef = useRef(routerTarget);
   const { t } = useI18n();
+  const translationRef = useRef(t);
+
+  const observeExternalHash = useCallback((nextHash: string) => {
+    if (currentHashRef.current === nextHash) return;
+    currentHashRef.current = nextHash;
+    setCurrentHash(nextHash);
+    setExternalHashRevision((revision) => revision + 1);
+  }, []);
 
   useLayoutEffect(() => {
-    committedTargetRef.current = { token, targetHash: navigationHash };
-  }, [token, navigationHash]);
+    translationRef.current = t;
+  }, [t]);
 
   useLayoutEffect(() => {
-    const syncHash = () => setNavigationHash(window.location.hash);
+    const syncHash = () => observeExternalHash(window.location.hash);
     window.addEventListener("hashchange", syncHash);
     window.addEventListener("popstate", syncHash);
     // Close the commit-to-subscription race: reconcile any navigation that
@@ -88,7 +101,17 @@ export default function SharePage() {
       window.removeEventListener("hashchange", syncHash);
       window.removeEventListener("popstate", syncHash);
     };
-  }, []);
+  }, [observeExternalHash]);
+
+  useLayoutEffect(() => {
+    if (routerTargetRef.current === routerTarget) return;
+    routerTargetRef.current = routerTarget;
+    observeExternalHash(location.hash);
+  }, [routerTarget, location.hash, observeExternalHash]);
+
+  useLayoutEffect(() => {
+    committedTargetRef.current = { token, targetHash: currentHash };
+  }, [token, currentHash]);
 
   const isCurrentRequest = useCallback((
     generation: number,
@@ -112,7 +135,7 @@ export default function SharePage() {
   useEffect(() => {
     const generation = ++requestGeneration.current;
     const requestToken = token;
-    const requestHash = navigationHash;
+    const requestHash = currentHashRef.current;
     const requestTarget: RequestTarget = {
       token: requestToken,
       targetHash: requestHash,
@@ -157,7 +180,7 @@ export default function SharePage() {
         setState({
           kind: "error",
           ...requestTarget,
-          message: t("share.missing_salt"),
+          message: translationRef.current("share.missing_salt"),
         });
         return;
       }
@@ -203,7 +226,7 @@ export default function SharePage() {
       }
     })();
     return cancel;
-  }, [token, valid, t, navigationHash, isCurrentRequest]);
+  }, [token, valid, externalHashRevision, isCurrentRequest]);
 
   const onUnlock = async (key: CryptoKey) => {
     if (state.kind !== "needs-key") return;
@@ -224,22 +247,26 @@ export default function SharePage() {
       if (!isCurrentManualRequest()) return;
       const doc = new Y.Doc();
       Y.applyUpdate(doc, pt);
+      currentHashRef.current = requestHash;
+      setCurrentHash(requestHash);
       setState({
         kind: "ready",
         token: requestToken,
-        targetHash: lockedState.targetHash,
+        targetHash: requestHash,
         generation,
         doc,
       });
     } catch (e) {
       if (!isCurrentManualRequest()) return;
       console.error("share: manual decrypt failed", e);
+      currentHashRef.current = requestHash;
+      setCurrentHash(requestHash);
       setState({
         kind: "error",
         token: requestToken,
-        targetHash: lockedState.targetHash,
+        targetHash: requestHash,
         generation,
-        message: t("share.decrypt_failed"),
+        message: translationRef.current("share.decrypt_failed"),
       });
     }
   };
@@ -262,7 +289,7 @@ export default function SharePage() {
   );
 
   if (
-    state.token !== token || state.targetHash !== navigationHash
+    state.token !== token || state.targetHash !== currentHash
     || state.kind === "loading"
   ) {
     return <>{head}<EditorSkeleton /></>;
