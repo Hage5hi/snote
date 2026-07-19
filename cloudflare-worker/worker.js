@@ -301,8 +301,14 @@ function normalizePath(p) {
 function parseRoute(pathname) {
   if (pathname === "/" || pathname === "") return { kind: "home" };
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length === 2 && parts[0] === "s" && TOKEN_RE.test(parts[1])) {
-    return { kind: "share" };
+  if (parts.length === 2 && parts[0] === "s") {
+    let token;
+    try {
+      token = decodeURIComponent(parts[1]);
+    } catch {
+      return null;
+    }
+    if (TOKEN_RE.test(token)) return { kind: "share" };
   }
   if (parts.length === 1) {
     let slug = parts[0];
