@@ -1,0 +1,141 @@
+import { render, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import NotePage from "../NotePage";
+
+const harness = vi.hoisted(() => ({
+  editorRender: vi.fn(),
+  previewRender: vi.fn(),
+  unlockRender: vi.fn(),
+  metaPromise: Promise.resolve({ data: null as Record<string, unknown> | null }),
+}));
+
+vi.mock("@/components/note/Editor", () => ({
+  Editor: () => {
+    harness.editorRender();
+    return <div data-testid="editor" />;
+  },
+}));
+vi.mock("@/components/note/Preview", () => ({
+  Preview: () => {
+    harness.previewRender();
+    return <div data-testid="preview" />;
+  },
+}));
+vi.mock("@/components/note/UnlockForm", () => ({
+  UnlockForm: () => {
+    harness.unlockRender();
+    return <div role="dialog" aria-label="Unlock encrypted note" />;
+  },
+}));
+vi.mock("@/components/note/Topbar", () => ({ Topbar: () => null }));
+vi.mock("@/components/note/PageIndicator", () => ({ PageIndicator: () => null }));
+vi.mock("@/components/note/GoalConfetti", () => ({ GoalConfetti: () => null }));
+vi.mock("@/components/note/OutlineSidebar", () => ({ OutlineSidebar: () => null }));
+vi.mock("@/components/app/AppShell", () => ({
+  AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+vi.mock("react-helmet-async", () => ({ Helmet: () => null }));
+vi.mock("lucide-react", () => ({ Loader2: () => <span aria-label="Loading encryption metadata" /> }));
+
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: () => harness.metaPromise }),
+      }),
+    }),
+  },
+}));
+vi.mock("@/lib/yjs/doc-cache", () => ({
+  acquireDoc: () => ({ getText: () => ({ toString: () => "" }) }),
+  releaseDoc: vi.fn(),
+}));
+vi.mock("@/lib/yjs/provider", () => ({
+  SupabaseYjsProvider: class {
+    awareness = {};
+  },
+}));
+vi.mock("@/hooks/use-word-goal", () => ({ useWordGoal: () => ({ goal: null }), consumeGoalReached: () => false }));
+vi.mock("@/hooks/use-toast", () => ({ toast: vi.fn() }));
+vi.mock("@/hooks/use-zen-mode", () => ({ useZenMode: () => ({ zen: false, toggle: vi.fn() }) }));
+vi.mock("@/hooks/use-typewriter-mode", () => ({ useTypewriterMode: () => ({ typewriter: false, toggle: vi.fn() }) }));
+vi.mock("@/hooks/use-preview-visible", () => ({ usePreviewVisible: () => ({ visible: true, setVisible: vi.fn() }) }));
+vi.mock("@/hooks/use-narrow-viewport", () => ({ useNarrowViewport: () => false }));
+vi.mock("@/hooks/use-scroll-sync-enabled", () => ({ useScrollSyncEnabled: () => ({ enabled: false, toggle: vi.fn() }) }));
+vi.mock("@/hooks/use-scroll-sync", () => ({ useScrollSync: vi.fn() }));
+vi.mock("@/hooks/use-focus-line", () => ({ useFocusLine: () => ({ focusLine: false, toggle: vi.fn() }) }));
+vi.mock("@/hooks/use-eink", () => ({ useEink: vi.fn() }));
+vi.mock("@/hooks/use-vim-mode", () => ({ useVimMode: () => ({ vim: false }) }));
+vi.mock("@/hooks/use-pagination", () => ({
+  usePagination: () => ({ enabled: false, toggle: vi.fn(), flip: vi.fn(), page: 1, totalPages: 1 }),
+}));
+vi.mock("@/i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock("@/lib/crypto", () => ({
+  deriveKey: vi.fn(), encryptBytes: vi.fn(), decryptBytes: vi.fn(), verifyCheck: vi.fn(), iterationsFor: () => 1,
+}));
+vi.mock("@/lib/recent-notes", () => ({ touchRecent: vi.fn() }));
+vi.mock("@/lib/snapshots", () => ({ maybeSaveSnapshot: vi.fn(), recordOnSuddenDelete: vi.fn() }));
+vi.mock("@/lib/yjs/identity", () => ({ getIdentity: () => ({ name: "Test", color: "#000" }) }));
+vi.mock("@/lib/wiki-link", () => ({ WIKI_NAV_EVENT: "wiki-nav" }));
+vi.mock("@/lib/ext-context", () => ({ isExtensionContext: false }));
+vi.mock("y-indexeddb", () => ({ IndexeddbPersistence: class {} }));
+
+function renderEmbedded() {
+  return render(
+    <MemoryRouter>
+      <NotePage embedSlug="secret" />
+    </MemoryRouter>,
+  );
+}
+
+function renderStandalone() {
+  return render(
+    <MemoryRouter initialEntries={["/secret"]}>
+      <Routes>
+        <Route path="/:slug" element={<NotePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+describe("NotePage encryption gate", () => {
+  beforeEach(() => {
+    harness.editorRender.mockClear();
+    harness.previewRender.mockClear();
+    harness.unlockRender.mockClear();
+    window.location.hash = "";
+  });
+
+  it("does not mount embedded editor or preview while encryption metadata is loading", () => {
+    harness.metaPromise = new Promise(() => {});
+
+    renderEmbedded();
+
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["embedded", renderEmbedded],
+    ["standalone", renderStandalone],
+  ])("shows the unlock gate without mounting %s editor or preview", async (_mode, renderPage) => {
+    harness.metaPromise = Promise.resolve({
+      data: {
+        is_encrypted: true,
+        enc_salt: "salt",
+        enc_check: "check",
+        enc_iterations: 1000,
+        ydoc_state: "ciphertext",
+      },
+    });
+
+    renderPage();
+    await waitFor(() => expect(harness.unlockRender).toHaveBeenCalled());
+
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+});
+
