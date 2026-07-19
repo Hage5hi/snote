@@ -189,8 +189,8 @@ describe("share crawler containment", () => {
       /\[observability\.logs\][\s\S]*invocation_logs\s*=\s*false/,
     );
     expect(readme).toContain("invocation_logs = false");
-    expect(rollout).toContain("Workers Logs");
-    expect(rollout).toContain("Tail Workers");
+    expect(rollout).toMatch(/Workers\s+Logs/);
+    expect(rollout).toMatch(/Tail\s+Workers/);
     expect(rollout).toContain("Logpush");
   });
 });
