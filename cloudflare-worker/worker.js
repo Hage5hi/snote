@@ -12,9 +12,11 @@
  *   - SUPABASE_ANON_KEY  = <anon key>     (secret)
  *   - NOTE_META_SECRET   = <shared secret>  (secret) — phải khớp với
  *                         secret cùng tên trong Supabase Edge Function.
- *   - SITE_URL           = "https://syrin.online"
+ *   - SITE_URL           = "https://note.syrin.online"
  *
- * Route: gắn worker vào pattern  syrin.online/*  và  www.syrin.online/*
+ * Route: gắn worker vào các pattern note.syrin.online/*, syrin.online/*
+ * và www.syrin.online/*. Mọi hostname share công khai phải đi qua Worker
+ * trước khi request /s/* có thể tới origin.
  */
 
 // Mở rộng UA: thêm iMessage/Apple, TikTok, Zalo, LINE, Viber, KakaoTalk,
@@ -454,7 +456,7 @@ function renderGenericShareHtml() {
 }
 
 function renderRobotsTxt(env) {
-  const siteUrl = (env.SITE_URL || "https://syrin.online").replace(/\/+$/, "");
+  const siteUrl = (env.SITE_URL || "https://note.syrin.online").replace(/\/+$/, "");
   return `User-agent: facebookexternalhit
 Allow: /
 
