@@ -35,14 +35,15 @@ afterEach(() => {
 });
 
 describe("share crawler containment", () => {
-  for (const suffix of ["", "/"]) {
-    it(`returns one generic, uncacheable response for /s/:token${suffix}`, async () => {
+  for (const hostname of ["syrin.online", "www.syrin.online"]) {
+    for (const suffix of ["", "/"]) {
+      it(`returns one generic, uncacheable response for ${hostname}/s/:token${suffix}`, async () => {
       const doubles = installWorkerDoubles();
       const logs: string[] = [];
       vi.spyOn(console, "log").mockImplementation((line) => logs.push(String(line)));
 
       const response = await worker.fetch(
-        new Request(`https://syrin.online/s/${TOKEN}${suffix}`, {
+        new Request(`https://${hostname}/s/${TOKEN}${suffix}`, {
           headers: {
             "cf-connecting-ip": "203.0.113.42",
             "user-agent": "Slackbot-LinkExpanding 1.0",
@@ -79,6 +80,7 @@ describe("share crawler containment", () => {
       expect(doubles.cacheMatch).not.toHaveBeenCalled();
       expect(doubles.cachePut).not.toHaveBeenCalled();
       expect(doubles.waitUntil).not.toHaveBeenCalled();
-    });
+      });
+    }
   }
 });
