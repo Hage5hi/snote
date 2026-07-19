@@ -1,4 +1,4 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -11,6 +11,8 @@ const harness = vi.hoisted(() => ({
   idbConstruct: vi.fn(),
   providerConnect: vi.fn(),
   metaForSlug: vi.fn(),
+  deriveKey: vi.fn(),
+  verifyCheck: vi.fn(),
   metaPromise: Promise.resolve({ data: null as Record<string, unknown> | null }),
 }));
 
@@ -30,10 +32,16 @@ vi.mock("@/components/note/Preview", () => ({
   },
 }));
 vi.mock("@/components/note/UnlockForm", () => ({
-  UnlockForm: () => {
-    harness.unlockRender();
-    return <div role="dialog" aria-label="Unlock encrypted note" />;
+  UnlockForm: ({ slug }: { slug: string }) => {
+    harness.unlockRender(slug);
+    return <div role="dialog" aria-label={`Unlock encrypted note ${slug}`} />;
   },
+}));
+vi.mock("@/components/ui/button", () => ({
+  Button: (props: React.ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
+}));
+vi.mock("@/components/ui/input", () => ({
+  Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }));
 vi.mock("@/components/note/Topbar", () => ({ Topbar: () => null }));
 vi.mock("@/components/note/PageIndicator", () => ({ PageIndicator: () => null }));
@@ -43,7 +51,11 @@ vi.mock("@/components/app/AppShell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("react-helmet-async", () => ({ Helmet: () => null }));
-vi.mock("lucide-react", () => ({ Loader2: () => <span aria-label="Loading encryption metadata" /> }));
+vi.mock("lucide-react", () => ({
+  ArrowLeft: () => null,
+  KeyRound: () => null,
+  Loader2: () => <span aria-label="Loading encryption metadata" />,
+}));
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
@@ -97,8 +109,13 @@ vi.mock("@/hooks/use-pagination", () => ({
   usePagination: () => ({ enabled: false, toggle: vi.fn(), flip: vi.fn(), page: 1, totalPages: 1 }),
 }));
 vi.mock("@/i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
+vi.mock("@/i18n/index", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/lib/crypto", () => ({
-  deriveKey: vi.fn(), encryptBytes: vi.fn(), decryptBytes: vi.fn(), verifyCheck: vi.fn(), iterationsFor: () => 1,
+  deriveKey: harness.deriveKey,
+  encryptBytes: vi.fn(),
+  decryptBytes: vi.fn(),
+  verifyCheck: harness.verifyCheck,
+  iterationsFor: () => 1,
 }));
 vi.mock("@/lib/recent-notes", () => ({ touchRecent: vi.fn() }));
 vi.mock("@/lib/snapshots", () => ({ maybeSaveSnapshot: vi.fn(), recordOnSuddenDelete: vi.fn() }));
@@ -147,7 +164,9 @@ describe("NotePage encryption gate", () => {
     harness.providerConnect.mockClear();
     harness.metaForSlug.mockReset();
     harness.metaForSlug.mockImplementation(() => harness.metaPromise);
-    window.location.hash = "";
+    harness.deriveKey.mockReset();
+    harness.verifyCheck.mockReset();
+    window.history.replaceState(null, "", window.location.pathname);
   });
 
   it("does not mount embedded editor or preview while encryption metadata is loading", () => {
@@ -212,6 +231,96 @@ describe("NotePage encryption gate", () => {
     await waitFor(() => expect(harness.metaForSlug).toHaveBeenCalledWith("encrypted"));
     expect(harness.idbConstruct).not.toHaveBeenCalledWith("note:encrypted");
     expect(harness.providerConnect).not.toHaveBeenCalledWith("encrypted");
+  });
+
+  it("ignores auto-unlock crypto that finishes after the embedded target changes", async () => {
+    let resolveAKey!: (key: CryptoKey) => void;
+    const keyA = {} as CryptoKey;
+    const deferredAKey = new Promise<CryptoKey>((resolve) => {
+      resolveAKey = resolve;
+    });
+    harness.deriveKey.mockReturnValue(deferredAKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    harness.metaForSlug.mockImplementation((slug: string) => Promise.resolve({
+      data: {
+        is_encrypted: true,
+        enc_salt: `salt-${slug}`,
+        enc_check: `check-${slug}`,
+        enc_iterations: 1000,
+        ydoc_state: `ciphertext-${slug}`,
+      },
+    }));
+    window.history.replaceState(null, "", `${window.location.pathname}#key-a`);
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <NotePage embedSlug="a" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(harness.deriveKey).toHaveBeenCalledWith("key-a", "salt-a", 1));
+
+    window.history.replaceState(null, "", window.location.pathname);
+    view.rerender(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <NotePage embedSlug="b" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(view.getByRole("dialog", { name: "Unlock encrypted note b" })).toBeInTheDocument());
+    harness.idbConstruct.mockClear();
+    harness.providerConnect.mockClear();
+
+    await act(async () => {
+      resolveAKey(keyA);
+      await deferredAKey;
+      await Promise.resolve();
+    });
+
+    expect(view.getByRole("dialog", { name: "Unlock encrypted note b" })).toBeInTheDocument();
+    expect(window.location.hash).toBe("");
+    expect(harness.idbConstruct).not.toHaveBeenCalledWith("note:b");
+    expect(harness.providerConnect).not.toHaveBeenCalledWith("b");
+  });
+
+  it("ignores a manual unlock that finishes after the form target changes", async () => {
+    const { UnlockForm: ActualUnlockForm } = await vi.importActual<
+      typeof import("@/components/note/UnlockForm")
+    >("@/components/note/UnlockForm");
+    let resolveAKey!: (key: CryptoKey) => void;
+    const keyA = {} as CryptoKey;
+    const deferredAKey = new Promise<CryptoKey>((resolve) => {
+      resolveAKey = resolve;
+    });
+    harness.deriveKey.mockReturnValue(deferredAKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    const onUnlockA = vi.fn();
+    const onUnlockB = vi.fn();
+    window.history.replaceState(null, "", "/a");
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ActualUnlockForm slug="a" salt="salt-a" check="check-a" iterations={1} onUnlock={onUnlockA} />
+      </MemoryRouter>,
+    );
+    fireEvent.change(view.getByPlaceholderText("unlock.placeholder"), { target: { value: "pass-a" } });
+    fireEvent.submit(view.container.querySelector("form")!);
+    await waitFor(() => expect(harness.deriveKey).toHaveBeenCalledWith("pass-a", "salt-a", 1));
+
+    window.history.replaceState(null, "", "/b");
+    view.rerender(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ActualUnlockForm slug="b" salt="salt-b" check="check-b" iterations={1} onUnlock={onUnlockB} />
+      </MemoryRouter>,
+    );
+    await act(async () => {
+      resolveAKey(keyA);
+      await deferredAKey;
+      await Promise.resolve();
+    });
+
+    expect(window.location.pathname).toBe("/b");
+    expect(window.location.hash).toBe("");
+    expect(onUnlockA).not.toHaveBeenCalled();
+    expect(onUnlockB).not.toHaveBeenCalled();
   });
 
   it.each([
