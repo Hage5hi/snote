@@ -18,6 +18,12 @@ without the explicit checkpoint below.
    `snote.lovable.app`. Route each public hostname through the generic share
    response, or make the alias non-public/disabled.
    Do not advance while any public alias can bypass the generic share response.
+5. Deploy only from the committed `cloudflare-worker/wrangler.toml` and confirm
+   `[observability.logs] invocation_logs = false`. Inventory Workers Logs, Tail
+   Workers, Workers Logpush, and zone-level HTTP request datasets. Disable or
+   redact every pipeline that can retain a raw `/s/*` request path; application
+   log sanitization cannot remove a URL captured by Cloudflare before the
+   Worker runs. Do not advance while any raw share path is retained.
 
 ## Migration and deployment order
 
@@ -42,14 +48,16 @@ without the explicit checkpoint below.
 6. Deploy the `share-rename` tombstone. Verify it returns `410` and `no-store`
    without initializing a database client, then purge cached responses for the
    retired endpoint.
-7. Deploy the generic share Worker first so no live Worker depends on the old
+7. Deploy the generic share Worker from the committed Wrangler configuration
+   first so no live Worker depends on the old
    `note-meta?token=` resolver. Then deploy the slug-only `note-meta` token
    tombstone and purge both `/s/*` HTML cache entries and every Supabase/CDN/
    intermediary entry for `note-meta?token=*`. If wildcard purge is not
    available, keep share rollout blocked through the verified maximum expiry
    of the old `s-maxage=300, stale-while-revalidate=3600` responses. Prove an
    unauthenticated token query cannot receive an old cached slug. Verify raw,
-   percent-encoded, uppercase, and trailing-slash share paths on
+   percent-encoded, encoded-separator/backslash, uppercase, asset-looking, and
+   trailing-slash share paths with Slack and Meta crawler user agents on
    `note.syrin.online`, the apex, and `www` return the same token-free,
    `no-store`, non-indexable crawler response. Verify `snote.lovable.app` is
    non-public/disabled or has equivalent origin-side containment before the
