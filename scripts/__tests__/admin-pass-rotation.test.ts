@@ -37,6 +37,9 @@ describe("admin passphrase rotation containment", () => {
     expect(panel).toMatch(
       /const clearAdminSession = \(\) => \{[\s\S]*?sessionStorage\.removeItem\(SESSION_TOKEN_KEY\)[\s\S]*?setGate\("denied"\)[\s\S]*?setSessionToken\(""\)[\s\S]*?setItems\(\[\]\)[\s\S]*?\};/,
     );
+    expect(panel).toMatch(
+      /const clearAdminSession = \(\) => \{[\s\S]*?setSearch\(""\)[\s\S]*?setTagFilter\(""\)[\s\S]*?setConfirmOpen\(null\)[\s\S]*?\};/,
+    );
     expect(panel).toContain("onSuccess={clearAdminSession}");
     expect(panel).not.toMatch(
       /onSuccess=\{\(\) => void fetchList\(sessionToken, search, tagFilter\)\}/,
