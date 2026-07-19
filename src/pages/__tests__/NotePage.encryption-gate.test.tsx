@@ -185,6 +185,19 @@ function ShareRouteHarness() {
       <button type="button" onClick={() => navigate(`/s/${SHARE_TOKEN_B}`)}>
         navigate-share-b
       </button>
+      <button
+        type="button"
+        onClick={() => {
+          window.history.replaceState(
+            null,
+            "",
+            `/s/${SHARE_TOKEN_A}#router-key`,
+          );
+          navigate(`/s/${SHARE_TOKEN_A}#router-key`);
+        }}
+      >
+        navigate-share-hash
+      </button>
       <Routes>
         <Route path="/s/:token" element={<SharePage />} />
       </Routes>
@@ -346,6 +359,30 @@ describe("NotePage encryption gate", () => {
     expect(window.location.hash).toBe("");
     expect(harness.idbConstruct).not.toHaveBeenCalledWith("note:b");
     expect(harness.providerConnect).not.toHaveBeenCalledWith("b");
+  });
+
+  it("falls back to the unlock gate for a malformed encrypted fragment", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: {
+        is_encrypted: true,
+        enc_salt: "salt-secret",
+        enc_check: "check-secret",
+        enc_iterations: 1000,
+        ydoc_state: "ciphertext-secret",
+      },
+    });
+    window.history.replaceState(null, "", `${window.location.pathname}#%`);
+
+    const view = renderEmbedded();
+
+    await waitFor(() =>
+      expect(
+        view.getByRole("dialog", { name: "Unlock encrypted note secret" }),
+      ).toBeInTheDocument(),
+    );
+    expect(harness.deriveKey).not.toHaveBeenCalled();
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    expect(harness.previewRender).not.toHaveBeenCalled();
   });
 
   it("ignores a manual unlock that finishes after the form target changes", async () => {
@@ -525,15 +562,28 @@ describe("NotePage encryption gate", () => {
     const onUnlock = vi.fn();
     window.history.replaceState(null, "", "/same-note?mode=a");
 
+    function QueryNavigationHarness() {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button type="button" onClick={() => navigate("?mode=b")}>navigate-query</button>
+          <ActualUnlockForm
+            slug="same-note"
+            salt="same-salt"
+            check="same-check"
+            iterations={1}
+            onUnlock={onUnlock}
+          />
+        </>
+      );
+    }
+
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <ActualUnlockForm
-          slug="same-note"
-          salt="same-salt"
-          check="same-check"
-          iterations={1}
-          onUnlock={onUnlock}
-        />
+      <MemoryRouter
+        initialEntries={["/same-note?mode=a"]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <QueryNavigationHarness />
       </MemoryRouter>,
     );
     fireEvent.change(view.getByPlaceholderText("unlock.placeholder"), {
@@ -544,10 +594,7 @@ describe("NotePage encryption gate", () => {
       expect(view.getByLabelText("Loading encryption metadata")).toBeInTheDocument(),
     );
 
-    act(() => {
-      window.history.replaceState(null, "", "/same-note?mode=b");
-      window.dispatchEvent(new PopStateEvent("popstate"));
-    });
+    fireEvent.click(view.getByRole("button", { name: "navigate-query" }));
 
     expect(view.queryByLabelText("Loading encryption metadata")).not.toBeInTheDocument();
     expect(view.getByPlaceholderText("unlock.placeholder")).toHaveValue("");
@@ -595,6 +642,23 @@ describe("NotePage encryption gate", () => {
       await Promise.resolve();
     });
 
+    expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("observes same-token hash navigation performed by React Router", async () => {
+    harness.shareInvoke.mockResolvedValue(encryptedShareResponse("router"));
+    harness.deriveKey.mockReturnValue(new Promise<CryptoKey>(() => {}));
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}`);
+
+    const view = renderShareRoute();
+    await waitFor(() => expect(harness.unlockProps).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(view.getByRole("button", { name: "navigate-share-hash" }));
+
+    await waitFor(() =>
+      expect(harness.deriveKey).toHaveBeenCalledWith("router-key", "salt-router", 1),
+    );
+    expect(view.getByTestId("skeleton")).toBeInTheDocument();
     expect(harness.previewRender).not.toHaveBeenCalled();
   });
 
@@ -658,6 +722,27 @@ describe("NotePage encryption gate", () => {
     expect(harness.shareInvoke).toHaveBeenCalledTimes(1);
     expect(view.getByTestId("preview")).toBeInTheDocument();
     expect(view.queryByTestId("skeleton")).not.toBeInTheDocument();
+
+    harness.translate = (key: string) => `next:${key}`;
+    view.rerender(
+      <MemoryRouter
+        initialEntries={[`/s/${SHARE_TOKEN_A}`]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <ShareRouteHarness />
+      </MemoryRouter>,
+    );
+    expect(harness.shareInvoke).toHaveBeenCalledTimes(1);
+    expect(view.getByTestId("preview")).toBeInTheDocument();
+
+    act(() => {
+      window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}`);
+      window.dispatchEvent(new Event("hashchange"));
+    });
+
+    expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+    expect(view.getByTestId("skeleton")).toBeInTheDocument();
+    await waitFor(() => expect(harness.shareInvoke).toHaveBeenCalledTimes(2));
   });
 
   it("does not let an old locked state adopt a newer same-token generation", async () => {
@@ -669,15 +754,14 @@ describe("NotePage encryption gate", () => {
     await waitFor(() => expect(harness.unlockProps).toHaveBeenCalledTimes(1));
     const staleUnlock = harness.unlockProps.mock.calls[0][0].onUnlock;
 
-    harness.translate = (key: string) => `next:${key}`;
-    view.rerender(
-      <MemoryRouter
-        initialEntries={[`/s/${SHARE_TOKEN_A}`]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
-        <ShareRouteHarness />
-      </MemoryRouter>,
-    );
+    act(() => {
+      window.history.replaceState(
+        null,
+        "",
+        `/s/${SHARE_TOKEN_A}#next-generation`,
+      );
+      window.dispatchEvent(new Event("hashchange"));
+    });
     await waitFor(() => expect(harness.shareInvoke).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(harness.unlockProps.mock.calls.length).toBeGreaterThanOrEqual(2));
     harness.previewRender.mockClear();
