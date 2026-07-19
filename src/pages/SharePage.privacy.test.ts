@@ -32,9 +32,9 @@ describe("SharePage crawler metadata", () => {
     expect(source).toContain("const requestGeneration = useRef(0);");
     expect(source).toContain("const committedTargetRef = useRef");
     expect(source).not.toContain("currentShareToken");
-    expect(source).toContain('state.token !== token || state.targetHash !== currentHash');
+    expect(source).toContain('state.token !== token || state.targetHash !== navigationHash');
     expect(source).toMatch(
-      /useLayoutEffect[\s\S]*committedTargetRef\.current = \{ token, targetHash: currentHash \}/,
+      /useLayoutEffect[\s\S]*committedTargetRef\.current = \{ token, targetHash: navigationHash \}/,
     );
     expect(onUnlock).toMatch(
       /state\.kind !== "needs-key"[\s\S]*const lockedState = state;[\s\S]*const generation = lockedState\.generation;[\s\S]*const requestToken = lockedState\.token;[\s\S]*const requestHash = window\.location\.hash;/,
@@ -62,6 +62,23 @@ describe("SharePage crawler metadata", () => {
     );
     expect(unlockSource).toMatch(
       /useLayoutEffect\(\(\) => \{[\s\S]*targetRef\.current = \{ slug, salt, check, iterations \}/,
+    );
+    expect(unlockSource).toMatch(
+      /useLayoutEffect\(\(\) => \{\s*mountedRef\.current = true;[\s\S]*mountedRef\.current = false;/,
+    );
+  });
+
+  it("drives refetches from externally observed hash navigation", () => {
+    const source = readSharePageSource();
+
+    expect(source).toContain("const [navigationHash, setNavigationHash] = useState");
+    expect(source).toMatch(
+      /useLayoutEffect\(\(\) => \{[\s\S]*addEventListener\("hashchange", syncHash\)[\s\S]*addEventListener\("popstate", syncHash\)[\s\S]*syncHash\(\);/,
+    );
+    expect(source).toContain("targetHash: navigationHash");
+    expect(source).toContain("state.targetHash !== navigationHash");
+    expect(source).toMatch(
+      /kind: "ready",\s*token: requestToken,\s*targetHash: lockedState\.targetHash,/,
     );
   });
 });
