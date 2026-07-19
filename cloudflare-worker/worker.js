@@ -160,6 +160,18 @@ export default {
       });
     }
 
+    // Classify capability-bearing share paths before asset passthrough or host
+    // redirects. A token may legitimately look like a filename or be followed
+    // by nested path data, and neither case may reach the origin.
+    const normalizedPath = normalizePath(url.pathname);
+    const route = parseRoute(normalizedPath);
+    if (isCrawler && route?.kind === "share") {
+      logEvent(env, "info", "prerender", {
+        kind: "share", status: 200,
+      });
+      return renderGenericShareHtml();
+    }
+
     if (!isCrawler || isAssetPath(url.pathname)) {
       if (url.hostname === "www.syrin.online") {
         url.hostname = "syrin.online";
@@ -185,18 +197,6 @@ export default {
           "x-bot-group": rl.group,
         },
       });
-    }
-
-    // Resolve share routes before redirects, cache access, or metadata lookup.
-    // Even a trailing slash must not echo the capability-bearing path back in
-    // a Location header or create a second cache key.
-    const normalizedPath = normalizePath(url.pathname);
-    const route = parseRoute(normalizedPath);
-    if (route?.kind === "share") {
-      logEvent(env, "info", "prerender", {
-        kind: "share", status: 200, group: rl.group,
-      });
-      return renderGenericShareHtml();
     }
 
     // Canonicalize non-share requests only after capability-bearing share
@@ -302,7 +302,7 @@ function normalizePath(p) {
 function parseRoute(pathname) {
   if (pathname === "/" || pathname === "") return { kind: "home" };
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length === 2 && isSharePrefix(parts[0])) {
+  if (parts.length >= 2 && isSharePrefix(parts[0])) {
     // Containment is deliberately independent of the legacy token regex.
     // Malformed, future-format, or re-encoded capabilities must never fall
     // through to origin redirects, metadata, caches, or raw-path logs.
