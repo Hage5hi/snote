@@ -1,0 +1,40 @@
+# Immediate containment rollout
+
+This change set is code-only. It must not be applied to staging or production
+without the explicit checkpoint below.
+
+## Required checkpoint
+
+1. Create and verify a database backup/PITR restore point.
+2. In staging, prove that the Supabase gateway overwrites client-supplied
+   `X-Forwarded-For` and supplies exactly one IP literal. If that cannot be
+   demonstrated, leave the admin functions disabled; they intentionally return
+   `503` rather than trust an ambiguous header.
+3. Provision `ADMIN_RATE_LIMIT_HMAC_SECRET` with at least 32 random bytes and
+   set `ADMIN_SESSION_TTL_MINUTES` between 5 and 30 (default: 15). Do not reuse
+   the admin passphrase as the HMAC secret.
+
+## Migration and deployment order
+
+1. Apply `20260522000000_admin_rate_limit.sql`.
+2. Apply `20260719000000_security_immediate_containment.sql`. Confirm public
+   DELETE is revoked, old raw-IP limiter rows were purged, the atomic RPCs are
+   executable only by `service_role`, and `admin_sessions` is service-role-only.
+3. Deploy `admin-session` and smoke-test wrong-pass concurrency, DB-error 503,
+   session expiry, logout revocation, and subject binding.
+4. Deploy `admin-list`, `admin-delete`, `admin-rotate`, and `cleanup` together;
+   the passphrase body contract is removed by this step.
+5. Deploy the SPA client, then tombstone `share-rename` and purge any cached
+   responses for the old endpoint.
+
+No function in this sequence logs a passphrase, session token, locator, or raw
+client address.
+
+## Rollback
+
+Rollback is API read-only. Disable the new admin functions and keep the public
+DELETE policy and table privilege revoked. Do not recreate `USING (true)` or
+restore direct anonymous DELETE. Restore application availability from the
+verified checkpoint only after incident review; session/limiter tables may be
+discarded because they contain no note content.
+
