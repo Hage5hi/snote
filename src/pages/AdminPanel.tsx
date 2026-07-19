@@ -224,12 +224,20 @@ export default function AdminPanel() {
     }
   };
 
-  const logout = () => {
-    const tokenToRevoke = sessionToken;
+  const clearAdminSession = () => {
     sessionStorage.removeItem(SESSION_TOKEN_KEY);
     setGate("denied");
     setSessionToken("");
     setItems([]);
+    setTotal(0);
+    setTopTags([]);
+    setSelected(new Set());
+    setRotateOpen(false);
+  };
+
+  const logout = () => {
+    const tokenToRevoke = sessionToken;
+    clearAdminSession();
     if (tokenToRevoke) {
       void supabase.functions.invoke("admin-session", {
         method: "DELETE",
@@ -267,7 +275,7 @@ export default function AdminPanel() {
         open={rotateOpen}
         onOpenChange={setRotateOpen}
         sessionToken={sessionToken}
-        onSuccess={() => void fetchList(sessionToken, search, tagFilter)}
+        onSuccess={clearAdminSession}
       />
 
       <div className="mx-auto max-w-5xl p-4">
