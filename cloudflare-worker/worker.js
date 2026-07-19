@@ -27,7 +27,6 @@
 const CRAWLER_UA = /(facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|Discordbot|WhatsApp|TelegramBot|Pinterest|pinterestbot|redditbot|Applebot|Googlebot|Google-Read-Aloud|Google-Site-Verification|Google-InspectionTool|bingbot|DuckDuckBot|YandexBot|Baiduspider|SkypeUriPreview|vkShare|W3C_Validator|Embedly|Iframely|nuzzel|outbrain|quora link preview|XING-contenttabreceiver|TikTokBot|Bytespider|Snapchat|SnapchatAds|Snapcrawler|Mastodon|Pleroma|Misskey|Threads|Bluesky|Notionbot|Trello|Asana|MicrosoftPreview|Teams|Outlook|Office|Zalo|LINE|Viber|KakaoTalk|iMessageLinkPreview|MetaInspector|Tumblr|Flipboard|PetalBot|Yeti|SeznamBot|Qwantify|MojeekBot|AhrefsBot|SemrushBot|archive\.org_bot|ia_archiver|YisouSpider|Sogou|360Spider|MJ12bot|DotBot|HeadlessChrome)/i;
 
 const SLUG_RE = /^[a-zA-Z0-9._-]{1,80}$/;
-const TOKEN_RE = /^[a-zA-Z0-9_-]{8,128}$/;
 const SHARE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
 // Rate limit (in-memory per-isolate). Token bucket đơn giản.
@@ -303,18 +302,11 @@ function normalizePath(p) {
 function parseRoute(pathname) {
   if (pathname === "/" || pathname === "") return { kind: "home" };
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length === 2) {
-    let prefix;
-    let token;
-    try {
-      prefix = decodeURIComponent(parts[0]);
-      token = decodeURIComponent(parts[1]);
-    } catch {
-      return null;
-    }
-    if (prefix.toLowerCase() === "s" && TOKEN_RE.test(token)) {
-      return { kind: "share" };
-    }
+  if (parts.length === 2 && isSharePrefix(parts[0])) {
+    // Containment is deliberately independent of the legacy token regex.
+    // Malformed, future-format, or re-encoded capabilities must never fall
+    // through to origin redirects, metadata, caches, or raw-path logs.
+    return { kind: "share" };
   }
   if (parts.length === 1) {
     let slug = parts[0];
@@ -322,6 +314,12 @@ function parseRoute(pathname) {
     if (SLUG_RE.test(slug)) return { kind: "note", slug };
   }
   return null;
+}
+
+function isSharePrefix(value) {
+  // Match s/S plus any number of standard re-encodings of %73/%53, e.g.
+  // %73, %2573, %252573. This stays linear for hostile input.
+  return value.toLowerCase() === "s" || /^%(?:25)*(?:53|73)$/i.test(value);
 }
 
 async function fetchNoteMeta(route, env) {
@@ -424,6 +422,7 @@ function renderGenericShareHtml() {
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
 <title>${title}</title>
 <meta name="description" content="${description}" />
 <meta name="robots" content="${SHARE_ROBOTS}" />
@@ -450,6 +449,7 @@ function renderGenericShareHtml() {
       "cache-control": "no-store",
       "cdn-cache-control": "no-store",
       "x-robots-tag": SHARE_ROBOTS,
+      "referrer-policy": "no-referrer",
       vary: "User-Agent",
     },
   });
