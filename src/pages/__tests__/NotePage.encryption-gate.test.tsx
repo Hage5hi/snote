@@ -2,6 +2,7 @@ import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as Y from "yjs";
 import NotePage from "../NotePage";
 import SharePage from "../SharePage";
 
@@ -202,6 +203,21 @@ function renderShareRoute() {
   );
 }
 
+function encryptedShareResponse(label: string) {
+  return {
+    data: {
+      content: "",
+      ydoc_state: `ciphertext-${label}`,
+      is_encrypted: true,
+      enc_salt: `salt-${label}`,
+      enc_check: `check-${label}`,
+      enc_iterations: 1,
+      updated_at: "2026-07-19T00:00:00.000Z",
+    },
+    error: null,
+  };
+}
+
 describe("NotePage encryption gate", () => {
   beforeEach(() => {
     harness.editorRender.mockClear();
@@ -216,6 +232,7 @@ describe("NotePage encryption gate", () => {
     harness.verifyCheck.mockReset();
     harness.decryptBytes.mockReset();
     harness.shareInvoke.mockReset();
+    harness.translate = (key: string) => key;
     window.history.replaceState(null, "", window.location.pathname);
   });
 
@@ -417,6 +434,180 @@ describe("NotePage encryption gate", () => {
     expect(window.location.hash).toBe("");
     expect(onUnlockA).not.toHaveBeenCalled();
     expect(onUnlockB).not.toHaveBeenCalled();
+  });
+
+  it("ignores a manual unlock when only the live URL hash changes", async () => {
+    const { UnlockForm: ActualUnlockForm } = await vi.importActual<
+      typeof import("@/components/note/UnlockForm")
+    >("@/components/note/UnlockForm");
+    let resolveKey!: (key: CryptoKey) => void;
+    const deferredKey = new Promise<CryptoKey>((resolve) => {
+      resolveKey = resolve;
+    });
+    const key = {} as CryptoKey;
+    harness.deriveKey.mockReturnValue(deferredKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    const onUnlock = vi.fn();
+    window.history.replaceState(null, "", "/same-note#starting-key");
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ActualUnlockForm
+          slug="same-note"
+          salt="same-salt"
+          check="same-check"
+          iterations={1}
+          onUnlock={onUnlock}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.change(view.getByPlaceholderText("unlock.placeholder"), {
+      target: { value: "submitted-key" },
+    });
+    fireEvent.submit(view.container.querySelector("form")!);
+    await waitFor(() =>
+      expect(harness.deriveKey).toHaveBeenCalledWith("submitted-key", "same-salt", 1),
+    );
+
+    window.history.replaceState(null, "", "/same-note#newer-key");
+    await act(async () => {
+      resolveKey(key);
+      await deferredKey;
+      await Promise.resolve();
+    });
+
+    expect(window.location.hash).toBe("#newer-key");
+    expect(onUnlock).not.toHaveBeenCalled();
+  });
+
+  it("preserves the query string when a manual unlock writes its hash", async () => {
+    const { UnlockForm: ActualUnlockForm } = await vi.importActual<
+      typeof import("@/components/note/UnlockForm")
+    >("@/components/note/UnlockForm");
+    const key = {} as CryptoKey;
+    harness.deriveKey.mockResolvedValue(key);
+    harness.verifyCheck.mockResolvedValue(true);
+    const onUnlock = vi.fn();
+    window.history.replaceState(null, "", "/same-note?mode=share");
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ActualUnlockForm
+          slug="same-note"
+          salt="same-salt"
+          check="same-check"
+          iterations={1}
+          onUnlock={onUnlock}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.change(view.getByPlaceholderText("unlock.placeholder"), {
+      target: { value: "submitted-key" },
+    });
+    fireEvent.submit(view.container.querySelector("form")!);
+
+    await waitFor(() => expect(onUnlock).toHaveBeenCalledWith(key));
+    expect(window.location.pathname).toBe("/same-note");
+    expect(window.location.search).toBe("?mode=share");
+    expect(window.location.hash).toBe("#submitted-key");
+  });
+
+  it("restarts auto-unlock and rejects the old key after a hash-only change", async () => {
+    let resolveFirstKey!: (key: CryptoKey) => void;
+    const firstKey = {} as CryptoKey;
+    const deferredFirstKey = new Promise<CryptoKey>((resolve) => {
+      resolveFirstKey = resolve;
+    });
+    const neverResolve = new Promise<CryptoKey>(() => {});
+    harness.deriveKey.mockImplementation((passphrase: string) =>
+      passphrase === "key-one" ? deferredFirstKey : neverResolve,
+    );
+    harness.verifyCheck.mockResolvedValue(true);
+    harness.decryptBytes.mockResolvedValue(Y.encodeStateAsUpdate(new Y.Doc()));
+    harness.shareInvoke.mockResolvedValue(encryptedShareResponse("auto"));
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#key-one`);
+
+    renderShareRoute();
+    await waitFor(() =>
+      expect(harness.deriveKey).toHaveBeenCalledWith("key-one", "salt-auto", 1),
+    );
+
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#key-two`);
+    window.dispatchEvent(new Event("hashchange"));
+    await waitFor(() =>
+      expect(harness.deriveKey).toHaveBeenCalledWith("key-two", "salt-auto", 1),
+    );
+
+    await act(async () => {
+      resolveFirstKey(firstKey);
+      await deferredFirstKey;
+      await Promise.resolve();
+    });
+
+    expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("rejects a manual share decrypt after its hash target changes", async () => {
+    let resolveDecrypt!: (value: Uint8Array) => void;
+    const deferredDecrypt = new Promise<Uint8Array>((resolve) => {
+      resolveDecrypt = resolve;
+    });
+    harness.decryptBytes.mockReturnValue(deferredDecrypt);
+    harness.deriveKey.mockReturnValue(new Promise<CryptoKey>(() => {}));
+    harness.shareInvoke.mockResolvedValue(encryptedShareResponse("manual"));
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}`);
+
+    renderShareRoute();
+    await waitFor(() => expect(harness.unlockProps).toHaveBeenCalledTimes(1));
+    const staleUnlock = harness.unlockProps.mock.calls[0][0].onUnlock;
+
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#submitted-key`);
+    void staleUnlock({} as CryptoKey);
+    await waitFor(() => expect(harness.decryptBytes).toHaveBeenCalled());
+
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}#newer-key`);
+    window.dispatchEvent(new Event("hashchange"));
+    await waitFor(() =>
+      expect(harness.deriveKey).toHaveBeenCalledWith("newer-key", "salt-manual", 1),
+    );
+
+    await act(async () => {
+      resolveDecrypt(Y.encodeStateAsUpdate(new Y.Doc()));
+      await deferredDecrypt;
+      await Promise.resolve();
+    });
+
+    expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("does not let an old locked state adopt a newer same-token generation", async () => {
+    harness.decryptBytes.mockResolvedValue(Y.encodeStateAsUpdate(new Y.Doc()));
+    harness.shareInvoke.mockResolvedValue(encryptedShareResponse("generation"));
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}`);
+
+    const view = renderShareRoute();
+    await waitFor(() => expect(harness.unlockProps).toHaveBeenCalledTimes(1));
+    const staleUnlock = harness.unlockProps.mock.calls[0][0].onUnlock;
+
+    harness.translate = (key: string) => `next:${key}`;
+    view.rerender(
+      <MemoryRouter
+        initialEntries={[`/s/${SHARE_TOKEN_A}`]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <ShareRouteHarness />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(harness.shareInvoke).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(harness.unlockProps.mock.calls.length).toBeGreaterThanOrEqual(2));
+    harness.previewRender.mockClear();
+
+    await act(async () => {
+      await staleUnlock({} as CryptoKey);
+    });
+
+    expect(harness.previewRender).not.toHaveBeenCalled();
+    expect(view.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("keeps a resolved share B locked when share A decrypt finishes late", async () => {
