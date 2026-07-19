@@ -265,6 +265,34 @@ AS $$
      AND subject_hash = p_subject_hash;
 $$;
 
+-- Rotate the persisted pass hash and revoke every outstanding session in one
+-- database transaction. The caller's session is intentionally revoked too,
+-- forcing a fresh exchange with the new passphrase.
+CREATE OR REPLACE FUNCTION public.admin_pass_rotate(
+  p_pass_hash text
+)
+RETURNS void
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+BEGIN
+  IF p_pass_hash IS NULL
+     OR p_pass_hash !~ '^\$2[aby]\$12\$[./A-Za-z0-9]{53}$' THEN
+    RAISE EXCEPTION 'admin pass rotation unavailable';
+  END IF;
+
+  INSERT INTO public.admin_config (id, pass_hash, updated_at)
+  VALUES (1, p_pass_hash, statement_timestamp())
+  ON CONFLICT (id) DO UPDATE
+    SET pass_hash = EXCLUDED.pass_hash,
+        updated_at = EXCLUDED.updated_at;
+
+  DELETE FROM public.admin_sessions;
+END;
+$$;
+
 DROP FUNCTION IF EXISTS public.admin_auth_check(text);
 DROP FUNCTION IF EXISTS public.admin_auth_record(text, boolean);
 
@@ -276,10 +304,13 @@ REVOKE ALL ON FUNCTION public.admin_session_validate(text, text)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_revoke(text, text)
   FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_pass_rotate(text)
+  FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.admin_auth_begin(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_auth_complete(text, text, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_validate(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_revoke(text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_pass_rotate(text) TO service_role;
 
 COMMIT;
