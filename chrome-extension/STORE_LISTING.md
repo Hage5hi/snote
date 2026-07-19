@@ -30,22 +30,20 @@ Syrin Note lives in Chrome's side panel so you can write notes without leaving t
 — Optional client-side AES-GCM encryption. The key is derived from your passphrase in your browser and never leaves your device.
 — Choose what opens on launch: a random new note, a specific slug, or the last note you had open. The toolbar badge shows H / S / L so you always know.
 — No tracking, no analytics, no remote code, no host permissions. The extension is a thin wrapper around https://note.syrin.online.
+— Optional device-local reliability diagnostics are retained for up to 7 days and are never uploaded automatically.
 
 Open source. Privacy policy: https://note.syrin.online/privacy
 ```
 
 ---
 
-## What's new — v1.3.0
+## What's new — v1.3.5
 
 ```
-• Unified watercolor "N" logo across the toolbar icon and store assets.
-• Debug mode: enable in Settings to see postMessage acks, origin rejections,
-  storage writes, and the current lastSlug inside the side panel.
-• Stronger reliability: Alt+S falls back to chrome.windows.getCurrent() and
-  postMessage uses an ack + retry handshake with strict-origin targeting.
-• Toolbar badge shows H / S / L so you know what the panel will open.
-• Playwright e2e suite for Alt+S + Settings reload + lastSlug sync.
+• More precise fallback reasons for handshake, CSP, and timeout failures.
+• Copy a sanitized diagnostics bundle directly from the fallback screen.
+• Bounded device-local telemetry with a maximum 7-day retention period.
+• Shared protocol constants and deterministic coverage for fallback paths.
 ```
 
 (Previous releases: v1.2.0 added the badge + postMessage handshake;
@@ -57,9 +55,7 @@ v1.1.0 added the Settings page and Alt+S shortcut.)
 
 **sidePanel** — required to render the Syrin Note app inside Chrome's side panel via `sidepanel.html`.
 
-**storage** — saves the user's Settings (default slug, open mode, debug toggle) and the last-opened note slug to `chrome.storage.sync` so the panel can resume them across browser restarts and synced profiles.
-
-**tabs** — used only to read `tab.windowId` of the active tab so `Alt+S` opens the side panel in the correct window. No URL, title, or content of any tab is read.
+**storage** — saves the user's Settings (default slug, open mode, debug toggle) and last-opened note locator to `chrome.storage.sync`. `chrome.storage.local` is used as a device-local fallback and for optional reliability diagnostics retained for up to 7 days. Diagnostics are never uploaded automatically.
 
 **Host permissions**: none. The extension does not request access to any website.
 
@@ -79,15 +75,18 @@ Open Syrin Note (https://note.syrin.online) inside Chrome's side panel so users 
 
 | Question | Answer |
 |----------|--------|
-| Does this item collect or use personal/sensitive user data? | No |
-| Does this item handle authentication info? | No (the embedded web app handles its own optional auth) |
+| Does this item handle user-generated content? | Yes. Note content entered in the embedded web app is synchronized by the web service; it is plaintext unless the user enables client-side encryption. |
+| Does this item handle extension settings? | Yes. Open mode, a default/last note locator, and debug preferences use Chrome storage. |
+| Does this item handle authentication info? | No account is required. Optional encryption passphrases remain in the browser. |
 | Does this item handle health/financial info? | No |
 | Does this item handle web history? | No |
-| Does this item handle user communications? | No |
-| Does this item handle location? | No |
-| Does this item use remote code? | No |
+| Does this item handle location? | No location feature or IP geolocation. Hosting and backend providers necessarily process standard connection metadata such as IP address. |
+| Does this item use local diagnostics? | Optional, bounded technical events only; retained for up to 7 days and never uploaded automatically. |
+| Does this item use remote code? | No executable extension code is loaded remotely. The side panel embeds the HTTPS web app described above. |
 | Privacy policy URL | https://note.syrin.online/privacy |
 | Support email | (your email) |
+
+Information received from Chrome APIs is used only for the extension's single purpose and in accordance with the Chrome Web Store User Data Policy, including its Limited Use requirements.
 
 ---
 
