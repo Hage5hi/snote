@@ -1,11 +1,9 @@
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const root = fileURLToPath(new URL("../../", import.meta.url));
 const noteMeta = readFileSync(
-  join(root, "supabase/functions/note-meta/index.ts"),
+  resolve(process.cwd(), "supabase/functions/note-meta/index.ts"),
   "utf8",
 );
 

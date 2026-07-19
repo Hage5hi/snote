@@ -19,19 +19,26 @@ interface ChromeMock {
       get: (defaults: Record<string, unknown>, cb: GetCb) => void;
       set: (data: Record<string, unknown>, cb: SetCb) => void;
     };
+    local: {
+      get: (defaults: Record<string, unknown>, cb: GetCb) => void;
+      set: (data: Record<string, unknown>, cb?: SetCb) => void;
+    };
     onChanged: { addListener: (fn: unknown) => void };
   };
   runtime: { lastError: { message: string } | null };
 }
 
+// @ts-expect-error - plain JS module
 import { initOptions } from "../options.js";
 
 let stored: Record<string, unknown> = {};
+let localStored: Record<string, unknown> = {};
 let setShouldFail = false;
 let chromeMock: ChromeMock;
 
 async function loadOptions(initial: Record<string, unknown> = {}) {
   stored = { ...initial };
+  localStored = {};
   setShouldFail = false;
   chromeMock = {
     storage: {
@@ -52,6 +59,19 @@ async function loadOptions(initial: Record<string, unknown> = {}) {
             Object.assign(stored, data);
             cb();
           }
+        }),
+      },
+      local: {
+        get: vi.fn((defaults: Record<string, unknown>, cb: GetCb) => {
+          const out = { ...defaults };
+          for (const k of Object.keys(defaults)) {
+            if (k in localStored) out[k] = localStored[k];
+          }
+          cb(out);
+        }),
+        set: vi.fn((data: Record<string, unknown>, cb?: SetCb) => {
+          Object.assign(localStored, data);
+          cb?.();
         }),
       },
       onChanged: { addListener: vi.fn() },

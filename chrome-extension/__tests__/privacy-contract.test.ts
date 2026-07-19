@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 function read(relativePath: string) {
-  return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
+  return readFileSync(resolve(process.cwd(), relativePath), "utf8");
 }
 
 describe("extension privacy contract", () => {
   it("documents the permissions and storage actually used at runtime", () => {
-    const manifest = JSON.parse(read("../manifest.json"));
-    const privacy = read("../../src/pages/Privacy.tsx");
+    const manifest = JSON.parse(read("chrome-extension/manifest.json"));
+    const privacy = read("src/pages/Privacy.tsx");
 
     expect(manifest.permissions).toEqual(["sidePanel", "storage"]);
     expect(privacy).toContain("chrome.storage.sync");
@@ -23,7 +23,7 @@ describe("extension privacy contract", () => {
   });
 
   it("discloses network metadata without claiming IP geolocation", () => {
-    const privacy = read("../../src/pages/Privacy.tsx");
+    const privacy = read("src/pages/Privacy.tsx");
 
     expect(privacy).toContain("standard connection metadata");
     expect(privacy).toContain("browser language");
@@ -31,8 +31,8 @@ describe("extension privacy contract", () => {
   });
 
   it("keeps the store listing and options copy aligned with the manifest", () => {
-    const listing = read("../STORE_LISTING.md");
-    const options = read("../options.html");
+    const listing = read("chrome-extension/STORE_LISTING.md");
+    const options = read("chrome-extension/options.html");
 
     expect(listing).toContain("## What's new — v1.3.5");
     expect(listing).not.toContain("**tabs**");

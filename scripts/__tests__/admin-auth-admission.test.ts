@@ -1,17 +1,17 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 function source(relativePath: string) {
-  return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
+  return readFileSync(resolve(process.cwd(), relativePath), "utf8");
 }
 
 describe("atomic admin authentication admission", () => {
   it("reserves one expiring per-subject lease before running bcrypt", () => {
     const migration = source(
-      "../../supabase/migrations/20260719000000_security_immediate_containment.sql",
+      "supabase/migrations/20260719000000_security_immediate_containment.sql",
     );
-    const session = source("../../supabase/functions/admin-session/index.ts");
+    const session = source("supabase/functions/admin-session/index.ts");
 
     expect(migration).toContain("lease_id text");
     expect(migration).toContain("lease_until timestamptz");
@@ -30,10 +30,10 @@ describe("atomic admin authentication admission", () => {
 
   it("accepts completion only for the active, unexpired lease under a row lock", () => {
     const migration = source(
-      "../../supabase/migrations/20260719000000_security_immediate_containment.sql",
+      "supabase/migrations/20260719000000_security_immediate_containment.sql",
     );
     const limiter = source(
-      "../../supabase/functions/_shared/admin-rate-limit.ts",
+      "supabase/functions/_shared/admin-rate-limit.ts",
     );
 
     expect(migration).toContain("CREATE OR REPLACE FUNCTION public.admin_auth_complete(");
@@ -47,7 +47,7 @@ describe("atomic admin authentication admission", () => {
 
   it("keeps admission RPCs service-role-only", () => {
     const migration = source(
-      "../../supabase/migrations/20260719000000_security_immediate_containment.sql",
+      "supabase/migrations/20260719000000_security_immediate_containment.sql",
     );
 
     for (const signature of [

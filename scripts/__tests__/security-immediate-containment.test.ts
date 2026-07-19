@@ -1,12 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const root = fileURLToPath(new URL("../../", import.meta.url));
-
 function source(path: string): string {
-  const absolutePath = join(root, path);
+  const absolutePath = resolve(process.cwd(), path);
   expect(existsSync(absolutePath), `${path} must exist`).toBe(true);
   return readFileSync(absolutePath, "utf8");
 }
