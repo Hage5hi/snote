@@ -1,9 +1,16 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, act, cleanup } from "@testing-library/react";
 import { DiagnosticsPanel } from "@/components/dev/DiagnosticsPanel";
-import { truncateDiagEventsForExport } from "@/components/dev/diagnostics-utils";
+import {
+  MAX_EXPORT_DETAIL_BYTES,
+  truncateDiagEventsForExport,
+} from "@/components/dev/diagnostics-utils";
 
 describe("truncateDiagEventsForExport", () => {
+  it("exports the detail-byte limit consumed by the panel payload", () => {
+    expect(MAX_EXPORT_DETAIL_BYTES).toBe(512);
+  });
+
   it("truncates oversized detail and componentStack to 512 bytes", () => {
     const big = "x".repeat(2000);
     const [out] = truncateDiagEventsForExport([
@@ -65,3 +72,4 @@ describe("DiagnosticsPanel disabled in prod-like build", () => {
     expect(container.querySelector('[data-diagnostics-panel]')).toBeNull();
   });
 });
+
