@@ -37,13 +37,13 @@ describe("SharePage crawler metadata", () => {
       /useLayoutEffect[\s\S]*committedTargetRef\.current = \{ token, targetHash: currentHash \}/,
     );
     expect(onUnlock).toMatch(
-      /state\.kind !== "needs-key"[\s\S]*const lockedState = state;[\s\S]*const generation = lockedState\.generation;[\s\S]*const requestToken = lockedState\.token;[\s\S]*const requestHash = lockedState\.targetHash;/,
+      /state\.kind !== "needs-key"[\s\S]*const lockedState = state;[\s\S]*const generation = lockedState\.generation;[\s\S]*const requestToken = lockedState\.token;[\s\S]*const requestHash = window\.location\.hash;/,
     );
     expect(onUnlock).toMatch(
-      /await decryptBytes[\s\S]*if \(!isCurrentRequest\(generation, requestToken, requestHash\)\) return;[\s\S]*setState\(\{ kind: "ready"/,
+      /await decryptBytes[\s\S]*if \(!isCurrentManualRequest\(\)\) return;[\s\S]*setState\(\{ kind: "ready"/,
     );
     expect(onUnlock).toMatch(
-      /catch[\s\S]*if \(!isCurrentRequest\(generation, requestToken, requestHash\)\) return;[\s\S]*setState\(\{ kind: "error"/,
+      /catch[\s\S]*if \(!isCurrentManualRequest\(\)\) return;[\s\S]*setState\(\{ kind: "error"/,
     );
   });
 
