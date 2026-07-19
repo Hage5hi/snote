@@ -11,7 +11,7 @@ export interface DiagEvent {
   kind: EventKind;
   message: string;
   detail?: string;
-  /** React componentStack from ErrorBoundary â€” top-most frame first. */
+  /** React componentStack from ErrorBoundary — top-most frame first. */
   componentStack?: string;
 }
 
@@ -33,7 +33,7 @@ export function truncateDiagEventsForExport(events: DiagEvent[]): DiagEvent[] {
       const value = out[key];
       if (typeof value === "string" && value.length > MAX_EXPORT_DETAIL_BYTES) {
         out[key] =
-          `${value.slice(0, MAX_EXPORT_DETAIL_BYTES)}â€¦[truncated ${value.length - MAX_EXPORT_DETAIL_BYTES}b]`;
+          `${value.slice(0, MAX_EXPORT_DETAIL_BYTES)}…[truncated ${value.length - MAX_EXPORT_DETAIL_BYTES}b]`;
       }
     }
     return out;
