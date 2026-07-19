@@ -204,6 +204,21 @@ describe("options.js — save", () => {
     expect(chromeMock.storage.sync.set).not.toHaveBeenCalled();
   });
 
+  it("persists the local telemetry opt-out even when sync save fails", async () => {
+    await loadOptions({ openMode: "home" });
+    const telemetry = document.getElementById("telemetryEnabled") as HTMLInputElement;
+    telemetry.checked = false;
+    setShouldFail = true;
+
+    submit();
+
+    expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
+      { "syrin:telemetryEnabled": false },
+      expect.any(Function),
+    );
+    expect(localStored["syrin:telemetryEnabled"]).toBe(false);
+  });
+
   it("shows error status when chrome.runtime.lastError set", async () => {
     await loadOptions({ openMode: "home" });
     setShouldFail = true;

@@ -33,6 +33,8 @@ describe("extension privacy contract", () => {
   it("keeps the store listing and options copy aligned with the manifest", () => {
     const listing = read("chrome-extension/STORE_LISTING.md");
     const options = read("chrome-extension/options.html");
+    const readme = read("chrome-extension/README.md");
+    const privacy = read("src/pages/Privacy.tsx");
 
     expect(listing).toContain("## What's new — v1.3.5");
     expect(listing).not.toContain("**tabs**");
@@ -45,5 +47,11 @@ describe("extension privacy contract", () => {
     expect(listing).not.toContain("retained for up to 7 days");
     expect(options).not.toContain("retained for up to 7 days");
     expect(options).toContain("never uploaded automatically");
+    for (const copy of [listing, readme, privacy]) {
+      expect(copy).not.toMatch(/chrome\.storage\.local[^\n.]*settings fallback/i);
+      expect(copy).not.toMatch(/chrome\.storage\.local[^\n.]*device-local fallback/i);
+    }
+    expect(listing).toContain("sync is unavailable, the panel uses safe defaults");
+    expect(privacy).toContain("sync is unavailable, the panel uses safe defaults");
   });
 });
