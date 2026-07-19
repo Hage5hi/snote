@@ -60,26 +60,30 @@ function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
 export default function SharePage() {
   const { token = "" } = useParams();
   const valid = TOKEN_RE.test(token);
-  const currentHash = window.location.hash;
+  const [navigationHash, setNavigationHash] = useState(
+    () => window.location.hash,
+  );
   const [state, setState] = useState<ViewState>(() => ({
     kind: "loading",
     token,
-    targetHash: currentHash,
+    targetHash: navigationHash,
     generation: 0,
   }));
-  const [, setHashRevision] = useState(0);
   const requestGeneration = useRef(0);
-  const committedTargetRef = useRef({ token, targetHash: currentHash });
+  const committedTargetRef = useRef({ token, targetHash: navigationHash });
   const { t } = useI18n();
 
   useLayoutEffect(() => {
-    committedTargetRef.current = { token, targetHash: currentHash };
-  }, [token, currentHash]);
+    committedTargetRef.current = { token, targetHash: navigationHash };
+  }, [token, navigationHash]);
 
-  useEffect(() => {
-    const syncHash = () => setHashRevision((revision) => revision + 1);
+  useLayoutEffect(() => {
+    const syncHash = () => setNavigationHash(window.location.hash);
     window.addEventListener("hashchange", syncHash);
     window.addEventListener("popstate", syncHash);
+    // Close the commit-to-subscription race: reconcile any navigation that
+    // happened after render but before these listeners were attached.
+    syncHash();
     return () => {
       window.removeEventListener("hashchange", syncHash);
       window.removeEventListener("popstate", syncHash);
@@ -108,7 +112,7 @@ export default function SharePage() {
   useEffect(() => {
     const generation = ++requestGeneration.current;
     const requestToken = token;
-    const requestHash = currentHash;
+    const requestHash = navigationHash;
     const requestTarget: RequestTarget = {
       token: requestToken,
       targetHash: requestHash,
@@ -199,7 +203,7 @@ export default function SharePage() {
       }
     })();
     return cancel;
-  }, [token, valid, t, currentHash, isCurrentRequest]);
+  }, [token, valid, t, navigationHash, isCurrentRequest]);
 
   const onUnlock = async (key: CryptoKey) => {
     if (state.kind !== "needs-key") return;
@@ -223,7 +227,7 @@ export default function SharePage() {
       setState({
         kind: "ready",
         token: requestToken,
-        targetHash: requestHash,
+        targetHash: lockedState.targetHash,
         generation,
         doc,
       });
@@ -233,7 +237,7 @@ export default function SharePage() {
       setState({
         kind: "error",
         token: requestToken,
-        targetHash: requestHash,
+        targetHash: lockedState.targetHash,
         generation,
         message: t("share.decrypt_failed"),
       });
@@ -258,7 +262,7 @@ export default function SharePage() {
   );
 
   if (
-    state.token !== token || state.targetHash !== currentHash
+    state.token !== token || state.targetHash !== navigationHash
     || state.kind === "loading"
   ) {
     return <>{head}<EditorSkeleton /></>;
