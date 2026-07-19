@@ -7,13 +7,6 @@ name: E2E (new specs, PR gate)
 
 on:
   pull_request:
-    paths:
-      - "src/**"
-      - "e2e/**"
-      - "playwright.config.ts"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/e2e-new-specs.yml"
   workflow_dispatch:
 
 concurrency:
