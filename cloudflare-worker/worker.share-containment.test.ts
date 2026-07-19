@@ -9,6 +9,8 @@ const TOKEN_PATHS = [
   ENCODED_TOKEN,
   "short",
   "future.token.format",
+  "asset-looking.js",
+  "nested/asset.css",
 ] as const;
 const PRIVATE_SLUG = "private-edit-slug";
 const ROBOTS = "noindex,nofollow,noarchive,nosnippet";
