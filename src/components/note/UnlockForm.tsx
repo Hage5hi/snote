@@ -53,8 +53,10 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
     e.preventDefault();
     if (!pass.trim()) return;
     const requestGeneration = ++requestGenerationRef.current;
+    const requestLocation = window.location.pathname + window.location.search;
     const isCurrentRequest = () => mountedRef.current
-      && requestGenerationRef.current === requestGeneration;
+      && requestGenerationRef.current === requestGeneration
+      && window.location.pathname + window.location.search === requestLocation;
     setBusy(true);
     setError(null);
     try {
