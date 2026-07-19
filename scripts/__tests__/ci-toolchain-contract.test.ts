@@ -14,6 +14,7 @@ const workflows = new Map(
 const allWorkflows = [...workflows.values()].join("\n");
 const ci = workflows.get(".github/workflows/ci.yml")!;
 const workflowStructure = workflows.get(".github/workflows/workflow-structure.yml")!;
+const e2eWorkflow = workflows.get(".github/workflows/e2e.yml")!;
 const extensionWorkflow = workflows.get(".github/workflows/extension-e2e.yml")!;
 const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
@@ -81,8 +82,15 @@ describe("CI toolchain contract", () => {
     );
   });
 
-  it("removes only the known incompatible broad overrides", () => {
-    for (const name of ["ajv", "esbuild", "glob", "minimatch"]) {
+  it("removes incompatible broad overrides", () => {
+    for (const name of [
+      "ajv",
+      "esbuild",
+      "glob",
+      "minimatch",
+      "@tootallnate/once",
+      "brace-expansion",
+    ]) {
       expect(packageJson.overrides).not.toHaveProperty(name);
     }
   });
@@ -116,6 +124,9 @@ describe("CI toolchain contract", () => {
     expect(qualityJob).toContain("name: quality");
     expect(qualityJob).toContain(ACTIONLINT_IMAGE);
     expect(qualityJob).toContain("persist-credentials: false");
+    expect(qualityJob).toContain("bun run test");
+    expect(qualityJob).toContain("bun run test:coverage");
+    expect(qualityJob).toContain("bun run build:check");
     expect(qualityJob).toContain(
       "bunx playwright test --list --project=chromium",
     );
@@ -123,6 +134,11 @@ describe("CI toolchain contract", () => {
       allWorkflows.match(/docker:\/\/rhysd\/actionlint[^\s]*/g) ?? [];
     expect(actionlintImages.length).toBeGreaterThan(0);
     expect(new Set(actionlintImages)).toEqual(new Set([ACTIONLINT_IMAGE]));
+  });
+
+  it("keeps one stable PR E2E check context", () => {
+    expect(e2eWorkflow).toContain("\n  e2e-pr:\n");
+    expect(e2eWorkflow).toMatch(/\n  e2e-pr:\n(?:.|\n)*?\n    name: e2e-pr\n/);
   });
 
   it("runs extension verification when its dependencies or audit scripts change", () => {
@@ -149,3 +165,4 @@ describe("CI toolchain contract", () => {
     expect(ci).toMatch(/\bactionlint\b/);
   });
 });
+
