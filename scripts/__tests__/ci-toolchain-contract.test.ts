@@ -1,15 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const EXPECTED_BUN_VERSION = "1.3.14";
-const WORKFLOW_FILES = [
-  ".github/workflows/ci.yml",
-  ".github/workflows/e2e-new-specs.yml",
-  ".github/workflows/e2e.yml",
-  ".github/workflows/extension-e2e.yml",
-  ".github/workflows/pwa-update-smoke-post-deploy.yml",
-  ".github/workflows/schema-guard.yml",
-] as const;
+const WORKFLOW_FILES = readdirSync(".github/workflows")
+  .filter((name) => /\.ya?ml$/.test(name))
+  .map((name) => `.github/workflows/${name}`);
 
 const workflows = new Map(
   WORKFLOW_FILES.map((path) => [path, readFileSync(path, "utf8")]),
@@ -71,6 +66,8 @@ describe("CI toolchain contract", () => {
       expect.arrayContaining([
         "scripts/**/*.ts",
         "e2e/**/*.ts",
+        "e2e-extension/**/*.ts",
+        "chrome-extension/**/*.ts",
         "vite.config.ts",
         "vitest.config.ts",
         "playwright.config.ts",
