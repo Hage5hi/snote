@@ -157,11 +157,9 @@
   "overrides": {
     "vite": "^5.4.21",
     "postcss": "^8.5.10",
-    "brace-expansion": "^2.0.2",
     "flatted": "^3.4.0",
     "yaml": "^2.8.3",
     "rollup": "^4.59.0",
-    "@tootallnate/once": "^3.0.1",
     "js-yaml": "^4.1.1"
   }
 }
