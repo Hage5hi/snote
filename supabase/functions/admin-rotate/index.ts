@@ -53,6 +53,8 @@ Deno.serve(async (req) => {
   try {
     const { error } = await supabase.rpc("admin_pass_rotate", {
       p_pass_hash: passHash,
+      p_token_hash: authorization.tokenHash,
+      p_subject_hash: authorization.subjectHash,
     });
     if (error) return serviceUnavailableResponse(corsHeaders);
   } catch {
@@ -61,4 +63,3 @@ Deno.serve(async (req) => {
 
   return json({ ok: true }, 200);
 });
-
