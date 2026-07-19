@@ -1,13 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as Y from "yjs";
+import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
 import {
   getSnapshotDebounceMs,
   SupabaseYjsProvider,
   type Encryption,
 } from "../provider";
+import { bytesToBase64 } from "../base64";
 
 // Capture upsert calls so saveSnapshot tests can assert payloads.
 const upsertCalls: Array<Record<string, unknown>> = [];
+type BroadcastHandler = (message: { payload: unknown }) => void | Promise<void>;
+type OutboundBroadcast = { event?: string; payload?: unknown; type?: string };
+const broadcastHandlers = new Map<string, BroadcastHandler>();
+const channelSendMock = vi.fn<(message: OutboundBroadcast) => Promise<void>>(async () => {});
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
@@ -20,9 +26,19 @@ vi.mock("@/integrations/supabase/client", () => ({
     }),
     channel: () => {
       const channel = {
-        on: () => channel,
-        subscribe: () => Promise.resolve("SUBSCRIBED"),
-        send: () => Promise.resolve(),
+        on: (
+          _type: string,
+          filter: { event?: string },
+          handler: BroadcastHandler,
+        ) => {
+          if (filter.event) broadcastHandlers.set(filter.event, handler);
+          return channel;
+        },
+        subscribe: async (handler: (status: string) => void | Promise<void>) => {
+          await handler("SUBSCRIBED");
+          return "SUBSCRIBED";
+        },
+        send: channelSendMock,
         unsubscribe: () => Promise.resolve(),
       };
       return channel;
@@ -31,8 +47,10 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-// Polyfill rAF for jsdom — flush on next microtask tick.
+// Polyfill rAF for jsdom â€” flush on next microtask tick.
 beforeEach(() => {
+  broadcastHandlers.clear();
+  channelSendMock.mockClear();
   globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
     return setTimeout(() => cb(performance.now()), 0) as unknown as number;
   }) as typeof requestAnimationFrame;
@@ -51,7 +69,99 @@ function makeProvider(slug = "test-slug") {
   return { provider: p, doc };
 }
 
-describe("SupabaseYjsProvider — unmount cancellation", () => {
+async function makeConnectedProvider(slug: string) {
+  const doc = new Y.Doc();
+  const provider = new SupabaseYjsProvider(slug, doc);
+  await provider.connect(
+    { name: "Tester", color: "#123456" },
+    { prefetchedYdocState: null, rowExists: true },
+  );
+  channelSendMock.mockClear();
+  return { provider, doc };
+}
+
+async function dispatchBroadcast(event: string, payload: unknown) {
+  await broadcastHandlers.get(event)?.({ payload });
+}
+
+function sentEvents(event: string) {
+  return channelSendMock.mock.calls.filter(
+    ([message]) => (message as { event?: string }).event === event,
+  );
+}
+
+describe("SupabaseYjsProvider â€” public broadcast containment", () => {
+  beforeEach(() => {
+    upsertCalls.length = 0;
+  });
+
+  it("ignores a forged slug-abandoned control event and keeps persistence active", async () => {
+    const { provider, doc } = await makeConnectedProvider("forged-control");
+
+    await dispatchBroadcast("slug-abandoned", { slug: "forged-control" });
+    doc.getText("content").insert(0, "must persist");
+    await provider.saveSnapshot();
+
+    expect(upsertCalls.at(-1)?.content).toBe("must persist");
+    await provider.destroy();
+  });
+
+  it("drops an oversized y-update before decoding or applying it", async () => {
+    const { provider, doc } = await makeConnectedProvider("oversized-update");
+    const remoteDoc = new Y.Doc();
+    remoteDoc.getText("content").insert(0, "x".repeat(300_000));
+    const oversized = bytesToBase64(Y.encodeStateAsUpdate(remoteDoc));
+
+    await dispatchBroadcast("y-update", { update: oversized });
+
+    expect(doc.getText("content").toString()).toBe("");
+    await provider.destroy();
+  });
+
+  it("drops oversized awareness state instead of adding the remote client", async () => {
+    const { provider } = await makeConnectedProvider("oversized-awareness");
+    const remoteDoc = new Y.Doc();
+    const remoteAwareness = new Awareness(remoteDoc);
+    remoteAwareness.setLocalState({ user: { name: "x".repeat(70_000), color: "#000" } });
+    const oversized = encodeAwarenessUpdate(remoteAwareness, [remoteDoc.clientID]);
+
+    await dispatchBroadcast("awareness", { update: bytesToBase64(oversized) });
+
+    expect(provider.awareness.getStates().has(remoteDoc.clientID)).toBe(false);
+    await provider.destroy();
+  });
+
+  it("rejects request-state payloads without a finite uint32 client id", async () => {
+    const { provider } = await makeConnectedProvider("invalid-state-request");
+
+    await dispatchBroadcast("request-state", { from: "attacker" });
+    await dispatchBroadcast("request-state", { from: -1 });
+    await dispatchBroadcast("request-state", { from: Number.NaN });
+
+    expect(sentEvents("y-update")).toHaveLength(0);
+    await provider.destroy();
+  });
+
+  it("throttles request-state responses to one full-state broadcast per second", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const { provider } = await makeConnectedProvider("state-request-throttle");
+
+    await dispatchBroadcast("request-state", { from: 101 });
+    await dispatchBroadcast("request-state", { from: 102 });
+    await dispatchBroadcast("request-state", { from: 103 });
+    expect(sentEvents("y-update")).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await dispatchBroadcast("request-state", { from: 104 });
+    expect(sentEvents("y-update")).toHaveLength(2);
+
+    await provider.destroy();
+    vi.useRealTimers();
+  });
+});
+
+describe("SupabaseYjsProvider â€” unmount cancellation", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
     vi.useFakeTimers();
@@ -88,11 +198,11 @@ describe("getSnapshotDebounceMs", () => {
 });
 
 
-describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {
+describe("SupabaseYjsProvider â€” Phase 2.5 broadcast batching", () => {
   it("batches multiple updates into 1 broadcast per rAF", async () => {
     const { provider, doc } = makeProvider();
     const text = doc.getText("content");
-    // 30 separate Y.Doc transactions → 30 handleDocUpdate calls.
+    // 30 separate Y.Doc transactions â†’ 30 handleDocUpdate calls.
     for (let i = 0; i < 30; i++) {
       text.insert(text.length, "a");
     }
@@ -106,7 +216,7 @@ describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {
   it("eager-flushes at MAX_PENDING_UPDATES (50) to bound memory", async () => {
     const { provider, doc } = makeProvider();
     const text = doc.getText("content");
-    // 100 updates → 1 eager flush at 50, 1 eager flush at 100 (50 more
+    // 100 updates â†’ 1 eager flush at 50, 1 eager flush at 100 (50 more
     // arrive synchronously, hitting the threshold again before rAF).
     for (let i = 0; i < 100; i++) {
       text.insert(text.length, "a");
@@ -120,7 +230,7 @@ describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {
   });
 });
 
-describe("SupabaseYjsProvider — SyncEvent lifecycle", () => {
+describe("SupabaseYjsProvider â€” SyncEvent lifecycle", () => {
   it("emits 'offline' to subscribed listeners", () => {
     const { provider } = makeProvider();
     const events: string[] = [];
@@ -158,7 +268,7 @@ describe("SupabaseYjsProvider — SyncEvent lifecycle", () => {
   });
 });
 
-describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
+describe("SupabaseYjsProvider â€” saveSnapshot encryption consistency", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
   });
@@ -191,7 +301,7 @@ describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
   it("skips write when local encryption mode disagrees with stored mode", async () => {
     const { provider, doc } = makeProvider();
     doc.getText("content").insert(0, "plaintext");
-    // Row is encrypted, but provider has no key — must NOT overwrite.
+    // Row is encrypted, but provider has no key â€” must NOT overwrite.
     provider.setExpectedEncrypted(true);
     await provider.saveSnapshot();
     expect(upsertCalls).toHaveLength(0);
@@ -208,13 +318,13 @@ describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
   });
 });
 
-describe("SupabaseYjsProvider — rapid lock/unlock toggle regression", () => {
+describe("SupabaseYjsProvider â€” rapid lock/unlock toggle regression", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
   });
 
   it("stale plaintext provider cannot write after row flips to encrypted", async () => {
-    // Simulates: user locks note via URL hash → enc-meta refetch marks the
+    // Simulates: user locks note via URL hash â†’ enc-meta refetch marks the
     // still-mounted plaintext provider as expected=encrypted BEFORE the new
     // provider mounts. The stale instance must be blocked from writing.
     const { provider: stale, doc } = makeProvider();
@@ -258,3 +368,4 @@ describe("SupabaseYjsProvider — rapid lock/unlock toggle regression", () => {
     expect(upsertCalls[0].is_encrypted).toBe(false);
   });
 });
+
