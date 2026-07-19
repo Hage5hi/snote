@@ -1,0 +1,162 @@
+import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import bcrypt from "https://esm.sh/bcryptjs@2.4.3";
+
+const SESSION_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
+
+export type AdminSessionAuthorization =
+  | { status: "authorized"; subjectHash: string; tokenHash: string }
+  | { status: "unauthorized" }
+  | { status: "unavailable" };
+
+export type AdminPassVerification =
+  | { available: true; valid: boolean }
+  | { available: false; valid: false };
+
+function jsonResponse(
+  body: unknown,
+  status: number,
+  corsHeaders: Record<string, string>,
+): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+export function serviceUnavailableResponse(
+  corsHeaders: Record<string, string>,
+): Response {
+  return jsonResponse({ error: "temporarily unavailable" }, 503, corsHeaders);
+}
+
+export function adminAuthResponse(
+  result: Exclude<AdminSessionAuthorization, { status: "authorized" }>,
+  corsHeaders: Record<string, string>,
+): Response {
+  return result.status === "unavailable"
+    ? serviceUnavailableResponse(corsHeaders)
+    : jsonResponse({ error: "unauthorized" }, 401, corsHeaders);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function isIpLiteral(value: string): boolean {
+  const ipv4 = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    return ipv4.slice(1).every((part) => Number(part) <= 255);
+  }
+
+  if (!value.includes(":") || !/^[0-9a-f:.]+$/i.test(value)) return false;
+  try {
+    const parsed = new URL(`http://[${value}]/`);
+    return parsed.hostname.length > 2;
+  } catch {
+    return false;
+  }
+}
+
+export async function getAdminSubjectHash(
+  req: Request,
+): Promise<{ ok: true; subjectHash: string } | { ok: false }> {
+  // Supabase's gateway is the sole trusted writer for this header. Reject
+  // forwarded chains: staging must prove the gateway overwrites client input
+  // before these functions are enabled.
+  const rawIp = req.headers.get("x-forwarded-for")?.trim() ?? "";
+  if (!rawIp || rawIp.includes(",") || rawIp.length > 45 || !isIpLiteral(rawIp)) {
+    return { ok: false };
+  }
+
+  const secret = Deno.env.get("ADMIN_RATE_LIMIT_HMAC_SECRET") ?? "";
+  const secretBytes = new TextEncoder().encode(secret);
+  if (secretBytes.byteLength < 32) return { ok: false };
+
+  const key = await crypto.subtle.importKey("raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign("HMAC",
+    key,
+    new TextEncoder().encode(rawIp),
+  );
+  return { ok: true, subjectHash: bytesToHex(new Uint8Array(signature)) };
+}
+
+export async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+  return bytesToHex(new Uint8Array(digest));
+}
+
+export async function authorizeAdminSession(
+  req: Request,
+  supabase: SupabaseClient,
+): Promise<AdminSessionAuthorization> {
+  const subject = await getAdminSubjectHash(req);
+  if (!subject.ok) return { status: "unavailable" };
+
+  const token = req.headers.get("x-admin-session")?.trim() ?? "";
+  if (!SESSION_TOKEN_RE.test(token)) return { status: "unauthorized" };
+
+  const tokenHash = await sha256Hex(token);
+  const { data, error } = await supabase.rpc("admin_session_validate", {
+    p_token_hash: tokenHash,
+    p_subject_hash: subject.subjectHash,
+  });
+  if (error) return { status: "unavailable" };
+  if (data !== true) return { status: "unauthorized" };
+
+  return {
+    status: "authorized",
+    subjectHash: subject.subjectHash,
+    tokenHash,
+  };
+}
+
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let index = 0; index < a.length; index += 1) {
+    diff |= a.charCodeAt(index) ^ b.charCodeAt(index);
+  }
+  return diff === 0;
+}
+
+export async function verifyAdminPass(
+  supabase: SupabaseClient,
+  input: string,
+): Promise<AdminPassVerification> {
+  const { data, error } = await supabase
+    .from("admin_config")
+    .select("pass_hash")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) return { available: false, valid: false };
+
+  const storedHash = typeof data?.pass_hash === "string" ? data.pass_hash : "";
+  if (storedHash) {
+    try {
+      return { available: true, valid: await bcrypt.compare(input, storedHash) };
+    } catch {
+      return { available: false, valid: false };
+    }
+  }
+
+  const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
+  if (!expected) return { available: false, valid: false };
+  return { available: true, valid: constantTimeEqual(input, expected) };
+}
+
+export async function hashAdminPass(input: string): Promise<string> {
+  return await bcrypt.hash(input, 12);
+}
+
