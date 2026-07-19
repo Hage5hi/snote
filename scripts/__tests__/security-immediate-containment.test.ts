@@ -29,23 +29,29 @@ describe("immediate containment contracts", () => {
     );
   });
 
-  it("uses one atomic SQL transition for concurrent admin failures", () => {
+  it("serializes admin verification and failure recording in SQL", () => {
     const migration = source(
       "supabase/migrations/20260719000000_security_immediate_containment.sql",
     );
     expect(migration).toMatch(
-      /CREATE OR REPLACE FUNCTION public\.admin_auth_record/i,
+      /CREATE OR REPLACE FUNCTION public\.admin_auth_begin/i,
+    );
+    expect(migration).toMatch(
+      /CREATE OR REPLACE FUNCTION public\.admin_auth_complete/i,
     );
     expect(migration).toMatch(/ON CONFLICT \(subject_hash\) DO UPDATE/i);
+    expect(migration).toMatch(/lease_id[\s\S]*lease_until/i);
+    expect(migration).toMatch(/FOR UPDATE/i);
     expect(migration).toMatch(/RENAME COLUMN ip TO subject_hash/i);
     expect(migration).toMatch(/TRUNCATE TABLE public\.admin_auth_attempts/i);
     expect(migration).toMatch(/SECURITY DEFINER/i);
     expect(migration).toMatch(
-      /REVOKE ALL ON FUNCTION public\.admin_auth_record[\s\S]*FROM PUBLIC, anon, authenticated/i,
+      /REVOKE ALL ON FUNCTION public\.admin_auth_begin[\s\S]*FROM PUBLIC, anon, authenticated/i,
     );
 
     const limiter = source("supabase/functions/_shared/admin-rate-limit.ts");
-    expect(limiter).toContain('.rpc("admin_auth_record"');
+    expect(limiter).toContain('.rpc("admin_auth_begin"');
+    expect(limiter).toContain('.rpc("admin_auth_complete"');
     expect(limiter).not.toContain('.select("failure_count');
     expect(limiter).not.toContain('.update(update)');
   });
