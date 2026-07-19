@@ -8,6 +8,9 @@ const harness = vi.hoisted(() => ({
   editorRender: vi.fn(),
   previewRender: vi.fn(),
   unlockRender: vi.fn(),
+  idbConstruct: vi.fn(),
+  providerConnect: vi.fn(),
+  metaForSlug: vi.fn(),
   metaPromise: Promise.resolve({ data: null as Record<string, unknown> | null }),
 }));
 
@@ -46,18 +49,37 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     from: () => ({
       select: () => ({
-        eq: () => ({ maybeSingle: () => harness.metaPromise }),
+        eq: (_column: string, slug: string) => ({ maybeSingle: () => harness.metaForSlug(slug) }),
       }),
     }),
   },
 }));
 vi.mock("@/lib/yjs/doc-cache", () => ({
-  acquireDoc: () => ({ getText: () => ({ toString: () => "" }) }),
+  acquireDoc: () => ({
+    getText: () => ({
+      toString: () => "",
+      observe: vi.fn(),
+      unobserve: vi.fn(),
+    }),
+  }),
   releaseDoc: vi.fn(),
 }));
 vi.mock("@/lib/yjs/provider", () => ({
   SupabaseYjsProvider: class {
     awareness = {};
+
+    constructor(private readonly slug: string) {}
+
+    setEncryption() {}
+    setExpectedEncrypted() {}
+    onAwareness() { return vi.fn(); }
+    onSyncEvent() { return vi.fn(); }
+    connect() {
+      harness.providerConnect(this.slug);
+      return Promise.resolve();
+    }
+    flushBeacon() {}
+    destroy() { return Promise.resolve(); }
   },
 }));
 vi.mock("@/hooks/use-word-goal", () => ({ useWordGoal: () => ({ goal: null }), consumeGoalReached: () => false }));
@@ -83,7 +105,17 @@ vi.mock("@/lib/snapshots", () => ({ maybeSaveSnapshot: vi.fn(), recordOnSuddenDe
 vi.mock("@/lib/yjs/identity", () => ({ getIdentity: () => ({ name: "Test", color: "#000" }) }));
 vi.mock("@/lib/wiki-link", () => ({ WIKI_NAV_EVENT: "wiki-nav" }));
 vi.mock("@/lib/ext-context", () => ({ isExtensionContext: false }));
-vi.mock("y-indexeddb", () => ({ IndexeddbPersistence: class {} }));
+vi.mock("y-indexeddb", () => ({
+  IndexeddbPersistence: class {
+    whenSynced = Promise.resolve();
+
+    constructor(name: string) {
+      harness.idbConstruct(name);
+    }
+
+    destroy() {}
+  },
+}));
 
 function renderEmbedded() {
   return render(
@@ -111,6 +143,10 @@ describe("NotePage encryption gate", () => {
     harness.editorRender.mockClear();
     harness.previewRender.mockClear();
     harness.unlockRender.mockClear();
+    harness.idbConstruct.mockClear();
+    harness.providerConnect.mockClear();
+    harness.metaForSlug.mockReset();
+    harness.metaForSlug.mockImplementation(() => harness.metaPromise);
     window.location.hash = "";
   });
 
@@ -121,6 +157,40 @@ describe("NotePage encryption gate", () => {
 
     expect(harness.editorRender).not.toHaveBeenCalled();
     expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("closes the gate synchronously when an embedded note changes", async () => {
+    const encryptedMetaPending = new Promise<{ data: Record<string, unknown> | null }>(() => {});
+    harness.metaForSlug.mockImplementation((slug: string) => (
+      slug === "plain"
+        ? Promise.resolve({ data: { is_encrypted: false } })
+        : encryptedMetaPending
+    ));
+
+    const { rerender } = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <NotePage embedSlug="plain" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(harness.editorRender).toHaveBeenCalled());
+    await waitFor(() => expect(harness.providerConnect).toHaveBeenCalledWith("plain"));
+
+    harness.editorRender.mockClear();
+    harness.previewRender.mockClear();
+    harness.idbConstruct.mockClear();
+    harness.providerConnect.mockClear();
+
+    rerender(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <NotePage embedSlug="encrypted" />
+      </MemoryRouter>,
+    );
+
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    expect(harness.previewRender).not.toHaveBeenCalled();
+    await waitFor(() => expect(harness.metaForSlug).toHaveBeenCalledWith("encrypted"));
+    expect(harness.idbConstruct).not.toHaveBeenCalledWith("note:encrypted");
+    expect(harness.providerConnect).not.toHaveBeenCalledWith("encrypted");
   });
 
   it.each([
