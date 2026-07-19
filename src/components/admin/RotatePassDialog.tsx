@@ -18,14 +18,14 @@ import { useI18n } from "@/i18n/index";
 interface RotatePassDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  currentPass: string;
-  onSuccess: (newPass: string) => void;
+  sessionToken: string;
+  onSuccess: () => void;
 }
 
 export function RotatePassDialog({
   open,
   onOpenChange,
-  currentPass,
+  sessionToken,
   onSuccess,
 }: RotatePassDialogProps) {
   const { t } = useI18n();
@@ -38,8 +38,8 @@ export function RotatePassDialog({
     setConfirm("");
   };
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
     if (newPass.length < 12) {
       toast({ title: t("admin.rotate.too_short"), variant: "destructive" });
       return;
@@ -48,26 +48,23 @@ export function RotatePassDialog({
       toast({ title: t("admin.rotate.mismatch"), variant: "destructive" });
       return;
     }
-    if (newPass === currentPass) {
-      toast({ title: t("admin.rotate.must_differ"), variant: "destructive" });
-      return;
-    }
 
     setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("admin-rotate", {
-        body: { currentPass, newPass },
+        body: { newPass },
+        headers: { "x-admin-session": sessionToken },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       toast({ title: t("admin.rotate.success") });
-      onSuccess(newPass);
+      onSuccess();
       reset();
       onOpenChange(false);
-    } catch (e) {
+    } catch (error) {
       toast({
         title: t("admin.rotate.failed"),
-        description: String((e as Error | undefined)?.message ?? e),
+        description: String((error as Error | undefined)?.message ?? error),
         variant: "destructive",
       });
     } finally {
@@ -78,9 +75,9 @@ export function RotatePassDialog({
   return (
     <Dialog
       open={open}
-      onOpenChange={(o) => {
-        if (!o) reset();
-        onOpenChange(o);
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) reset();
+        onOpenChange(nextOpen);
       }}
     >
       <DialogContent className="sm:max-w-md">
@@ -96,7 +93,7 @@ export function RotatePassDialog({
               type="password"
               autoComplete="new-password"
               value={newPass}
-              onChange={(e) => setNewPass(e.target.value)}
+              onChange={(event) => setNewPass(event.target.value)}
               placeholder={t("admin.rotate.new_placeholder")}
               minLength={12}
               required
@@ -109,7 +106,7 @@ export function RotatePassDialog({
               type="password"
               autoComplete="new-password"
               value={confirm}
-              onChange={(e) => setConfirm(e.target.value)}
+              onChange={(event) => setConfirm(event.target.value)}
               required
             />
           </div>
@@ -132,3 +129,4 @@ export function RotatePassDialog({
     </Dialog>
   );
 }
+
