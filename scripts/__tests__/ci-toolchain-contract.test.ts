@@ -11,6 +11,7 @@ const workflows = new Map(
 );
 const allWorkflows = [...workflows.values()].join("\n");
 const ci = workflows.get(".github/workflows/ci.yml")!;
+const workflowStructure = workflows.get(".github/workflows/workflow-structure.yml")!;
 const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   packageManager?: string;
@@ -98,6 +99,12 @@ describe("CI toolchain contract", () => {
       );
       expect(workflow).toMatch(/cancel-in-progress:\s*true\b/);
     }
+  });
+
+  it("lists Playwright tests in the stable quality gate", () => {
+    expect(workflowStructure).toContain(
+      "bunx playwright test --list --project=chromium",
+    );
   });
 
   it("uses the audit command supported by pinned Bun", () => {
