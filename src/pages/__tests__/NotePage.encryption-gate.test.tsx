@@ -11,12 +11,15 @@ const harness = vi.hoisted(() => ({
   metaPromise: Promise.resolve({ data: null as Record<string, unknown> | null }),
 }));
 
-vi.mock("@/components/note/Editor", () => ({
-  Editor: () => {
-    harness.editorRender();
-    return <div data-testid="editor" />;
-  },
-}));
+vi.mock("@/components/note/Editor", async () => {
+  const { forwardRef } = await vi.importActual<typeof import("react")>("react");
+  return {
+    Editor: forwardRef(function Editor() {
+      harness.editorRender();
+      return <div data-testid="editor" />;
+    }),
+  };
+});
 vi.mock("@/components/note/Preview", () => ({
   Preview: () => {
     harness.previewRender();
@@ -84,7 +87,7 @@ vi.mock("y-indexeddb", () => ({ IndexeddbPersistence: class {} }));
 
 function renderEmbedded() {
   return render(
-    <MemoryRouter>
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <NotePage embedSlug="secret" />
     </MemoryRouter>,
   );
@@ -92,7 +95,10 @@ function renderEmbedded() {
 
 function renderStandalone() {
   return render(
-    <MemoryRouter initialEntries={["/secret"]}>
+    <MemoryRouter
+      initialEntries={["/secret"]}
+      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+    >
       <Routes>
         <Route path="/:slug" element={<NotePage />} />
       </Routes>
