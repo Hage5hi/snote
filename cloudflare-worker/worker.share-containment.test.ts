@@ -3,7 +3,13 @@ import worker from "./worker.js";
 
 const TOKEN = "superSecretToken42";
 const ENCODED_TOKEN = "super%53ecretToken42";
-const SHARE_PREFIXES = ["s", "%73", "S"] as const;
+const SHARE_PREFIXES = ["s", "%73", "%2573", "S"] as const;
+const TOKEN_PATHS = [
+  TOKEN,
+  ENCODED_TOKEN,
+  "short",
+  "future.token.format",
+] as const;
 const PRIVATE_SLUG = "private-edit-slug";
 const ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
@@ -37,6 +43,7 @@ afterEach(() => {
 });
 
 describe("share crawler containment", () => {
+  let caseIndex = 0;
   for (const hostname of [
     "note.syrin.online",
     "syrin.online",
@@ -44,7 +51,8 @@ describe("share crawler containment", () => {
   ]) {
     for (const suffix of ["", "/"]) {
       for (const prefix of SHARE_PREFIXES) {
-        for (const tokenPath of [TOKEN, ENCODED_TOKEN]) {
+        for (const tokenPath of TOKEN_PATHS) {
+          const clientIp = `203.0.113.${++caseIndex}`;
           it(`returns one generic, uncacheable response for ${hostname}/${prefix}/${tokenPath}${suffix}`, async () => {
             const doubles = installWorkerDoubles();
             const logs: string[] = [];
@@ -55,7 +63,7 @@ describe("share crawler containment", () => {
             const response = await worker.fetch(
               new Request(`https://${hostname}/${prefix}/${tokenPath}${suffix}`, {
                 headers: {
-                  "cf-connecting-ip": "203.0.113.42",
+                  "cf-connecting-ip": clientIp,
                   "user-agent": "Slackbot-LinkExpanding 1.0",
                 },
               }),
@@ -85,7 +93,7 @@ describe("share crawler containment", () => {
             expect(observable).not.toContain(TOKEN);
             expect(observable).not.toContain(ENCODED_TOKEN);
             expect(observable).not.toContain(PRIVATE_SLUG);
-            expect(observable).not.toContain("203.0.113.42");
+            expect(observable).not.toContain(clientIp);
             expect(observable).not.toContain(`/s/${TOKEN}`);
             expect(doubles.metadataFetch).not.toHaveBeenCalled();
             expect(doubles.cacheMatch).not.toHaveBeenCalled();
