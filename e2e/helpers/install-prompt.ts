@@ -141,11 +141,11 @@ export async function expectFocusInsideDialog(
     // by CI (e.g. the artifact HTTP base for the run). The URL is joined
     // with the test's outputDir relative to repo root so reviewers can
     // open the PNG/HTML straight from the JSON.
-    const base = (process.env.IP_ARTIFACT_BASE_URL || "").replace(/\/+$/, "");
-    if (base) {
+    const artifactBaseUrl = (process.env.IP_ARTIFACT_BASE_URL || "").replace(/\/+$/, "");
+    if (artifactBaseUrl) {
       const path = await import("node:path");
       const rel = path.relative(process.cwd(), testInfo.outputDir).replace(/\\/g, "/");
-      const mk = (name: string | null) => (name ? `${base}/${rel}/${name}` : null);
+      const mk = (name: string | null) => (name ? `${artifactBaseUrl}/${rel}/${name}` : null);
       payload.artifactUrls = {
         json: mk(jsonName),
         screenshot: captureDisabled ? null : mk(pngName),
