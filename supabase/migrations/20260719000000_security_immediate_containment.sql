@@ -7,6 +7,7 @@ BEGIN;
 -- Slugs are locators, not authorization. Remove the legacy public DELETE path
 -- without rewriting the historical migration that may already be recorded.
 DROP POLICY IF EXISTS "Anyone can delete notes" ON public.notes;
+REVOKE DELETE ON TABLE public.notes FROM PUBLIC;
 REVOKE DELETE ON TABLE public.notes FROM anon, authenticated;
 
 -- The first limiter migration called this column `ip`. It must contain only a
