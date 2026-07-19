@@ -29,6 +29,12 @@ describe("SharePage crawler metadata", () => {
     const onUnlock = source.slice(onUnlockAt, headAt);
 
     expect(source).toContain("const requestGeneration = useRef(0);");
+    expect(source).toContain("const currentShareToken = useRef(token);");
+    expect(source).toContain("currentShareToken.current = token;");
+    expect(source).toContain('state.token !== token');
+    expect(source).toMatch(
+      /const isCurrentRequest[\s\S]*currentShareToken\.current === requestToken/,
+    );
     expect(onUnlock).toMatch(
       /const generation = requestGeneration\.current;[\s\S]*const requestToken = token;/,
     );
