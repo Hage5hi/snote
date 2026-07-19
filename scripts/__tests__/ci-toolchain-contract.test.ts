@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const EXPECTED_BUN_VERSION = "1.2.22";
+const EXPECTED_BUN_VERSION = "1.3.14";
 const WORKFLOW_FILES = [
   ".github/workflows/ci.yml",
   ".github/workflows/e2e-new-specs.yml",
