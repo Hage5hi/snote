@@ -129,14 +129,13 @@ export default {
     const url = new URL(request.url);
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const ua = request.headers.get("user-agent") ?? "";
-
-    // Force www → apex để tránh duplicate canonical
-    if (url.hostname === "www.syrin.online") {
-      url.hostname = "syrin.online";
-      return Response.redirect(url.toString(), 301);
-    }
+    const isCrawler = CRAWLER_UA.test(ua);
 
     if (url.pathname === "/robots.txt") {
+      if (url.hostname === "www.syrin.online") {
+        url.hostname = "syrin.online";
+        return Response.redirect(url.toString(), 301);
+      }
       const body = renderRobotsTxt(env);
       const etag = etagOf(body);
       if (matchesEtag(request, etag)) {
@@ -160,9 +159,11 @@ export default {
       });
     }
 
-    const isCrawler = CRAWLER_UA.test(ua);
-
     if (!isCrawler || isAssetPath(url.pathname)) {
+      if (url.hostname === "www.syrin.online") {
+        url.hostname = "syrin.online";
+        return Response.redirect(url.toString(), 301);
+      }
       return passThrough(request, env);
     }
 
@@ -195,6 +196,13 @@ export default {
         kind: "share", status: 200, group: rl.group,
       });
       return renderGenericShareHtml();
+    }
+
+    // Canonicalize non-share requests only after capability-bearing share
+    // routes have been contained. A redirect would echo the token in Location.
+    if (url.hostname === "www.syrin.online") {
+      url.hostname = "syrin.online";
+      return Response.redirect(url.toString(), 301);
     }
 
     // Chuẩn hoá pathname (strip trailing slash, lowercase host đã xong)
