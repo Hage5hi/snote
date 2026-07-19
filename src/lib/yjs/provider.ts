@@ -49,7 +49,7 @@ export type Encryption = {
 /**
  * Slugs marked as "abandoned" (e.g. renamed away). Any provider whose slug
  * is in this set will silently drop pending snapshot writes and skip the
- * final flush on destroy — this prevents the just-deleted row from being
+ * final flush on destroy â€” this prevents the just-deleted row from being
  * resurrected by a debounced upsert or beacon after rename.
  */
 const abandonedSlugs = new Set<string>();
@@ -57,6 +57,31 @@ const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
 const abandonedSlugCleanups = new Map<string, Set<() => void | Promise<void>>>();
 const ABANDONED_SLUG_STORAGE_PREFIX = "syrin:abandoned-slug:";
 const ABANDONED_SLUG_TTL_MS = 5 * 60_000;
+// Keep inbound messages below the smallest documented Supabase Broadcast
+// payload ceiling (256 KiB, including the JSON envelope). Full-state recovery
+// still has the durable Postgres snapshot path when a note is larger.
+const MAX_REALTIME_UPDATE_BYTES = 180 * 1024;
+const MAX_REALTIME_AWARENESS_BYTES = 32 * 1024;
+const REQUEST_STATE_THROTTLE_MS = 1_000;
+
+function decodeBoundedBroadcastBytes(payload: unknown, maxBytes: number): Uint8Array | null {
+  if (!payload || typeof payload !== "object") return null;
+  const encoded = (payload as { update?: unknown }).update;
+  if (typeof encoded !== "string" || encoded.length === 0) return null;
+  const maxEncodedChars = Math.ceil(maxBytes / 3) * 4;
+  if (encoded.length > maxEncodedChars) return null;
+  const bytes = base64ToBytes(encoded);
+  return bytes.byteLength > 0 && bytes.byteLength <= maxBytes ? bytes : null;
+}
+
+function isRealtimeClientId(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= 0xffff_ffff
+  );
+}
 
 function isSlugAbandoned(slug: string) {
   if (abandonedSlugs.has(slug)) return true;
@@ -83,10 +108,9 @@ function runAbandonedSlugCleanups(slug: string) {
   });
 }
 
-function markSlugAbandoned(slug: string, broadcast: boolean) {
+function markSlugAbandoned(slug: string, persistAcrossTabs: boolean) {
   abandonedSlugs.add(slug);
   activeProvidersBySlug.get(slug)?.forEach((provider) => {
-    if (broadcast) void provider.broadcastSlugAbandoned();
     provider.markAbandoned();
   });
   runAbandonedSlugCleanups(slug);
@@ -94,7 +118,7 @@ function markSlugAbandoned(slug: string, broadcast: boolean) {
   // a fresh empty row. Providers that were active at rename time stay marked
   // abandoned on the instance and can never resurrect the old content.
   setTimeout(() => abandonedSlugs.delete(slug), ABANDONED_SLUG_TTL_MS);
-  if (broadcast && typeof localStorage !== "undefined") {
+  if (persistAcrossTabs && typeof localStorage !== "undefined") {
     try {
       localStorage.setItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`, String(Date.now()));
     } catch {
@@ -152,8 +176,8 @@ function unabandonProviderForSlug(slug: string) {
   }
 }
 
-// Retained internally so the cross-tab abandonment broadcast handler compiles;
-// no code path currently calls this since Rename/Duplicate were removed.
+// Retained for local same-origin cleanup; no code path currently calls these
+// helpers since Rename/Duplicate were removed.
 void abandonProviderForSlug;
 void unabandonProviderForSlug;
 
@@ -186,6 +210,7 @@ export class SupabaseYjsProvider {
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
   private lastBroadcastAt = 0;
+  private lastStateRequestResponseAt = Number.NEGATIVE_INFINITY;
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
   private syncListeners = new Set<Listener<SyncEvent>>();
   private clientId = Math.floor(Math.random() * 0xffffffff);
@@ -199,16 +224,16 @@ export class SupabaseYjsProvider {
   // join and again on every auto-reconnect. We treat reconnects specially:
   // peer broadcasts that happened while we were offline are NOT replayed by
   // Supabase Realtime, so we re-read the DB snapshot to pick up anything
-  // other clients persisted in the meantime — otherwise our next
+  // other clients persisted in the meantime â€” otherwise our next
   // `saveSnapshot` would overwrite their work.
   private hasSubscribedOnce = false;
-  // Phase 2.5 — broadcast batching. Local updates accumulate here and are
+  // Phase 2.5 â€” broadcast batching. Local updates accumulate here and are
   // merged via Y.mergeUpdates then flushed once per animation frame. This
-  // collapses 30+ keystrokes/s into ≤60 broadcast messages/s without
+  // collapses 30+ keystrokes/s into â‰¤60 broadcast messages/s without
   // affecting durability (snapshot debounce is unchanged).
   private pendingUpdates: Uint8Array[] = [];
   private flushScheduled = false;
-  // Safety valve — if rAF is starved (background tab) and the queue grows
+  // Safety valve â€” if rAF is starved (background tab) and the queue grows
   // beyond this, flush eagerly to avoid unbounded memory.
   private static readonly MAX_PENDING_UPDATES = 50;
   // Dev-only counters for verifying batching behavior. Tree-shaken in prod
@@ -228,8 +253,8 @@ export class SupabaseYjsProvider {
     this.awareness = new Awareness(doc);
     this.awareness.clientID = this.clientId;
     this.encryption = encryption ?? null;
-    // Bug A fix — listen to native online/offline events so the indicator
-    // flips to "offline" instantly instead of waiting ~13–20s for the
+    // Bug A fix â€” listen to native online/offline events so the indicator
+    // flips to "offline" instantly instead of waiting ~13â€“20s for the
     // Realtime channel to time out. We only act on "offline" here; the
     // "online" event is left to the channel SUBSCRIBED callback so we don't
     // emit a false-positive "online" before the WebSocket actually
@@ -260,19 +285,6 @@ export class SupabaseYjsProvider {
     this.abandoned = true;
     this.cancelPendingSnapshot();
     this.pendingUpdates = [];
-  }
-
-  async broadcastSlugAbandoned() {
-    if (!this.channel || !this.connected) return;
-    try {
-      await this.channel.send({
-        type: "broadcast",
-        event: "slug-abandoned",
-        payload: { slug: this.slug },
-      });
-    } catch {
-      /* best-effort cross-tab/device notice */
-    }
   }
 
   private isAbandoned() {
@@ -375,7 +387,7 @@ export class SupabaseYjsProvider {
           }
         }
       } catch {
-        // sessionStorage unavailable — ignore.
+        // sessionStorage unavailable â€” ignore.
       }
     }
 
@@ -423,8 +435,10 @@ export class SupabaseYjsProvider {
 
     this.channel.on("broadcast", { event: "y-update" }, async ({ payload }) => {
       try {
-        let bytes = base64ToBytes(payload.update);
+        let bytes = decodeBoundedBroadcastBytes(payload, MAX_REALTIME_UPDATE_BYTES);
+        if (!bytes) return;
         if (this.encryption) bytes = await this.encryption.decrypt(bytes);
+        if (bytes.byteLength === 0 || bytes.byteLength > MAX_REALTIME_UPDATE_BYTES) return;
         Y.applyUpdate(this.doc, bytes, "remote");
       } catch (e) {
         console.warn("Bad remote update", e);
@@ -433,22 +447,23 @@ export class SupabaseYjsProvider {
 
     this.channel.on("broadcast", { event: "awareness" }, ({ payload }) => {
       try {
-        const bytes = base64ToBytes(payload.update);
+        const bytes = decodeBoundedBroadcastBytes(payload, MAX_REALTIME_AWARENESS_BYTES);
+        if (!bytes) return;
         applyAwarenessUpdate(this.awareness, bytes, "remote");
       } catch (e) {
         console.warn("Bad awareness", e);
       }
     });
 
-    this.channel.on("broadcast", { event: "slug-abandoned" }, ({ payload }) => {
-      if (payload?.slug === this.slug) markSlugAbandoned(this.slug, false);
-    });
-
     // When a new client joins, request the full state from peers.
     this.channel.on("broadcast", { event: "request-state" }, ({ payload }) => {
-      if (payload.from === this.clientId) return;
+      const from = payload?.from;
+      if (!isRealtimeClientId(from) || from === this.clientId) return;
+      const now = Date.now();
+      if (now - this.lastStateRequestResponseAt < REQUEST_STATE_THROTTLE_MS) return;
+      this.lastStateRequestResponseAt = now;
       const update = Y.encodeStateAsUpdate(this.doc);
-      this.broadcastUpdate(update);
+      void this.broadcastUpdate(update);
     });
 
     await this.channel.subscribe(async (status) => {
@@ -464,7 +479,7 @@ export class SupabaseYjsProvider {
         this.hasSubscribedOnce = true;
         if (wasOffline) {
           this.emitSync({ type: "online" });
-          // Bug B fix — flush any pending local edits that piled up while
+          // Bug B fix â€” flush any pending local edits that piled up while
           // offline. Without this, `pendingBytes` stays > 0 and the stale
           // `lastError` (e.g. "Failed to fetch") never clears until the
           // user types again. A successful saveSnapshot emits
@@ -535,7 +550,7 @@ export class SupabaseYjsProvider {
       const before = Y.encodeStateVector(this.doc);
       Y.applyUpdate(this.doc, update, "remote-snapshot");
       const after = Y.encodeStateVector(this.doc);
-      // Cheap byte-wise compare — state vectors are deterministic per state.
+      // Cheap byte-wise compare â€” state vectors are deterministic per state.
       let changed = before.byteLength !== after.byteLength;
       if (!changed) {
         for (let i = 0; i < before.byteLength; i++) {
@@ -560,7 +575,7 @@ export class SupabaseYjsProvider {
     if (this.destroyed || this.isAbandoned()) return;
     if (origin === "remote" || origin === "remote-snapshot") return;
     this.updateCount++;
-    // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
+    // Counter only â€” no event emit. UI polls `getPendingBytes()` (Phase 2.2)
     // to avoid render storms when typing fast (~30 keystrokes/s).
     this.pendingBytes += update.byteLength;
     this.queueBroadcast(update);
@@ -570,7 +585,7 @@ export class SupabaseYjsProvider {
   private queueBroadcast(update: Uint8Array) {
     if (this.destroyed || this.isAbandoned()) return;
     this.pendingUpdates.push(update);
-    // Eager flush if rAF starved (background tab) — bounds memory.
+    // Eager flush if rAF starved (background tab) â€” bounds memory.
     if (this.pendingUpdates.length >= SupabaseYjsProvider.MAX_PENDING_UPDATES) {
       this.flushBroadcasts();
       return;
@@ -622,13 +637,14 @@ export class SupabaseYjsProvider {
         return;
       }
     }
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_REALTIME_UPDATE_BYTES) return;
     if (this.destroyed || this.isAbandoned()) return;
     this.channel.send({
       type: "broadcast",
       event: "y-update",
       payload: { update: bytesToBase64(bytes) },
     });
-    // Counter only — no event emit. UI polls `getLastBroadcastAt()`.
+    // Counter only â€” no event emit. UI polls `getLastBroadcastAt()`.
     this.lastBroadcastAt = Date.now();
   }
 
@@ -638,6 +654,7 @@ export class SupabaseYjsProvider {
       this.awareness,
       clients ?? Array.from(this.awareness.getStates().keys())
     );
+    if (update.byteLength === 0 || update.byteLength > MAX_REALTIME_AWARENESS_BYTES) return;
     this.channel.send({
       type: "broadcast",
       event: "awareness",
@@ -675,7 +692,7 @@ export class SupabaseYjsProvider {
       if (this.encryption) {
         try {
           stateBytes = await this.encryption.encrypt(state);
-          // Server is zero-knowledge — never expose plaintext or true length.
+          // Server is zero-knowledge â€” never expose plaintext or true length.
           storedContent = "";
           storedCount = 0;
           storedTags = [];
@@ -703,7 +720,7 @@ export class SupabaseYjsProvider {
         this.emitSync({ type: "error", message: error.message ?? String(error) });
       } else {
         this.lastSnapshotAt = Date.now();
-        // Durable persistence achieved — clear the pending counter and notify.
+        // Durable persistence achieved â€” clear the pending counter and notify.
         this.pendingBytes = 0;
         this.emitSync({ type: "synced-durable" });
       }
@@ -801,3 +818,4 @@ export class SupabaseYjsProvider {
     if (activeForSlug?.size === 0) activeProvidersBySlug.delete(this.slug);
   }
 }
+
