@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,17 +23,22 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
   const requestGenerationRef = useRef(0);
   const targetRef = useRef({ slug, salt, check, iterations });
   const onUnlockRef = useRef(onUnlock);
-  onUnlockRef.current = onUnlock;
 
-  if (
-    targetRef.current.slug !== slug
-    || targetRef.current.salt !== salt
-    || targetRef.current.check !== check
-    || targetRef.current.iterations !== iterations
-  ) {
-    targetRef.current = { slug, salt, check, iterations };
-    requestGenerationRef.current += 1;
-  }
+  useLayoutEffect(() => {
+    onUnlockRef.current = onUnlock;
+  }, [onUnlock]);
+
+  useLayoutEffect(() => {
+    if (
+      targetRef.current.slug !== slug
+      || targetRef.current.salt !== salt
+      || targetRef.current.check !== check
+      || targetRef.current.iterations !== iterations
+    ) {
+      targetRef.current = { slug, salt, check, iterations };
+      requestGenerationRef.current += 1;
+    }
+  }, [slug, salt, check, iterations]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -53,32 +58,38 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
     e.preventDefault();
     if (!pass.trim()) return;
     const requestGeneration = ++requestGenerationRef.current;
-    const requestLocation = window.location.pathname + window.location.search;
-    const isCurrentRequest = () => mountedRef.current
+    const submittedPass = pass;
+    const requestLocation = window.location.pathname
+      + window.location.search
+      + window.location.hash;
+    const isCurrentRequestAt = (expectedLocation: string) => mountedRef.current
       && requestGenerationRef.current === requestGeneration
-      && window.location.pathname + window.location.search === requestLocation;
+      && window.location.pathname + window.location.search + window.location.hash
+        === expectedLocation;
     setBusy(true);
     setError(null);
     try {
-      const key = await deriveKey(pass, salt, iterations);
-      if (!isCurrentRequest()) return;
+      const key = await deriveKey(submittedPass, salt, iterations);
+      if (!isCurrentRequestAt(requestLocation)) return;
       const ok = await verifyCheck(key, check);
-      if (!isCurrentRequest()) return;
+      if (!isCurrentRequestAt(requestLocation)) return;
       if (!ok) {
         setError(t("unlock.wrong_key"));
         setBusy(false);
         return;
       }
-      if (!isCurrentRequest()) return;
+      if (!isCurrentRequestAt(requestLocation)) return;
+      let expectedLocation = requestLocation;
       try {
-        history.replaceState(null, "", `${window.location.pathname}#${encodeURIComponent(pass)}`);
+        expectedLocation = `${window.location.pathname}${window.location.search}#${encodeURIComponent(submittedPass)}`;
+        history.replaceState(null, "", expectedLocation);
       } catch {
-        // ignore
+        expectedLocation = requestLocation;
       }
-      if (!isCurrentRequest()) return;
+      if (!isCurrentRequestAt(expectedLocation)) return;
       onUnlockRef.current(key);
     } catch (err) {
-      if (!isCurrentRequest()) return;
+      if (!isCurrentRequestAt(requestLocation)) return;
       console.error(err);
       setError(t("unlock.decrypt_error"));
       setBusy(false);
