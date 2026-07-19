@@ -83,6 +83,23 @@ describe("CI toolchain contract", () => {
     }
   });
 
+  it("cancels stale runs for pull-request workflows", () => {
+    const pullRequestWorkflows = [...workflows].filter(([, workflow]) =>
+      /^  pull_request:/m.test(workflow),
+    );
+    expect(pullRequestWorkflows.length).toBeGreaterThan(0);
+
+    for (const [path, workflow] of pullRequestWorkflows) {
+      expect(
+        workflow,
+        `${path} must group runs by workflow and pull request/ref`,
+      ).toContain(
+        "group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}",
+      );
+      expect(workflow).toMatch(/cancel-in-progress:\s*true\b/);
+    }
+  });
+
   it("uses the audit command supported by pinned Bun", () => {
     expect(extensionAudit).toContain("bun pm scan");
     expect(extensionAudit).not.toMatch(/bun(?: pm)? audit/);
