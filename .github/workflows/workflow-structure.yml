@@ -38,8 +38,8 @@ jobs:
         with:
           args: -shellcheck=
 
-  toolchain-contract:
-    name: TypeScript projects and CI contract
+  quality-fast:
+    name: Fast lint, typecheck and CI contract
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,11 +47,18 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - name: Lint
+        if: success() || failure()
+        run: bun run lint
       - name: Typecheck app
+        if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.app.json
       - name: Typecheck node config
+        if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.node.json
       - name: Typecheck scripts, e2e and extension TypeScript
+        if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.tools.json
       - name: Verify CI toolchain contract
+        if: success() || failure()
         run: bunx vitest run scripts/__tests__/ci-toolchain-contract.test.ts
