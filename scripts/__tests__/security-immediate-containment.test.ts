@@ -175,6 +175,8 @@ describe("immediate containment contracts", () => {
       '{ pattern = "note.syrin.online/*", zone_name = "syrin.online" }',
     );
     expect(readme).toContain("SITE_URL = \"https://note.syrin.online\"");
+    expect(readme).toContain("Rollback must keep generic `/s/*` containment");
+    expect(readme).not.toContain("traffic trở lại pass-through 100%");
     expect(rollout).toContain("Inventory every live share hostname and direct origin alias");
     expect(rollout).toContain("note.syrin.online");
     expect(rollout).toContain("snote.lovable.app");
