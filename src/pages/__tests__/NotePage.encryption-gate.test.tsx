@@ -512,6 +512,55 @@ describe("NotePage encryption gate", () => {
     expect(window.location.hash).toBe("#submitted-key");
   });
 
+  it("cancels a busy manual unlock on query-only history navigation", async () => {
+    const { UnlockForm: ActualUnlockForm } = await vi.importActual<
+      typeof import("@/components/note/UnlockForm")
+    >("@/components/note/UnlockForm");
+    let resolveKey!: (key: CryptoKey) => void;
+    const deferredKey = new Promise<CryptoKey>((resolve) => {
+      resolveKey = resolve;
+    });
+    harness.deriveKey.mockReturnValue(deferredKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    const onUnlock = vi.fn();
+    window.history.replaceState(null, "", "/same-note?mode=a");
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ActualUnlockForm
+          slug="same-note"
+          salt="same-salt"
+          check="same-check"
+          iterations={1}
+          onUnlock={onUnlock}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.change(view.getByPlaceholderText("unlock.placeholder"), {
+      target: { value: "submitted-key" },
+    });
+    fireEvent.submit(view.container.querySelector("form")!);
+    await waitFor(() =>
+      expect(view.getByLabelText("Loading encryption metadata")).toBeInTheDocument(),
+    );
+
+    act(() => {
+      window.history.replaceState(null, "", "/same-note?mode=b");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(view.queryByLabelText("Loading encryption metadata")).not.toBeInTheDocument();
+    expect(view.getByPlaceholderText("unlock.placeholder")).toHaveValue("");
+
+    await act(async () => {
+      resolveKey({} as CryptoKey);
+      await deferredKey;
+    });
+
+    expect(onUnlock).not.toHaveBeenCalled();
+    expect(view.queryByLabelText("Loading encryption metadata")).not.toBeInTheDocument();
+  });
+
   it("restarts auto-unlock and rejects the old key after a hash-only change", async () => {
     let resolveFirstKey!: (key: CryptoKey) => void;
     const firstKey = {} as CryptoKey;
@@ -582,6 +631,33 @@ describe("NotePage encryption gate", () => {
     });
 
     expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("keeps a successful manual share unlock without refetching", async () => {
+    harness.shareInvoke
+      .mockResolvedValueOnce(encryptedShareResponse("manual-success"))
+      .mockReturnValue(new Promise(() => {}));
+    harness.decryptBytes.mockResolvedValue(Y.encodeStateAsUpdate(new Y.Doc()));
+    window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}`);
+
+    const view = renderShareRoute();
+    await waitFor(() => expect(harness.unlockProps).toHaveBeenCalledTimes(1));
+    const onUnlock = harness.unlockProps.mock.lastCall?.[0].onUnlock as (
+      key: CryptoKey,
+    ) => Promise<void>;
+
+    window.history.replaceState(
+      null,
+      "",
+      `/s/${SHARE_TOKEN_A}#submitted-key`,
+    );
+    await act(async () => {
+      await onUnlock({} as CryptoKey);
+    });
+
+    expect(harness.shareInvoke).toHaveBeenCalledTimes(1);
+    expect(view.getByTestId("preview")).toBeInTheDocument();
+    expect(view.queryByTestId("skeleton")).not.toBeInTheDocument();
   });
 
   it("does not let an old locked state adopt a newer same-token generation", async () => {
