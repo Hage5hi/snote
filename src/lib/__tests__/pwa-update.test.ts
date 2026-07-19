@@ -205,7 +205,7 @@ describe("registerAppUpdater", () => {
     await flush(80);
 
     dismissMock.mockClear();
-    // Reload attempt but buildId did NOT change â€” poller keeps seeing mismatch.
+    // Reload attempt but buildId did NOT change — poller keeps seeing mismatch.
     await flush(80);
     expect(dismissMock).not.toHaveBeenCalled();
     const state = (window as unknown as { __SNOTE_PWA_UPDATE_STATE__?: { currentBuildId: string; updateAvailable: boolean } }).__SNOTE_PWA_UPDATE_STATE__;
@@ -301,4 +301,3 @@ describe("registerAppUpdater", () => {
     expect(serialized).not.toContain("build-b");
   });
 });
-
