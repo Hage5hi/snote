@@ -47,7 +47,7 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 
-// Polyfill rAF for jsdom â€” flush on next microtask tick.
+// Polyfill rAF for jsdom — flush on next microtask tick.
 beforeEach(() => {
   broadcastHandlers.clear();
   channelSendMock.mockClear();
@@ -90,7 +90,7 @@ function sentEvents(event: string) {
   );
 }
 
-describe("SupabaseYjsProvider â€” public broadcast containment", () => {
+describe("SupabaseYjsProvider — public broadcast containment", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
   });
@@ -161,7 +161,7 @@ describe("SupabaseYjsProvider â€” public broadcast containment", () => {
   });
 });
 
-describe("SupabaseYjsProvider â€” unmount cancellation", () => {
+describe("SupabaseYjsProvider — unmount cancellation", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
     vi.useFakeTimers();
@@ -198,11 +198,11 @@ describe("getSnapshotDebounceMs", () => {
 });
 
 
-describe("SupabaseYjsProvider â€” Phase 2.5 broadcast batching", () => {
+describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {
   it("batches multiple updates into 1 broadcast per rAF", async () => {
     const { provider, doc } = makeProvider();
     const text = doc.getText("content");
-    // 30 separate Y.Doc transactions â†’ 30 handleDocUpdate calls.
+    // 30 separate Y.Doc transactions → 30 handleDocUpdate calls.
     for (let i = 0; i < 30; i++) {
       text.insert(text.length, "a");
     }
@@ -216,7 +216,7 @@ describe("SupabaseYjsProvider â€” Phase 2.5 broadcast batching", () => {
   it("eager-flushes at MAX_PENDING_UPDATES (50) to bound memory", async () => {
     const { provider, doc } = makeProvider();
     const text = doc.getText("content");
-    // 100 updates â†’ 1 eager flush at 50, 1 eager flush at 100 (50 more
+    // 100 updates → 1 eager flush at 50, 1 eager flush at 100 (50 more
     // arrive synchronously, hitting the threshold again before rAF).
     for (let i = 0; i < 100; i++) {
       text.insert(text.length, "a");
@@ -230,7 +230,7 @@ describe("SupabaseYjsProvider â€” Phase 2.5 broadcast batching", () => {
   });
 });
 
-describe("SupabaseYjsProvider â€” SyncEvent lifecycle", () => {
+describe("SupabaseYjsProvider — SyncEvent lifecycle", () => {
   it("emits 'offline' to subscribed listeners", () => {
     const { provider } = makeProvider();
     const events: string[] = [];
@@ -268,7 +268,7 @@ describe("SupabaseYjsProvider â€” SyncEvent lifecycle", () => {
   });
 });
 
-describe("SupabaseYjsProvider â€” saveSnapshot encryption consistency", () => {
+describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
   });
@@ -301,7 +301,7 @@ describe("SupabaseYjsProvider â€” saveSnapshot encryption consistency", () 
   it("skips write when local encryption mode disagrees with stored mode", async () => {
     const { provider, doc } = makeProvider();
     doc.getText("content").insert(0, "plaintext");
-    // Row is encrypted, but provider has no key â€” must NOT overwrite.
+    // Row is encrypted, but provider has no key — must NOT overwrite.
     provider.setExpectedEncrypted(true);
     await provider.saveSnapshot();
     expect(upsertCalls).toHaveLength(0);
@@ -318,13 +318,13 @@ describe("SupabaseYjsProvider â€” saveSnapshot encryption consistency", () 
   });
 });
 
-describe("SupabaseYjsProvider â€” rapid lock/unlock toggle regression", () => {
+describe("SupabaseYjsProvider — rapid lock/unlock toggle regression", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
   });
 
   it("stale plaintext provider cannot write after row flips to encrypted", async () => {
-    // Simulates: user locks note via URL hash â†’ enc-meta refetch marks the
+    // Simulates: user locks note via URL hash → enc-meta refetch marks the
     // still-mounted plaintext provider as expected=encrypted BEFORE the new
     // provider mounts. The stale instance must be blocked from writing.
     const { provider: stale, doc } = makeProvider();
@@ -368,4 +368,3 @@ describe("SupabaseYjsProvider â€” rapid lock/unlock toggle regression", () 
     expect(upsertCalls[0].is_encrypted).toBe(false);
   });
 });
-
