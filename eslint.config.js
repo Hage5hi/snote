@@ -85,11 +85,6 @@ export default tseslint.config(
     rules: { "no-restricted-syntax": "off" },
   },
   {
-    // Playwright fixtures name their callback parameter `use`; it is not a React hook.
-    files: ["e2e-extension/fixtures/**/*.ts"],
-    rules: { "react-hooks/rules-of-hooks": "off" },
-  },
-  {
     // Test files freely use literal strings as fixtures.
     files: ["**/__tests__/**", "**/*.test.{ts,tsx}"],
     rules: { "no-restricted-syntax": "off" },
