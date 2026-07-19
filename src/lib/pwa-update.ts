@@ -14,7 +14,7 @@ import type { PwaReloadStrategy, PwaUpdateReadinessState } from "@/lib/pwa-updat
 declare const __BUILD_ID__: string;
 const STAMPED_BUILD_ID: string = typeof __BUILD_ID__ === "string" ? __BUILD_ID__ : "dev";
 
-// Tunables — see docs/e2e-env-overrides.md ("PWA update tunables").
+// Tunables â€” see docs/e2e-env-overrides.md ("PWA update tunables").
 function envNum(key: string, fallback: number): number {
   const raw = (import.meta.env as Record<string, string | undefined>)[key];
   const v = raw ? Number(raw) : NaN;
@@ -92,6 +92,9 @@ function writeDebugState(next: Partial<PwaUpdateDebugState>): void {
 }
 
 export async function nukeServiceWorkersAndCaches(): Promise<void> {
+  // Destructive cleanup is only valid in Lovable's disposable preview host.
+  // On the real app, the active worker and caches are the offline rollback.
+  if (!isLovablePreviewHost()) return;
   try {
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -169,14 +172,10 @@ function reloadCleanUrl(targetBuildId: string | null): void {
   }
 }
 
-async function recoverAndReloadCleanUrl(targetBuildId: string | null): Promise<void> {
+function recoverAndReloadCleanUrl(targetBuildId: string | null): void {
   scrubLegacyVersionParamFromVisibleUrl();
   if (signalE2EReload(targetBuildId)) return;
-  try {
-    await nukeServiceWorkersAndCaches();
-  } finally {
-    reloadCleanUrl(targetBuildId);
-  }
+  reloadCleanUrl(targetBuildId);
 }
 
 function updateButton(label: string, disabled: boolean, onReload: () => void): ReactNode {
@@ -193,7 +192,7 @@ function updateButton(label: string, disabled: boolean, onReload: () => void): R
         if (!disabled) onReload();
       },
     },
-    disabled ? `${label}…` : label,
+    disabled ? `${label}â€¦` : label,
   );
 }
 
@@ -248,7 +247,7 @@ function startVersionPoller(
         onCurrent(data.buildId);
       }
     } catch {
-      /* network blip — try again next tick */
+      /* network blip â€” try again next tick */
     }
   };
 
@@ -355,8 +354,8 @@ export function registerAppUpdater(): void {
       console.log("[pwa-update] reload strategy=waiting-sw", { currentBuildId: getCurrentBuildId(), pendingBuildId });
       logLifecycle("reload-start");
       const fallback = window.setTimeout(() => {
-        console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
-        void recoverAndReloadCleanUrl(pendingBuildId);
+        console.log("[pwa-update] waiting-sw fallback â†’ hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
+        recoverAndReloadCleanUrl(pendingBuildId);
       }, RELOAD_FALLBACK_MS);
       let done = false;
       const onCtrl = () => {
@@ -370,7 +369,7 @@ export function registerAppUpdater(): void {
       scrubLegacyVersionParamFromVisibleUrl();
       void updateSWFn(false).catch(() => {
         window.clearTimeout(fallback);
-        void recoverAndReloadCleanUrl(pendingBuildId);
+        recoverAndReloadCleanUrl(pendingBuildId);
       });
       return;
     }
@@ -379,7 +378,7 @@ export function registerAppUpdater(): void {
     syncDebugState();
     console.log("[pwa-update] reload strategy=hard", { currentBuildId: getCurrentBuildId(), pendingBuildId });
     logLifecycle("reload-start");
-    void recoverAndReloadCleanUrl(pendingBuildId);
+    recoverAndReloadCleanUrl(pendingBuildId);
   };
 
   const logLifecycle = (event: string) => {
@@ -492,3 +491,4 @@ export function registerAppUpdater(): void {
     window.removeEventListener("i18n:lang-changed", onLangChanged);
   });
 }
+
