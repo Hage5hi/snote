@@ -11,6 +11,7 @@ const workflows = new Map(
 );
 const allWorkflows = [...workflows.values()].join("\n");
 const ci = workflows.get(".github/workflows/ci.yml")!;
+const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   packageManager?: string;
   scripts: Record<string, string>;
@@ -80,6 +81,11 @@ describe("CI toolchain contract", () => {
     for (const name of ["ajv", "esbuild", "glob", "minimatch"]) {
       expect(packageJson.overrides).not.toHaveProperty(name);
     }
+  });
+
+  it("uses the audit command supported by pinned Bun", () => {
+    expect(extensionAudit).toContain("bun pm scan");
+    expect(extensionAudit).not.toMatch(/bun(?: pm)? audit/);
   });
 
   it("represents lint, unit, coverage, build and workflow-structure gates", () => {
