@@ -63,11 +63,15 @@ Deno.serve(async (req) => {
     if (authorization.status !== "authorized") {
       return adminAuthResponse(authorization, corsHeaders);
     }
-    const { error } = await supabase.rpc("admin_session_revoke", {
-      p_token_hash: authorization.tokenHash,
-      p_subject_hash: authorization.subjectHash,
-    });
-    if (error) return serviceUnavailableResponse(corsHeaders);
+    try {
+      const { error } = await supabase.rpc("admin_session_revoke", {
+        p_token_hash: authorization.tokenHash,
+        p_subject_hash: authorization.subjectHash,
+      });
+      if (error) return serviceUnavailableResponse(corsHeaders);
+    } catch {
+      return serviceUnavailableResponse(corsHeaders);
+    }
     return new Response(null, {
       status: 204,
       headers: { ...corsHeaders, "Cache-Control": "no-store" },
@@ -98,18 +102,22 @@ Deno.serve(async (req) => {
       : lockoutResponse(recorded.retryAfterSeconds, corsHeaders);
   }
 
-  const sessionToken = createSessionToken();
-  const tokenHash = await sha256Hex(sessionToken);
-  const expiresAt = new Date(
-    Date.now() + sessionTtlMinutes() * 60 * 1000,
-  ).toISOString();
-  const { error } = await supabase.from("admin_sessions").insert({
-    token_hash: tokenHash,
-    subject_hash: subject.subjectHash,
-    expires_at: expiresAt,
-  });
-  if (error) return serviceUnavailableResponse(corsHeaders);
+  try {
+    const sessionToken = createSessionToken();
+    const tokenHash = await sha256Hex(sessionToken);
+    const expiresAt = new Date(
+      Date.now() + sessionTtlMinutes() * 60 * 1000,
+    ).toISOString();
+    const { error } = await supabase.from("admin_sessions").insert({
+      token_hash: tokenHash,
+      subject_hash: subject.subjectHash,
+      expires_at: expiresAt,
+    });
+    if (error) return serviceUnavailableResponse(corsHeaders);
 
-  return json({ sessionToken, expiresAt }, 200);
+    return json({ sessionToken, expiresAt }, 200);
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
+  }
 });
 
