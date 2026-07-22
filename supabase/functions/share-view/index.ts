@@ -1,58 +1,74 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { readCapabilityBearer } from "../_shared/capability.ts";
+import {
+  capabilityCorsHeaders,
+  capabilityEnvironment,
+  capabilityFailure,
+  capabilityJson,
+  capabilityTokenHash,
+  materializeNoteSession,
+  rpcStatus,
+} from "../_shared/capability-edge.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
-
-function json(body: unknown, status: number) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-      "Cache-Control": "no-store",
-    },
-  });
-}
+const LEGACY_TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
+  if (req.method === "OPTIONS") return new Response("ok", { headers: capabilityCorsHeaders });
+  if (req.method !== "POST") return capabilityJson({ error: "method not allowed" }, 405);
+
+  const environment = capabilityEnvironment();
+  if (!environment.ok) return capabilityFailure("unavailable");
 
   try {
-    const body = await req.json().catch(() => ({}));
-    const token = String(body?.token ?? "").trim();
-    if (!TOKEN_RE.test(token)) return json({ error: "invalid token" }, 400);
+    const bearer = readCapabilityBearer(req);
+    if (bearer) {
+      const body = await req.json().catch(() => ({}));
+      const afterSequence = Number(body?.afterSequence ?? 0);
+      if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
+        return capabilityFailure("invalid");
+      }
+      const tokenHash = await capabilityTokenHash(bearer, environment.hmacSecret);
+      if (!tokenHash) return capabilityFailure("unavailable");
+      const { data, error } = await environment.client.rpc("capability_session_open", {
+        p_token_hash: tokenHash,
+        p_after_seq: afterSequence,
+        p_limit: 500,
+      });
+      if (error || rpcStatus(data) !== "ok") {
+        return capabilityFailure(error ? "unavailable" : rpcStatus(data));
+      }
+      const session = await materializeNoteSession(
+        data?.session,
+        environment.supabaseUrl,
+        environment.jwtSecret,
+      );
+      return session
+        ? capabilityJson({ session }, 200)
+        : capabilityFailure("unavailable");
+    }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-
-    const { data: share } = await supabase
+    // Temporary dual-mode compatibility only. New capabilities are never
+    // accepted here; the legacy opaque share is moved out of the JSON body so
+    // gateways and application error serializers cannot capture it there.
+    const legacyShare = req.headers.get("x-legacy-share")?.trim() ?? "";
+    if (!LEGACY_TOKEN_RE.test(legacyShare)) {
+      return capabilityJson({ error: "unauthorized" }, 401);
+    }
+    const { data: share, error: shareError } = await environment.client
       .from("note_shares")
       .select("slug")
-      .eq("token", token)
+      .eq("token", legacyShare)
       .maybeSingle();
-    // Same 404 whether the token doesn't exist or the note was deleted, so the
-    // viewer can't distinguish "never existed" from "revoked".
-    if (!share) return json({ error: "not found" }, 404);
+    if (shareError || !share) return capabilityJson({ error: "not found" }, 404);
 
-    const { data: note, error } = await supabase
+    const { data: note, error: noteError } = await environment.client
       .from("notes")
       .select("content, ydoc_state, is_encrypted, enc_salt, enc_check, enc_iterations, updated_at")
       .eq("slug", share.slug)
+      .eq("capability_managed", false)
       .maybeSingle();
-    if (error || !note) return json({ error: "not found" }, 404);
+    if (noteError || !note) return capabilityJson({ error: "not found" }, 404);
 
-    // IMPORTANT: do NOT include `slug` in the response. The whole point of
-    // the share link is that the viewer never learns the underlying slug
-    // (which would grant them edit access).
-    return json({
+    return capabilityJson({
       content: note.content,
       ydoc_state: note.ydoc_state,
       is_encrypted: note.is_encrypted,
@@ -62,7 +78,6 @@ Deno.serve(async (req) => {
       updated_at: note.updated_at,
     }, 200);
   } catch {
-    // Do not echo or log errors that may contain the supplied share token.
-    return json({ error: "temporarily unavailable" }, 503);
+    return capabilityFailure("unavailable");
   }
 });

@@ -15,6 +15,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
+    "typecheck:edge": "deno check --frozen supabase/functions/_shared/capability.ts supabase/functions/_shared/capability-edge.ts supabase/functions/note-session/index.ts supabase/functions/note-sync/index.ts supabase/functions/note-manage/index.ts supabase/functions/share-view/index.ts supabase/functions/share-create/index.ts supabase/functions/raw/index.ts",
     "test:e2e": "bash scripts/run-playwright.sh test",
     "test:e2e:system": "PLAYWRIGHT_FORCE_SYSTEM_CHROMIUM=1 PLAYWRIGHT_PROJECT=chromium bash scripts/run-playwright.sh test",
     "test:e2e:both": "bun run test:e2e && bun run test:e2e:system",
@@ -123,6 +124,7 @@
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.11.3",
+    "@electric-sql/pglite": "0.5.4",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.60.0",
     "@tailwindcss/typography": "^0.5.19",

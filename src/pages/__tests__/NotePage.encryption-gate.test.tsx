@@ -1181,19 +1181,21 @@ describe("NotePage encryption gate", () => {
     });
     harness.decryptBytes.mockReturnValue(deferredDecrypt);
     harness.shareInvoke.mockImplementation(
-      (_name: string, options: { body: { token: string } }) =>
-        Promise.resolve({
+      (_name: string, options: { headers: { "x-legacy-share": string } }) => {
+        const shareToken = options.headers["x-legacy-share"];
+        return Promise.resolve({
           data: {
             content: "",
             ydoc_state: "ciphertext",
             is_encrypted: true,
-            enc_salt: `salt-${options.body.token}`,
-            enc_check: `check-${options.body.token}`,
+            enc_salt: `salt-${shareToken}`,
+            enc_check: `check-${shareToken}`,
             enc_iterations: 1,
             updated_at: "2026-07-19T00:00:00.000Z",
           },
           error: null,
-        }),
+        });
+      },
     );
 
     const view = renderShareRoute();

@@ -4,19 +4,20 @@ import { describe, expect, it } from "vitest";
 
 describe("share-view revocation cache contract", () => {
   it("marks every JSON response as no-store", () => {
-    const source = readFileSync(
+    const endpoint = readFileSync(
       resolve(process.cwd(), "supabase/functions/share-view/index.ts"),
       "utf8",
     );
+    const shared = readFileSync(
+      resolve(process.cwd(), "supabase/functions/_shared/capability-edge.ts"),
+      "utf8",
+    );
 
-    expect(source).toMatch(
-      /function json[\s\S]*?headers:\s*\{[\s\S]*?"Cache-Control":\s*"no-store"[\s\S]*?\}/,
-    );
-    expect(source).not.toMatch(
-      /headers:\s*\{\s*\.\.\.corsHeaders,\s*"Content-Type":\s*"application\/json"\s*\}/,
-    );
-    expect(source).not.toContain("console.error");
-    expect(source).not.toContain("String(e)");
-    expect(source).toContain('json({ error: "temporarily unavailable" }, 503)');
+    expect(shared).toMatch(/function capabilityJson[\s\S]*?"Cache-Control":\s*"no-store"/);
+    expect(shared).toContain('"CDN-Cache-Control": "no-store"');
+    expect(shared).toContain('"Vary": "Authorization, X-Legacy-Share"');
+    expect(endpoint).not.toMatch(/console\.(?:log|info|warn|error)/);
+    expect(endpoint).not.toContain("String(e)");
+    expect(endpoint).toContain('capabilityFailure("unavailable")');
   });
 });

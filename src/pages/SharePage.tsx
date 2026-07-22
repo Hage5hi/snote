@@ -159,7 +159,7 @@ export default function SharePage() {
     (async () => {
       const { data, error } = await supabase.functions.invoke<ShareViewResponse>(
         "share-view",
-        { body: { token: requestToken } },
+        { headers: { "x-legacy-share": requestToken } },
       );
       if (!isCurrent()) return;
       if (error || !data) {

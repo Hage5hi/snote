@@ -1,1 +1,15 @@
 project_id = "onfzjmfjldsbthchssfr"
+
+# Capability tokens are opaque CSPRNG values, not Supabase Auth JWTs. These
+# functions authenticate the exact Bearer value themselves and fail closed.
+[functions.note-session]
+verify_jwt = false
+
+[functions.note-sync]
+verify_jwt = false
+
+[functions.note-manage]
+verify_jwt = false
+
+[functions.share-view]
+verify_jwt = false

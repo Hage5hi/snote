@@ -58,42 +58,174 @@ export type Database = {
           },
         ]
       }
+      note_capabilities: {
+        Row: {
+          capability_id: string
+          created_at: string
+          generation: number
+          last_used_at: string | null
+          note_id: string
+          revoked_at: string | null
+          scope: Database["public"]["Enums"]["note_capability_scope"]
+          token_hash: string
+        }
+        Insert: {
+          capability_id?: string
+          created_at?: string
+          generation?: number
+          last_used_at?: string | null
+          note_id: string
+          revoked_at?: string | null
+          scope: Database["public"]["Enums"]["note_capability_scope"]
+          token_hash: string
+        }
+        Update: {
+          capability_id?: string
+          created_at?: string
+          generation?: number
+          last_used_at?: string | null
+          note_id?: string
+          revoked_at?: string | null
+          scope?: Database["public"]["Enums"]["note_capability_scope"]
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_capabilities_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["note_id"]
+          },
+        ]
+      }
+      note_checkpoints: {
+        Row: {
+          checkpoint_id: string
+          created_at: string
+          encryption_version: number
+          note_id: string
+          payload: string
+          through_seq: number
+          version: number
+        }
+        Insert: {
+          checkpoint_id: string
+          created_at?: string
+          encryption_version: number
+          note_id: string
+          payload: string
+          through_seq: number
+          version: number
+        }
+        Update: {
+          checkpoint_id?: string
+          created_at?: string
+          encryption_version?: number
+          note_id?: string
+          payload?: string
+          through_seq?: number
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_checkpoints_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["note_id"]
+          },
+        ]
+      }
+      note_updates: {
+        Row: {
+          created_at: string
+          encryption_version: number
+          note_id: string
+          payload: string
+          seq: number
+          update_id: string
+        }
+        Insert: {
+          created_at?: string
+          encryption_version: number
+          note_id: string
+          payload: string
+          seq?: never
+          update_id: string
+        }
+        Update: {
+          created_at?: string
+          encryption_version?: number
+          note_id?: string
+          payload?: string
+          seq?: never
+          update_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_updates_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["note_id"]
+          },
+        ]
+      }
       notes: {
         Row: {
+          capability_managed: boolean
           char_count: number
           content: string
           created_at: string
+          deleted_at: string | null
           enc_check: string | null
           enc_iterations: number
           enc_salt: string | null
+          encryption_version: number
           is_encrypted: boolean
+          note_id: string
+          payload_limit_bytes: number
           slug: string
+          sync_status: Database["public"]["Enums"]["note_sync_status"]
           tags: string[]
           updated_at: string
           ydoc_state: string
         }
         Insert: {
+          capability_managed?: boolean
           char_count?: number
           content?: string
           created_at?: string
+          deleted_at?: string | null
           enc_check?: string | null
           enc_iterations?: number
           enc_salt?: string | null
+          encryption_version?: number
           is_encrypted?: boolean
+          note_id?: string
+          payload_limit_bytes?: number
           slug: string
+          sync_status?: Database["public"]["Enums"]["note_sync_status"]
           tags?: string[]
           updated_at?: string
           ydoc_state?: string
         }
         Update: {
+          capability_managed?: boolean
           char_count?: number
           content?: string
           created_at?: string
+          deleted_at?: string | null
           enc_check?: string | null
           enc_iterations?: number
           enc_salt?: string | null
+          encryption_version?: number
           is_encrypted?: boolean
+          note_id?: string
+          payload_limit_bytes?: number
           slug?: string
+          sync_status?: Database["public"]["Enums"]["note_sync_status"]
           tags?: string[]
           updated_at?: string
           ydoc_state?: string
@@ -105,10 +237,50 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      capability_note_create: {
+        Args: {
+          p_edit_token_hash: string
+          p_owner_token_hash: string
+          p_slug: string
+          p_view_token_hash: string
+        }
+        Returns: Json
+      }
+      capability_note_manage: {
+        Args: { p_action: string; p_params?: Json; p_token_hash: string }
+        Returns: Json
+      }
+      capability_payload_audit: {
+        Args: { p_soft_limit?: number }
+        Returns: {
+          max_checkpoint_bytes: number
+          max_legacy_snapshot_bytes: number
+          max_update_bytes: number
+          notes_above_limit: number
+          total_notes: number
+        }[]
+      }
+      capability_quarantine_oversized: { Args: never; Returns: number }
+      capability_session_open: {
+        Args: { p_after_seq?: number; p_limit?: number; p_token_hash: string }
+        Returns: Json
+      }
+      capability_updates_append: {
+        Args: {
+          p_expected_encryption_version: number
+          p_token_hash: string
+          p_updates: Json
+        }
+        Returns: Json
+      }
+      legacy_share_rotate: {
+        Args: { p_slug: string; p_token: string }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      note_capability_scope: "owner" | "edit" | "view"
+      note_sync_status: "legacy" | "active" | "read_only_quarantine" | "deleted"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -235,6 +407,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      note_capability_scope: ["owner", "edit", "view"],
+      note_sync_status: ["legacy", "active", "read_only_quarantine", "deleted"],
+    },
   },
 } as const
