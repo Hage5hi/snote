@@ -135,6 +135,12 @@ export default defineConfig(({ mode }) => ({
           return "assets/[name]-[hash].js";
         },
         manualChunks(id) {
+          // The worker itself stays runtime-cached, but its shared renderer is
+          // also the no-worker fallback. Give that dynamic main-thread chunk a
+          // non-worker name so Workbox precaches it for first-use offline mode.
+          if (id.includes("/src/lib/markdown/preview-worker-renderer")) {
+            return "markdown-fallback";
+          }
           // Pin Vite's `__vitePreload` helper to its own tiny chunk.
           // Without this, Rollup hoists the helper into whichever lazy chunk
           // it happens to land in (historically `mermaid-vendor`), which
