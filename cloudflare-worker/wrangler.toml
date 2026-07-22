@@ -23,3 +23,7 @@ head_sampling_rate = 1
 # path during the legacy containment window, so only sanitized custom logs are
 # permitted.
 invocation_logs = false
+
+[observability.traces]
+# Trace spans can also retain request URLs before application redaction.
+enabled = false

@@ -105,13 +105,13 @@ export function acquireDoc(slug: string): Y.Doc {
     cache.delete(slug);
     cache.set(slug, existing); // mark as most-recent
     acquireHitCount++;
-    log("acquire:hit", { slug });
+    log("acquire:hit", { locatorLength: slug.length });
     return existing.doc;
   }
   const doc = new Y.Doc();
   cache.set(slug, { doc, releasedAt: 0, destroyTimer: null });
   acquireMissCount++;
-  log("acquire:miss", { slug });
+  log("acquire:miss", { locatorLength: slug.length });
   trim();
   return doc;
 }
@@ -128,9 +128,9 @@ export function releaseDoc(slug: string) {
     cache.delete(slug);
     try { cur.doc.destroy(); } catch { /* ignore */ }
     destroyCount++;
-    log("destroy:idle", { slug });
+    log("destroy:idle", { locatorLength: slug.length });
   }, IDLE_MS);
-  log("release", { slug });
+  log("release", { locatorLength: slug.length });
 }
 
 /** Immediately remove and destroy a cached doc for slugs that were renamed away. */
@@ -141,7 +141,7 @@ export function evictDoc(slug: string) {
   cache.delete(slug);
   try { entry.doc.destroy(); } catch { /* ignore */ }
   destroyCount++;
-  log("destroy:evict", { slug });
+  log("destroy:evict", { locatorLength: slug.length });
 }
 
 /** True when a slug still has a warm Y.Doc in this tab's in-memory cache. */
@@ -159,7 +159,7 @@ function trim() {
       if (entry.destroyTimer) clearTimeout(entry.destroyTimer);
       try { entry.doc.destroy(); } catch { /* ignore */ }
       destroyCount++;
-      log("destroy:trim", { slug: oldest });
+      log("destroy:trim", { locatorLength: oldest.length });
     }
   }
 }

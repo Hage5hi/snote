@@ -10,6 +10,7 @@ describe("extension privacy contract", () => {
   it("documents the permissions and storage actually used at runtime", () => {
     const manifest = JSON.parse(read("chrome-extension/manifest.json"));
     const privacy = read("src/pages/Privacy.tsx");
+    const sidepanel = read("chrome-extension/sidepanel.js");
 
     expect(manifest.permissions).toEqual(["sidePanel", "storage"]);
     expect(privacy).toContain("chrome.storage.sync");
@@ -20,6 +21,8 @@ describe("extension privacy contract", () => {
     expect(privacy).not.toContain("retained for up to 7 days");
     expect(privacy).not.toContain("declares one Chrome permission");
     expect(privacy).not.toMatch(/do not request[\s\S]{0,160}<code>storage<\/code>/);
+    expect(sidepanel).not.toContain("chrome.storage.local.get(defaults");
+    expect(sidepanel).toContain("storage.sync unavailable, using defaults");
   });
 
   it("discloses network metadata without claiming IP geolocation", () => {
@@ -53,5 +56,16 @@ describe("extension privacy contract", () => {
     }
     expect(listing).toContain("sync is unavailable, the panel uses safe defaults");
     expect(privacy).toContain("sync is unavailable, the panel uses safe defaults");
+  });
+
+  it("requires both the exact app origin and the embedded iframe source", () => {
+    const sidepanel = read("chrome-extension/sidepanel.js");
+    const sourceGuardAt = sidepanel.indexOf("event.source !== iframe?.contentWindow");
+    const originGuardAt = sidepanel.indexOf("event.origin !== APP_ORIGIN");
+    const slugHandlerAt = sidepanel.indexOf('data.type === "syrin:slug"');
+
+    expect(sourceGuardAt).toBeGreaterThan(-1);
+    expect(originGuardAt).toBeGreaterThan(sourceGuardAt);
+    expect(slugHandlerAt).toBeGreaterThan(originGuardAt);
   });
 });

@@ -47,6 +47,7 @@ async function postBadProtocol(page: import("@playwright/test").Page) {
   await page.evaluate((origin) => {
     const ev = new MessageEvent("message", {
       data: { type: "syrin:ready", protocol: 999, buildId: "x", appVersion: "test" },
+      source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
     });
     Object.defineProperty(ev, "origin", { value: origin });
     window.dispatchEvent(ev);

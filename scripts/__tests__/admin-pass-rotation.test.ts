@@ -50,16 +50,40 @@ describe("admin passphrase rotation containment", () => {
 
   it("purges the revoked token and cached admin data instead of reusing the session", () => {
     const panel = source("src/pages/AdminPanel.tsx");
+    const rotateDialog = source("src/components/admin/RotatePassDialog.tsx");
 
-    expect(panel).toMatch(
-      /const clearAdminSession = \(\) => \{[\s\S]*?sessionStorage\.removeItem\(SESSION_TOKEN_KEY\)[\s\S]*?setGate\("denied"\)[\s\S]*?setSessionToken\(""\)[\s\S]*?setItems\(\[\]\)[\s\S]*?\};/,
-    );
-    expect(panel).toMatch(
-      /const clearAdminSession = \(\) => \{[\s\S]*?setSearch\(""\)[\s\S]*?setTagFilter\(""\)[\s\S]*?setConfirmOpen\(null\)[\s\S]*?\};/,
-    );
-    expect(panel).toContain("onSuccess={clearAdminSession}");
+    const purge = panel.match(
+      /const purgeAdminState = useCallback\([\s\S]*?\n  \);/,
+    )?.[0] ?? "";
+    expect(purge).not.toBe("");
+    expect(purge).toContain("sessionStorage.removeItem(SESSION_TOKEN_KEY)");
+    expect(purge).toContain("sessionStorage.removeItem(SESSION_EXPIRY_KEY)");
+    expect(purge).toContain('setGate("denied")');
+    expect(purge).toContain('setSessionToken("")');
+    expect(purge).toContain("setItems([])");
+    expect(purge).toContain('setSearch("")');
+    expect(purge).toContain('setTagFilter("")');
+    expect(purge).toContain("setConfirmOpen(null)");
+    expect(panel).toContain("purgeAdminState(true)");
+    expect(panel).toContain("onSuccess={handleRotateUnauthorized}");
+    expect(panel).toContain("onUnauthorized={handleRotateUnauthorized}");
+    expect(panel).toContain("validateSession={validateRotateSession}");
     expect(panel).not.toMatch(
       /onSuccess=\{\(\) => void fetchList\(sessionToken, search, tagFilter\)\}/,
+    );
+
+    expect(rotateDialog).toContain(
+      "onUnauthorized: (rejectedToken: string, generation: number) => boolean",
+    );
+    expect(rotateDialog).toContain(
+      "validateSession: (token: string, generation: number) => boolean",
+    );
+    expect(rotateDialog).toMatch(/status === 401 \|\| status === 403/);
+    expect(rotateDialog).toContain(
+      "onUnauthorized(sessionToken, sessionGeneration)",
+    );
+    expect(rotateDialog).toContain(
+      "if (!validateSession(sessionToken, sessionGeneration)) return",
     );
   });
 });

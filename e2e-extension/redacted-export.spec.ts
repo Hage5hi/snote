@@ -1,7 +1,7 @@
 import { test, expect } from "./fixtures/extension";
 
 // Verifies the redaction + schema modules behave as advertised:
-// - redacted exports mask lastSlug, iframeSrc, and sensitive tokens in lines
+// - redacted exports mask structured locators and classify free-form lines
 // - schema validation passes for both redacted and non-redacted shapes
 // - filename contract matches expectedFilename()
 //
@@ -17,7 +17,7 @@ test.describe("debug export — redaction & schema", () => {
     await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   });
 
-  test("redactPayload masks lastSlug, iframeSrc, and sensitive tokens", async ({
+  test("redactPayload masks locators and replaces free-form lines with safe classes", async ({
     context,
     extensionId,
   }) => {
@@ -64,7 +64,12 @@ test.describe("debug export — redaction & schema", () => {
     expect(joined).not.toContain("sk_live_ABCDEFGHIJKLMNOPQRSTUVWX");
     expect(joined).not.toContain("11111111-2222-3333-4444-555555555555");
     expect(joined).not.toContain("token=xyz");
-    expect(joined).toMatch(/<email>|<jwt>|<api-key>|<uuid>|<path>/);
+    expect(result.lines.map((line: { msg: string }) => line.msg)).toEqual([
+      "ack sent",
+      "loading",
+      "debug-event",
+      "debug-event",
+    ]);
   });
 
   test("schema validates both redacted and non-redacted exports", async ({

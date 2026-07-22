@@ -17,7 +17,7 @@ bunx playwright test --config=e2e-extension/playwright.config.ts
 |------|------------------|
 | `alt-s.spec.ts` | `chrome.sidePanel.open({windowId})` opens the side panel with the URL `buildSrc()` computes for each `openMode` (home/slug/last). |
 | `settings-reload.spec.ts` | Saving Settings persists to `chrome.storage.sync` and values are restored after page reload. |
-| `last-slug-sync.spec.ts` | `postMessage({type:"syrin:slug"})` from the embedded app is validated by origin and written to `lastSlug`. |
+| `last-slug-sync.spec.ts` | `postMessage({type:"syrin:slug"})` is accepted only from the embedded iframe at the exact app origin; a forged same-origin event from another window is rejected. |
 
 ## Known limitation
 

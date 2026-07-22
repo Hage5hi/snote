@@ -20,7 +20,12 @@ function generateToken(): string {
 function json(body: unknown, status: number) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "CDN-Cache-Control": "no-store",
+    },
   });
 }
 
@@ -33,21 +38,24 @@ Deno.serve(async (req) => {
     const slug = String(body?.slug ?? "").trim();
     if (!SLUG_RE.test(slug)) return json({ error: "invalid slug" }, 400);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json({ error: "temporarily unavailable" }, 503);
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Ensure the notes row exists. The client-side provider fires an
     // unawaited upsert when a fresh slug is opened (provider.ts), but that
     // can race with a fast user clicking "Generate share link", or fail
-    // silently if the request is cancelled mid-flight. Anonymous CRUD on
-    // `notes` is by design (slug-as-key), so claiming an empty row here
-    // adds no security exposure — it just makes share-create idempotent.
+    // silently if the request is cancelled mid-flight. This is a legacy
+    // compatibility step only; slug-as-key is not authorization and this
+    // direct-table model is removed by the capability cutover.
     const { error: ensureErr } = await supabase
       .from("notes")
       .upsert({ slug }, { onConflict: "slug", ignoreDuplicates: true });
-    if (ensureErr) return json({ error: String(ensureErr) }, 500);
+    if (ensureErr) return json({ error: "temporarily unavailable" }, 503);
 
     // "One link per slug" contract, enforced atomically via UNIQUE(slug) +
     // UPSERT onConflict=slug. A brand-new slug inserts; an existing slug
@@ -69,11 +77,10 @@ Deno.serve(async (req) => {
       // appear as unique_violation on the token PK, not the slug).
       lastErr = error;
     }
-    if (lastErr) throw lastErr;
+    if (lastErr) return json({ error: "temporarily unavailable" }, 503);
 
     return json({ token }, 200);
-  } catch (e) {
-    console.error("share-create error", e);
-    return json({ error: String(e) }, 500);
+  } catch {
+    return json({ error: "temporarily unavailable" }, 503);
   }
 });

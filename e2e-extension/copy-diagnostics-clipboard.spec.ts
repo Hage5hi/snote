@@ -2,17 +2,15 @@ import { test, expect, openPanel, sendReady, waitForFallback } from "./fixtures/
 
 // Clicking the prominent "Copy diagnostics" button on the fallback overlay
 // must copy a JSON payload to the clipboard that passes the same schema
-// validation the download path enforces. Uses the extension origin so
-// clipboard-read permission can be granted (chrome-extension:// URLs
-// accept it directly).
+// validation the download path enforces. Chromium treats extension pages as
+// opaque for origin-scoped permission grants, so grant clipboard permission to
+// this isolated test context without an origin filter.
 
 test("Copy diagnostics puts schema-valid JSON on the clipboard", async ({
   context,
   extensionId,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: `chrome-extension://${extensionId}`,
-  });
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
   const panel = await openPanel(context, extensionId);
   await sendReady(panel, { protocol: 999, buildId: "copy-fixture" });
@@ -56,7 +54,7 @@ test("Copy diagnostics puts schema-valid JSON on the clipboard", async ({
 
   // Fixture values from the mismatch we triggered.
   expect(bundle.handshake.appProtocol).toBe(999);
-  expect(bundle.handshake.appBuildId).toBe("copy-fixture");
+  expect(bundle.handshake.appBuildId).toBe("<redacted>");
 
   // Validation error banner must NOT be visible when schema is valid.
   await expect(panel.locator("#diag-validation")).toBeHidden();

@@ -1,10 +1,15 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { BrowserRouter, MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import NotePage from "../NotePage";
 import SharePage from "../SharePage";
+import {
+  clearNoteEncryptionPin,
+  getEncryptionPinState,
+  markNoteEncrypted,
+} from "@/lib/encryption-pin";
 
 const harness = vi.hoisted(() => ({
   editorRender: vi.fn(),
@@ -12,7 +17,11 @@ const harness = vi.hoisted(() => ({
   unlockRender: vi.fn(),
   unlockProps: vi.fn(),
   idbConstruct: vi.fn(),
+  docAcquire: vi.fn(),
+  docRelease: vi.fn(),
+  providerConstruct: vi.fn(),
   providerConnect: vi.fn(),
+  providerDestroy: vi.fn(),
   metaForSlug: vi.fn(),
   deriveKey: vi.fn(),
   verifyCheck: vi.fn(),
@@ -85,31 +94,42 @@ vi.mock("@/integrations/supabase/client", () => ({
   },
 }));
 vi.mock("@/lib/yjs/doc-cache", () => ({
-  acquireDoc: () => ({
-    getText: () => ({
-      toString: () => "",
-      observe: vi.fn(),
-      unobserve: vi.fn(),
-    }),
-  }),
-  releaseDoc: vi.fn(),
+  acquireDoc: (slug: string) => {
+    harness.docAcquire(slug);
+    return {
+      getText: () => ({
+        toString: () => "",
+        observe: vi.fn(),
+        unobserve: vi.fn(),
+      }),
+    };
+  },
+  releaseDoc: (slug: string) => harness.docRelease(slug),
 }));
 vi.mock("@/lib/yjs/provider", () => ({
   SupabaseYjsProvider: class {
     awareness = {};
+    private destroyed = false;
 
-    constructor(private readonly slug: string) {}
+    constructor(private readonly slug: string) {
+      harness.providerConstruct(slug);
+    }
 
     setEncryption() {}
     setExpectedEncrypted() {}
     onAwareness() { return vi.fn(); }
     onSyncEvent() { return vi.fn(); }
     connect() {
+      if (this.destroyed) return Promise.resolve();
       harness.providerConnect(this.slug);
       return Promise.resolve();
     }
     flushBeacon() {}
-    destroy() { return Promise.resolve(); }
+    destroy() {
+      this.destroyed = true;
+      harness.providerDestroy(this.slug);
+      return Promise.resolve();
+    }
   },
 }));
 vi.mock("@/hooks/use-word-goal", () => ({ useWordGoal: () => ({ goal: null }), consumeGoalReached: () => false }));
@@ -238,7 +258,11 @@ describe("NotePage encryption gate", () => {
     harness.unlockRender.mockClear();
     harness.unlockProps.mockClear();
     harness.idbConstruct.mockClear();
+    harness.docAcquire.mockClear();
+    harness.docRelease.mockClear();
+    harness.providerConstruct.mockClear();
     harness.providerConnect.mockClear();
+    harness.providerDestroy.mockClear();
     harness.metaForSlug.mockReset();
     harness.metaForSlug.mockImplementation(() => harness.metaPromise);
     harness.deriveKey.mockReset();
@@ -246,7 +270,145 @@ describe("NotePage encryption gate", () => {
     harness.decryptBytes.mockReset();
     harness.shareInvoke.mockReset();
     harness.translate = (key: string) => key;
+    localStorage.clear();
     window.history.replaceState(null, "", window.location.pathname);
+  });
+
+  it("fails closed when a previously encrypted note is reported as plaintext", async () => {
+    expect(markNoteEncrypted("secret")).toBe(true);
+    harness.metaForSlug.mockResolvedValue({
+      data: { is_encrypted: false },
+      error: null,
+    });
+
+    const view = renderStandalone();
+
+    await waitFor(() =>
+      expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_conflict"),
+    );
+    expect(harness.docAcquire).not.toHaveBeenCalled();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
+    expect(harness.providerConnect).not.toHaveBeenCalled();
+    expect(harness.idbConstruct).not.toHaveBeenCalled();
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a previously encrypted note disappears from metadata", async () => {
+    expect(markNoteEncrypted("secret")).toBe(true);
+    harness.metaForSlug.mockResolvedValue({ data: null, error: null });
+
+    const view = renderEmbedded();
+
+    await waitFor(() =>
+      expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_conflict"),
+    );
+    expect(harness.docAcquire).not.toHaveBeenCalled();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
+    expect(harness.providerConnect).not.toHaveBeenCalled();
+    expect(harness.idbConstruct).not.toHaveBeenCalled();
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    expect(harness.previewRender).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when local encryption-pin storage is unavailable", async () => {
+    const storageRead = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("storage denied", "SecurityError");
+    });
+    harness.metaForSlug.mockResolvedValue({
+      data: { is_encrypted: false },
+      error: null,
+    });
+
+    const view = renderEmbedded();
+
+    await waitFor(() => expect(view.getByRole("alert")).toBeInTheDocument());
+    expect(harness.docAcquire).not.toHaveBeenCalled();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
+    expect(harness.idbConstruct).not.toHaveBeenCalled();
+    expect(harness.editorRender).not.toHaveBeenCalled();
+    storageRead.mockRestore();
+  });
+
+  it("pins encrypted metadata before exposing the manual unlock gate", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: {
+        is_encrypted: true,
+        enc_salt: "salt-secret",
+        enc_check: "check-secret",
+        enc_iterations: 1000,
+        ydoc_state: "ciphertext-secret",
+      },
+      error: null,
+    });
+
+    const view = renderEmbedded();
+
+    await waitFor(() =>
+      expect(view.getByRole("dialog", { name: "Unlock encrypted note secret" })).toBeInTheDocument(),
+    );
+    expect(getEncryptionPinState("secret")).toBe("pinned");
+  });
+
+  it("still mounts a fresh unpinned plaintext note", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: { is_encrypted: false },
+      error: null,
+    });
+
+    const view = renderStandalone();
+
+    await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
+    expect(harness.docAcquire).toHaveBeenCalledWith("secret");
+    expect(harness.providerConstruct).toHaveBeenCalledWith("secret");
+    expect(harness.idbConstruct).toHaveBeenCalledWith("note:secret");
+  });
+
+  it("immediately closes a live plaintext note when another local flow pins it", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: { is_encrypted: false },
+      error: null,
+    });
+    const view = renderStandalone();
+    await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
+
+    act(() => {
+      expect(markNoteEncrypted("secret")).toBe(true);
+    });
+
+    await waitFor(() => expect(view.getByRole("alert")).toBeInTheDocument());
+    expect(view.queryByTestId("editor")).not.toBeInTheDocument();
+    expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+    expect(harness.docRelease).toHaveBeenCalledWith("secret");
+    expect(harness.providerDestroy).toHaveBeenCalledWith("secret");
+  });
+
+  it("immediately closes a live encrypted note when its local pin is cleared", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: {
+        is_encrypted: true,
+        enc_salt: "salt-secret",
+        enc_check: "check-secret",
+        enc_iterations: 1000,
+        ydoc_state: "ciphertext-secret",
+      },
+      error: null,
+    });
+    harness.deriveKey.mockResolvedValue({} as CryptoKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    window.history.replaceState(null, "", "/secret#key");
+    const view = renderStandalone();
+    await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
+
+    act(() => {
+      expect(clearNoteEncryptionPin("secret")).toBe(true);
+    });
+
+    await waitFor(() => expect(view.getByRole("alert")).toBeInTheDocument());
+    expect(view.queryByTestId("editor")).not.toBeInTheDocument();
+    expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+    expect(harness.docRelease).toHaveBeenCalledWith("secret");
+    expect(harness.providerDestroy).toHaveBeenCalledWith("secret");
   });
 
   it("does not mount embedded editor or preview while encryption metadata is loading", () => {
@@ -256,6 +418,28 @@ describe("NotePage encryption gate", () => {
 
     expect(harness.editorRender).not.toHaveBeenCalled();
     expect(harness.previewRender).not.toHaveBeenCalled();
+    expect(harness.docAcquire).not.toHaveBeenCalled();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
+  });
+
+  it("does not acquire document or provider resources for an abandoned render", () => {
+    const never = new Promise<never>(() => {});
+    const SuspendForever = (): never => {
+      throw never;
+    };
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <Suspense fallback={<div data-testid="abandoned-fallback" />}>
+          <NotePage embedSlug="abandoned" />
+          <SuspendForever />
+        </Suspense>
+      </MemoryRouter>,
+    );
+
+    expect(view.getByTestId("abandoned-fallback")).toBeInTheDocument();
+    expect(harness.docAcquire).not.toHaveBeenCalled();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
   });
 
   it("fails closed when the encryption metadata query returns an error", async () => {
@@ -361,6 +545,44 @@ describe("NotePage encryption gate", () => {
     expect(harness.providerConnect).not.toHaveBeenCalledWith("b");
   });
 
+  it("rejects pending auto-unlock when the live hash changes before Router commits", async () => {
+    let resolveKey!: (key: CryptoKey) => void;
+    const deferredKey = new Promise<CryptoKey>((resolve) => {
+      resolveKey = resolve;
+    });
+    harness.metaForSlug.mockResolvedValue({
+      data: {
+        is_encrypted: true,
+        enc_salt: "salt-secret",
+        enc_check: "check-secret",
+        enc_iterations: 1000,
+        ydoc_state: "ciphertext-secret",
+      },
+    });
+    harness.deriveKey.mockReturnValue(deferredKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    window.history.replaceState(window.history.state, "", "/secret#old-key");
+
+    const view = renderEmbedded();
+    await waitFor(() =>
+      expect(harness.deriveKey).toHaveBeenCalledWith("old-key", "salt-secret", 1),
+    );
+
+    // BrowserRouter updates the address bar synchronously, while its React
+    // location update may still be queued in a transition. Model that window
+    // without emitting a native hash event.
+    window.history.replaceState(window.history.state, "", "/secret#new-key");
+    await act(async () => {
+      resolveKey({} as CryptoKey);
+      await deferredKey;
+      await Promise.resolve();
+    });
+
+    expect(view.queryByTestId("editor")).not.toBeInTheDocument();
+    expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+    expect(harness.providerConnect).not.toHaveBeenCalled();
+  });
+
   it("falls back to the unlock gate for a malformed encrypted fragment", async () => {
     harness.metaForSlug.mockResolvedValue({
       data: {
@@ -430,6 +652,100 @@ describe("NotePage encryption gate", () => {
     await waitFor(() =>
       expect(
         view.getByRole("dialog", { name: "Unlock encrypted note secret" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("recreates a live provider and reacquires its document after relock and re-unlock", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: {
+        is_encrypted: true,
+        enc_salt: "salt-secret",
+        enc_check: "check-secret",
+        enc_iterations: 1000,
+        ydoc_state: "ciphertext-secret",
+      },
+    });
+    harness.deriveKey.mockResolvedValue({} as CryptoKey);
+    harness.verifyCheck.mockResolvedValue(true);
+    window.history.replaceState(window.history.state, "", "/secret#first-key");
+
+    const view = renderEmbedded();
+    await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
+    await waitFor(() => expect(harness.providerConnect).toHaveBeenCalledTimes(1));
+    const constructsBeforeRelock = harness.providerConstruct.mock.calls.length;
+    const acquiresBeforeRelock = harness.docAcquire.mock.calls.length;
+    const releasesBeforeRelock = harness.docRelease.mock.calls.length;
+
+    act(() => {
+      window.history.replaceState(window.history.state, "", "/secret");
+      window.dispatchEvent(new Event("hashchange"));
+    });
+    await waitFor(() =>
+      expect(
+        view.getByRole("dialog", { name: "Unlock encrypted note secret" }),
+      ).toBeInTheDocument(),
+    );
+
+    const unlock = harness.unlockProps.mock.lastCall?.[0].onUnlock as (
+      key: CryptoKey,
+    ) => void;
+    act(() => {
+      window.history.replaceState(window.history.state, "", "/secret#second-key");
+      unlock({} as CryptoKey);
+    });
+
+    await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
+    await waitFor(() => expect(harness.providerConnect).toHaveBeenCalledTimes(2));
+    expect(harness.providerConstruct).toHaveBeenCalledTimes(constructsBeforeRelock + 1);
+    expect(harness.docAcquire).toHaveBeenCalledTimes(acquiresBeforeRelock + 1);
+    expect(harness.docRelease).toHaveBeenCalledTimes(releasesBeforeRelock + 1);
+  });
+
+  it("relocks an encrypted sibling pane when another pane adopts a different hash key", async () => {
+    type TestKey = CryptoKey & { submitted: string };
+    harness.metaForSlug.mockImplementation((slug: string) => Promise.resolve({
+      data: {
+        is_encrypted: true,
+        enc_salt: `salt-${slug}`,
+        enc_check: `check-${slug}`,
+        enc_iterations: 1000,
+        ydoc_state: `ciphertext-${slug}`,
+      },
+    }));
+    harness.deriveKey.mockImplementation(async (submitted: string) => ({
+      submitted,
+    }) as TestKey);
+    harness.verifyCheck.mockImplementation(async (key: TestKey, check: string) => (
+      key.submitted === "key-b" && check === "check-b"
+    ));
+    window.history.replaceState(window.history.state, "", "/split#key-b");
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <NotePage embedSlug="a" />
+        <NotePage embedSlug="b" />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(view.getAllByTestId("editor")).toHaveLength(1));
+    await waitFor(() =>
+      expect(
+        view.getByRole("dialog", { name: "Unlock encrypted note a" }),
+      ).toBeInTheDocument(),
+    );
+    const unlockA = harness.unlockProps.mock.calls.find(
+      ([props]) => props.slug === "a",
+    )?.[0].onUnlock as (key: CryptoKey) => void;
+
+    act(() => {
+      window.history.replaceState(window.history.state, "", "/split#key-a");
+      unlockA({} as CryptoKey);
+    });
+
+    await waitFor(() => expect(view.getAllByTestId("editor")).toHaveLength(1));
+    await waitFor(() =>
+      expect(
+        view.getByRole("dialog", { name: "Unlock encrypted note b" }),
       ).toBeInTheDocument(),
     );
   });
@@ -596,6 +912,41 @@ describe("NotePage encryption gate", () => {
     expect(window.location.pathname).toBe("/same-note");
     expect(window.location.search).toBe("?mode=share");
     expect(window.location.hash).toBe("#submitted-key");
+  });
+
+  it("preserves React Router history state when a manual unlock writes its hash", async () => {
+    const { UnlockForm: ActualUnlockForm } = await vi.importActual<
+      typeof import("@/components/note/UnlockForm")
+    >("@/components/note/UnlockForm");
+    const key = {} as CryptoKey;
+    harness.deriveKey.mockResolvedValue(key);
+    harness.verifyCheck.mockResolvedValue(true);
+    const onUnlock = vi.fn();
+    const routerState = {
+      idx: 7,
+      key: "router-entry",
+      usr: { source: "split" },
+    };
+    window.history.replaceState(routerState, "", "/same-note?mode=share");
+
+    const view = render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <ActualUnlockForm
+          slug="same-note"
+          salt="same-salt"
+          check="same-check"
+          iterations={1}
+          onUnlock={onUnlock}
+        />
+      </MemoryRouter>,
+    );
+    fireEvent.change(view.getByPlaceholderText("unlock.placeholder"), {
+      target: { value: "submitted-key" },
+    });
+    fireEvent.submit(view.container.querySelector("form")!);
+
+    await waitFor(() => expect(onUnlock).toHaveBeenCalledWith(key));
+    expect(window.history.state).toEqual(routerState);
   });
 
   it("cancels a busy manual unlock on query-only history navigation", async () => {

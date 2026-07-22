@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Trash2, Search, RefreshCw, Sparkles, X, KeyRound } from "lucide-react";
+import { ArrowLeft, Trash2, Search, RefreshCw, X, KeyRound } from "lucide-react";
 import { RotatePassDialog } from "@/components/admin/RotatePassDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -31,10 +31,70 @@ type AdminNote = {
 
 type TopTag = { name: string; count: number };
 type GateStatus = "checking" | "denied" | "allowed";
+type RequestOwnership = "owned" | "stale" | "superseded";
 
 // This stores a random, short-lived server session only. It never contains the
 // admin passphrase supplied through the scrubbed URL fragment.
 const SESSION_TOKEN_KEY = "__a_session";
+const SESSION_EXPIRY_KEY = "__a_session_expiry";
+const MAX_CACHED_SESSION_TTL_MS = 31 * 60 * 1000;
+
+function parseSessionExpiry(value: unknown): number | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const expiresAtMs = Date.parse(value);
+  return Number.isFinite(expiresAtMs) ? expiresAtMs : null;
+}
+
+function remainingSessionLifetime(expiresAt: string): number | null {
+  const expiresAtMs = parseSessionExpiry(expiresAt);
+  if (expiresAtMs === null) return null;
+  const remainingMs = expiresAtMs - Date.now();
+  return remainingMs > 0 && remainingMs <= MAX_CACHED_SESSION_TTL_MS
+    ? remainingMs
+    : null;
+}
+
+function readStoredAdminSession(): { token: string; expiresAt: string } | null {
+  try {
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) ?? "";
+    const expiresAt = sessionStorage.getItem(SESSION_EXPIRY_KEY) ?? "";
+    return token && remainingSessionLifetime(expiresAt) !== null
+      ? { token, expiresAt }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredSessionToken(): string | null {
+  try {
+    return sessionStorage.getItem(SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storedSessionIsCurrent(token: string): boolean {
+  const stored = readStoredAdminSession();
+  return stored?.token === token;
+}
+
+function isUnauthorizedAdminResponse(error: unknown, data: unknown): boolean {
+  const candidate = error && typeof error === "object"
+    ? error as { status?: unknown; context?: { status?: unknown } }
+    : null;
+  const directStatus = Number(candidate?.status);
+  const contextStatus = Number(candidate?.context?.status);
+  const status = Number.isFinite(contextStatus) ? contextStatus : directStatus;
+  const apiError = data && typeof data === "object" && "error" in data
+    ? String((data as { error?: unknown }).error ?? "").trim().toLowerCase()
+    : "";
+  const message = String((error as { message?: unknown } | null)?.message ?? "")
+    .toLowerCase();
+  return status === 401 || status === 403 ||
+    /^(unauthorized|session (expired|invalid))$/.test(apiError) ||
+    message.includes("unauthorized") || message.includes("session expired");
+}
 
 function sessionHeaders(sessionToken: string): Record<string, string> {
   return { "x-admin-session": sessionToken };
@@ -52,35 +112,218 @@ export default function AdminPanel() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState<null | "selected" | "all">(null);
   const [rotateOpen, setRotateOpen] = useState(false);
+  const [sessionGeneration, setSessionGeneration] = useState(0);
+  const expiryTimerRef = useRef<number | null>(null);
+  const sessionGenerationRef = useRef(0);
+  const activeSessionTokenRef = useRef("");
+  const latestListRequestRef = useRef(0);
+
+  const purgeAdminState = useCallback(
+    (removeStoredSession: boolean) => {
+      sessionGenerationRef.current += 1;
+      latestListRequestRef.current += 1;
+      setSessionGeneration(sessionGenerationRef.current);
+      activeSessionTokenRef.current = "";
+      if (expiryTimerRef.current !== null) {
+        window.clearTimeout(expiryTimerRef.current);
+        expiryTimerRef.current = null;
+      }
+      if (removeStoredSession) {
+        try {
+          sessionStorage.removeItem(SESSION_TOKEN_KEY);
+          sessionStorage.removeItem(SESSION_EXPIRY_KEY);
+        } catch {
+          // Storage may be disabled. Rendered state is still purged below.
+        }
+      }
+      setGate("denied");
+      setSessionToken("");
+      setLoading(false);
+      setItems([]);
+      setTotal(0);
+      setTopTags([]);
+      setSelected(new Set());
+      setSearch("");
+      setTagFilter("");
+      setConfirmOpen(null);
+      setRotateOpen(false);
+    },
+    [],
+  );
+
+  const clearAdminSession = useCallback(() => {
+    purgeAdminState(true);
+  }, [purgeAdminState]);
+
+  const retireStaleAdminView = useCallback(() => {
+    // A different component instance already stored a newer session. Hide this
+    // instance's previews without deleting the newer token from sessionStorage.
+    purgeAdminState(false);
+  }, [purgeAdminState]);
+
+  const requestOwnership = useCallback(
+    (token: string, generation: number): RequestOwnership => {
+      if (
+        sessionGenerationRef.current !== generation ||
+        activeSessionTokenRef.current !== token
+      ) {
+        return "stale";
+      }
+      const storedToken = readStoredSessionToken();
+      return storedToken !== null && storedToken !== token
+        ? "superseded"
+        : "owned";
+    },
+    [],
+  );
+
+  const clearRejectedSession = useCallback(
+    (token: string, generation: number): boolean => {
+      const ownership = requestOwnership(token, generation);
+      if (ownership === "stale") return false;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return false;
+      }
+      clearAdminSession();
+      return true;
+    },
+    [clearAdminSession, requestOwnership, retireStaleAdminView],
+  );
+
+  const beginAdminRequest = useCallback(
+    (token: string, expectedGeneration?: number): number | null => {
+      const generation = expectedGeneration ?? sessionGenerationRef.current;
+      const ownership = requestOwnership(token, generation);
+      if (ownership === "stale") return null;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return null;
+      }
+      if (!storedSessionIsCurrent(token)) {
+        clearAdminSession();
+        return null;
+      }
+      return generation;
+    },
+    [clearAdminSession, requestOwnership, retireStaleAdminView],
+  );
+
+  const scheduleSessionExpiry = useCallback(
+    (token: string, expiresAt: string): boolean => {
+      const remainingMs = remainingSessionLifetime(expiresAt);
+      if (remainingMs === null) {
+        clearAdminSession();
+        return false;
+      }
+
+      try {
+        sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+        sessionStorage.setItem(SESSION_EXPIRY_KEY, expiresAt);
+      } catch {
+        clearAdminSession();
+        return false;
+      }
+
+      if (expiryTimerRef.current !== null) {
+        window.clearTimeout(expiryTimerRef.current);
+      }
+      sessionGenerationRef.current += 1;
+      const generation = sessionGenerationRef.current;
+      setSessionGeneration(generation);
+      activeSessionTokenRef.current = token;
+      expiryTimerRef.current = window.setTimeout(() => {
+        const ownership = requestOwnership(token, generation);
+        if (ownership === "stale") return;
+        if (ownership === "superseded") {
+          retireStaleAdminView();
+          return;
+        }
+        clearAdminSession();
+      }, remainingMs);
+      return true;
+    },
+    [clearAdminSession, requestOwnership, retireStaleAdminView],
+  );
 
   const fetchList = useCallback(
     async (token: string, query = "", tag = "") => {
+      const requestGeneration = beginAdminRequest(token);
+      if (requestGeneration === null) return false;
+      const listRequestId = ++latestListRequestRef.current;
       setLoading(true);
       try {
         const { data, error } = await supabase.functions.invoke("admin-list", {
           body: { search: query, tag, limit: 200, offset: 0 },
           headers: sessionHeaders(token),
         });
+        if (listRequestId !== latestListRequestRef.current) return false;
+        const ownership = requestOwnership(token, requestGeneration);
+        if (ownership === "stale") return false;
+        if (ownership === "superseded") {
+          retireStaleAdminView();
+          return false;
+        }
+        if (isUnauthorizedAdminResponse(error, data)) {
+          if (clearRejectedSession(token, requestGeneration)) {
+            toast({
+              title: "Failed to load list",
+              description: "Session expired.",
+              variant: "destructive",
+            });
+          }
+          return false;
+        }
         if (error) throw error;
         if (data?.error) throw new Error(data.error);
+        if (!storedSessionIsCurrent(token)) {
+          clearAdminSession();
+          return false;
+        }
         setItems(data.items ?? []);
         setTotal(data.total ?? 0);
         setTopTags(data.topTags ?? []);
         setSelected(new Set());
         return true;
       } catch (error) {
+        if (listRequestId !== latestListRequestRef.current) return false;
+        const ownership = requestOwnership(token, requestGeneration);
+        if (ownership === "stale") return false;
+        if (ownership === "superseded") {
+          retireStaleAdminView();
+          return false;
+        }
         const message = String((error as Error | undefined)?.message ?? error);
+        const unauthorized = isUnauthorizedAdminResponse(error, null);
+        if (unauthorized && !clearRejectedSession(token, requestGeneration)) {
+          return false;
+        }
+        if (!unauthorized && !storedSessionIsCurrent(token)) {
+          clearAdminSession();
+          return false;
+        }
         toast({
           title: "Failed to load list",
-          description: message.includes("unauthorized") ? "Session expired." : message,
+          description: unauthorized ? "Session expired." : message,
           variant: "destructive",
         });
         return false;
       } finally {
-        setLoading(false);
+        if (
+          listRequestId === latestListRequestRef.current &&
+          requestOwnership(token, requestGeneration) === "owned"
+        ) {
+          setLoading(false);
+        }
       }
     },
-    [],
+    [
+      beginAdminRequest,
+      clearAdminSession,
+      clearRejectedSession,
+      requestOwnership,
+      retireStaleAdminView,
+    ],
   );
 
   useEffect(() => {
@@ -88,7 +331,9 @@ export default function AdminPanel() {
     meta.name = "robots";
     meta.content = "noindex,nofollow,noarchive";
     document.head.appendChild(meta);
-    return () => document.head.removeChild(meta);
+    return () => {
+      document.head.removeChild(meta);
+    };
   }, []);
 
   useEffect(() => {
@@ -112,25 +357,35 @@ export default function AdminPanel() {
 
     void (async () => {
       try {
-        let opaqueToken = sessionStorage.getItem(SESSION_TOKEN_KEY) ?? "";
+        const storedSession = readStoredAdminSession();
+        let opaqueToken = storedSession?.token ?? "";
+        let expiresAt = storedSession?.expiresAt ?? "";
         if (fragmentPassphrase) {
           const { data, error } = await supabase.functions.invoke("admin-session", {
             body: { passphrase: fragmentPassphrase },
           });
           fragmentPassphrase = "";
-          if (error || !data?.sessionToken) throw error ?? new Error("unauthorized");
+          if (error || !data?.sessionToken || !data?.expiresAt) {
+            throw error ?? new Error("unauthorized");
+          }
           opaqueToken = String(data.sessionToken);
+          expiresAt = String(data.expiresAt);
         }
-        if (!opaqueToken) throw new Error("unauthorized");
+        if (!opaqueToken || remainingSessionLifetime(expiresAt) === null) {
+          throw new Error("unauthorized");
+        }
 
         const { data, error } = await supabase.functions.invoke("admin-list", {
           body: { limit: 1, offset: 0, tag: fragmentTag },
           headers: sessionHeaders(opaqueToken),
         });
         if (cancelled) return;
+        if (isUnauthorizedAdminResponse(error, data)) {
+          throw error ?? new Error("unauthorized");
+        }
         if (error || data?.error) throw error ?? new Error(String(data?.error));
+        if (!scheduleSessionExpiry(opaqueToken, expiresAt)) return;
 
-        sessionStorage.setItem(SESSION_TOKEN_KEY, opaqueToken);
         setSessionToken(opaqueToken);
         if (fragmentTag) setTagFilter(fragmentTag);
         setItems(data.items ?? []);
@@ -141,16 +396,35 @@ export default function AdminPanel() {
       } catch {
         fragmentPassphrase = "";
         if (cancelled) return;
-        sessionStorage.removeItem(SESSION_TOKEN_KEY);
-        setGate("denied");
+        clearAdminSession();
       }
     })();
 
     return () => {
       cancelled = true;
       fragmentPassphrase = "";
+      if (expiryTimerRef.current !== null) {
+        window.clearTimeout(expiryTimerRef.current);
+        expiryTimerRef.current = null;
+      }
     };
-  }, [fetchList]);
+  }, [clearAdminSession, fetchList, scheduleSessionExpiry]);
+
+  useEffect(() => {
+    if (gate !== "allowed" || !sessionToken) return;
+    const revalidate = () => {
+      beginAdminRequest(sessionToken);
+    };
+    revalidate();
+    window.addEventListener("focus", revalidate);
+    window.addEventListener("pageshow", revalidate);
+    document.addEventListener("visibilitychange", revalidate);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      window.removeEventListener("pageshow", revalidate);
+      document.removeEventListener("visibilitychange", revalidate);
+    };
+  }, [beginAdminRequest, gate, sessionToken]);
 
   const onSearch = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -179,6 +453,8 @@ export default function AdminPanel() {
   };
 
   const doDelete = async (mode: "selected" | "all") => {
+    const requestGeneration = beginAdminRequest(sessionToken);
+    if (requestGeneration === null) return;
     setLoading(true);
     try {
       const body = mode === "all" ? { all: true } : { slugs: Array.from(selected) };
@@ -186,57 +462,82 @@ export default function AdminPanel() {
         body,
         headers: sessionHeaders(sessionToken),
       });
+      const ownership = requestOwnership(sessionToken, requestGeneration);
+      if (ownership === "stale") return;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return;
+      }
+      if (isUnauthorizedAdminResponse(error, data)) {
+        if (clearRejectedSession(sessionToken, requestGeneration)) {
+          toast({
+            title: "Delete failed",
+            description: "Session expired.",
+            variant: "destructive",
+          });
+        }
+        return;
+      }
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      if (!storedSessionIsCurrent(sessionToken)) {
+        clearAdminSession();
+        return;
+      }
       toast({ title: `Deleted ${data.deleted} note(s)` });
       await fetchList(sessionToken, search, tagFilter);
     } catch (error) {
+      const ownership = requestOwnership(sessionToken, requestGeneration);
+      if (ownership === "stale") return;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return;
+      }
+      const unauthorized = isUnauthorizedAdminResponse(error, null);
+      if (
+        unauthorized &&
+        !clearRejectedSession(sessionToken, requestGeneration)
+      ) {
+        return;
+      }
+      if (!unauthorized && !storedSessionIsCurrent(sessionToken)) {
+        clearAdminSession();
+        return;
+      }
       toast({
         title: "Delete failed",
-        description: String((error as Error | undefined)?.message ?? error),
+        description: unauthorized
+          ? "Session expired."
+          : String((error as Error | undefined)?.message ?? error),
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
-      setConfirmOpen(null);
+      if (requestOwnership(sessionToken, requestGeneration) === "owned") {
+        setLoading(false);
+        setConfirmOpen(null);
+      }
     }
   };
 
-  const runCleanup = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("cleanup", {
-        body: { olderThanHours: 1 },
-        headers: sessionHeaders(sessionToken),
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast({ title: `Cleaned ${data.deleted} empty note(s)` });
-      await fetchList(sessionToken, search, tagFilter);
-    } catch (error) {
-      toast({
-        title: "Cleanup error",
-        description: String((error as Error | undefined)?.message ?? error),
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
+  const openDeleteConfirmation = (mode: "selected" | "all") => {
+    if (beginAdminRequest(sessionToken) !== null) setConfirmOpen(mode);
   };
 
-  const clearAdminSession = () => {
-    sessionStorage.removeItem(SESSION_TOKEN_KEY);
-    setGate("denied");
-    setSessionToken("");
-    setItems([]);
-    setTotal(0);
-    setTopTags([]);
-    setSelected(new Set());
-    setSearch("");
-    setTagFilter("");
-    setConfirmOpen(null);
-    setRotateOpen(false);
+  const openRotateDialog = () => {
+    if (beginAdminRequest(sessionToken) !== null) setRotateOpen(true);
   };
+
+  const validateRotateSession = useCallback(
+    (token: string, generation: number) =>
+      beginAdminRequest(token, generation) !== null,
+    [beginAdminRequest],
+  );
+
+  const handleRotateUnauthorized = useCallback(
+    (token: string, generation: number) =>
+      clearRejectedSession(token, generation),
+    [clearRejectedSession],
+  );
 
   const logout = () => {
     const tokenToRevoke = sessionToken;
@@ -259,11 +560,7 @@ export default function AdminPanel() {
         </Link>
         <h1 className="font-semibold">Admin · {total} note</h1>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={runCleanup} disabled={loading}>
-            <Sparkles className="h-3.5 w-3.5" />
-            Clean empty notes
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setRotateOpen(true)} disabled={loading}>
+          <Button size="sm" variant="ghost" onClick={openRotateDialog} disabled={loading}>
             <KeyRound className="h-3.5 w-3.5" />
             Rotate key
           </Button>
@@ -278,7 +575,10 @@ export default function AdminPanel() {
         open={rotateOpen}
         onOpenChange={setRotateOpen}
         sessionToken={sessionToken}
-        onSuccess={clearAdminSession}
+        sessionGeneration={sessionGeneration}
+        validateSession={validateRotateSession}
+        onUnauthorized={handleRotateUnauthorized}
+        onSuccess={handleRotateUnauthorized}
       />
 
       <div className="mx-auto max-w-5xl p-4">
@@ -332,7 +632,7 @@ export default function AdminPanel() {
               size="sm"
               variant="destructive"
               disabled={selected.size === 0 || loading}
-              onClick={() => setConfirmOpen("selected")}
+              onClick={() => openDeleteConfirmation("selected")}
             >
               <Trash2 className="h-3.5 w-3.5" /> Delete selected
             </Button>
@@ -340,7 +640,7 @@ export default function AdminPanel() {
               size="sm"
               variant="outline"
               disabled={loading || items.length === 0}
-              onClick={() => setConfirmOpen("all")}
+              onClick={() => openDeleteConfirmation("all")}
             >
               Delete ALL
             </Button>

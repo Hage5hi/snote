@@ -81,6 +81,14 @@ export default function Privacy() {
           raw IP addresses in application logs.
         </p>
         <p>
+          Admin abuse protection stores keyed admin abuse-prevention hashes derived
+          from a gateway-verified network address, not the raw address, in the app
+          database. Failed-attempt hashes become eligible for deletion after seven
+          days; a daily retention job removes them, and each admin authentication
+          request also runs the same cleanup. Expired opaque admin-session hashes
+          are removed by that cleanup as well.
+        </p>
+        <p>
           Provider-level logs, backups, and service data follow the applicable
           provider retention settings and legal obligations. Notes remain in the
           backend until deleted or removed under the service's maintenance and

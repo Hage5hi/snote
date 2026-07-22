@@ -32,6 +32,7 @@ import {
 } from "@/lib/crypto";
 import { bytesToBase64 } from "@/lib/yjs/base64";
 import { useI18n } from "@/i18n/index";
+import { clearNoteEncryptionPin, markNoteEncrypted } from "@/lib/encryption-pin";
 
 interface LockButtonProps {
   slug: string;
@@ -85,6 +86,9 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
         );
       if (error) throw error;
 
+      // The durable local pin closes the legacy-table downgrade window. It is
+      // written only after the encrypted upsert succeeds and before reload.
+      markNoteEncrypted(slug);
       toast({ title: t("lock.encrypted_ok") });
       // Full navigation (not just hash change) so NotePage remounts and the
       // Yjs provider is rebuilt with the new encryption state. Otherwise the
@@ -123,6 +127,9 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
         );
       if (error) throw error;
 
+      // A failed decrypt must retain the pin. Clear it only after the server
+      // acknowledges the explicit transition back to plaintext.
+      clearNoteEncryptionPin(slug);
       toast({ title: t("lock.decrypted_ok") });
       // Full reload so the provider re-initializes without the stale
       // encryption key and future saves don't clobber the row.

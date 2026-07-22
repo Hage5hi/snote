@@ -112,7 +112,7 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
       if (cancelIfStale(requestLocation)) return;
       try {
         expectedLocation = `${window.location.pathname}${window.location.search}#${encodeURIComponent(submittedPass)}`;
-        history.replaceState(null, "", expectedLocation);
+        history.replaceState(history.state, "", expectedLocation);
       } catch {
         expectedLocation = requestLocation;
       }

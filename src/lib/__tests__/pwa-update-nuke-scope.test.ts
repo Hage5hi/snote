@@ -1,7 +1,5 @@
-// Verifies the update-fallback cleanup only removes the app's own service
-// workers (/sw.js, /service-worker.js) and Workbox precache/runtime caches —
-// never third-party workers (Firebase Messaging, OneSignal) or unrelated
-// caches (e.g. app-created "user-notes-cache").
+// The production app must preserve its active worker and caches as the offline
+// rollback when an update stalls. Destructive cleanup is preview-host-only.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("virtual:pwa-register", () => ({ registerSW: () => async () => {} }));
@@ -18,7 +16,7 @@ function makeReg(scriptURL: string): { active: FakeReg; unregister: FakeReg["unr
   };
 }
 
-describe("nukeServiceWorkersAndCaches — scope safety", () => {
+describe("nukeServiceWorkersAndCaches — production safety", () => {
   const originalSW = (navigator as unknown as { serviceWorker?: unknown }).serviceWorker;
   const originalCaches = (globalThis as unknown as { caches?: unknown }).caches;
   let unregisterCalls: string[] = [];
@@ -73,22 +71,13 @@ describe("nukeServiceWorkersAndCaches — scope safety", () => {
     (globalThis as unknown as { caches?: unknown }).caches = originalCaches;
   });
 
-  it("only unregisters /sw.js and /service-worker.js — leaves messaging/OneSignal workers alone", async () => {
+  it("does not unregister any worker on a production host", async () => {
     await nukeServiceWorkersAndCaches();
-    expect(unregisterCalls.sort()).toEqual(
-      ["https://example.com/service-worker.js", "https://example.com/sw.js"].sort(),
-    );
-    expect(unregisterCalls).not.toContain("https://example.com/firebase-messaging-sw.js");
-    expect(unregisterCalls).not.toContain("https://example.com/OneSignalSDKWorker.js");
+    expect(unregisterCalls).toEqual([]);
   });
 
-  it("only deletes Workbox precache/runtime caches — leaves messaging/user caches alone", async () => {
+  it("does not delete any cache on a production host", async () => {
     await nukeServiceWorkersAndCaches();
-    for (const name of deletedCacheNames) {
-      expect(name).toMatch(/(^|-)precache-v\d+-|(^|-)runtime-|^workbox-/);
-    }
-    expect(deletedCacheNames).not.toContain("firebase-messaging-sw-cache");
-    expect(deletedCacheNames).not.toContain("onesignal-cache");
-    expect(deletedCacheNames).not.toContain("user-notes-cache");
+    expect(deletedCacheNames).toEqual([]);
   });
 });

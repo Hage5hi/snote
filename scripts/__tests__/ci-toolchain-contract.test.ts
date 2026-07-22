@@ -16,6 +16,7 @@ const ci = workflows.get(".github/workflows/ci.yml")!;
 const workflowStructure = workflows.get(".github/workflows/workflow-structure.yml")!;
 const extensionWorkflow = workflows.get(".github/workflows/extension-e2e.yml")!;
 const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
+const securityFindings = readFileSync("docs/security-findings.md", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   packageManager?: string;
   scripts: Record<string, string>;
@@ -52,10 +53,18 @@ describe("CI toolchain contract", () => {
     expect(allWorkflows).not.toContain("bun.lockb");
   });
 
-  it("keeps Vitest and its V8 coverage provider on 3.2.4", () => {
-    expect(packageJson.devDependencies.vitest).toBe("3.2.4");
-    expect(packageJson.devDependencies["@vitest/coverage-v8"]).toBe("3.2.4");
+  it("keeps patched Vitest and its V8 coverage provider on 3.2.6", () => {
+    expect(packageJson.devDependencies.vitest).toBe("3.2.6");
+    expect(packageJson.devDependencies["@vitest/coverage-v8"]).toBe("3.2.6");
     expect(packageJson.scripts["test:coverage"]).toBe("vitest run --coverage");
+  });
+
+  it("records why the Vite major security exception cannot stay on Vite 5", () => {
+    expect(packageJson.devDependencies.vite).toBe("^6.4.3");
+    expect(packageJson.overrides?.vite).toBe("^6.4.3");
+    expect(securityFindings).toContain("GHSA-fx2h-pf6j-xcff");
+    expect(securityFindings).toContain("there is no patched Vite 5 release");
+    expect(securityFindings).toContain("GHSA-5xrq-8626-4rwp");
   });
 
   it("runs explicit app, node and tools TypeScript projects", () => {
@@ -143,7 +152,7 @@ describe("CI toolchain contract", () => {
 
   it("keeps one stable PR E2E check context", () => {
     const e2ePrWorkflows = [...workflows]
-      .filter(([, workflow]) => workflow.includes("\n  e2e-pr:\n"))
+      .filter(([, workflow]) => /(?:^|\r?\n)  e2e-pr:\r?\n/.test(workflow))
       .map(([path]) => path);
     expect(e2ePrWorkflows).toEqual([".github/workflows/e2e-new-specs.yml"]);
 
@@ -151,9 +160,9 @@ describe("CI toolchain contract", () => {
     expect(e2ePrWorkflow).toMatch(
       /^  pull_request:\s*\n  workflow_dispatch:/m,
     );
-    const e2ePrJob = e2ePrWorkflow.slice(
-      e2ePrWorkflow.indexOf("\n  e2e-pr:\n"),
-    );
+    const e2ePrJobStart = e2ePrWorkflow.search(/(?:^|\r?\n)  e2e-pr:\r?\n/);
+    expect(e2ePrJobStart).toBeGreaterThanOrEqual(0);
+    const e2ePrJob = e2ePrWorkflow.slice(e2ePrJobStart);
     expect(e2ePrJob).toMatch(/^\s{4}name:\s*e2e-pr\s*$/m);
   });
 
@@ -169,7 +178,8 @@ describe("CI toolchain contract", () => {
   });
 
   it("selects the audit command supported by pinned Bun", () => {
-    expect(extensionAudit).toContain("bun audit --prod --audit-level=high");
+    expect(extensionAudit).toContain("bun audit --audit-level=high");
+    expect(extensionAudit).not.toMatch(/bun audit[^\r\n]*--prod/);
     expect(extensionAudit).not.toMatch(/bun pm (?:audit|scan)/);
   });
 

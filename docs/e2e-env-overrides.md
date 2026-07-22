@@ -42,8 +42,9 @@ Helper: `newPageWithDebounce(context, ms)` in `e2e/note-rename-yjs-race.spec.ts`
 
 - `syrin:yjs-snapshot-debounce-ms` also drives the finalize/deletion-confirm
   polling window in `src/lib/rename.ts` (`waitForSlugDeletionConfirmed`).
-- The `old-slug-cleanup-status` edge function logs `dbMs`/`totalMs` metrics —
-  grep CI logs for `[cleanup-status]` when a resurrection is suspected.
+- `old-slug-cleanup-status` is permanently retired during immediate
+  containment. It returns a generic `410 no-store` response and must not be
+  used as a locator oracle or a source of cleanup metrics.
 
 ## Rename stress + multi-tab observer overrides
 
@@ -51,7 +52,7 @@ Helper: `newPageWithDebounce(context, ms)` in `e2e/note-rename-yjs-race.spec.ts`
 | --- | --- | --- | --- |
 | `STRESS_RENAME_SEED` | random `Date.now() ^ Math.random()` (attached to report as `stress-seed.json`) | same | Deterministic replay of the randomized debounce timeline. Accepts hex (`0x…`) or decimal. |
 | `STRESS_RENAME_ITERATIONS` | `3` | `8` | Iteration count for the "repeated randomized-debounce renames" spec. |
-| `MULTI_TAB_OBSERVER_WINDOW_MS` | `6000` | `15000` | How long Tab B keeps polling `old-slug-cleanup-status` and asserting the old slug never resurrects. |
+| `MULTI_TAB_OBSERVER_WINDOW_MS` | `6000` | `15000` | Legacy local-only observer window; no test may poll the retired service-role endpoint. |
 
 ### Replaying a failed stress run
 

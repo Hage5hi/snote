@@ -5,6 +5,9 @@ import {
   type Worker,
 } from "@playwright/test";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const fixtureDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Loads chrome-extension/ as an unpacked extension in a persistent context.
 // Exposes `context`, `extensionId`, and `serviceWorker` to specs.
@@ -15,7 +18,7 @@ export const test = base.extend<{
 }>({
   // eslint-disable-next-line no-empty-pattern
   context: async ({}, provide) => {
-    const extPath = path.resolve(__dirname, "..", "..", "chrome-extension");
+    const extPath = path.resolve(fixtureDir, "..", "..", "chrome-extension");
     const ctx = await chromium.launchPersistentContext("", {
       headless: false,
       args: [
@@ -79,6 +82,7 @@ export async function sendReady(
     ({ origin, protocol, buildId, appVersion }) => {
       const ev = new MessageEvent("message", {
         data: { type: "syrin:ready", protocol, buildId, appVersion },
+        source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
       });
       Object.defineProperty(ev, "origin", { value: origin });
       window.dispatchEvent(ev);

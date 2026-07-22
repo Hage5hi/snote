@@ -26,6 +26,10 @@ export function snapshotDebugLog() {
   return buffer.slice();
 }
 
+export function clearDebugLog() {
+  buffer.length = 0;
+}
+
 export function dlog(...args) {
   if (!enabled) return;
   try {

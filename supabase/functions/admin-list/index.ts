@@ -45,36 +45,51 @@ Deno.serve(async (req) => {
     500,
   );
   const offset = Math.max(Number.parseInt(body?.offset ?? "0", 10) || 0, 0);
+  const safeSearch = search.replace(/[%_,()"*\\]/g, "").slice(0, 100);
+  const safeTag = tag.replace(/[^a-z0-9_-]/g, "").slice(0, 32);
 
-  let query = supabase
-    .from("notes")
-    .select("slug, char_count, is_encrypted, updated_at, created_at, content, tags", {
-      count: "exact",
-    })
-    .order("updated_at", { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (search) {
-    const safe = search.replace(/[%_,()"*\\]/g, "").slice(0, 100);
-    if (safe) query = query.or(`slug.ilike.%${safe}%,content.ilike.%${safe}%`);
+  let result: unknown;
+  try {
+    const { data, error } = await supabase.rpc("admin_notes_list", {
+      p_token_hash: authorization.tokenHash,
+      p_subject_hash: authorization.subjectHash,
+      p_search: safeSearch,
+      p_tag: safeTag,
+      p_limit: limit,
+      p_offset: offset,
+    });
+    if (error) return serviceUnavailableResponse(corsHeaders);
+    result = data;
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
   }
-  if (tag) {
-    const safeTag = tag.replace(/[^a-z0-9_-]/g, "").slice(0, 32);
-    if (safeTag) query = query.contains("tags", [safeTag]);
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return serviceUnavailableResponse(corsHeaders);
   }
+  const response = result as Record<string, unknown>;
+  if (response.authorized !== true) {
+    return adminAuthResponse({ status: "unauthorized" }, corsHeaders);
+  }
+  if (!Array.isArray(response.items)) return serviceUnavailableResponse(corsHeaders);
 
-  const { data, error, count } = await query;
-  if (error) return serviceUnavailableResponse(corsHeaders);
-
-  const items = (data ?? []).map((row) => ({
+  const items = response.items.map((rawRow) => {
+    const row = rawRow && typeof rawRow === "object"
+      ? rawRow as Record<string, unknown>
+      : {};
+    return {
     slug: row.slug,
     char_count: row.char_count,
     is_encrypted: row.is_encrypted,
     updated_at: row.updated_at,
     created_at: row.created_at,
-    tags: row.tags ?? [],
-    preview: row.is_encrypted ? "encrypted" : (row.content ?? "").slice(0, 200),
-  }));
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    preview: row.is_encrypted === true
+      ? "encrypted"
+      : typeof row.content === "string"
+        ? row.content.slice(0, 200)
+        : "",
+    };
+  });
 
   const tagCount = new Map<string, number>();
   for (const item of items) {
@@ -87,6 +102,11 @@ Deno.serve(async (req) => {
     .slice(0, 30)
     .map(([name, itemCount]) => ({ name, count: itemCount }));
 
-  return json({ items, total: count ?? items.length, topTags }, 200);
+  const total = Number(response.total);
+  if (!Number.isSafeInteger(total) || total < 0) {
+    return serviceUnavailableResponse(corsHeaders);
+  }
+
+  return json({ items, total, topTags }, 200);
 });
 

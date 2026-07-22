@@ -1,9 +1,8 @@
 import { test, expect } from "./fixtures/extension";
 
-// Verifies the side panel saves lastSlug when the embedded app posts
-// `syrin:slug`. Posts from inside the panel page (same origin requirement
-// is bypassed via direct postMessage — but we still simulate the realistic
-// flow: parent receives, validates origin, writes storage).
+// Verifies the side panel saves lastSlug only when the embedded app posts
+// `syrin:slug`. The listener must validate both the exact origin and the
+// MessageEvent source window before writing synced storage.
 test("sidepanel saves lastSlug from postMessage", async ({ context, extensionId, serviceWorker }) => {
   // Clear storage + open side panel by manually navigating the panel page in
   // a tab (works for asserting message handling).
@@ -18,12 +17,30 @@ test("sidepanel saves lastSlug from postMessage", async ({ context, extensionId,
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
 
-  // Fake the message origin check by patching event.origin via evaluate.
-  // Since the listener checks event.origin === APP_ORIGIN, we dispatch a
-  // synthetic MessageEvent through a stub origin getter.
+  // A same-origin event from any window other than the embedded app must not
+  // be allowed to overwrite the device-local locator.
+  await panel.evaluate(() => {
+    const ev = new MessageEvent("message", {
+      data: { type: "syrin:slug", slug: "forged-source" },
+      source: window,
+    });
+    Object.defineProperty(ev, "origin", { value: "https://note.syrin.online" });
+    window.dispatchEvent(ev);
+  });
+
+  await panel.waitForTimeout(100);
+  const forged = await serviceWorker.evaluate(
+    () => new Promise((resolve) => {
+      // @ts-expect-error chrome global in extension service worker
+      chrome.storage.sync.get("lastSlug", resolve);
+    }),
+  );
+  expect(forged).not.toMatchObject({ lastSlug: "forged-source" });
+
   await panel.evaluate(() => {
     const ev = new MessageEvent("message", {
       data: { type: "syrin:slug", slug: "from-app" },
+      source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
     });
     Object.defineProperty(ev, "origin", { value: "https://note.syrin.online" });
     window.dispatchEvent(ev);

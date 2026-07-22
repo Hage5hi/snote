@@ -7,25 +7,25 @@ const noteMeta = readFileSync(
   "utf8",
 );
 
-describe("note-meta legacy share-token containment", () => {
-  it("tombstones every token query before Supabase client initialization", () => {
-    const tokenGuardAt = noteMeta.indexOf('url.searchParams.has("token")');
-    const clientInitAt = noteMeta.indexOf("const supabase = createClient(");
-
-    expect(tokenGuardAt).toBeGreaterThan(-1);
-    expect(clientInitAt).toBeGreaterThan(tokenGuardAt);
-
-    const preDatabasePath = noteMeta.slice(tokenGuardAt, clientInitAt);
-    expect(preDatabasePath).toMatch(
-      /return jsonResponse\(\s*\{ found: false \},\s*410,\s*\{\s*"cache-control": "no-store"\s*\},?\s*\)/,
+describe("note-meta legacy metadata containment", () => {
+  it("tombstones every metadata lookup as an uncacheable generic response", () => {
+    expect(noteMeta).toMatch(
+      /return jsonResponse\(\s*\{ found: false \},\s*410,?\s*\)/,
     );
+    expect(noteMeta).toContain('"cache-control": "no-store"');
+    expect(noteMeta).toContain('"cdn-cache-control": "no-store"');
+    expect(noteMeta).not.toContain("createClient");
+    expect(noteMeta).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(noteMeta).not.toContain("NOTE_META_SECRET");
   });
 
-  it("contains no legacy share lookup or token-derived slug/cache path", () => {
-    expect(noteMeta).not.toContain('url.searchParams.get("token")');
+  it("contains no content, locator, token, or database lookup path", () => {
+    expect(noteMeta).not.toContain("searchParams");
+    expect(noteMeta).not.toContain('.from("notes")');
     expect(noteMeta).not.toContain('.from("note_shares")');
-    expect(noteMeta).not.toContain("TOKEN_RE");
-    expect(noteMeta).not.toContain("resolvedSlug");
-    expect(noteMeta).not.toMatch(/const\s+(?:raw)?token\s*=/i);
+    expect(noteMeta).not.toContain("snippet");
+    expect(noteMeta).not.toContain("slug");
+    expect(noteMeta).not.toContain("s-maxage");
+    expect(noteMeta).not.toContain("stale-while-revalidate");
   });
 });

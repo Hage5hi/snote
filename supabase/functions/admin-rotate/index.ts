@@ -5,6 +5,7 @@ import {
   hashAdminPass,
   serviceUnavailableResponse,
 } from "../_shared/admin-auth.ts";
+import { isValidAdminPassphrase } from "../_shared/admin-passphrase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -39,9 +40,9 @@ Deno.serve(async (req) => {
   }
 
   const body = await req.json().catch(() => ({}));
-  const newPass = String(body?.newPass ?? "");
-  if (newPass.length < 12 || newPass.length > 1024) {
-    return json({ error: "new key must be between 12 and 1024 characters" }, 400);
+  const newPass = typeof body?.newPass === "string" ? body.newPass : "";
+  if (!isValidAdminPassphrase(newPass)) {
+    return json({ error: "new key must be between 12 and 72 UTF-8 bytes" }, 400);
   }
 
   let passHash: string;

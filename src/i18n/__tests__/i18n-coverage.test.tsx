@@ -17,8 +17,6 @@ function Wrap({ children }: { children: React.ReactNode }) {
   );
 }
 
-const IP_DETECTED_KEY = "lang.ip_detected";
-
 // Capture toast() calls for assertion.
 const toastSpy = vi.fn();
 vi.mock("@/hooks/use-toast", () => ({
@@ -29,8 +27,6 @@ vi.mock("@/hooks/use-toast", () => ({
 beforeEach(() => {
   localStorage.clear();
   toastSpy.mockClear();
-  // Skip ipapi.co fetch so tests are deterministic.
-  localStorage.setItem(IP_DETECTED_KEY, "1");
   // Stable clipboard mock.
   Object.assign(navigator, {
     clipboard: { writeText: vi.fn(async () => {}) },

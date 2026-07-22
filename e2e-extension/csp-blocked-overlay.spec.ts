@@ -39,6 +39,7 @@ test("blocked frame-ancestors surfaces exact CSP reason in overlay banner", asyn
   await panel.evaluate((origin) => {
     const ev = new MessageEvent("message", {
       data: { type: "syrin:ready", protocol: 999, buildId: "bad" },
+      source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
     });
     Object.defineProperty(ev, "origin", { value: origin });
     window.dispatchEvent(ev);

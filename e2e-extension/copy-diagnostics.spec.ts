@@ -28,6 +28,8 @@ test("Download diagnostics JSON contains only sanitized keys with fixture-pinned
   const panel = await openPanel(context, extensionId);
   await sendReady(panel, FIXTURE);
   await waitForFallback(panel);
+  await panel.locator("details.diag > summary").click();
+  await expect(panel.locator("#diag-download")).toBeVisible();
 
   const [download] = await Promise.all([
     panel.waitForEvent("download"),
@@ -54,11 +56,9 @@ test("Download diagnostics JSON contains only sanitized keys with fixture-pinned
   expect(bundle.schemaVersion).toBe(2);
   expect(bundle.handshake.extensionProtocol).toBe(2);
   expect(bundle.handshake.appProtocol).toBe(999);
-  expect(bundle.handshake.appBuildId).toBe("fixture-bad");
+  expect(bundle.handshake.appBuildId).toBe("<redacted>");
   expect(bundle.handshake.ready).toBe(false);
-  expect(bundle.handshake.versionMismatch).toBe(
-    "app protocol=999 not in [1,2] (ext=2)",
-  );
+  expect(bundle.handshake.versionMismatch).toBe("protocol-mismatch");
 
   // Sanitization: no forbidden key names anywhere.
   const flat = JSON.stringify(bundle);

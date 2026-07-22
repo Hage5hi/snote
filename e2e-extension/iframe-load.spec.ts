@@ -19,6 +19,7 @@ test("loader hides when app posts syrin:ready", async ({ context, extensionId })
   await panel.evaluate((origin) => {
     const ev = new MessageEvent("message", {
       data: { type: "syrin:ready", buildId: "test-build" },
+      source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
     });
     Object.defineProperty(ev, "origin", { value: origin });
     window.dispatchEvent(ev);

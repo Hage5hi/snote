@@ -12,6 +12,7 @@ import {
   completeAdminAuthAttempt,
   lockoutResponse,
 } from "../_shared/admin-rate-limit.ts";
+import { isValidAdminLoginPassphrase } from "../_shared/admin-passphrase.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -65,6 +66,13 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
+  try {
+    const { error } = await supabase.rpc("admin_security_prune");
+    if (error) return serviceUnavailableResponse(corsHeaders);
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
+  }
+
   if (req.method === "DELETE") {
     const authorization = await authorizeAdminSession(req, supabase);
     if (authorization.status !== "authorized") {
@@ -89,7 +97,8 @@ Deno.serve(async (req) => {
   if (!subject.ok) return serviceUnavailableResponse(corsHeaders);
 
   const body = await req.json().catch(() => ({}));
-  const passphrase = String(body?.passphrase ?? "").slice(0, 1024);
+  const passphrase = typeof body?.passphrase === "string" ? body.passphrase : "";
+  const passphraseValid = isValidAdminLoginPassphrase(passphrase);
   let leaseId: string;
   try {
     leaseId = createAdmissionLeaseId();
@@ -105,7 +114,11 @@ Deno.serve(async (req) => {
   if (!gate.available) return serviceUnavailableResponse(corsHeaders);
   if (!gate.allowed) return lockoutResponse(gate.retryAfterSeconds, corsHeaders);
 
-  const verified = await verifyAdminPass(supabase, passphrase);
+  // Invalid lengths still consume the same serialized failure lease so an
+  // attacker cannot bypass the concurrent lockout by sending oversized input.
+  const verified = passphraseValid
+    ? await verifyAdminPass(supabase, passphrase)
+    : { available: true as const, valid: false as const };
   if (!verified.available) return serviceUnavailableResponse(corsHeaders);
 
   const recorded = await completeAdminAuthAttempt(

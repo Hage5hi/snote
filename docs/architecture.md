@@ -4,7 +4,7 @@ Snapshot after Phase 7 (PWA shell + Web Vitals primer). Update when new phases l
 
 ## Overview
 
-- React 18 + Vite 5 + TypeScript SPA
+- React 18 + Vite 6 + TypeScript SPA
 - Yjs CRDT for note state, persisted locally via `y-indexeddb` and remotely via Supabase Realtime + Postgres
 - Markdown rendering: `marked` + DOMPurify inside a Web Worker, with mermaid/katex/hljs lazy-loaded and hydrated post-render
 - PWA shell via Workbox precache, offline-first for the app shell

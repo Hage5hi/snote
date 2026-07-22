@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -64,7 +66,6 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-
 async function expectContainedShare({
   hostname,
   path,
@@ -126,8 +127,35 @@ async function expectContainedShare({
 }
 
 describe("share crawler containment", () => {
-  it("still prerenders a normal note crawler request", async () => {
+  it.each([`/s/${TOKEN}`, `/${PRIVATE_SLUG}`])(
+    "does not echo a browser credential in a www redirect for %s",
+    async (path) => {
+      const doubles = installWorkerDoubles();
+
+      const response = await worker.fetch(
+        new Request(`https://www.syrin.online${path}`, {
+          headers: { "user-agent": "Mozilla/5.0" },
+        }),
+        {
+          ORIGIN_HOST: "snote.lovable.app",
+          SITE_URL: "https://note.syrin.online",
+        },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+      expect(doubles.metadataFetch).toHaveBeenCalledOnce();
+      const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+      expect(new URL(originRequest.url).hostname).toBe("snote.lovable.app");
+    },
+  );
+
+  it("never serves cached plaintext metadata for a private note route", async () => {
     const doubles = installWorkerDoubles();
+    doubles.cacheMatch.mockResolvedValueOnce(
+      new Response("old private note preview from before encryption"),
+    );
 
     const response = await worker.fetch(
       new Request("https://note.syrin.online/public-note", {
@@ -146,10 +174,18 @@ describe("share crawler containment", () => {
       { waitUntil: doubles.waitUntil },
     );
 
+    const body = await response.text();
     expect(response.status).toBe(200);
-    expect(await response.text()).toContain(PRIVATE_SLUG);
-    expect(doubles.metadataFetch).toHaveBeenCalledTimes(1);
-    expect(doubles.waitUntil).toHaveBeenCalledTimes(1);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cdn-cache-control")).toBe("no-store");
+    expect(response.headers.get("x-robots-tag")).toBe(ROBOTS);
+    expect(body).not.toContain("public-note");
+    expect(body).not.toContain(PRIVATE_SLUG);
+    expect(body).not.toContain("old private note preview");
+    expect(doubles.metadataFetch).not.toHaveBeenCalled();
+    expect(doubles.cacheMatch).not.toHaveBeenCalled();
+    expect(doubles.cachePut).not.toHaveBeenCalled();
+    expect(doubles.waitUntil).not.toHaveBeenCalled();
   });
 
   let caseIndex = 0;
@@ -222,5 +258,8 @@ describe("share crawler containment", () => {
     expect(rollout).toMatch(/Workers\s+Logs/);
     expect(rollout).toMatch(/Tail\s+Workers/);
     expect(rollout).toContain("Logpush");
+    expect(rollout).toContain("every query-string variant");
+    expect(rollout).toContain("historical `?slug=...` and");
+    expect(rollout).toContain("`?token=...` forms");
   });
 });

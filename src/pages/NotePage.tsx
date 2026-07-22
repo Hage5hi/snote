@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -36,6 +36,12 @@ import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } fro
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 import { AppShell } from "@/components/app/AppShell";
 import { isExtensionContext } from "@/lib/ext-context";
+import {
+  ENCRYPTION_PIN_CHANGE_EVENT,
+  encryptionPinStorageKey,
+  getEncryptionPinState,
+  markNoteEncrypted,
+} from "@/lib/encryption-pin";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000;
@@ -60,6 +66,12 @@ type EncMeta = {
 type EncGateTarget = {
   slug: string;
   metaVersion: number;
+};
+
+type NoteResources = EncGateTarget & {
+  providerEpoch: number;
+  doc: Y.Doc;
+  provider: SupabaseYjsProvider;
 };
 
 export default function NotePage({ embedSlug }: NotePageProps) {
@@ -90,20 +102,10 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const tRef = useRef(t);
   useEffect(() => { tRef.current = t; }, [t]);
 
-  // Mount Y.Doc IMMEDIATELY (synchronously) — no waiting on enc-meta or any
-  // fetch. The doc-cache returns the previously-warm doc when navigating
-  // back so re-opens are essentially free.
-  const doc = useMemo(() => (validSlug ? acquireDoc(slug) : null), [slug, validSlug]);
-
-  // Provider is bound to (slug, doc, encryption mode). Bumping `providerEpoch`
-  // on any encryption-mode flip forces a full teardown + rebuild — no stale
-  // instance can survive a lock/unlock and write in the wrong mode.
+  // Provider generations are invalidated when the persisted encryption mode
+  // changes. Resource construction itself happens after commit below so an
+  // abandoned concurrent render cannot pin a document or leak a provider.
   const [providerEpoch, setProviderEpoch] = useState(0);
-  const provider = useMemo(
-    () => (validSlug && doc ? new SupabaseYjsProvider(slug, doc) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [slug, validSlug, doc, providerEpoch],
-  );
 
   // Celebrate when crossing the goal threshold (once per goal value).
   // `confettiTrigger` bumps in lockstep with the toast so a CSS-only burst
@@ -143,9 +145,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const { enabled: paginated, toggle: togglePagination, flip, page, totalPages } = usePagination();
   useEink();
 
-  // Encryption phases: "loading" (waiting on enc-meta), "needs-key", "ready".
+  // Encryption phases: "loading" (waiting on enc-meta), "needs-key", "blocked",
+  // "ready". A blocked note has violated the durable encrypted-state pin and
+  // must never mount local/network persistence as plaintext.
   // Editor/Preview and network sync stay unmounted until the gate is ready.
-  const [encPhase, setEncPhase] = useState<"loading" | "needs-key" | "ready">("loading");
+  const [encPhase, setEncPhase] = useState<"loading" | "needs-key" | "blocked" | "ready">("loading");
   const [encMeta, setEncMeta] = useState<EncMeta>({
     isEncrypted: false,
     salt: null,
@@ -160,12 +164,20 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // the encryption key in the URL fragment changes (lock/unlock flows).
   const [metaVersion, setMetaVersion] = useState(0);
   const [resolvedEncTarget, setResolvedEncTarget] = useState<EncGateTarget | null>(null);
+  const [resources, setResources] = useState<NoteResources | null>(null);
   const currentEncTargetRef = useRef<EncGateTarget>({ slug, metaVersion });
   const observedHashRef = useRef(window.location.hash);
   const routerTarget = `${location.key}\u0000${location.pathname}\u0000${location.search}\u0000${location.hash}`;
   const routerTargetRef = useRef(routerTarget);
   const encTargetIsCurrent = resolvedEncTarget?.slug === slug
     && resolvedEncTarget.metaVersion === metaVersion;
+  const resourcesAreCurrent = encPhase === "ready"
+    && encTargetIsCurrent
+    && resources?.slug === slug
+    && resources.metaVersion === metaVersion
+    && resources.providerEpoch === providerEpoch;
+  const doc = resourcesAreCurrent ? resources.doc : null;
+  const provider = resourcesAreCurrent ? resources.provider : null;
 
   const observeHash = useCallback((nextHash: string) => {
     if (observedHashRef.current === nextHash) return;
@@ -179,6 +191,27 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   useLayoutEffect(() => {
     currentEncTargetRef.current = { slug, metaVersion };
   }, [slug, metaVersion]);
+
+  // acquireDoc() mutates a module-level cache and the provider constructor
+  // registers global listeners. Do neither until the encryption gate has
+  // authorized this exact target, then own both from a committed effect so
+  // React can pair acquisition with cleanup, including StrictMode replays.
+  useLayoutEffect(() => {
+    if (!validSlug || encPhase !== "ready" || !encTargetIsCurrent) return;
+    const ownedDoc = acquireDoc(slug);
+    const ownedProvider = new SupabaseYjsProvider(slug, ownedDoc);
+    setResources({
+      slug,
+      metaVersion,
+      providerEpoch,
+      doc: ownedDoc,
+      provider: ownedProvider,
+    });
+    return () => {
+      void ownedProvider.destroy();
+      releaseDoc(slug);
+    };
+  }, [slug, validSlug, metaVersion, providerEpoch, encPhase, encTargetIsCurrent]);
 
   useLayoutEffect(() => {
     const syncHash = () => observeHash(window.location.hash);
@@ -206,9 +239,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     setEncPhase("loading");
     let cancelled = false;
     const requestTarget: EncGateTarget = { slug, metaVersion };
+    const requestHash = window.location.hash;
     const isCurrentRequest = () => !cancelled
       && currentEncTargetRef.current.slug === requestTarget.slug
-      && currentEncTargetRef.current.metaVersion === requestTarget.metaVersion;
+      && currentEncTargetRef.current.metaVersion === requestTarget.metaVersion
+      // BrowserRouter mutates window.history before a transition commits its
+      // useLocation value. Never let old crypto authorize the new live URL in
+      // that window between history mutation and React commit.
+      && window.location.hash === requestHash;
     (async () => {
       try {
         const { data, error } = await supabase
@@ -237,6 +275,22 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           return meta;
         });
 
+        // The legacy table still permits an attacker to alter encryption
+        // metadata until the capability cutover. Remember every encrypted
+        // observation locally and reject a later plaintext/missing response.
+        // localStorage is synchronous, so the pin is committed before any
+        // document, provider, IndexedDB store, editor, preview, or snapshot can
+        // mount for this response.
+        const encryptionStateIsTrusted = meta.isEncrypted
+          ? markNoteEncrypted(slug)
+          : getEncryptionPinState(slug) === "clear";
+        if (!encryptionStateIsTrusted) {
+          if (!isCurrentRequest()) return;
+          setEncryption(null);
+          setEncPhase("blocked");
+          setResolvedEncTarget(requestTarget);
+          return;
+        }
 
         if (!meta.isEncrypted) {
           if (!isCurrentRequest()) return;
@@ -286,6 +340,40 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     };
   }, [slug, validSlug, metaVersion]);
 
+  // A sibling tab (native storage event) or a same-tab lock/decrypt flow
+  // (custom event) can change the durable pin while this provider is live.
+  // Close the workspace immediately; provider-level guards independently
+  // reject any write racing this React state transition.
+  useEffect(() => {
+    if (!validSlug || encPhase !== "ready" || !encTargetIsCurrent) return;
+
+    const closeIfPinChanged = () => {
+      const pinState = getEncryptionPinState(slug);
+      const stillTrusted = encMeta.isEncrypted
+        ? pinState === "pinned"
+        : pinState === "clear";
+      if (stillTrusted) return;
+      setEncryption(null);
+      setEncPhase("blocked");
+    };
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== null && event.key !== encryptionPinStorageKey(slug)) return;
+      closeIfPinChanged();
+    };
+    const onLocalPinChange = (event: Event) => {
+      const changedSlug = (event as CustomEvent<{ slug?: string }>).detail?.slug;
+      if (changedSlug !== slug) return;
+      closeIfPinChanged();
+    };
+
+    window.addEventListener("storage", onStorage);
+    window.addEventListener(ENCRYPTION_PIN_CHANGE_EVENT, onLocalPinChange);
+    return () => {
+      window.removeEventListener("storage", onStorage);
+      window.removeEventListener(ENCRYPTION_PIN_CHANGE_EVENT, onLocalPinChange);
+    };
+  }, [slug, validSlug, encPhase, encTargetIsCurrent, encMeta.isEncrypted]);
+
   // When inside the Syrin Note Chrome extension side panel, tell the host
   // which slug we're on so it can remember the last-opened note. We retry
   // up to 3 times (1s apart) if the host doesn't ack within 500ms — covers
@@ -318,7 +406,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       const d = e.data;
       if (d && typeof d === "object" && d.type === "syrin:ack" && d.slug === slug) {
         acked = true;
-        dlog("ack received", slug, "after attempts=", attempts);
+        dlog("ack received", "locatorLength=", slug.length, "after attempts=", attempts);
         if (timer) clearTimeout(timer);
       }
     };
@@ -326,7 +414,15 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     const sendOnce = () => {
       try {
         window.parent.postMessage({ type: "syrin:slug", slug }, targetOrigin);
-        dlog("posted slug", slug, "→", targetOrigin, "attempt", attempts + 1);
+        dlog(
+          "posted locator",
+          "locatorLength=",
+          slug.length,
+          "targetOrigin=",
+          targetOrigin,
+          "attempt",
+          attempts + 1,
+        );
       } catch (err) {
         dlog("post failed", err);
       }
@@ -464,23 +560,26 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       
       unsubAwareness();
       unsubSync();
-      void provider.destroy();
       idb.destroy();
-      // Doc itself stays warm in cache for fast re-open; only release.
-      releaseDoc(slug);
     };
   }, [slug, validSlug, doc, provider, embedSlug, encPhase, encTargetIsCurrent, encryption, encMeta.isEncrypted, encMeta.ydocState, encMeta.rowExists]);
 
   if (!validSlug) return <Navigate to="/" replace />;
-  if (!doc || !provider) return null;
-  const getContent = () => doc.getText("content").toString();
 
   // This gate deliberately precedes both render branches. In particular,
   // SplitView's embedded branch must never mount Editor/Preview behind an
   // overlay while encryption metadata or a decryption key is unavailable.
   const visibleEncPhase = encTargetIsCurrent ? encPhase : "loading";
   if (visibleEncPhase !== "ready") {
-    const gate = visibleEncPhase === "needs-key" ? (
+    const gate = visibleEncPhase === "blocked" ? (
+      <div
+        className="mx-auto max-w-md space-y-2 px-6 text-center"
+        role="alert"
+      >
+        <p className="font-medium text-destructive">{t("unlock.metadata_conflict")}</p>
+        <p className="text-sm text-muted-foreground">{t("unlock.metadata_conflict_desc")}</p>
+      </div>
+    ) : visibleEncPhase === "needs-key" ? (
       <UnlockForm
         slug={slug}
         salt={encMeta.salt!}
@@ -495,6 +594,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           // without starting another metadata request; a later removal must
           // still be detected and close the gate.
           observedHashRef.current = window.location.hash;
+          // replaceState() emits no browser navigation event. Notify every
+          // other mounted gate (notably the sibling SplitView pane) after this
+          // instance adopts the hash, so a key replaced elsewhere cannot
+          // leave stale plaintext mounted.
+          window.dispatchEvent(new Event("hashchange"));
           setEncryption({
             encrypt: (b) => encryptBytes(key, b),
             decrypt: (b) => decryptBytes(key, b),
@@ -526,6 +630,11 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // SplitView wraps each panel — render compact topbar + editor (+ preview if toggled).
   // Compact topbar hides app-wide toggles (zen, theme, settings) but keeps
   // per-note actions (preview toggle, lock, share, rename, status, presence).
+  // The ready phase schedules resource acquisition in a layout effect. Keep
+  // the workspace closed for that single commit until its owned pair exists.
+  if (!doc || !provider) return null;
+  const getContent = () => doc.getText("content").toString();
+
   if (embedSlug) {
     return (
       <div className="flex h-full min-h-0 flex-col bg-background">

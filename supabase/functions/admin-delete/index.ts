@@ -42,13 +42,26 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({}));
   if (body?.all === true) {
-    const { error, count } = await supabase
-      .from("notes")
-      .delete({ count: "exact" })
-      .gte("created_at", "1970-01-01");
-    return error
-      ? serviceUnavailableResponse(corsHeaders)
-      : json({ deleted: count ?? 0 }, 200);
+    try {
+      const { data, error } = await supabase.rpc("admin_notes_delete", {
+        p_token_hash: authorization.tokenHash,
+        p_subject_hash: authorization.subjectHash,
+        p_all: true,
+        p_slugs: [],
+      });
+      if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+        return serviceUnavailableResponse(corsHeaders);
+      }
+      if (data.authorized !== true) {
+        return adminAuthResponse({ status: "unauthorized" }, corsHeaders);
+      }
+      const deleted = Number(data.deleted);
+      return Number.isSafeInteger(deleted) && deleted >= 0
+        ? json({ deleted }, 200)
+        : serviceUnavailableResponse(corsHeaders);
+    } catch {
+      return serviceUnavailableResponse(corsHeaders);
+    }
   }
 
   if (!Array.isArray(body?.slugs) || body.slugs.length === 0) {
@@ -64,12 +77,25 @@ Deno.serve(async (req) => {
   ].slice(0, 500);
   if (slugs.length === 0) return json({ error: "valid slugs[] required" }, 400);
 
-  const { error, count } = await supabase
-    .from("notes")
-    .delete({ count: "exact" })
-    .in("slug", slugs);
-  return error
-    ? serviceUnavailableResponse(corsHeaders)
-    : json({ deleted: count ?? 0 }, 200);
+  try {
+    const { data, error } = await supabase.rpc("admin_notes_delete", {
+      p_token_hash: authorization.tokenHash,
+      p_subject_hash: authorization.subjectHash,
+      p_all: false,
+      p_slugs: slugs,
+    });
+    if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+      return serviceUnavailableResponse(corsHeaders);
+    }
+    if (data.authorized !== true) {
+      return adminAuthResponse({ status: "unauthorized" }, corsHeaders);
+    }
+    const deleted = Number(data.deleted);
+    return Number.isSafeInteger(deleted) && deleted >= 0
+      ? json({ deleted }, 200)
+      : serviceUnavailableResponse(corsHeaders);
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
+  }
 });
 

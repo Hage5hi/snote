@@ -13,6 +13,7 @@ async function postReady(page: import("@playwright/test").Page, protocol: number
     ({ origin, protocol, buildId }) => {
       const ev = new MessageEvent("message", {
         data: { type: "syrin:ready", protocol, buildId, appVersion: "test" },
+        source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
       });
       Object.defineProperty(ev, "origin", { value: origin });
       window.dispatchEvent(ev);

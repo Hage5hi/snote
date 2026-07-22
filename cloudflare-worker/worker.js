@@ -1,17 +1,14 @@
 /**
- * Cloudflare Worker — Prerender meta tags cho crawler không-JS.
+ * Cloudflare Worker — containment cho URL riêng tư và prerender public shell.
  *
  * Đặt trước syrin.online. Worker phát hiện User-Agent crawler
- * (LinkedIn, Slack, Facebook, Twitter, Discord, WhatsApp, Telegram...)
- * và trả HTML đã render sẵn meta tags theo từng note URL. Request từ
- * trình duyệt thường được pass-through tới Lovable hosting nguyên bản.
+ * (LinkedIn, Slack, Facebook, Twitter, Discord, WhatsApp, Telegram...). URL
+ * note/share luôn nhận HTML generic, không cache và không index; chỉ public
+ * shell được prerender metadata. Request từ trình duyệt thường được
+ * pass-through tới Lovable hosting nguyên bản mà không redirect URL chứa quyền.
  *
  * Cấu hình cần (Environment Variables / Secrets trong Cloudflare):
  *   - ORIGIN_HOST        = "snote.lovable.app"   (Lovable origin)
- *   - SUPABASE_PROJECT   = "onfzjmfjldsbthchssfr"
- *   - SUPABASE_ANON_KEY  = <anon key>     (secret)
- *   - NOTE_META_SECRET   = <shared secret>  (secret) — phải khớp với
- *                         secret cùng tên trong Supabase Edge Function.
  *   - SITE_URL           = "https://note.syrin.online"
  *
  * Route: gắn worker vào các pattern note.syrin.online/*, syrin.online/*
@@ -171,9 +168,25 @@ export default {
       });
       return renderGenericShareHtml();
     }
+    // A legacy note slug is still an edit credential until the capability
+    // cutover. Never read a content-bearing cache or metadata endpoint for a
+    // crawler: a cached plaintext preview could survive a later lock/revoke.
+    if (isCrawler && route?.kind === "note") {
+      logEvent(env, "info", "prerender", {
+        kind: "note", status: 200,
+      });
+      return renderGenericNoteHtml();
+    }
 
     if (!isCrawler || isAssetPath(url.pathname)) {
-      if (url.hostname === "www.syrin.online") {
+      // Legacy note locators and share paths are credentials until cutover.
+      // Passing them through avoids copying the raw path into Location and
+      // another round of proxy/browser logs. Public routes may still redirect.
+      if (
+        url.hostname === "www.syrin.online"
+        && route?.kind !== "share"
+        && route?.kind !== "note"
+      ) {
         url.hostname = "syrin.online";
         return Response.redirect(url.toString(), 301);
       }
@@ -199,8 +212,8 @@ export default {
       });
     }
 
-    // Canonicalize non-share requests only after capability-bearing share
-    // routes have been contained. A redirect would echo the token in Location.
+    // Canonicalize only after every credential-bearing route has been
+    // contained. A redirect would echo that credential in Location.
     if (url.hostname === "www.syrin.online") {
       url.hostname = "syrin.online";
       return Response.redirect(url.toString(), 301);
@@ -374,20 +387,9 @@ function isSharePrefix(value) {
   return value.toLowerCase() === "s" || /^%(?:25)*(?:53|73)$/i.test(value);
 }
 
-async function fetchNoteMeta(route, env) {
+async function fetchNoteMeta(route) {
   if (route.kind === "home") return { found: true, kind: "home" };
-  if (route.kind !== "note") throw new TypeError("metadata route must be home or note");
-  const qs = `slug=${encodeURIComponent(route.slug)}`;
-  const endpoint = `https://${env.SUPABASE_PROJECT}.functions.supabase.co/note-meta?${qs}`;
-  const res = await fetch(endpoint, {
-    headers: {
-      apikey: env.SUPABASE_ANON_KEY,
-      authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-      "x-meta-secret": env.NOTE_META_SECRET ?? "",
-    },
-  });
-  const data = await res.json();
-  return { ...data, kind: route.kind };
+  throw new TypeError("private metadata lookup is disabled");
 }
 
 async function passThrough(request, env) {
@@ -467,8 +469,20 @@ function renderHtml(meta, url, env) {
 }
 
 function renderGenericShareHtml() {
-  const title = "Shared note — Syrin Notes";
-  const description = "Open a private, revocable shared note on Syrin Notes.";
+  return renderGenericPrivateHtml(
+    "Shared note — Syrin Notes",
+    "Open a private, revocable shared note on Syrin Notes.",
+  );
+}
+
+function renderGenericNoteHtml() {
+  return renderGenericPrivateHtml(
+    "Private note — Syrin Notes",
+    "Open a private note on Syrin Notes.",
+  );
+}
+
+function renderGenericPrivateHtml(title, description) {
   const html = `<!doctype html>
 <html lang="en">
 <head>

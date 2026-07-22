@@ -72,6 +72,36 @@ GRANT SELECT, INSERT, DELETE ON TABLE public.admin_sessions TO service_role;
 CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires_at
   ON public.admin_sessions (expires_at);
 
+CREATE INDEX IF NOT EXISTS idx_admin_auth_attempts_first_failure_at
+  ON public.admin_auth_attempts (first_failure_at);
+
+-- Bound security-metadata retention without exposing either table. The Edge
+-- session endpoint invokes this on every admin request as a backstop; rollout
+-- also schedules it daily so dormant installations do not retain stale hashes.
+CREATE OR REPLACE FUNCTION public.admin_security_prune()
+RETURNS TABLE(expired_sessions bigint, stale_attempts bigint)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := statement_timestamp();
+BEGIN
+  DELETE FROM public.admin_sessions
+   WHERE expires_at <= v_now;
+  GET DIAGNOSTICS expired_sessions = ROW_COUNT;
+
+  DELETE FROM public.admin_auth_attempts
+   WHERE first_failure_at < v_now - interval '7 days'
+     AND (locked_until IS NULL OR locked_until <= v_now)
+     AND (lease_until IS NULL OR lease_until <= v_now);
+  GET DIAGNOSTICS stale_attempts = ROW_COUNT;
+
+  RETURN NEXT;
+END;
+$$;
+
 -- A singleton credential epoch binds password verification to session issue.
 -- It is independent of admin_config so the environment-passphrase fallback is
 -- also invalidated by the first database-backed rotation.
@@ -96,7 +126,7 @@ RETURNS TABLE(pass_hash text, credential_epoch bigint)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT config.pass_hash, state.credential_epoch
     FROM public.admin_auth_state AS state
@@ -113,7 +143,7 @@ CREATE OR REPLACE FUNCTION public.admin_auth_begin(
 RETURNS TABLE(allowed boolean, retry_after_seconds integer)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_locked_until timestamptz;
@@ -196,7 +226,7 @@ CREATE OR REPLACE FUNCTION public.admin_auth_complete(
 RETURNS TABLE(allowed boolean, retry_after_seconds integer)
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_failure_count integer;
@@ -272,7 +302,7 @@ RETURNS boolean
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT
     p_token_hash ~ '^[0-9a-f]{64}$'
@@ -286,6 +316,172 @@ AS $$
     );
 $$;
 
+-- List and delete are privileged actions, not just authenticated routes. Keep
+-- session validation and the note operation in one transaction, holding a
+-- shared credential-epoch lock against password rotation and a shared session
+-- row lock against concurrent logout/revocation.
+CREATE OR REPLACE FUNCTION public.admin_notes_list(
+  p_token_hash text,
+  p_subject_hash text,
+  p_search text,
+  p_tag text,
+  p_limit integer,
+  p_offset integer
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_items jsonb;
+  v_total bigint;
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$'
+     OR p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$' THEN
+    RETURN jsonb_build_object('authorized', false);
+  END IF;
+  IF p_search IS NULL OR length(p_search) > 100
+     OR p_tag IS NULL OR length(p_tag) > 32
+     OR p_limit IS NULL OR p_limit < 1 OR p_limit > 500
+     OR p_offset IS NULL OR p_offset < 0 THEN
+    RAISE EXCEPTION 'admin notes list request unavailable';
+  END IF;
+
+  PERFORM 1
+    FROM public.admin_auth_state AS state
+   WHERE state.id = 1
+   FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'admin notes list unavailable';
+  END IF;
+
+  PERFORM 1
+    FROM public.admin_sessions AS sessions
+   WHERE sessions.token_hash = p_token_hash
+     AND sessions.subject_hash = p_subject_hash
+     AND sessions.expires_at > statement_timestamp()
+   FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('authorized', false);
+  END IF;
+
+  WITH filtered AS MATERIALIZED (
+    SELECT
+      notes.slug,
+      notes.updated_at
+    FROM public.notes AS notes
+    WHERE (
+      p_search = ''
+      OR notes.slug ILIKE '%' || p_search || '%'
+      OR notes.content ILIKE '%' || p_search || '%'
+    )
+      AND (p_tag = '' OR notes.tags @> ARRAY[p_tag]::text[])
+  ),
+  page_keys AS (
+    SELECT slug, updated_at
+      FROM filtered
+     ORDER BY updated_at DESC, slug
+     LIMIT p_limit
+    OFFSET p_offset
+  ),
+  page AS (
+    SELECT
+      notes.slug,
+      notes.char_count,
+      notes.is_encrypted,
+      notes.updated_at,
+      notes.created_at,
+      notes.content,
+      notes.tags
+    FROM page_keys
+    JOIN public.notes AS notes USING (slug)
+  )
+  SELECT
+    count(*),
+    COALESCE(
+      (SELECT jsonb_agg(to_jsonb(page) ORDER BY page.updated_at DESC, page.slug)
+         FROM page),
+      '[]'::jsonb
+    )
+    INTO v_total, v_items
+    FROM filtered;
+
+  RETURN jsonb_build_object(
+    'authorized', true,
+    'items', v_items,
+    'total', v_total
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_notes_delete(
+  p_token_hash text,
+  p_subject_hash text,
+  p_all boolean,
+  p_slugs text[]
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_deleted bigint;
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[0-9a-f]{64}$'
+     OR p_subject_hash IS NULL OR p_subject_hash !~ '^[0-9a-f]{64}$' THEN
+    RETURN jsonb_build_object('authorized', false);
+  END IF;
+  IF p_all IS NULL
+     OR (
+       NOT p_all
+       AND (
+         p_slugs IS NULL
+         OR cardinality(p_slugs) < 1
+         OR cardinality(p_slugs) > 500
+         OR EXISTS (
+           SELECT 1
+             FROM unnest(p_slugs) AS candidate(slug)
+            WHERE candidate.slug !~ '^[A-Za-z0-9._-]{1,80}$'
+         )
+       )
+     ) THEN
+    RAISE EXCEPTION 'admin notes delete request unavailable';
+  END IF;
+
+  PERFORM 1
+    FROM public.admin_auth_state AS state
+   WHERE state.id = 1
+   FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'admin notes delete unavailable';
+  END IF;
+
+  PERFORM 1
+    FROM public.admin_sessions AS sessions
+   WHERE sessions.token_hash = p_token_hash
+     AND sessions.subject_hash = p_subject_hash
+     AND sessions.expires_at > statement_timestamp()
+   FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('authorized', false);
+  END IF;
+
+  IF p_all THEN
+    DELETE FROM public.notes;
+  ELSE
+    DELETE FROM public.notes AS notes
+     WHERE notes.slug = ANY(p_slugs);
+  END IF;
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+
+  RETURN jsonb_build_object('authorized', true, 'deleted', v_deleted);
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.admin_session_revoke(
   p_token_hash text,
   p_subject_hash text
@@ -294,7 +490,7 @@ RETURNS void
 LANGUAGE sql
 VOLATILE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
   DELETE FROM public.admin_sessions
    WHERE token_hash = p_token_hash
@@ -314,7 +510,7 @@ RETURNS void
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_credential_epoch bigint;
@@ -356,7 +552,7 @@ RETURNS void
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_consumed_token_hash text;
@@ -421,19 +617,28 @@ REVOKE ALL ON FUNCTION public.admin_credential_material()
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_validate(text, text)
   FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_notes_list(text, text, text, text, integer, integer)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_notes_delete(text, text, boolean, text[])
+  FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_revoke(text, text)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_session_issue(text, text, timestamptz, bigint)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.admin_pass_rotate(text, text, text)
   FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.admin_security_prune()
+  FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.admin_auth_begin(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_auth_complete(text, text, boolean) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_credential_material() TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_validate(text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_notes_list(text, text, text, text, integer, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_notes_delete(text, text, boolean, text[]) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_revoke(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_session_issue(text, text, timestamptz, bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION public.admin_pass_rotate(text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.admin_security_prune() TO service_role;
 
 COMMIT;

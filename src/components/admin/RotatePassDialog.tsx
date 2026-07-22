@@ -14,18 +14,42 @@ import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n/index";
+import { isValidAdminPassphrase } from "../../../supabase/functions/_shared/admin-passphrase";
 
 interface RotatePassDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sessionToken: string;
-  onSuccess: () => void;
+  sessionGeneration: number;
+  validateSession: (token: string, generation: number) => boolean;
+  onUnauthorized: (rejectedToken: string, generation: number) => boolean;
+  onSuccess: (rotatedToken: string, generation: number) => boolean;
+}
+
+function isUnauthorizedAdminResponse(error: unknown, data: unknown): boolean {
+  const candidate = error && typeof error === "object"
+    ? error as { status?: unknown; context?: { status?: unknown } }
+    : null;
+  const directStatus = Number(candidate?.status);
+  const contextStatus = Number(candidate?.context?.status);
+  const status = Number.isFinite(contextStatus) ? contextStatus : directStatus;
+  const apiError = data && typeof data === "object" && "error" in data
+    ? String((data as { error?: unknown }).error ?? "").trim().toLowerCase()
+    : "";
+  const message = String((error as { message?: unknown } | null)?.message ?? "")
+    .toLowerCase();
+  return status === 401 || status === 403 ||
+    /^(unauthorized|session (expired|invalid))$/.test(apiError) ||
+    message.includes("unauthorized") || message.includes("session expired");
 }
 
 export function RotatePassDialog({
   open,
   onOpenChange,
   sessionToken,
+  sessionGeneration,
+  validateSession,
+  onUnauthorized,
   onSuccess,
 }: RotatePassDialogProps) {
   const { t } = useI18n();
@@ -40,14 +64,15 @@ export function RotatePassDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (newPass.length < 12) {
-      toast({ title: t("admin.rotate.too_short"), variant: "destructive" });
+    if (!isValidAdminPassphrase(newPass)) {
+      toast({ title: t("admin.rotate.invalid_length"), variant: "destructive" });
       return;
     }
     if (newPass !== confirm) {
       toast({ title: t("admin.rotate.mismatch"), variant: "destructive" });
       return;
     }
+    if (!validateSession(sessionToken, sessionGeneration)) return;
 
     setLoading(true);
     try {
@@ -55,13 +80,33 @@ export function RotatePassDialog({
         body: { newPass },
         headers: { "x-admin-session": sessionToken },
       });
+      if (isUnauthorizedAdminResponse(error, data)) {
+        if (onUnauthorized(sessionToken, sessionGeneration)) {
+          toast({
+            title: t("admin.rotate.failed"),
+            description: "Session expired.",
+            variant: "destructive",
+          });
+        }
+        return;
+      }
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      if (!onSuccess(sessionToken, sessionGeneration)) return;
       toast({ title: t("admin.rotate.success") });
-      onSuccess();
       reset();
       onOpenChange(false);
     } catch (error) {
+      if (isUnauthorizedAdminResponse(error, null)) {
+        if (onUnauthorized(sessionToken, sessionGeneration)) {
+          toast({
+            title: t("admin.rotate.failed"),
+            description: "Session expired.",
+            variant: "destructive",
+          });
+        }
+        return;
+      }
       toast({
         title: t("admin.rotate.failed"),
         description: String((error as Error | undefined)?.message ?? error),
@@ -95,9 +140,9 @@ export function RotatePassDialog({
               value={newPass}
               onChange={(event) => setNewPass(event.target.value)}
               placeholder={t("admin.rotate.new_placeholder")}
-              minLength={12}
               required
             />
+            <p className="text-xs text-muted-foreground">12–72 UTF-8 bytes</p>
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="confirm">{t("admin.rotate.confirm_label")}</Label>

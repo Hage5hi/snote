@@ -11,7 +11,11 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 function json(body: unknown, status: number) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
   });
 }
 
@@ -57,8 +61,8 @@ Deno.serve(async (req) => {
       enc_iterations: note.enc_iterations,
       updated_at: note.updated_at,
     }, 200);
-  } catch (e) {
-    console.error("share-view error", e);
-    return json({ error: String(e) }, 500);
+  } catch {
+    // Do not echo or log errors that may contain the supplied share token.
+    return json({ error: "temporarily unavailable" }, 503);
   }
 });
