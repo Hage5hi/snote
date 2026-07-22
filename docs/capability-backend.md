@@ -16,9 +16,9 @@ mode and never receive an owner capability automatically.
   do not log request data.
 - The temporary `x-legacy-share` header is solely for old `/s/:token` links.
   It is not accepted as a new capability and is removed by the PR5 cutover.
-- Legacy share creation is serialized through `legacy_share_rotate`; a database
-  trigger rejects capability-managed targets even if an older Edge bundle is
-  still reachable. Secure slugs receive only a non-persisted decoy response.
+- During the additive phase, legacy share creation is serialized through
+  `legacy_share_rotate`. The atomic cutover tombstones that Edge endpoint and
+  revokes the RPC from `service_role`, so legacy state is read-only afterward.
 - `owner` can manage and edit, `edit` can sync, and `view` can only read.
 - Realtime JWTs expire after five minutes. Their `sub`, `note_id`, scope, and
   generation are checked against an active capability by RLS on
@@ -37,6 +37,11 @@ mode and never receive an owner capability automatically.
 ## Public HTTP contract
 
 All responses carry `Cache-Control: no-store` and `CDN-Cache-Control: no-store`.
+After the atomic cutover, legacy note content is available only through the
+exact-match `legacy-note-open` Edge Function. Browser roles have no direct
+table grants. See [the cutover runbook](security/atomic-capability-cutover.md)
+for the mandatory 48-hour soak, migration order, compatibility deadline, and
+read-only rollback procedure.
 Malformed credentials return a generic `401`; storage/configuration failures
 return `503` without including database error text.
 
@@ -46,6 +51,13 @@ return `503` without including database error text.
 Authorization header is present. The `201` response contains `{ session,
 capabilities: { owner, edit, view } }`; this is the only time all three raw
 capabilities are returned.
+
+`POST { "action": "import-legacy", ...initialCheckpoint }` is the cutover-only
+duplicate path. It validates/encrypts on the client first, then atomically
+inserts the note, capability hashes, and initial checkpoint in one database
+transaction. The client persists a fresh owner candidate before sending it as
+the Bearer credential; retrying the same owner + checkpoint recovers a commit
+whose response was lost instead of leaving an unowned slug.
 
 Otherwise, send `Authorization: Bearer <capability>` and optionally
 `{ "afterSequence": 42 }`. The response contains a `NoteSession`:

@@ -9,11 +9,15 @@ import {
   capabilityFailure,
   capabilityJson,
   capabilityTokenHash,
+  capabilityWritesDisabled,
   materializeNoteSession,
   rpcStatus,
 } from "../_shared/capability-edge.ts";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const UPDATE_ID_RE = /^[a-f0-9]{64}$/;
+const PAYLOAD_RE = /^[A-Za-z0-9_-]+$/;
+const MAX_ENCODED_PAYLOAD_CHARS = 5_592_406;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: capabilityCorsHeaders });
@@ -27,6 +31,7 @@ Deno.serve(async (req) => {
     const bearer = readCapabilityBearer(req);
 
     if (body?.action === "create") {
+      if (capabilityWritesDisabled()) return capabilityFailure("read_only");
       if (req.headers.has("authorization") || bearer) {
         return capabilityJson({ error: "unauthorized" }, 401);
       }
@@ -61,6 +66,69 @@ Deno.serve(async (req) => {
       );
       if (!session) return capabilityFailure("unavailable");
       return capabilityJson({ session, capabilities: { owner, edit, view } }, 201);
+    }
+
+    if (body?.action === "import-legacy") {
+      if (capabilityWritesDisabled()) return capabilityFailure("read_only");
+      if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
+      const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
+      const checkpointId = typeof body?.checkpointId === "string" ? body.checkpointId : "";
+      const payload = typeof body?.payload === "string" ? body.payload : "";
+      const isEncrypted = body?.isEncrypted;
+      const salt = body?.salt ?? null;
+      const check = body?.check ?? null;
+      const iterations = body?.iterations ?? null;
+      const encryptionMetadataValid = isEncrypted === true
+        ? typeof salt === "string" && salt.length >= 16 && salt.length <= 512
+          && typeof check === "string" && check.length >= 16 && check.length <= 2048
+          && Number.isSafeInteger(iterations) && iterations >= 100_000 && iterations <= 2_000_000
+        : isEncrypted === false && salt === null && check === null && iterations === null;
+      if (
+        !SLUG_RE.test(slug)
+        || !UPDATE_ID_RE.test(checkpointId)
+        || !PAYLOAD_RE.test(payload)
+        || payload.length > MAX_ENCODED_PAYLOAD_CHARS
+        || !encryptionMetadataValid
+      ) return capabilityFailure("invalid");
+
+      // The client persists this candidate before the first mutating request.
+      // A lost response can therefore retry the exact same owner hash.
+      const owner = bearer;
+      const edit = createCapabilityToken();
+      const view = createCapabilityToken();
+      const [ownerHash, editHash, viewHash] = await Promise.all([
+        hashCapabilityToken(owner, environment.hmacSecret),
+        hashCapabilityToken(edit, environment.hmacSecret),
+        hashCapabilityToken(view, environment.hmacSecret),
+      ]);
+      const { data: created, error: createError } = await environment.client.rpc(
+        "capability_note_import_legacy",
+        {
+          p_slug: slug,
+          p_owner_token_hash: ownerHash,
+          p_edit_token_hash: editHash,
+          p_view_token_hash: viewHash,
+          p_checkpoint_id: checkpointId,
+          p_payload_text: payload,
+          p_is_encrypted: isEncrypted,
+          p_salt: salt,
+          p_check: check,
+          p_iterations: iterations,
+        },
+      );
+      if (createError || rpcStatus(created) !== "ok") {
+        return capabilityFailure(createError ? "unavailable" : rpcStatus(created));
+      }
+      const session = await materializeNoteSession(
+        created?.session,
+        environment.supabaseUrl,
+        environment.jwtSecret,
+      );
+      if (!session) return capabilityFailure("unavailable");
+      const capabilities = created?.recovered === true
+        ? { owner }
+        : { owner, edit, view };
+      return capabilityJson({ session, capabilities }, created?.recovered === true ? 200 : 201);
     }
 
     if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);

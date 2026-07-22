@@ -66,6 +66,7 @@ describe("capability primitives", () => {
       issuer: "https://example.supabase.co/auth/v1",
       secret: "jwt-secret-material-that-is-at-least-thirty-two-bytes",
       nowSeconds: 1_700_000_000,
+      writeDisabled: true,
     });
     const [, encodedPayload] = jwt.split(".");
     const payload = JSON.parse(
@@ -76,6 +77,7 @@ describe("capability primitives", () => {
       note_id: "123e4567-e89b-12d3-a456-426614174000",
       note_scope: "edit",
       capability_generation: 7,
+      note_write_disabled: true,
       role: "authenticated",
       aud: "authenticated",
       iat: 1_700_000_000,
@@ -199,10 +201,17 @@ describe("Edge capability endpoints", () => {
     const endpoint = source("supabase/functions/note-session/index.ts");
     const createBranch = endpoint.slice(
       endpoint.indexOf('if (body?.action === "create")'),
-      endpoint.indexOf("if (!bearer)"),
+      endpoint.indexOf('if (body?.action === "import-legacy")'),
     );
     expect(createBranch.match(/environment\.client\.rpc\(/g)).toHaveLength(1);
     expect(createBranch).toContain("created?.session");
+
+    const importBranch = endpoint.slice(
+      endpoint.indexOf('if (body?.action === "import-legacy")'),
+      endpoint.indexOf("const tokenHash = await capabilityTokenHash"),
+    );
+    expect(importBranch.match(/environment\.client\.rpc\(/g)).toHaveLength(1);
+    expect(importBranch).toContain('"capability_note_import_legacy"');
 
     const sql = source("supabase/migrations/20260722000000_capability_backend.sql");
     const createRpc = sql.slice(
@@ -232,7 +241,8 @@ describe("Edge capability endpoints", () => {
     const shareCreate = source("supabase/functions/share-create/index.ts");
     expect(raw).toContain('.eq("capability_managed", false)');
     expect(shareView).toContain('.eq("capability_managed", false)');
-    expect(shareCreate).toContain('rpc("legacy_share_rotate"');
+    expect(shareCreate).toContain('status: 410');
+    expect(shareCreate).not.toContain("legacy_share_rotate");
     expect(shareCreate).not.toContain('.from("notes")');
     expect(shareCreate).not.toContain('.from("note_shares")');
   });

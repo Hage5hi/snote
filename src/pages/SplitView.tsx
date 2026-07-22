@@ -9,7 +9,9 @@ import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { saveLastSplitView } from "@/lib/split-view-persistence";
 import { useI18n } from "@/i18n";
 
-const NotePage = lazy(() => import("./NotePage"));
+const NotePage = lazy(() => import("./NotePage").then((module) => ({
+  default: module.CutoverNotePage,
+})));
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const MIN_PANES = 2;

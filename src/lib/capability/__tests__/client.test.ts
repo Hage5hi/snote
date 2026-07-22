@@ -44,6 +44,37 @@ describe("capability API client", () => {
     );
   });
 
+  it("imports an initial legacy checkpoint in one unauthenticated request", async () => {
+    const initial = {
+      slug: "daily-copy",
+      checkpointId: "a".repeat(64),
+      payload: "AQID",
+      isEncrypted: false,
+      salt: null,
+      check: null,
+      iterations: null,
+    };
+    const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` });
+      expect(JSON.parse(String(init?.body))).toEqual({ action: "import-legacy", ...initial });
+      return Response.json({
+        session: session({
+          slug: "daily-copy",
+          checkpointVersion: 1,
+          checkpointPayload: "AQID",
+          checkpointEncryptionVersion: 0,
+        }),
+        capabilities: { owner: TOKEN, edit: "c".repeat(43), view: "d".repeat(43) },
+      }, { status: 201 });
+    });
+    const api = createCapabilityApi({ baseUrl: "https://project.supabase.co", fetcher });
+
+    const imported = await api.importLegacyNote(initial, TOKEN);
+
+    expect(imported.capabilities.owner).toBe(TOKEN);
+    expect(imported.session.checkpointPayload).toBe("AQID");
+  });
+
   it("opens every missing update page with a Bearer header", async () => {
     const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
       expect(init?.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` });

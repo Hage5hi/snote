@@ -43,7 +43,10 @@ export function parseCapabilityLocation(location: Pick<URL, "pathname" | "search
 export function readEncryptionSecret(hash: string): string {
   if (!hash.startsWith("#") || hash.length === 1) return "";
   const params = fragmentParams(hash);
-  if (params && (["owner", "edit", "view"] as const).some((scope) => params.has(scope))) {
+  if (params && (
+    (["owner", "edit", "view"] as const).some((scope) => params.has(scope))
+    || params.has("legacy")
+  )) {
     return params.get("key") ?? "";
   }
   try {
@@ -55,7 +58,10 @@ export function readEncryptionSecret(hash: string): string {
 
 export function writeEncryptionSecretToHash(currentHash: string, secret: string): string {
   const params = fragmentParams(currentHash);
-  if (params && (["owner", "edit", "view"] as const).some((scope) => params.has(scope))) {
+  if (params && (
+    (["owner", "edit", "view"] as const).some((scope) => params.has(scope))
+    || params.has("legacy")
+  )) {
     params.set("key", secret);
     return `#${params.toString()}`;
   }

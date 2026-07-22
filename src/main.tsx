@@ -3,6 +3,12 @@ import { HelmetProvider } from "react-helmet-async";
 import App from "./App.tsx";
 import "./index.css";
 import { postExtensionReady } from "./lib/ext-context";
+import { sanitizeLegacyShareUrl } from "./lib/legacy/cutover";
+
+// Run before BrowserRouter reads location. The old /s/:token request has
+// already reached the host, but the raw token must not persist in SPA history,
+// referrers, screenshots, or subsequent client navigation.
+sanitizeLegacyShareUrl(window.location, window.history);
 
 createRoot(document.getElementById("root")!).render(
   <HelmetProvider>

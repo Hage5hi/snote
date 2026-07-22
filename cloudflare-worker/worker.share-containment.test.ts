@@ -127,9 +127,78 @@ async function expectContainedShare({
 }
 
 describe("share crawler containment", () => {
-  it.each([`/s/${TOKEN}`, `/${PRIVATE_SLUG}`])(
+  it.each([
+    "/sw.js",
+    "/registerSW.js",
+    "/manifest.webmanifest",
+    "/favicon.ico",
+    "/version.json",
+    "/workbox-9c191d2f.js",
+    "/icon-192.png",
+    "/offline.html",
+    "/sitemap.xml",
+    "/sw-kill.js",
+  ])("passes public root artifact %s to origin unchanged", async (path) => {
+    const doubles = installWorkerDoubles();
+
+    const response = await worker.fetch(
+      new Request(`https://note.syrin.online${path}`, {
+        headers: { "user-agent": "Mozilla/5.0" },
+      }),
+      { ORIGIN_HOST: "snote.lovable.app", SITE_URL: "https://note.syrin.online" },
+      { waitUntil: doubles.waitUntil },
+    );
+
+    expect(response.headers.get("x-robots-tag")).toBeNull();
+    expect(response.headers.get("cdn-cache-control")).toBeNull();
+    const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+    expect(new URL(originRequest.url).pathname).toBe(path);
+  });
+
+  it("contains a raw markdown note locator without forwarding it to origin", async () => {
+    const doubles = installWorkerDoubles();
+
+    const response = await worker.fetch(
+      new Request("https://note.syrin.online/private-note.md", {
+        headers: { "user-agent": "Mozilla/5.0" },
+      }),
+      { ORIGIN_HOST: "snote.lovable.app", SITE_URL: "https://note.syrin.online" },
+      { waitUntil: doubles.waitUntil },
+    );
+
+    expect(response.headers.get("x-robots-tag")).toBe(ROBOTS);
+    const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+    expect(new URL(originRequest.url).pathname).toBe("/");
+  });
+
+  it("keeps the public privacy page outside private-route containment", async () => {
+    const doubles = installWorkerDoubles();
+
+    const response = await worker.fetch(
+      new Request("https://note.syrin.online/privacy", {
+        headers: { "user-agent": "Mozilla/5.0" },
+      }),
+      {
+        ORIGIN_HOST: "snote.lovable.app",
+        SITE_URL: "https://note.syrin.online",
+      },
+      { waitUntil: doubles.waitUntil },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-robots-tag")).toBeNull();
+    expect(response.headers.get("cdn-cache-control")).toBeNull();
+    expect(doubles.metadataFetch).toHaveBeenCalledOnce();
+    const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+    expect(new URL(originRequest.url).pathname).toBe("/privacy");
+  });
+
+  it.each([
+    { path: `/s/${TOKEN}`, originPath: "/s" },
+    { path: `/${PRIVATE_SLUG}`, originPath: "/" },
+  ])(
     "does not echo a browser credential in a www redirect for %s",
-    async (path) => {
+    async ({ path, originPath }) => {
       const doubles = installWorkerDoubles();
 
       const response = await worker.fetch(
@@ -145,9 +214,16 @@ describe("share crawler containment", () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get("location")).toBeNull();
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("cdn-cache-control")).toBe("no-store");
+      expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+      expect(response.headers.get("x-robots-tag")).toBe(ROBOTS);
       expect(doubles.metadataFetch).toHaveBeenCalledOnce();
       const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
-      expect(new URL(originRequest.url).hostname).toBe("snote.lovable.app");
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.hostname).toBe("snote.lovable.app");
+      expect(originUrl.pathname).toBe(originPath);
+      expect(originUrl.search).toBe("");
     },
   );
 

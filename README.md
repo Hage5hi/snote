@@ -12,7 +12,7 @@ Realtime markdown notes by URL. Create, share, and edit notes that sync across d
 - **Markdown editor** — CodeMirror 6 with syntax highlighting, Vim mode, and typewriter mode
 - **Live preview** — rendered markdown with KaTeX math, Mermaid diagrams, and code highlighting
 - **Split view** — side-by-side editor + preview (e.g. `syrin.online/my-note+preview`)
-- **Share links** — revocable token-based read-only sharing (`/s/:token`)
+- **Share links** — revocable capability-based read-only sharing (`/s#view=<token>`)
 - **Encryption** — optional passphrase-based note locking
 - **Note history** — snapshot diffs to review past edits
 - **Tags & pinning** — organize notes with tags and pin favorites

@@ -16,6 +16,7 @@ import { createCapabilityApi, type NoteSession } from "@/lib/capability/client";
 import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } from "@/lib/capability/url";
 import { CapabilityYjsProvider } from "@/lib/yjs/capability-provider";
 import type { Encryption } from "@/lib/yjs/provider";
+import { parseLegacyShareFragment } from "@/lib/legacy/cutover";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const SHARE_CANONICAL_URL = "https://note.syrin.online/s";
@@ -187,8 +188,14 @@ function ShareHead() {
   );
 }
 function LegacySharePage() {
-  const { token = "" } = useParams();
+  const params = useParams();
   const location = useLocation();
+  const legacyAccess = parseLegacyShareFragment(
+    typeof window === "undefined" ? location.hash : window.location.hash,
+  );
+  // main.tsx rewrites the old path before BrowserRouter starts. The param
+  // fallback keeps the compatibility shell robust under embedded/test mounts.
+  const token = legacyAccess?.token ?? (TOKEN_RE.test(params.token ?? "") ? params.token! : "");
   const valid = TOKEN_RE.test(token);
   const [currentHash, setCurrentHash] = useState(
     () => window.location.hash,
@@ -317,11 +324,9 @@ function LegacySharePage() {
       // If a key is already in the URL hash (typical share-with-key flow),
       // try to unlock silently. On failure, drop through to the password form.
       const iterations = iterationsFor(data.enc_iterations);
-      let hash = "";
-      try {
-        hash = decodeURIComponent(requestHash.replace(/^#/, ""));
-      } catch {
-        // Malformed fragments fail closed to the manual unlock form.
+      let hash = parseLegacyShareFragment(requestHash)?.encryptionSecret ?? "";
+      if (!hash && !requestHash.includes("legacy=")) {
+        try { hash = decodeURIComponent(requestHash.replace(/^#/, "")); } catch { /* manual unlock */ }
       }
       if (hash) {
         try {

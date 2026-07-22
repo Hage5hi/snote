@@ -26,6 +26,16 @@
 /index.html
   Cache-Control: no-cache, must-revalidate
 
+/s
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+
+/s/*
+  Cache-Control: no-store
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
 

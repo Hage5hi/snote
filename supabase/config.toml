@@ -13,3 +13,6 @@ verify_jwt = false
 
 [functions.share-view]
 verify_jwt = false
+
+[functions.legacy-note-open]
+verify_jwt = false

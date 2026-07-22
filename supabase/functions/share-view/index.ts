@@ -11,8 +11,20 @@ import {
 
 const LEGACY_TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
+function legacyShareCutoffMs(): number {
+  const value = Deno.env.get("LEGACY_SHARE_CUTOFF") ?? "";
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && value === new Date(parsed).toISOString() ? parsed : 0;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: capabilityCorsHeaders });
+  if (req.method === "GET") {
+    const cutoffMs = legacyShareCutoffMs();
+    return cutoffMs
+      ? capabilityJson({ legacyShareCutoff: new Date(cutoffMs).toISOString() }, 200)
+      : capabilityFailure("unavailable");
+  }
   if (req.method !== "POST") return capabilityJson({ error: "method not allowed" }, 405);
 
   const environment = capabilityEnvironment();
@@ -49,6 +61,10 @@ Deno.serve(async (req) => {
     // Temporary dual-mode compatibility only. New capabilities are never
     // accepted here; the legacy opaque share is moved out of the JSON body so
     // gateways and application error serializers cannot capture it there.
+    const cutoffMs = legacyShareCutoffMs();
+    if (!cutoffMs || Date.now() >= cutoffMs) {
+      return capabilityJson({ error: "legacy share compatibility expired" }, 410);
+    }
     const legacyShare = req.headers.get("x-legacy-share")?.trim() ?? "";
     if (!LEGACY_TOKEN_RE.test(legacyShare)) {
       return capabilityJson({ error: "unauthorized" }, 401);

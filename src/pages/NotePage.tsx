@@ -39,6 +39,8 @@ import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } fro
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 import { AppShell } from "@/components/app/AppShell";
 import { isExtensionContext } from "@/lib/ext-context";
+import LegacyNotePage from "@/pages/LegacyNotePage";
+import { clearLegacyImportRecovery } from "@/lib/legacy/cutover";
 import {
   ENCRYPTION_PIN_CHANGE_EVENT,
   encryptionPinStorageKey,
@@ -76,6 +78,32 @@ type NoteResources = EncGateTarget & {
   doc: Y.Doc;
   provider: YjsProviderLike;
 };
+
+export function CutoverNotePage(props: NotePageProps) {
+  const params = useParams();
+  const location = useLocation();
+  const slug = props.embedSlug ?? params.slug ?? "";
+  const capabilityAccess = useMemo(() => {
+    const parsed = typeof window === "undefined"
+      ? null
+      : parseCapabilityLocation(new URL(
+        `${location.pathname}${location.search}${location.hash}`,
+        window.location.origin,
+      ));
+    return parsed && parsed.scope !== "view" && parsed.slug === slug ? parsed : null;
+  }, [slug, location.pathname, location.search, location.hash]);
+
+  useEffect(() => {
+    if (capabilityAccess?.scope === "owner") {
+      clearLegacyImportRecovery(slug, capabilityAccess.token);
+    }
+  }, [capabilityAccess, slug]);
+
+  if (!capabilityAccess) {
+    return <LegacyNotePage slug={slug} embed={!!props.embedSlug} />;
+  }
+  return <NotePage {...props} />;
+}
 
 export default function NotePage({ embedSlug }: NotePageProps) {
   const params = useParams();

@@ -16,7 +16,9 @@ import { EditorSkeleton } from "./components/note/EditorSkeleton";
 import { I18nProvider } from "./i18n/provider";
 
 // Lazy-load heavy routes so the editor / admin bundles only load when needed.
-const NotePage = lazy(() => import("./pages/NotePage"));
+const NotePage = lazy(() => import("./pages/NotePage").then((module) => ({
+  default: module.CutoverNotePage,
+})));
 const RawView = lazy(() => import("./pages/RawView"));
 const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));

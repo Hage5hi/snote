@@ -2,6 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Must precede every subresource. A precached navigation shell can be
+         served for a legacy /s/:token URL before the SPA moves it to #. -->
+    <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Syrin Notes — Realtime markdown notes by URL</title>
     <meta name="description" content="Syrin Notes — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.">

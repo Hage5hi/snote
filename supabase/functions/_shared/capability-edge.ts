@@ -12,7 +12,7 @@ export const capabilityCorsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-legacy-share",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 type CapabilityRpcResponse = {
@@ -57,6 +57,21 @@ type CapabilityDatabase = {
           p_owner_token_hash: string;
           p_edit_token_hash: string;
           p_view_token_hash: string;
+        };
+        Returns: CapabilityRpcResponse;
+      };
+      capability_note_import_legacy: {
+        Args: {
+          p_slug: string;
+          p_owner_token_hash: string;
+          p_edit_token_hash: string;
+          p_view_token_hash: string;
+          p_checkpoint_id: string;
+          p_payload_text: string;
+          p_is_encrypted: boolean;
+          p_salt: string | null;
+          p_check: string | null;
+          p_iterations: number | null;
         };
         Returns: CapabilityRpcResponse;
       };
@@ -204,6 +219,7 @@ export async function materializeNoteSession(
       issuer: `${supabaseUrl.replace(/\/$/, "")}/auth/v1`,
       secret: jwtSecret,
       nowSeconds,
+      writeDisabled: capabilityWritesDisabled(),
     });
     return {
       noteId: stored.noteId,
@@ -243,4 +259,11 @@ export function capabilityFailure(status: string): Response {
     return capabilityJson({ error: "invalid request" }, 400);
   }
   return capabilityJson({ error: "temporarily unavailable" }, 503);
+}
+
+/** Operational rollback keeps capability reads online while rejecting writes. */
+export function capabilityWritesDisabled(): boolean {
+  return ["1", "true", "yes", "on"].includes(
+    (Deno.env.get("CAPABILITY_WRITE_DISABLED") ?? "").trim().toLowerCase(),
+  );
 }

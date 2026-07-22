@@ -46,6 +46,9 @@ describe("capability URL contract", () => {
       `#edit=${TOKEN}&key=new+secret`,
     );
     expect(writeEncryptionSecretToHash("", "legacy secret")).toBe("#legacy%20secret");
+    expect(writeEncryptionSecretToHash(`#legacy=${"x".repeat(32)}`, "old secret")).toBe(
+      `#legacy=${"x".repeat(32)}&key=old+secret`,
+    );
   });
 
   it("builds canonical capability URLs without query parameters", () => {

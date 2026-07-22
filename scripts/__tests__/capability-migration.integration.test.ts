@@ -11,6 +11,7 @@ type RpcResult = {
   noteId?: string;
   encryptionVersion?: number;
   checkpointVersion?: number;
+  recovered?: boolean;
   session?: {
     checkpointPayload?: string | null;
     missingUpdates?: Array<{ payload: string }>;
@@ -47,12 +48,14 @@ async function setRealtimeClaims(
   noteId: string,
   scope: "owner" | "edit" | "view",
   generation: number,
+  writeDisabled = false,
 ) {
   const claims = JSON.stringify({
     sub: capabilityId,
     note_id: noteId,
     note_scope: scope,
     capability_generation: generation,
+    note_write_disabled: writeDisabled,
   });
   await db.query(
     "select set_config('request.jwt.claim.sub', $1, false), "
@@ -468,6 +471,122 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     expect(Object.keys(audit.rows[0])).not.toEqual(
       expect.arrayContaining(["slug", "content", "token", "ip"]),
     );
+
+    await db.exec(readFileSync(
+      resolve(process.cwd(), "supabase/migrations/20260724000000_atomic_capability_cutover.sql"),
+      "utf8",
+    ));
+
+    await db.exec("SET ROLE anon");
+    await expect(db.query("SELECT slug FROM public.notes"))
+      .rejects.toMatchObject({ code: "42501" });
+    await db.exec("RESET ROLE");
+
+    await db.exec("SET ROLE service_role");
+    await expect(db.query(
+      "SELECT public.legacy_share_rotate($1, $2)",
+      ["legacy-row", "x".repeat(32)],
+    )).rejects.toMatchObject({ code: "42501" });
+
+    const importBytes = Buffer.alloc(60, 23);
+    const imported = await rpc(db, "capability_note_import_legacy", [
+      "legacy-copy",
+      tokenHash("1"),
+      tokenHash("2"),
+      tokenHash("3"),
+      createHash("sha256").update(importBytes).digest("hex"),
+      importBytes.toString("base64url"),
+      true,
+      "s".repeat(16),
+      "c".repeat(16),
+      100000,
+    ]);
+    expect(imported).toMatchObject({
+      status: "ok",
+      recovered: false,
+      session: {
+        slug: "legacy-copy",
+        scope: "owner",
+        checkpointPayload: importBytes.toString("base64url"),
+      },
+    });
+
+    const recoveredImport = await rpc(db, "capability_note_import_legacy", [
+      "legacy-copy",
+      tokenHash("1"),
+      tokenHash("4"),
+      tokenHash("5"),
+      createHash("sha256").update(importBytes).digest("hex"),
+      importBytes.toString("base64url"),
+      true,
+      "s".repeat(16),
+      "c".repeat(16),
+      100000,
+    ]);
+    expect(recoveredImport).toMatchObject({
+      status: "ok",
+      noteId: imported.noteId,
+      recovered: true,
+    });
+    expect((await rpc(db, "capability_note_import_legacy", [
+      "legacy-copy",
+      tokenHash("9"),
+      tokenHash("7"),
+      tokenHash("8"),
+      createHash("sha256").update(importBytes).digest("hex"),
+      importBytes.toString("base64url"),
+      true,
+      "s".repeat(16),
+      "c".repeat(16),
+      100000,
+    ])).status).toBe("slug_unavailable");
+    await db.exec("RESET ROLE");
+
+    const importedRows = await db.query<{ notes: number; capabilities: number; checkpoints: number }>(`
+      SELECT
+        (SELECT count(*)::integer FROM public.notes WHERE slug = 'legacy-copy') AS notes,
+        (SELECT count(*)::integer FROM public.note_capabilities
+          WHERE note_id = (SELECT note_id FROM public.notes WHERE slug = 'legacy-copy')) AS capabilities,
+        (SELECT count(*)::integer FROM public.note_checkpoints
+          WHERE note_id = (SELECT note_id FROM public.notes WHERE slug = 'legacy-copy')) AS checkpoints
+    `);
+    expect(importedRows.rows[0]).toEqual({ notes: 1, capabilities: 3, checkpoints: 1 });
+
+    const importedOwner = await db.query<{ capability_id: string }>(`
+      SELECT capability_id
+      FROM public.note_capabilities
+      WHERE token_hash = $1
+    `, [tokenHash("1")]);
+    await setRealtimeClaims(
+      db,
+      importedOwner.rows[0].capability_id,
+      imported.session!.noteId,
+      "owner",
+      1,
+      true,
+    );
+    await db.exec("SET ROLE authenticated");
+    await expect(db.exec(
+      "INSERT INTO realtime.messages(extension) VALUES ('broadcast')",
+    )).rejects.toMatchObject({ code: "42501" });
+    await db.exec("RESET ROLE");
+
+    const invalidImport = await rpc(db, "capability_note_import_legacy", [
+      "orphan-must-not-exist",
+      tokenHash("4"),
+      tokenHash("5"),
+      tokenHash("6"),
+      hash([99]),
+      importBytes.toString("base64url"),
+      false,
+      null,
+      null,
+      null,
+    ], ["", "", "", "", "", "", "", "", "", "::integer"]);
+    expect(invalidImport.status).toBe("invalid");
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.notes WHERE slug = 'orphan-must-not-exist'",
+    )).rows[0].count).toBe(0);
   } finally {
     await db.close();
   }

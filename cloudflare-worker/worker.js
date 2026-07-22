@@ -23,7 +23,8 @@
 // SemrushBot, archive.org_bot, ia_archiver, Snapcrawler, Tumblr, Flipboard.
 const CRAWLER_UA = /(facebookexternalhit|Facebot|meta-externalagent|meta-externalfetcher|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|Discordbot|WhatsApp|TelegramBot|Pinterest|pinterestbot|redditbot|Applebot|Googlebot|Google-Read-Aloud|Google-Site-Verification|Google-InspectionTool|bingbot|DuckDuckBot|YandexBot|Baiduspider|SkypeUriPreview|vkShare|W3C_Validator|Embedly|Iframely|nuzzel|outbrain|quora link preview|XING-contenttabreceiver|TikTokBot|Bytespider|Snapchat|SnapchatAds|Snapcrawler|Mastodon|Pleroma|Misskey|Threads|Bluesky|Notionbot|Trello|Asana|MicrosoftPreview|Teams|Outlook|Office|Zalo|LINE|Viber|KakaoTalk|iMessageLinkPreview|MetaInspector|Tumblr|Flipboard|PetalBot|Yeti|SeznamBot|Qwantify|MojeekBot|AhrefsBot|SemrushBot|archive\.org_bot|ia_archiver|YisouSpider|Sogou|360Spider|MJ12bot|DotBot|HeadlessChrome)/i;
 
-const SLUG_RE = /^[a-zA-Z0-9._-]{1,80}$/;
+const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const RAW_NOTE_RE = /^([a-zA-Z0-9_-]{1,64})\.md$/i;
 const SHARE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
 // Rate limit (in-memory per-isolate). Token bucket đơn giản.
@@ -190,7 +191,12 @@ export default {
         url.hostname = "syrin.online";
         return Response.redirect(url.toString(), 301);
       }
-      return passThrough(request, env);
+      return passThrough(
+        request,
+        env,
+        route?.kind === "share" || route?.kind === "note",
+        route?.kind === "share" || route?.kind === "note" ? route.kind : null,
+      );
     }
 
     // Rate limit chỉ áp dụng cho nhánh crawler (đã rẽ vào prerender).
@@ -323,11 +329,16 @@ function parseRoute(pathname) {
   if (pathname === "/" || pathname === "") return { kind: "home" };
   pathname = resolveContainmentDotSegments(pathname);
   if (pathname === "/" || pathname === "") return { kind: "home" };
+  // `/privacy` is an explicit public SPA route, not a legacy note locator.
+  // Keep it crawlable and outside the no-store/noindex credential boundary.
+  if (pathname.toLowerCase() === "/privacy") return null;
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length === 1) {
     let slug = parts[0];
     try { slug = decodeURIComponent(slug); } catch { /* ignore */ }
     if (SLUG_RE.test(slug)) return { kind: "note", slug };
+    const rawNote = slug.match(RAW_NOTE_RE);
+    if (rawNote) return { kind: "note", slug: rawNote[1] };
   }
   return null;
 }
@@ -392,10 +403,40 @@ async function fetchNoteMeta(route) {
   throw new TypeError("private metadata lookup is disabled");
 }
 
-async function passThrough(request, env) {
+async function passThrough(
+  request,
+  env,
+  privateRoute = false,
+  privateRouteKind = null,
+) {
   const url = new URL(request.url);
   url.hostname = env.ORIGIN_HOST;
-  return fetch(new Request(url, request));
+  if (privateRouteKind === "share") {
+    // The SPA migrates the legacy token into the URL fragment before routing.
+    // Fragments never reach this worker, so the origin only needs the generic
+    // compatibility shell and must not receive the raw credential path/query.
+    url.pathname = "/s";
+    url.search = "";
+  } else if (privateRouteKind === "note") {
+    // A legacy slug is still a credential. The root document is the same SPA
+    // shell, while the outer browser URL remains unchanged for BrowserRouter.
+    url.pathname = "/";
+    url.search = "";
+  }
+  const response = await fetch(new Request(url, request));
+  if (!privateRoute) return response;
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store");
+  headers.set("cdn-cache-control", "no-store");
+  headers.set("x-robots-tag", SHARE_ROBOTS);
+  headers.set("referrer-policy", "no-referrer");
+  headers.delete("etag");
+  headers.delete("last-modified");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function escapeHtml(s) {

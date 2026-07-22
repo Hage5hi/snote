@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,6 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { getPinned, getRecents, removeRecent, togglePin, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { isExtensionContext } from "@/lib/ext-context";
-import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -18,6 +17,7 @@ import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
 import { createCapabilityApi } from "@/lib/capability/client";
 import { buildCapabilityUrl } from "@/lib/capability/url";
+import { createLegacyNoteApi } from "@/lib/legacy/cutover";
 
 // Cross-fade navigation when the browser supports the View Transitions API.
 function softNavigate(navigate: (path: string) => void, path: string) {
@@ -100,6 +100,7 @@ export default function Home() {
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
   const isMobile = useIsMobile();
   const { scene, committedScene, setScene } = useSceneTheme();
+  const legacyApi = useMemo(() => createLegacyNoteApi(), []);
 
   // Mobile: scenes are heavyweight WebGL/Canvas backgrounds that don't add
   // value on small screens. Clear any persisted scene from a desktop session
@@ -136,28 +137,20 @@ export default function Home() {
     setSlugStatus("checking");
     const ctrl = new AbortController();
     const t = window.setTimeout(async () => {
-      const { data, error } = await supabase
-        .from("notes")
-        .select("slug, char_count")
-        .eq("slug", trimmed)
-        .abortSignal(ctrl.signal)
-        .maybeSingle();
-      if (ctrl.signal.aborted) return;
-      if (error) {
+      try {
+        const exists = await legacyApi.exists(trimmed, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        setSlugStatus(exists ? "taken" : "available");
+      } catch {
+        if (ctrl.signal.aborted) return;
         setSlugStatus("idle");
-        return;
       }
-      // Any legacy row owns its locator, including an empty historical row.
-      // New secure notes are created atomically by note-session and must not
-      // claim or overwrite an existing legacy locator.
-      if (!data) setSlugStatus("available");
-      else setSlugStatus("taken");
     }, 350);
     return () => {
       ctrl.abort();
       window.clearTimeout(t);
     };
-  }, [slug]);
+  }, [legacyApi, slug]);
 
   // Warm up heavy editor modules ONLY when the device looks capable. On
   // mobile / save-data / low-memory devices, skip — keeps the Home heap
@@ -202,25 +195,7 @@ export default function Home() {
     // Hover/touch on a recent = clear signal the user is about to open a note.
     // Warm the editor modules now (idempotent).
     if (canPrefetchEditor(isMobile)) prefetchEditor();
-    const key = `note-prefetch:${s}`;
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, "1");
-    void supabase
-      .from("notes")
-      .select("ydoc_state, is_encrypted, enc_salt, enc_check")
-      .eq("slug", s)
-      .maybeSingle()
-      .then(({ data }) => {
-        // Only stash the snapshot for plaintext notes — encrypted bytes need
-        // the key to be useful and would just take cache space.
-        if (data?.ydoc_state && !data?.is_encrypted) {
-          try {
-            sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
-          } catch {
-            // QuotaExceeded — silently drop, network fetch is still fast.
-          }
-        }
-      });
+    void s;
   };
 
   const hasScene = scene !== "none";
