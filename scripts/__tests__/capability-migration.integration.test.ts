@@ -10,6 +10,7 @@ type RpcResult = {
   status: string;
   noteId?: string;
   encryptionVersion?: number;
+  checkpointVersion?: number;
   session?: {
     checkpointPayload?: string | null;
     missingUpdates?: Array<{ payload: string }>;
@@ -119,6 +120,10 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     `);
     await db.exec(readFileSync(
       resolve(process.cwd(), "supabase/migrations/20260722000000_capability_backend.sql"),
+      "utf8",
+    ));
+    await db.exec(readFileSync(
+      resolve(process.cwd(), "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql"),
       "utf8",
     ));
 
@@ -374,6 +379,35 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       }],
       ["", "", "::jsonb"],
     )).toMatchObject({ status: "ok", encryptionVersion: 4 });
+    const postTransitionUpdate = await rpc(
+      db,
+      "capability_updates_append",
+      [tokenHash("b"), [{ updateId: hash([12]), payload: "DA" }], 4],
+      ["", "::jsonb", ""],
+    );
+    expect(postTransitionUpdate.status).toBe("ok");
+    const compactionSequence = postTransitionUpdate.acknowledgements![0].sequence;
+    const compactedBytes = Buffer.from([13, 14]);
+    expect(await rpc(
+      db,
+      "capability_checkpoint_append",
+      [tokenHash("b"), {
+        checkpointId: createHash("sha256").update(compactedBytes).digest("hex"),
+        payload: compactedBytes.toString("base64url"),
+        throughSequence: compactionSequence,
+      }, 4, 4],
+      ["", "::jsonb", "", ""],
+    )).toMatchObject({ status: "ok", checkpointVersion: 5 });
+    expect(await rpc(
+      db,
+      "capability_checkpoint_append",
+      [tokenHash("b"), {
+        checkpointId: hash([15]),
+        payload: "Dw",
+        throughSequence: compactionSequence,
+      }, 4, 4],
+      ["", "::jsonb", "", ""],
+    )).toMatchObject({ status: "version_conflict" });
     await db.query(
       "UPDATE public.notes SET sync_status = 'read_only_quarantine' WHERE note_id = $1",
       [createdA.noteId],

@@ -21,7 +21,7 @@ import { LockButton } from "../LockButton";
 import { PinButton } from "../PinButton";
 import { WordGoalDialog } from "../WordGoalDialog";
 import { ShareDialog } from "../ShareDialog";
-import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
+import type { Encryption, YjsProviderLike } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 import { TopbarBrand } from "./TopbarBrand";
 import { WordCountTrigger } from "./WordCountTrigger";
@@ -33,12 +33,13 @@ import { HelpMenu } from "./HelpMenu";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useI18n } from "@/i18n";
+import type { CapabilityAccess } from "@/lib/capability/url";
 
 
 interface TopbarProps {
   slug: string;
   doc: Y.Doc;
-  provider?: SupabaseYjsProvider | null;
+  provider?: YjsProviderLike | null;
   charCount: number;
   wordCount: number;
   users: PresenceUser[];
@@ -54,6 +55,8 @@ interface TopbarProps {
   onToggleFocusLine: () => void;
   getContent: () => string;
   isEncrypted: boolean;
+  encryption?: Encryption | null;
+  capabilityAccess?: CapabilityAccess | null;
   paginated: boolean;
   onTogglePagination: () => void;
   /** Compact mode for SplitView panels: hides app-wide menus (Mode, Help, theme)
@@ -81,6 +84,8 @@ export function Topbar({
   onToggleFocusLine,
   getContent,
   isEncrypted,
+  encryption = null,
+  capabilityAccess = null,
   paginated,
   onTogglePagination,
   compact = false,
@@ -178,8 +183,17 @@ export function Topbar({
             />
             <PresenceDots users={users} />
             <PinButton slug={slug} />
-            <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
-            <ShareDialog slug={slug} isEncrypted={isEncrypted} />
+            {(!capabilityAccess || capabilityAccess.scope === "owner") && (
+              <LockButton
+                slug={slug}
+                doc={doc}
+                isEncrypted={isEncrypted}
+                provider={provider}
+                capabilityAccess={capabilityAccess}
+                encryption={encryption}
+              />
+            )}
+            <ShareDialog slug={slug} isEncrypted={isEncrypted} capabilityAccess={capabilityAccess} />
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               <NoteMenu
                 onOpenGoal={() => setGoalOpen(true)}
@@ -231,9 +245,18 @@ export function Topbar({
 
             <PinButton slug={slug} />
 
-            <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
+            {(!capabilityAccess || capabilityAccess.scope === "owner") && (
+              <LockButton
+                slug={slug}
+                doc={doc}
+                isEncrypted={isEncrypted}
+                provider={provider}
+                capabilityAccess={capabilityAccess}
+                encryption={encryption}
+              />
+            )}
 
-            <ShareDialog slug={slug} isEncrypted={isEncrypted} />
+            <ShareDialog slug={slug} isEncrypted={isEncrypted} capabilityAccess={capabilityAccess} />
 
             <ViewControls
               showPreview={showPreview}
@@ -286,6 +309,7 @@ export function Topbar({
       <HistoryDialog
         slug={slug}
         doc={doc}
+        snapshotProtection={encryption}
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         trigger={false}

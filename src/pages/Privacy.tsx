@@ -53,15 +53,19 @@ export default function Privacy() {
           </li>
         </ul>
         <p>
-          The diagnostics opt-in and device-local diagnostics use{" "}
-          <code>chrome.storage.local</code>.
-           They contain bounded event names and technical status fields, not note
+          Device-local <code>chrome.storage.local</code> keeps edit capabilities
+          for notes opened through the extension, plus the diagnostics opt-in
+          and optional reliability diagnostics. Owner capabilities are never
+          stored by the extension or synced between devices. Diagnostics contain
+          bounded event names and technical status fields, not note
            content or full URLs. They are never uploaded automatically, can be
            disabled, or cleared in Settings. Events older than 7 days are
            discarded the next time diagnostics are read or written. If the
            extension is not used, expired entries can remain on the device until
            that next use.
-           Synced settings remain until you clear extension data or uninstall the
+          Edit capabilities and diagnostics remain only on that Chrome profile
+          until you clear extension data or uninstall the extension. Synced
+          settings remain until you clear extension data or uninstall the
           extension, subject to Chrome sync behavior.
         </p>
         <p>

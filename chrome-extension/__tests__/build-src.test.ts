@@ -30,6 +30,23 @@ describe("buildSrc", () => {
     );
   });
 
+  it("restores only an edit capability from device-local storage", () => {
+    const token = "e".repeat(43);
+    expect(buildSrc({
+      openMode: "last",
+      lastSlug: "yesterday",
+      editCapabilities: { yesterday: token },
+    })).toBe(`${DEFAULT_APP_ORIGIN}/yesterday?from=ext#edit=${token}`);
+  });
+
+  it("rejects malformed locally stored capabilities", () => {
+    expect(buildSrc({
+      openMode: "slug",
+      defaultSlug: "daily",
+      editCapabilities: { daily: "owner-or-invalid" },
+    })).toBe(`${DEFAULT_APP_ORIGIN}/daily?from=ext`);
+  });
+
   it("last mode with empty lastSlug → root fallback", () => {
     expect(buildSrc({ openMode: "last", lastSlug: "" })).toBe(
       `${DEFAULT_APP_ORIGIN}/?from=ext`,

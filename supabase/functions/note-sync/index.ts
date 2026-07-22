@@ -32,6 +32,7 @@ Deno.serve(async (req) => {
     const updates = body?.updates;
     const expectedEncryptionVersion = Number(body?.expectedEncryptionVersion);
     const afterSequence = Number(body?.afterSequence ?? 0);
+    const checkpoint = body?.checkpoint;
     if (
       !Array.isArray(updates)
       || updates.length > 100
@@ -56,6 +57,40 @@ Deno.serve(async (req) => {
       normalized.push({ updateId, payload });
     }
 
+    let normalizedCheckpoint: {
+      checkpointId: string;
+      payload: string;
+      throughSequence: number;
+      expectedCheckpointVersion: number;
+    } | null = null;
+    if (checkpoint !== undefined) {
+      const checkpointId = typeof checkpoint?.checkpointId === "string"
+        ? checkpoint.checkpointId
+        : "";
+      const payload = typeof checkpoint?.payload === "string" ? checkpoint.payload : "";
+      const throughSequence = Number(checkpoint?.throughSequence);
+      const expectedCheckpointVersion = Number(checkpoint?.expectedCheckpointVersion);
+      if (
+        !UPDATE_ID_RE.test(checkpointId)
+        || !Number.isSafeInteger(throughSequence)
+        || throughSequence < 0
+        || !Number.isSafeInteger(expectedCheckpointVersion)
+        || expectedCheckpointVersion < 0
+      ) return capabilityFailure("invalid");
+      const decoded = decodeCapabilityPayload(payload, MAX_BATCH_BYTES);
+      totalBytes += decoded.byteLength;
+      if (totalBytes > MAX_BATCH_BYTES) return capabilityFailure("payload_too_large");
+      if (await sha256CapabilityPayload(decoded) !== checkpointId) {
+        return capabilityFailure("invalid");
+      }
+      normalizedCheckpoint = {
+        checkpointId,
+        payload,
+        throughSequence,
+        expectedCheckpointVersion,
+      };
+    }
+
     const { data: appended, error: appendError } = await environment.client.rpc(
       "capability_updates_append",
       {
@@ -66,6 +101,21 @@ Deno.serve(async (req) => {
     );
     if (appendError || rpcStatus(appended) !== "ok") {
       return capabilityFailure(appendError ? "unavailable" : rpcStatus(appended));
+    }
+
+    let compacted: unknown = null;
+    if (normalizedCheckpoint) {
+      const { expectedCheckpointVersion, ...checkpointPayload } = normalizedCheckpoint;
+      const { data, error } = await environment.client.rpc("capability_checkpoint_append", {
+        p_token_hash: tokenHash,
+        p_checkpoint: checkpointPayload,
+        p_expected_checkpoint_version: expectedCheckpointVersion,
+        p_expected_encryption_version: expectedEncryptionVersion,
+      });
+      if (error || rpcStatus(data) !== "ok") {
+        return capabilityFailure(error ? "unavailable" : rpcStatus(data));
+      }
+      compacted = data;
     }
 
     const { data: opened, error: openError } = await environment.client.rpc(
@@ -83,6 +133,7 @@ Deno.serve(async (req) => {
     if (!session) return capabilityFailure("unavailable");
     return capabilityJson({
       acknowledgements: appended?.acknowledgements ?? [],
+      ...(compacted ? { checkpoint: compacted } : {}),
       session,
     }, 200);
   } catch (error) {

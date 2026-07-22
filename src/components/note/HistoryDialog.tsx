@@ -13,7 +13,14 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { listSnapshots, clearSnapshots, filterSnapshots, type Snapshot, type SnapshotKind } from "@/lib/snapshots";
+import {
+  listSnapshots,
+  clearSnapshots,
+  filterSnapshots,
+  type Snapshot,
+  type SnapshotKind,
+  type SnapshotProtection,
+} from "@/lib/snapshots";
 import { Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { SnapshotDiff } from "./SnapshotDiff";
@@ -25,6 +32,7 @@ interface HistoryDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   trigger?: boolean;
+  snapshotProtection?: SnapshotProtection | null;
 }
 
 function formatTs(ts: number) {
@@ -37,6 +45,7 @@ export function HistoryDialog({
   open: openProp,
   onOpenChange,
   trigger = true,
+  snapshotProtection = null,
 }: HistoryDialogProps) {
   const { t } = useI18n();
   const [openInternal, setOpenInternal] = useState(false);
@@ -83,14 +92,14 @@ export function HistoryDialog({
 
   useEffect(() => {
     if (!open) return;
-    listSnapshots(slug).then((list) => {
+    listSnapshots(slug, snapshotProtection).then((list) => {
       setItems(list);
       if (list.length > 0) {
         setDiffA(String(list[0].id ?? ""));
         setDiffB("__current__");
       }
-    });
-  }, [open, slug]);
+    }).catch(() => setItems([]));
+  }, [open, slug, snapshotProtection]);
 
   const restore = (snap: Snapshot) => {
     const ok = window.confirm(

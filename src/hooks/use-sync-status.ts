@@ -12,7 +12,7 @@
 // actually changes (shallow compare). Internal counters in the provider that
 // don't shift the displayed status produce zero renders.
 import { useEffect, useRef, useState } from "react";
-import type { SupabaseYjsProvider, SyncEvent } from "@/lib/yjs/provider";
+import type { SyncEvent, YjsProviderLike } from "@/lib/yjs/provider";
 
 export type SyncIndicatorStatus =
   | "synced"
@@ -94,7 +94,7 @@ export interface UseSyncStatusReturn extends SyncSnapshot {
 }
 
 export function useSyncStatus(
-  provider: SupabaseYjsProvider | null,
+  provider: YjsProviderLike | null,
 ): UseSyncStatusReturn {
   const internalRef = useRef<InternalState>({
     offline: false,

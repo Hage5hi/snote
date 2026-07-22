@@ -15,6 +15,8 @@ describe("extension privacy contract", () => {
     expect(manifest.permissions).toEqual(["sidePanel", "storage"]);
     expect(privacy).toContain("chrome.storage.sync");
     expect(privacy).toContain("chrome.storage.local");
+    expect(privacy).toContain("Owner capabilities are never");
+    expect(privacy).toContain("edit capabilities");
     expect(privacy).toMatch(
       /Events older than 7 days are\s+discarded the next time diagnostics are read or written/,
     );

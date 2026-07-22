@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deriveKey, verifyCheck } from "@/lib/crypto";
 import { useI18n } from "@/i18n/index";
+import { writeEncryptionSecretToHash } from "@/lib/capability/url";
 
 interface UnlockFormProps {
   slug: string;
@@ -111,7 +112,9 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
       }
       if (cancelIfStale(requestLocation)) return;
       try {
-        expectedLocation = `${window.location.pathname}${window.location.search}#${encodeURIComponent(submittedPass)}`;
+        expectedLocation = window.location.pathname
+          + window.location.search
+          + writeEncryptionSecretToHash(window.location.hash, submittedPass);
         history.replaceState(history.state, "", expectedLocation);
       } catch {
         expectedLocation = requestLocation;

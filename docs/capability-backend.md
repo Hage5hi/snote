@@ -103,6 +103,12 @@ Calling it again with the same `{ updateId, payload }` is idempotent and returns
 the same sequence. A view capability is rejected. A stale encryption version or
 `read_only_quarantine` note cannot accept writes.
 
+An owner/editor may also send an optional checkpoint
+`{ checkpointId, payload, throughSequence, expectedCheckpointVersion }`.
+Checkpoint creation uses checkpoint-version and encryption-version CAS;
+`throughSequence` must advance beyond the latest checkpoint without exceeding
+the durable update sequence.
+
 ### `note-manage`
 
 All actions require an owner Bearer capability:

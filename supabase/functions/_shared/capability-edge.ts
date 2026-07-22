@@ -76,6 +76,15 @@ type CapabilityDatabase = {
         Args: { p_token_hash: string; p_action: string; p_params?: Record<string, unknown> };
         Returns: CapabilityRpcResponse;
       };
+      capability_checkpoint_append: {
+        Args: {
+          p_token_hash: string;
+          p_checkpoint: { checkpointId: string; payload: string; throughSequence: number };
+          p_expected_checkpoint_version: number;
+          p_expected_encryption_version: number;
+        };
+        Returns: CapabilityRpcResponse;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

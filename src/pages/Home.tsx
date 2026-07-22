@@ -16,6 +16,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
+import { createCapabilityApi } from "@/lib/capability/client";
+import { buildCapabilityUrl } from "@/lib/capability/url";
 
 // Cross-fade navigation when the browser supports the View Transitions API.
 function softNavigate(navigate: (path: string) => void, path: string) {
@@ -145,9 +147,10 @@ export default function Home() {
         setSlugStatus("idle");
         return;
       }
-      // Treat empty notes as still available — common case is auto-created
-      // from a typo or prefetch path.
-      if (!data || (data.char_count ?? 0) === 0) setSlugStatus("available");
+      // Any legacy row owns its locator, including an empty historical row.
+      // New secure notes are created atomically by note-session and must not
+      // claim or overwrite an existing legacy locator.
+      if (!data) setSlugStatus("available");
       else setSlugStatus("taken");
     }, 350);
     return () => {
@@ -166,13 +169,30 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, [isMobile]);
 
-  const open = (s: string) => {
+  const createSecure = async (trimmed: string) => {
+    const created = await createCapabilityApi().createNote(trimmed);
+    const secureUrl = new URL(buildCapabilityUrl("owner", created.capabilities.owner, trimmed));
+    softNavigate(navigate, `${secureUrl.pathname}${secureUrl.hash}`);
+  };
+
+  const open = async (s: string) => {
     const trimmed = s.trim();
     if (!SLUG_RE.test(trimmed)) {
       setError(t("home.error.invalid_slug"));
       return;
     }
-    softNavigate(navigate, `/${trimmed}`);
+    setError(null);
+    if (slugStatus === "taken") {
+      softNavigate(navigate, `/${trimmed}`);
+      return;
+    }
+    if (slugStatus !== "available") return;
+    try {
+      await createSecure(trimmed);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create secure note");
+      setSlugStatus("idle");
+    }
   };
 
   // Prefetch a note's full opening payload on hover. We grab enc-meta AND the
@@ -319,7 +339,10 @@ export default function Home() {
               )}
             </div>
           </div>
-          <Button type="submit" disabled={!slug.trim()}>
+          <Button
+            type="submit"
+            disabled={!slug.trim() || slugStatus === "checking" || slugStatus === "idle"}
+          >
             {slugStatus === "taken" ? t("home.btn.open_existing") : t("home.btn.open")}
             <ArrowRight className="h-4 w-4" />
           </Button>
@@ -330,7 +353,14 @@ export default function Home() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => softNavigate(navigate, `/${randomSlug()}`)}
+            onClick={() => {
+              const next = randomSlug();
+              setSlug(next);
+              setError(null);
+              void createSecure(next).catch((cause) => {
+                setError(cause instanceof Error ? cause.message : "Unable to create secure note");
+              });
+            }}
           >
             <Shuffle className="h-3.5 w-3.5" />
             {t("home.btn.random")}

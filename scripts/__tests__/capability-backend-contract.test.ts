@@ -167,6 +167,17 @@ describe("capability database boundary", () => {
     const audit = sql.slice(sql.indexOf("FUNCTION public.capability_payload_audit"));
     expect(audit).not.toMatch(/RETURNS[\s\S]{0,300}\bslug\b/i);
   });
+
+  it("adds edit-scoped checkpoint compaction with checkpoint and encryption CAS", () => {
+    const sql = source("supabase/migrations/20260723000000_capability_checkpoint_compaction.sql");
+    expect(sql).toContain("FUNCTION public.capability_checkpoint_append");
+    expect(sql).toContain("c.scope IN ('owner', 'edit')");
+    expect(sql).toContain("p_expected_checkpoint_version");
+    expect(sql).toContain("p_expected_encryption_version");
+    expect(sql).toContain("v_through_seq > v_current_seq");
+    expect(sql).toContain("v_through_seq <= v_latest_through_seq");
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.capability_checkpoint_append\([^;]+ TO service_role/);
+  });
 });
 
 describe("Edge capability endpoints", () => {
@@ -205,6 +216,14 @@ describe("Edge capability endpoints", () => {
     const endpoint = source("supabase/functions/share-view/index.ts");
     expect(endpoint).toContain("const afterSequence = Number(body?.afterSequence ?? 0)");
     expect(endpoint).toContain("p_after_seq: afterSequence");
+  });
+
+  it("validates and forwards optional checkpoint CAS through note-sync", () => {
+    const endpoint = source("supabase/functions/note-sync/index.ts");
+    expect(endpoint).toContain("body?.checkpoint");
+    expect(endpoint).toContain('rpc("capability_checkpoint_append"');
+    expect(endpoint).toContain("p_expected_checkpoint_version");
+    expect(endpoint.match(/totalBytes \+= decoded\.byteLength/g)).toHaveLength(2);
   });
 
   it("keeps service-role legacy readers away from capability-managed rows", () => {

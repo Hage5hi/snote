@@ -12,6 +12,10 @@ import { base64ToBytes } from "@/lib/yjs/base64";
 import { useI18n } from "@/i18n";
 import { AppShell } from "@/components/app/AppShell";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
+import { createCapabilityApi, type NoteSession } from "@/lib/capability/client";
+import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } from "@/lib/capability/url";
+import { CapabilityYjsProvider } from "@/lib/yjs/capability-provider";
+import type { Encryption } from "@/lib/yjs/provider";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const SHARE_CANONICAL_URL = "https://note.syrin.online/s";
@@ -58,6 +62,131 @@ function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
 }
 
 export default function SharePage() {
+  const location = useLocation();
+  const access = typeof window === "undefined"
+    ? null
+    : parseCapabilityLocation(new URL(window.location.href));
+  if (access?.scope === "view") {
+    return <CapabilitySharePage key={`${access.token}:${location.hash}`} access={access} />;
+  }
+  return <LegacySharePage />;
+}
+
+function CapabilitySharePage({ access }: { access: CapabilityAccess }) {
+  const { t } = useI18n();
+  const tRef = useRef(t);
+  const [session, setSession] = useState<NoteSession | null>(null);
+  const [encryption, setEncryption] = useState<Encryption | null>(null);
+  const [doc, setDoc] = useState<Y.Doc | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [unlockRequired, setUnlockRequired] = useState(false);
+
+  useLayoutEffect(() => { tRef.current = t; }, [t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSession(null);
+    setEncryption(null);
+    setDoc(null);
+    setError(null);
+    setUnlockRequired(false);
+    void (async () => {
+      try {
+        const opened = await createCapabilityApi().openSession(access.token);
+        if (cancelled) return;
+        if (opened.scope !== "view") throw new Error("view capability required");
+        setSession(opened);
+        if (!opened.encryption.enabled) return;
+        if (!opened.encryption.salt || !opened.encryption.check) {
+          throw new Error(tRef.current("share.missing_salt"));
+        }
+        const secret = readEncryptionSecret(window.location.hash);
+        if (!secret) {
+          setUnlockRequired(true);
+          return;
+        }
+        const key = await deriveKey(secret, opened.encryption.salt, opened.encryption.iterations);
+        if (cancelled) return;
+        if (!(await verifyCheck(key, opened.encryption.check))) {
+          setUnlockRequired(true);
+          return;
+        }
+        if (cancelled) return;
+        setEncryption({
+          encrypt: (bytes) => import("@/lib/crypto").then(({ encryptBytes }) => encryptBytes(key, bytes)),
+          decrypt: (bytes) => decryptBytes(key, bytes),
+        });
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [access.token]);
+
+  useEffect(() => {
+    if (!session || (session.encryption.enabled && !encryption)) return;
+    let disposed = false;
+    const ownedDoc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(access, session, ownedDoc, {}, encryption);
+    provider.setExpectedEncrypted(session.encryption.enabled);
+    void provider.connect({ name: "Viewer", color: "#64748b" }).then(() => {
+      if (!disposed) setDoc(ownedDoc);
+    }).catch((cause) => {
+      if (!disposed) setError(cause instanceof Error ? cause.message : String(cause));
+    });
+    return () => {
+      disposed = true;
+      setDoc(null);
+      void provider.destroy().finally(() => ownedDoc.destroy());
+    };
+  }, [access, session, encryption]);
+
+  const head = <ShareHead />;
+  if (error) {
+    return (
+      <>{head}<div className="flex min-h-svh items-center justify-center px-4 text-sm text-destructive">{error}</div></>
+    );
+  }
+  if (session?.encryption.enabled && unlockRequired && !encryption) {
+    return (
+      <>
+        {head}
+        <UnlockForm
+          slug={t("share.slug_label")}
+          salt={session.encryption.salt!}
+          check={session.encryption.check!}
+          iterations={session.encryption.iterations}
+          onUnlock={(key) => {
+            setEncryption({
+              encrypt: (bytes) => import("@/lib/crypto").then(({ encryptBytes }) => encryptBytes(key, bytes)),
+              decrypt: (bytes) => decryptBytes(key, bytes),
+            });
+            setUnlockRequired(false);
+          }}
+        />
+      </>
+    );
+  }
+  if (!doc) return <>{head}<EditorSkeleton /></>;
+  return <ShareReady head={head} doc={doc} t={t} />;
+}
+
+function ShareHead() {
+  const { t } = useI18n();
+  return (
+    <Helmet>
+      <title>Shared note — Syrin Notes</title>
+      <meta name="description" content={t("share.readonly_desc")} />
+      <link rel="canonical" href={SHARE_CANONICAL_URL} />
+      <meta name="robots" content={SHARE_ROBOTS} />
+      <meta name="googlebot" content={SHARE_ROBOTS} />
+      <meta property="og:title" content={t("share.dialog_title")} />
+      <meta property="og:description" content={t("share.readonly_desc")} />
+      <meta property="og:url" content={SHARE_CANONICAL_URL} />
+    </Helmet>
+  );
+}
+function LegacySharePage() {
   const { token = "" } = useParams();
   const location = useLocation();
   const valid = TOKEN_RE.test(token);

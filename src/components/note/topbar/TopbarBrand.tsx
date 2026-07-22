@@ -16,7 +16,7 @@ import { SyncIndicator } from "../SyncIndicator";
 import { TagChips } from "../TagChips";
 import { OUTLINE_TOGGLE_EVENT } from "../OutlineSidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
+import type { YjsProviderLike } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n";
 
@@ -25,7 +25,7 @@ interface TopbarBrandProps {
   doc: Y.Doc;
   isEncrypted: boolean;
   /** Phase 2.2 — when present, the SyncIndicator pill renders here. */
-  provider?: SupabaseYjsProvider | null;
+  provider?: YjsProviderLike | null;
   /** Returns the current decrypted note body. Used by the Copy icon button. */
   getContent: () => string;
   /** When true, hide the Home arrow. Used by SplitView-embedded panels where
@@ -44,7 +44,7 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hide
     // current host (note.syrin.online, *.lovable.app, localhost, etc.).
     // Preserve current query string and hash so shared links keep context.
     const { search, hash } = window.location;
-    const url = `https://syrin.online/${slug}${search}${hash}`;
+    const url = `https://note.syrin.online/${slug}${search}${hash}`;
     await navigator.clipboard.writeText(url);
   };
 

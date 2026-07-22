@@ -9,7 +9,7 @@ A Manifest V3 Chrome extension that opens [note.syrin.online](https://note.syrin
 - **CSP contract enforced by host** — `vercel.json` now sends `Content-Security-Policy: frame-ancestors 'self' chrome-extension://*`, and `scripts/verify-frame-ancestors.sh` runs after every deploy so the header can't silently disappear again.
 - **Manifest hardening** — dropped the `tabs` permission (unused; `windowId` is available without it), added explicit `content_security_policy.extension_pages`, restricted `frame-src` to `note.syrin.online`.
 - **Belt-and-suspenders click handler** — `chrome.action.onClicked` fallback opens the panel when `setPanelBehavior` is refused by policy.
-- **Storage failure behavior** — `chrome.storage.sync` errors use safe defaults; note locators are not mirrored into device-local storage.
+- **Storage failure behavior** — `chrome.storage.sync` errors use safe defaults; note locators are not mirrored into device-local storage. Edit capabilities are kept only in `chrome.storage.local`; owner capabilities are never stored by the extension.
 
 ## v1.3.0
 
@@ -54,7 +54,7 @@ cd chrome-extension && nix run nixpkgs#zip -- -r ../public/syrin-note-sidepanel.
 - **Single purpose**: "Open Syrin Note in Chrome's side panel."
 - **Permission justification**:
   - `sidePanel` — required to render the app in the side panel.
-  - `storage` — syncs settings and the last-opened locator across signed-in Chrome profiles, and keeps the diagnostics opt-in/events device-local. If sync is unavailable, the panel uses safe defaults.
+  - `storage` — syncs settings and the last-opened locator across signed-in Chrome profiles, and keeps edit capabilities plus the diagnostics opt-in/events device-local. Owner capabilities are never stored by the extension. If sync is unavailable, the panel uses safe defaults.
 - **Privacy policy URL**: <https://note.syrin.online/privacy>
 - **Category**: Productivity.
 

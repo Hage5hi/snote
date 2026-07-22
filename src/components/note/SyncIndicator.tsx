@@ -20,10 +20,10 @@ import {
   useSyncStatus,
   type SyncIndicatorStatus,
 } from "@/hooks/use-sync-status";
-import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
+import type { YjsProviderLike } from "@/lib/yjs/provider";
 
 interface SyncIndicatorProps {
-  provider: SupabaseYjsProvider | null;
+  provider: YjsProviderLike | null;
 }
 
 interface PillStyle {

@@ -24,6 +24,7 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
   deriveKey,
+  decryptBytes,
   encryptBytes,
   generatePassphrase,
   makeCheck,
@@ -33,30 +34,96 @@ import {
 import { bytesToBase64 } from "@/lib/yjs/base64";
 import { useI18n } from "@/i18n/index";
 import { clearNoteEncryptionPin, markNoteEncrypted } from "@/lib/encryption-pin";
+import type { YjsProviderLike } from "@/lib/yjs/provider";
+import type { CapabilityAccess } from "@/lib/capability/url";
+import { buildCapabilityUrl, readEncryptionSecret } from "@/lib/capability/url";
+import { createCapabilityApi, type NoteSession } from "@/lib/capability/client";
+import { capabilityPayloadId, encodeCapabilityPayload } from "@/lib/capability/encoding";
+import {
+  clearSnapshots,
+  protectExistingSnapshots,
+  unprotectExistingSnapshots,
+  type SnapshotProtection,
+} from "@/lib/snapshots";
 
 interface LockButtonProps {
   slug: string;
   doc: Y.Doc;
   isEncrypted: boolean;
+  provider?: YjsProviderLike | null;
+  capabilityAccess?: CapabilityAccess | null;
+  encryption?: SnapshotProtection | null;
 }
 
-export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
+type CapabilityProviderSurface = YjsProviderLike & {
+  flushNow: () => Promise<void>;
+  refreshNow: () => Promise<void>;
+  getSession: () => NoteSession;
+};
+
+function isCapabilityProvider(provider: YjsProviderLike | null | undefined): provider is CapabilityProviderSurface {
+  return !!provider
+    && "flushNow" in provider
+    && "refreshNow" in provider
+    && "getSession" in provider;
+}
+
+async function purgePlaintextLocalState(slug: string, protection: SnapshotProtection) {
+  try {
+    await protectExistingSnapshots(slug, protection);
+  } catch {
+    // Never leave a partially migrated plaintext recovery history behind.
+    await clearSnapshots(slug).catch(() => {});
+  }
+  try {
+    indexedDB.deleteDatabase(`note:${slug}`);
+  } catch {
+    // Storage can be unavailable in privacy mode. The provider never mounts
+    // y-indexeddb for an encrypted note, so failing closed is still safe.
+  }
+}
+
+async function restorePlaintextSnapshotState(
+  slug: string,
+  protection: SnapshotProtection | null,
+) {
+  if (!protection) {
+    await clearSnapshots(slug).catch(() => {});
+    return;
+  }
+  try {
+    await unprotectExistingSnapshots(slug, protection);
+  } catch {
+    await clearSnapshots(slug).catch(() => {});
+  }
+}
+
+export function LockButton({
+  slug,
+  doc,
+  isEncrypted,
+  provider = null,
+  capabilityAccess = null,
+  encryption = null,
+}: LockButtonProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [pass, setPass] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const currentKey =
-    typeof window !== "undefined" && window.location.hash.startsWith("#")
-      ? decodeURIComponent(window.location.hash.slice(1))
-      : "";
+  const currentKey = typeof window !== "undefined"
+    ? readEncryptionSecret(window.location.hash)
+    : "";
 
   const copyKey = async () => {
     if (!currentKey) {
       toast({ title: t("lock.no_key_in_url") });
       return;
     }
-    await navigator.clipboard.writeText(`${window.location.origin}/${slug}#${currentKey}`);
+    const encryptedUrl = capabilityAccess
+      ? buildCapabilityUrl(capabilityAccess.scope, capabilityAccess.token, slug, currentKey)
+      : `${window.location.origin}/${slug}#${encodeURIComponent(currentKey)}`;
+    await navigator.clipboard.writeText(encryptedUrl);
     toast({ title: t("lock.copied_url_key") });
   };
 
@@ -68,6 +135,46 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
       const check = await makeCheck(key);
       const state = Y.encodeStateAsUpdate(doc);
       const encrypted = await encryptBytes(key, state);
+      const snapshotProtection: SnapshotProtection = {
+        encrypt: (bytes) => encryptBytes(key, bytes),
+        decrypt: (bytes) => decryptBytes(key, bytes),
+      };
+
+      if (capabilityAccess) {
+        if (capabilityAccess.scope !== "owner" || !isCapabilityProvider(provider)) {
+          throw new Error("owner capability required");
+        }
+        await provider.flushNow();
+        if (provider.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
+        await provider.refreshNow();
+        const session = provider.getSession();
+        const freshEncrypted = await encryptBytes(key, Y.encodeStateAsUpdate(doc));
+        const checkpointId = await capabilityPayloadId(freshEncrypted);
+        await createCapabilityApi().manage(capabilityAccess.token, {
+          action: "set-encryption",
+          isEncrypted: true,
+          expectedEncryptionVersion: session.encryption.version,
+          salt,
+          check,
+          iterations: PBKDF2_ITERATIONS,
+          checkpoint: {
+            checkpointId,
+            payload: encodeCapabilityPayload(freshEncrypted),
+            throughSequence: session.currentSequence,
+          },
+        });
+        markNoteEncrypted(slug);
+        await purgePlaintextLocalState(slug, snapshotProtection);
+        toast({ title: t("lock.encrypted_ok") });
+        window.location.href = buildCapabilityUrl(
+          "owner",
+          capabilityAccess.token,
+          slug,
+          passphrase,
+        );
+        window.location.reload();
+        return;
+      }
 
       const { error } = await supabase
         .from("notes")
@@ -89,6 +196,7 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
       // The durable local pin closes the legacy-table downgrade window. It is
       // written only after the encrypted upsert succeeds and before reload.
       markNoteEncrypted(slug);
+      await purgePlaintextLocalState(slug, snapshotProtection);
       toast({ title: t("lock.encrypted_ok") });
       // Full navigation (not just hash change) so NotePage remounts and the
       // Yjs provider is rebuilt with the new encryption state. Otherwise the
@@ -111,6 +219,32 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
     try {
       const text = doc.getText("content").toString();
       const state = Y.encodeStateAsUpdate(doc);
+      if (capabilityAccess) {
+        if (capabilityAccess.scope !== "owner" || !isCapabilityProvider(provider)) {
+          throw new Error("owner capability required");
+        }
+        await provider.flushNow();
+        if (provider.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
+        await provider.refreshNow();
+        const session = provider.getSession();
+        const freshState = Y.encodeStateAsUpdate(doc);
+        await createCapabilityApi().manage(capabilityAccess.token, {
+          action: "set-encryption",
+          isEncrypted: false,
+          expectedEncryptionVersion: session.encryption.version,
+          checkpoint: {
+            checkpointId: await capabilityPayloadId(freshState),
+            payload: encodeCapabilityPayload(freshState),
+            throughSequence: session.currentSequence,
+          },
+        });
+        await restorePlaintextSnapshotState(slug, encryption);
+        clearNoteEncryptionPin(slug);
+        toast({ title: t("lock.decrypted_ok") });
+        window.location.href = buildCapabilityUrl("owner", capabilityAccess.token, slug);
+        window.location.reload();
+        return;
+      }
       const { error } = await supabase
         .from("notes")
         .upsert(
@@ -129,6 +263,7 @@ export function LockButton({ slug, doc, isEncrypted }: LockButtonProps) {
 
       // A failed decrypt must retain the pin. Clear it only after the server
       // acknowledges the explicit transition back to plaintext.
+      await restorePlaintextSnapshotState(slug, encryption);
       clearNoteEncryptionPin(slug);
       toast({ title: t("lock.decrypted_ok") });
       // Full reload so the provider re-initializes without the stale

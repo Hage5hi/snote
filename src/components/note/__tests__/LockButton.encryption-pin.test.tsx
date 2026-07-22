@@ -9,6 +9,11 @@ const harness = vi.hoisted(() => ({
   markEncrypted: vi.fn(),
   clearPin: vi.fn(),
   toast: vi.fn(),
+  manage: vi.fn(),
+  clearSnapshots: vi.fn(),
+  protectExistingSnapshots: vi.fn(),
+  unprotectExistingSnapshots: vi.fn(),
+  errors: [] as unknown[],
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -21,12 +26,20 @@ vi.mock("@/lib/encryption-pin", () => ({
   clearNoteEncryptionPin: (slug: string) => harness.clearPin(slug),
 }));
 vi.mock("@/hooks/use-toast", () => ({ toast: (...args: unknown[]) => harness.toast(...args) }));
+vi.mock("@/lib/capability/client", () => ({
+  createCapabilityApi: () => ({ manage: (...args: unknown[]) => harness.manage(...args) }),
+}));
+vi.mock("@/lib/snapshots", () => ({
+  clearSnapshots: (...args: unknown[]) => harness.clearSnapshots(...args),
+  protectExistingSnapshots: (...args: unknown[]) => harness.protectExistingSnapshots(...args),
+  unprotectExistingSnapshots: (...args: unknown[]) => harness.unprotectExistingSnapshots(...args),
+}));
 vi.mock("@/i18n/index", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/lib/crypto", () => ({
-  deriveKey: vi.fn().mockResolvedValue({}),
-  encryptBytes: vi.fn().mockResolvedValue(new Uint8Array([1])),
+  deriveKey: async () => ({}),
+  encryptBytes: async () => new Uint8Array([1]),
   generatePassphrase: () => "generated-passphrase",
-  makeCheck: vi.fn().mockResolvedValue("check"),
+  makeCheck: async () => "check",
   randomSalt: () => "salt",
   PBKDF2_ITERATIONS: 1000,
 }));
@@ -96,9 +109,21 @@ describe("LockButton encryption downgrade pin", () => {
     harness.markEncrypted.mockReset();
     harness.clearPin.mockReset();
     harness.toast.mockReset();
+    harness.manage.mockReset();
+    harness.clearSnapshots.mockReset();
+    harness.protectExistingSnapshots.mockReset();
+    harness.unprotectExistingSnapshots.mockReset();
+    harness.errors.length = 0;
     harness.markEncrypted.mockReturnValue(true);
     harness.clearPin.mockReturnValue(true);
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    harness.manage.mockResolvedValue({ ok: true });
+    harness.clearSnapshots.mockResolvedValue(undefined);
+    harness.protectExistingSnapshots.mockResolvedValue(undefined);
+    harness.unprotectExistingSnapshots.mockResolvedValue(undefined);
+    vi.spyOn(console, "error").mockImplementation((...args) => {
+      if (String(args[0]).includes("Not implemented: navigation")) return;
+      harness.errors.push(args);
+    });
   });
 
   afterEach(() => vi.restoreAllMocks());
@@ -138,5 +163,46 @@ describe("LockButton encryption downgrade pin", () => {
 
     await waitFor(() => expect(harness.upsert).toHaveBeenCalled());
     expect(harness.clearPin).not.toHaveBeenCalled();
+  });
+
+  it("uses owner-only checkpoint CAS instead of the public notes table", async () => {
+    const provider = {
+      flushNow: vi.fn().mockResolvedValue(undefined),
+      refreshNow: vi.fn().mockResolvedValue(undefined),
+      hasUnflushedLocalChanges: () => false,
+      getSession: () => ({
+        currentSequence: 7,
+        encryption: { version: 2 },
+      }),
+    };
+    const view = render(
+      <LockButton
+        slug="secret"
+        doc={new Y.Doc()}
+        isEncrypted={false}
+        provider={provider as never}
+        capabilityAccess={{ slug: "secret", scope: "owner", token: "o".repeat(43) }}
+      />,
+    );
+    fireEvent.change(view.getByPlaceholderText("lock.placeholder"), {
+      target: { value: "safe passphrase" },
+    });
+    fireEvent.click(view.getByText("lock.encrypt_btn"));
+
+    await waitFor(() => expect(provider.refreshNow).toHaveBeenCalled());
+    expect(harness.errors).toEqual([]);
+    await waitFor(() => expect(harness.manage).toHaveBeenCalled());
+    expect(harness.upsert).not.toHaveBeenCalled();
+    expect(harness.manage.mock.calls[0][1]).toMatchObject({
+      action: "set-encryption",
+      isEncrypted: true,
+      expectedEncryptionVersion: 2,
+      checkpoint: { throughSequence: 7 },
+    });
+    expect(provider.flushNow).toHaveBeenCalledBefore(provider.refreshNow);
+    await waitFor(() => expect(harness.protectExistingSnapshots).toHaveBeenCalledWith(
+      "secret",
+      expect.objectContaining({ encrypt: expect.any(Function), decrypt: expect.any(Function) }),
+    ));
   });
 });

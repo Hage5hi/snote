@@ -49,6 +49,8 @@ const LOAD_TIMEOUT_MS =
     : DEFAULT_LOAD_TIMEOUT_MS;
 const MESSAGE_TIMELINE_MAX = 30;
 const APP_VERSION_MAX_LENGTH = 64;
+const EDIT_CAPABILITY_RE = /^[A-Za-z0-9_-]{43}$/;
+const MAX_LOCAL_EDIT_CAPABILITIES = 50;
 
 const iframe = document.getElementById("app");
 const loader = document.getElementById("loader");
@@ -125,6 +127,35 @@ function updateDebugBarVisibility() {
 
 function updateDebugLast(slug) {
   if (debugLast) debugLast.textContent = `lastSlug: ${summarizeSlugForDiagnostics(slug)}`;
+}
+
+function persistEditCapability(slug, editCapability) {
+  if (!isValidSlug(slug) || !EDIT_CAPABILITY_RE.test(editCapability || "")) return;
+  try {
+    chrome.storage.local.get({ editCapabilities: {} }, (stored) => {
+      if (chrome.runtime.lastError) {
+        dlog("local edit capability read failed");
+        return;
+      }
+      const current = stored.editCapabilities && typeof stored.editCapabilities === "object"
+        ? stored.editCapabilities
+        : {};
+      const next = { ...current };
+      // Refresh insertion order so the bounded map evicts the least recently
+      // received locator rather than a capability that was just updated.
+      delete next[slug];
+      next[slug] = editCapability;
+      const keys = Object.keys(next);
+      for (const oldSlug of keys.slice(0, Math.max(0, keys.length - MAX_LOCAL_EDIT_CAPABILITIES))) {
+        delete next[oldSlug];
+      }
+      chrome.storage.local.set({ editCapabilities: next }, () => {
+        if (chrome.runtime.lastError) dlog("local edit capability write failed");
+      });
+    });
+  } catch {
+    dlog("local edit capability storage unavailable");
+  }
 }
 
 onDebugLog(renderDebugLine);
@@ -261,6 +292,9 @@ window.addEventListener("message", (event) => {
     } catch (err) {
       console.warn("[syrin-note] ack failed", err);
     }
+    // The web app sends this field only for edit scope. Owner capabilities
+    // are deliberately never accepted or persisted by the extension.
+    persistEditCapability(data.slug, data.editCapability);
     if (data.slug === lastSavedSlug) return;
     lastSavedSlug = data.slug;
     updateDebugLast(data.slug);
@@ -281,6 +315,22 @@ window.addEventListener("message", (event) => {
 
 function loadDefaultsWithFallback(cb) {
   const defaults = { openMode: "home", defaultSlug: "", lastSlug: "", debug: false };
+  const finish = (settings) => {
+    try {
+      chrome.storage.local.get({ editCapabilities: {} }, (local) => {
+        if (chrome.runtime.lastError) {
+          cb({ ...settings, editCapabilities: {} });
+          return;
+        }
+        const editCapabilities = local.editCapabilities && typeof local.editCapabilities === "object"
+          ? local.editCapabilities
+          : {};
+        cb({ ...settings, editCapabilities });
+      });
+    } catch {
+      cb({ ...settings, editCapabilities: {} });
+    }
+  };
   try {
     chrome.storage.sync.get(defaults, (settings) => {
       if (chrome.runtime.lastError) {
@@ -289,14 +339,14 @@ function loadDefaultsWithFallback(cb) {
           retryCount,
           detail: { reason: chrome.runtime.lastError.message },
         });
-        cb(defaults);
+        finish(defaults);
         return;
       }
-      cb(settings);
+      finish(settings);
     });
   } catch (err) {
     dlog("storage.sync threw, using defaults", String(err?.message || err));
-    cb(defaults);
+    finish(defaults);
   }
 }
 

@@ -100,6 +100,14 @@ const App = () => (
                   }
                 />
                 <Route
+                  path="/s"
+                  element={
+                    <Suspense fallback={PlainFallback}>
+                      <SharePage />
+                    </Suspense>
+                  }
+                />
+                <Route
                   path="/s/:token"
                   element={
                     <Suspense fallback={PlainFallback}>

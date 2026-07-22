@@ -47,6 +47,28 @@ export type Encryption = {
   decrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
 };
 
+/** Small provider surface consumed by the editor UI in legacy and capability mode. */
+export interface YjsProviderLike {
+  doc: Y.Doc;
+  awareness: Awareness;
+  slug: string;
+  connected: boolean;
+  setEncryption: (encryption: Encryption | null) => void;
+  setExpectedEncrypted: (expected: boolean | null) => void;
+  onAwareness: (listener: Listener<Map<number, AwarenessState>>) => () => void;
+  onSyncEvent: (listener: Listener<SyncEvent>) => () => void;
+  getPendingBytes: () => number;
+  getLastBroadcastAt: () => number;
+  getLastSnapshotAt: () => number;
+  hasUnflushedLocalChanges: () => boolean;
+  connect: (
+    identity: { name: string; color: string },
+    options?: { prefetchedYdocState?: string | null; rowExists?: boolean },
+  ) => Promise<void>;
+  flushBeacon: () => void;
+  destroy: () => Promise<void>;
+}
+
 /**
  * Slugs marked as "abandoned" (e.g. renamed away). Any provider whose slug
  * is in this set will silently drop pending snapshot writes and skip the

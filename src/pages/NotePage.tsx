@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -14,7 +14,10 @@ import { GoalConfetti } from "@/components/note/GoalConfetti";
 import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
 import { toast } from "@/hooks/use-toast";
 import { OutlineSidebar } from "@/components/note/OutlineSidebar";
-import { SupabaseYjsProvider, type Encryption } from "@/lib/yjs/provider";
+import { SupabaseYjsProvider, type Encryption, type YjsProviderLike } from "@/lib/yjs/provider";
+import { CapabilityYjsProvider } from "@/lib/yjs/capability-provider";
+import { createCapabilityApi, type NoteSession } from "@/lib/capability/client";
+import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } from "@/lib/capability/url";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
 import type { PresenceUser } from "@/components/note/PresenceDots";
@@ -71,7 +74,7 @@ type EncGateTarget = {
 type NoteResources = EncGateTarget & {
   providerEpoch: number;
   doc: Y.Doc;
-  provider: SupabaseYjsProvider;
+  provider: YjsProviderLike;
 };
 
 export default function NotePage({ embedSlug }: NotePageProps) {
@@ -79,6 +82,16 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   const location = useLocation();
   const slug = embedSlug ?? params.slug ?? "";
   const validSlug = SLUG_RE.test(slug);
+  const capabilityAccess: CapabilityAccess | null = useMemo(() => {
+    const parsed = typeof window === "undefined"
+      ? null
+      : parseCapabilityLocation(new URL(
+        `${location.pathname}${location.search}${location.hash}`,
+        window.location.origin,
+      ));
+    return parsed && parsed.scope !== "view" && parsed.slug === slug ? parsed : null;
+  }, [slug, location.pathname, location.search, location.hash]);
+  const capabilityToken = capabilityAccess?.token ?? null;
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
   const { visible: showPreview, setVisible: setShowPreview } = usePreviewVisible();
   // On narrow viewports (< 900 px) the editor + preview are NOT shown
@@ -159,6 +172,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     rowExists: false,
   });
   const [encryption, setEncryption] = useState<Encryption | null>(null);
+  const [capabilitySession, setCapabilitySession] = useState<NoteSession | null>(null);
 
   // Bumped by the hashchange listener so the meta-fetch effect re-runs when
   // the encryption key in the URL fragment changes (lock/unlock flows).
@@ -197,9 +211,16 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // authorized this exact target, then own both from a committed effect so
   // React can pair acquisition with cleanup, including StrictMode replays.
   useLayoutEffect(() => {
-    if (!validSlug || encPhase !== "ready" || !encTargetIsCurrent) return;
+    if (
+      !validSlug
+      || encPhase !== "ready"
+      || !encTargetIsCurrent
+      || (capabilityAccess && !capabilitySession)
+    ) return;
     const ownedDoc = acquireDoc(slug);
-    const ownedProvider = new SupabaseYjsProvider(slug, ownedDoc);
+    const ownedProvider: YjsProviderLike = capabilityAccess && capabilitySession
+      ? new CapabilityYjsProvider(capabilityAccess, capabilitySession, ownedDoc)
+      : new SupabaseYjsProvider(slug, ownedDoc);
     setResources({
       slug,
       metaVersion,
@@ -211,7 +232,17 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       void ownedProvider.destroy();
       releaseDoc(slug);
     };
-  }, [slug, validSlug, metaVersion, providerEpoch, encPhase, encTargetIsCurrent]);
+  }, [
+    slug,
+    validSlug,
+    metaVersion,
+    providerEpoch,
+    encPhase,
+    encTargetIsCurrent,
+    capabilityAccess,
+    capabilityToken,
+    capabilitySession,
+  ]);
 
   useLayoutEffect(() => {
     const syncHash = () => observeHash(window.location.hash);
@@ -249,23 +280,48 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       && window.location.hash === requestHash;
     (async () => {
       try {
-        const { data, error } = await supabase
-          .from("notes")
-          .select("is_encrypted, enc_salt, enc_check, enc_iterations, ydoc_state")
-          .eq("slug", slug)
-          .maybeSingle();
-        if (!isCurrentRequest()) return;
-        if (error) {
-          console.warn("Encryption metadata query failed");
-          return;
+        let data: {
+          is_encrypted?: boolean;
+          enc_salt?: string | null;
+          enc_check?: string | null;
+          enc_iterations?: number | null;
+          ydoc_state?: string | null;
+        } | null = null;
+        let rowExists = false;
+        if (capabilityAccess) {
+          const session = await createCapabilityApi().openSession(capabilityAccess.token);
+          if (!isCurrentRequest()) return;
+          if (session.slug !== slug || session.scope !== capabilityAccess.scope) {
+            throw new Error("capability locator mismatch");
+          }
+          setCapabilitySession(session);
+          data = {
+            is_encrypted: session.encryption.enabled,
+            enc_salt: session.encryption.salt,
+            enc_check: session.encryption.check,
+            enc_iterations: session.encryption.iterations,
+            ydoc_state: null,
+          };
+          rowExists = true;
+        } else {
+          setCapabilitySession(null);
+          const response = await supabase
+            .from("notes")
+            .select("is_encrypted, enc_salt, enc_check, enc_iterations, ydoc_state")
+            .eq("slug", slug)
+            .maybeSingle();
+          if (response.error) throw response.error;
+          data = response.data;
+          rowExists = !!response.data;
         }
+        if (!isCurrentRequest()) return;
         const meta: EncMeta = {
           isEncrypted: !!data?.is_encrypted,
           salt: data?.enc_salt ?? null,
           check: data?.enc_check ?? null,
           iterations: data?.enc_iterations ?? null,
           ydocState: data?.ydoc_state ?? null,
-          rowExists: !!data,
+          rowExists,
         };
         setEncMeta((prev) => {
           // Encryption mode flipped since last fetch — force a provider rebuild.
@@ -299,15 +355,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           setResolvedEncTarget(requestTarget);
           return;
         }
-        let hashKey = "";
-        if (window.location.hash.startsWith("#")) {
-          try {
-            hashKey = decodeURIComponent(window.location.hash.slice(1));
-          } catch {
-            // Malformed fragments cannot be keys; keep the encrypted gate
-            // closed and fall through to the manual unlock form.
-          }
-        }
+        const hashKey = readEncryptionSecret(window.location.hash);
         if (hashKey && meta.salt && meta.check) {
           try {
             const key = await deriveKey(hashKey, meta.salt, iterationsFor(meta.iterations));
@@ -338,7 +386,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     return () => {
       cancelled = true;
     };
-  }, [slug, validSlug, metaVersion]);
+  }, [slug, validSlug, metaVersion, capabilityAccess, capabilityToken]);
 
   // A sibling tab (native storage event) or a same-tab lock/decrypt flow
   // (custom event) can change the durable pin while this provider is live.
@@ -413,7 +461,13 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     window.addEventListener("message", onMessage);
     const sendOnce = () => {
       try {
-        window.parent.postMessage({ type: "syrin:slug", slug }, targetOrigin);
+        window.parent.postMessage({
+          type: "syrin:slug",
+          slug,
+          ...(capabilityAccess?.scope === "edit"
+            ? { editCapability: capabilityAccess.token }
+            : {}),
+        }, targetOrigin);
         dlog(
           "posted locator",
           "locatorLength=",
@@ -441,7 +495,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       window.removeEventListener("message", onMessage);
       if (timer) clearTimeout(timer);
     };
-  }, [slug, validSlug, embedSlug]);
+  }, [slug, validSlug, embedSlug, capabilityAccess, capabilityToken]);
 
 
 
@@ -452,9 +506,13 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     provider.setExpectedEncrypted(encMeta.isEncrypted);
 
     const identity = getIdentity();
-    if (!embedSlug) touchRecent(slug);
+    if (!embedSlug && !capabilityAccess) touchRecent(slug);
 
-    const idb = new IndexeddbPersistence(`note:${slug}`, doc);
+    // y-indexeddb stores Yjs structs as plaintext. Capability outbox replaces
+    // it for secure notes, and encrypted legacy notes must not mount it.
+    const idb = !capabilityAccess && !encMeta.isEncrypted
+      ? new IndexeddbPersistence(`note:${slug}`, doc)
+      : null;
     let disposed = false;
 
     
@@ -480,6 +538,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     });
 
     const ytext = doc.getText("content");
+    const snapshotProtection = encMeta.isEncrypted ? encryption : null;
     let prevContent = ytext.toString();
     let lastBigDeleteAt = 0;
 
@@ -499,7 +558,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         prevContent.length >= SUDDEN_DELETE_THRESHOLD
       ) {
         lastBigDeleteAt = now;
-        void recordOnSuddenDelete(slug, prevContent);
+        void recordOnSuddenDelete(slug, prevContent, snapshotProtection);
       }
       prevContent = text;
     };
@@ -510,7 +569,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     updateCounts();
     ytext.observe(scheduleCounts);
 
-    idb.whenSynced.then(() => {
+    (idb?.whenSynced ?? Promise.resolve()).then(() => {
       if (disposed) return;
       provider
         .connect(identity, {
@@ -520,22 +579,22 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         .catch((e) => console.warn("Provider connect failed", e));
       prevContent = ytext.toString();
       updateCounts();
-      void maybeSaveSnapshot(slug, prevContent);
+      void maybeSaveSnapshot(slug, prevContent, snapshotProtection);
     });
 
     // Pause snapshot interval while tab hidden; flush when visible again.
     let snapshotTimer = window.setInterval(() => {
-      void maybeSaveSnapshot(slug, ytext.toString());
+      void maybeSaveSnapshot(slug, ytext.toString(), snapshotProtection);
     }, SNAPSHOT_INTERVAL_MS);
     const onVisibility = () => {
       if (disposed) return;
       if (document.visibilityState === "hidden") {
         window.clearInterval(snapshotTimer);
         // Best-effort flush before browser may freeze the tab.
-        void maybeSaveSnapshot(slug, ytext.toString());
+        void maybeSaveSnapshot(slug, ytext.toString(), snapshotProtection);
       } else {
         snapshotTimer = window.setInterval(() => {
-          void maybeSaveSnapshot(slug, ytext.toString());
+          void maybeSaveSnapshot(slug, ytext.toString(), snapshotProtection);
         }, SNAPSHOT_INTERVAL_MS);
       }
     };
@@ -560,9 +619,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
       
       unsubAwareness();
       unsubSync();
-      idb.destroy();
+      idb?.destroy();
     };
-  }, [slug, validSlug, doc, provider, embedSlug, encPhase, encTargetIsCurrent, encryption, encMeta.isEncrypted, encMeta.ydocState, encMeta.rowExists]);
+  }, [slug, validSlug, doc, provider, embedSlug, encPhase, encTargetIsCurrent, encryption, encMeta.isEncrypted, encMeta.ydocState, encMeta.rowExists, capabilityAccess, capabilityToken]);
 
   if (!validSlug) return <Navigate to="/" replace />;
 
@@ -657,6 +716,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           onToggleFocusLine={toggleFocusLine}
           getContent={() => doc.getText("content").toString()}
           isEncrypted={encMeta.isEncrypted}
+          encryption={encryption}
+          capabilityAccess={capabilityAccess}
           paginated={paginated}
           onTogglePagination={togglePagination}
           compact
@@ -724,6 +785,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         onToggleFocusLine={toggleFocusLine}
         getContent={getContent}
         isEncrypted={encMeta.isEncrypted}
+        encryption={encryption}
+        capabilityAccess={capabilityAccess}
         paginated={paginated}
         onTogglePagination={togglePagination}
       />
