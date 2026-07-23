@@ -11,6 +11,26 @@ const cases = [
 
 for (const c of cases) {
   test(`Split view renders correctly when persisted payload is ${c.label}`, async ({ page }) => {
+    await page.route("**/functions/v1/legacy-note-open", async (route) => {
+      const body = route.request().postDataJSON() as { slug?: string };
+      const slug = body.slug ?? "note";
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          exists: true,
+          note: {
+            slug,
+            content: `# ${slug}\nSplit-view test note`,
+            ydocState: "",
+            isEncrypted: false,
+            salt: null,
+            check: null,
+            iterations: null,
+          },
+        }),
+      });
+    });
     await page.addInitScript((raw) => {
       try {
         sessionStorage.setItem("snote:last-split-view:v1", raw);

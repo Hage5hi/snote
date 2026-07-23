@@ -1,15 +1,13 @@
 // E2E: ThemeToggle is a direct light/dark switch — no dropdown, no "System".
 import { test, expect } from "@playwright/test";
 
-const NOTE_PATH = `/e2e-theme-${Math.random().toString(36).slice(2, 8)}`;
-
 test("theme toggle flips light/dark directly with no menu or System option", async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem("lang", "en");
     localStorage.setItem("lang.ip_detected", "1");
     localStorage.setItem("theme", "light");
   });
-  await page.goto(NOTE_PATH);
+  await page.goto("/");
 
   const toggle = page.getByRole("button", { name: /theme|giao diện/i }).first();
   await expect(toggle).toBeVisible();

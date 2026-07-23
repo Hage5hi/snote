@@ -17,6 +17,7 @@ const END_OF_CENTRAL_DIRECTORY = 0x06054b50;
 const UTF8_FLAG = 0x0800;
 const DEFLATE_METHOD = 8;
 const DOS_DATE_1980_01_01 = 0x0021;
+const TEXT_EXTENSIONS = new Set([".css", ".html", ".js", ".json", ".md"]);
 
 const CRC32_TABLE = Array.from({ length: 256 }, (_, index) => {
   let value = index;
@@ -47,6 +48,13 @@ function isPackageFile(relativePath: string) {
   return true;
 }
 
+export function canonicalizeExtensionEntry(path: string, data: Buffer) {
+  const dot = path.lastIndexOf(".");
+  const extension = dot >= 0 ? path.slice(dot).toLowerCase() : "";
+  if (!TEXT_EXTENSIONS.has(extension)) return data;
+  return Buffer.from(data.toString("utf8").replace(/\r\n?/g, "\n"), "utf8");
+}
+
 export function collectExtensionPackageEntries(
   repositoryRoot = process.cwd(),
 ): ExtensionArchiveEntry[] {
@@ -75,7 +83,10 @@ export function collectExtensionPackageEntries(
     .sort(comparePaths)
     .map((archivePath) => ({
       path: archivePath,
-      data: readFileSync(join(extensionRoot, ...archivePath.split("/"))),
+      data: canonicalizeExtensionEntry(
+        archivePath,
+        readFileSync(join(extensionRoot, ...archivePath.split("/"))),
+      ),
     }));
 }
 

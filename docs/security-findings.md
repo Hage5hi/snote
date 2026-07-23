@@ -1,115 +1,123 @@
-# Security findings — containment status
+# Security findings — repository and rollout status
 
-This document records the current security disposition. It supersedes the old
-scan triage that described anonymous note access and deletion as false
-positives. Slugs are locators, not authorization credentials; the capability
-backend and atomic policy cutover remain required follow-up work.
+This document describes the state of the stacked implementation. It does not
+claim that staging or production has been migrated. Local tests prove the code
+contracts only; backup, deploy, cache purge, 48-hour soak, atomic cutover, and
+post-cutover probes remain mandatory operational gates.
 
-## 1. Legacy note metadata and crawler previews — contained
+Slugs are locators, never authorization credentials. New notes use
+owner/edit/view capabilities. Legacy notes are exact-match, read-only, and may
+only be copied into a new capability-managed note.
+
+## 1. Legacy metadata and crawler previews — implemented, deploy unverified
 
 `note-meta` is a generic `410 no-store` tombstone. It does not parse a token,
 initialize a database client, or return content or a locator. The Cloudflare
 Worker returns generic, non-indexable, `no-store` HTML for crawler requests to
-both legacy note locators and `/s/*` before consulting metadata or Cache API.
+legacy note and share paths before consulting metadata or Cache API.
 
-Deployment order matters: deploy the generic Worker, purge all old note/share
-HTML and `note-meta` caches, verify cache misses across every public alias, and
-only then deploy the `note-meta` tombstone. Rollback must retain generic
-containment rather than restoring content-bearing previews.
+Production still requires the ordered rollout in
+`docs/security/immediate-containment-rollout.md`: deploy the generic Worker,
+purge old note/share HTML and metadata caches across every alias, verify cache
+misses, then deploy the tombstone. Rollback must retain generic containment.
 
-## 2. Admin authentication and cleanup — contained
+## 2. Admin authentication and cleanup — implemented, deploy unverified
 
-Only `admin-session` accepts an admin passphrase. Login retains a bounded legacy
-compatibility contract: any non-empty value up to 1,024 JavaScript code units
-may be checked against an existing hash. Newly rotated passphrases alone enforce
-the 12–72 UTF-8-byte bcrypt policy. The endpoint reserves a serialized SQL
+Only `admin-session` accepts an admin passphrase. It reserves a serialized SQL
 admission lease and consumes failed attempts atomically. The client receives a
-short random opaque session bound to a keyed HMAC of the gateway-verified client
-address. Ambiguous or untrusted forwarding headers, database errors, and
-retention-RPC errors fail closed with `503`.
+short opaque session bound to a keyed digest of the gateway-verified client
+address. Ambiguous forwarding headers, database errors, and retention-RPC
+errors fail closed with `503`.
 
-`admin-list`, `admin-delete`, and `admin-rotate` accept only the opaque session.
-Rotation atomically consumes the caller, updates the bcrypt hash and credential
-epoch, and revokes every outstanding session. The old destructive `cleanup`
-endpoint is a generic `410 no-store` tombstone because legacy clients can forge
-every note field that its deletion predicate used.
+Login retains a bounded legacy compatibility contract: any non-empty value up
+to 1,024 JavaScript code units may be checked against an existing hash.
+Newly rotated passphrases alone enforce the 12–72 UTF-8-byte bcrypt policy.
 
-`admin_security_prune()` deletes expired session hashes and limiter rows whose
-failure window is older than seven days and whose lock/lease has expired. It is
-service-role-only, runs on each admin-session request, and must also be scheduled
-as a monitored daily retention job so idle deployments do not retain stale
-keyed hashes.
+`admin-list`, `admin-delete`, and `admin-rotate` accept only that session.
+Rotation atomically updates the credential epoch and revokes outstanding
+sessions. The old destructive `cleanup` endpoint is a generic `410 no-store`
+tombstone. `admin_security_prune()` is service-role-only; production must also
+schedule and monitor its daily retention run.
 
-## 3. Share tokens and legacy share paths — partially contained
+The migration must precede the Edge functions. No production limiter or
+session guarantee is claimed until concurrent-failure and database-failure
+probes pass against the deployed environment.
 
-`note_shares` remains RLS default-deny for `anon` and `authenticated`; access is
-through service-role Edge functions. `share-view` never returns the underlying
-slug, marks every JSON response `no-store`, and returns a generic `503` without
-logging raw errors. `share-rename` is retired as a `410 no-store` tombstone.
+## 3. Share capabilities and compatibility URLs — implemented, deploy unverified
 
-Legacy `/s/:token` URLs still place a bearer-like token in the path. Platform
-request logs and traces are disabled in the committed Wrangler configuration,
-all other raw-path pipelines must be disabled or redacted at rollout, and the
-Worker emits only generic crawler content. Moving share capabilities to URL
-fragments and Authorization headers is deferred to the capability client/API
-PRs and is not claimed complete here.
+New view capabilities travel in `/s#view=<token>`, then only in an exact
+`Authorization: Bearer` header. `share-view` does not return the note slug,
+marks responses `no-store`, and returns generic errors without logging raw
+request data. Rotating a view capability revokes the previous generation.
+`share-rename` is a `410 no-store` tombstone.
 
-## 4. Public `notes` policies — real issue, cutover pending
+Legacy `/s/:token` is a 30-day compatibility shell. Before React starts it
+moves the token into the fragment, removes it from the visible path, and uses
+`no-store`/`no-referrer`; after the configured deadline it fails closed. The
+Worker never forwards the raw path token. Platform logs, traces, and cache
+keys still require deployment-time review and redaction.
 
-The legacy schema still allows anonymous SELECT, INSERT, and UPDATE because the
-current client reads and persists directly by slug. These `true` policies are a
-confirmed authorization vulnerability, not an intentional security boundary.
-Immediate containment revokes public DELETE and tombstones server cleanup, but
-removing the remaining privileges before capability APIs and a dual-mode client
-exist would destroy product availability and strand existing notes.
+## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 
-The required end state is the planned atomic cutover: immutable note IDs,
-owner/edit/view capability hashes, narrow APIs/RPCs, private Realtime channels,
-and no anonymous direct-table access. Legacy notes become exact-match read-only
-and can be duplicated securely; they must not silently acquire an owner.
+`20260724000000_atomic_capability_cutover.sql` dynamically drops every policy
+on `public.notes` and revokes all direct privileges from `PUBLIC`, `anon`, and
+`authenticated` in one transaction. Capability, update, checkpoint, and share
+tables remain default-deny. The SPA uses narrow Edge APIs; legacy content is
+available only through the exact-match read-only `legacy-note-open` function.
 
-## 5. Public Realtime and persistence — real issue, cutover pending
+Do not apply this migration until the dual-mode client and capability APIs have
+completed the required 48-hour production soak. A local migration test is not
+evidence that the deployed database is closed. After cutover, probe both
+`anon` and `authenticated` for failed select/insert/update/delete attempts.
+Rollback is API read-only and must never recreate public policies.
 
-The forged `slug-abandoned` control event has been removed and accepted event
-types and payload sizes are bounded. A durable per-locator encryption pin now
-fails closed before acquiring a Y.Doc, provider, IndexedDB persistence, editor,
-preview, or disaster-snapshot path when a previously encrypted note is later
-reported as plaintext or missing. Pin changes close already-mounted workspaces,
-and every provider content path rechecks the database mode, active key mode,
-and pin immediately before Realtime, snapshot, beacon, or keepalive output.
+## 5. Realtime and durable persistence — implemented, deploy unverified
 
-This is containment, not a replacement authorization boundary. A legacy
-direct-table write already in flight cannot be revoked after the browser has
-sent it, local Yjs persistence for encrypted notes is not yet encrypted at
-rest, and public channels plus snapshot last-writer-wins persistence remain
-transitional risks. They require the private capability-scoped Realtime
-channels, idempotent Yjs update log, encrypted outbox/local persistence, and
-checkpoint compaction planned for the capability backend/client PRs.
+Capability notes use private `note:<noteId>` channels. Five-minute Realtime
+JWTs carry note ID, scope, generation, and rollback claims; RLS on
+`realtime.messages` permits receive for active capabilities and send only for
+owner/edit scopes. The forged legacy `slug-abandoned` control event is removed,
+and accepted event types and payload sizes are bounded.
 
-## 6. RLS enabled with no permissive policy — expected for internal tables
+The client persists each Yjs update to an IndexedDB outbox before broadcast or
+HTTP sync. `note-sync` acknowledges an update ID idempotently; only acknowledged
+items are removed. Peers may persist the same validated update hash. Checkpoint
+compaction uses `throughSequence` plus version/encryption CAS. Locked-note
+updates, checkpoints, recovery snapshots, and outbox entries remain ciphertext;
+locking purges plaintext persistence before the secure mode is accepted.
 
-Default-deny on `note_shares`, `admin_config`, `admin_auth_attempts`,
-`admin_sessions`, and `admin_auth_state` is intentional. These tables are
-service-role-only. Do not add permissive policies merely to silence a generic
-scanner; verify grants, RPC execution rights, and Edge callers instead.
+Production must still prove reconnects, reversed delivery, sub-800 ms
+navigation, concurrent saves, JWT refresh, encrypted recovery, outbox backlog,
+and checkpoint conflicts during the soak. Oversized existing data must be
+quarantined read-only, never truncated.
 
-## 7. Toolchain security exception — verified
+## 6. Privacy boundary — implemented in code, operations need review
 
-The otherwise deferred Vite major upgrade is intentionally included because
+The application no longer calls `ipapi.co`; locale selection uses browser
+signals. Privacy copy, the extension manifest, and runtime behavior prohibit
+logging note content, slug, capability/share token, URL fragment, or raw IP.
+Only aggregate API errors, authorization denials, outbox backlog, and
+compaction failures are permitted. Deployment logging and retention settings
+must be checked separately.
+
+## 7. Toolchain security exceptions — verified locally
+
+The otherwise deferred Vite major upgrade is included because
 [GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff)
-affects every Vite release through `6.4.2`; there is no patched Vite 5 release,
-and `6.4.3` is the first patched line compatible with the current plugins.
+affects every Vite release through `6.4.2`; `6.4.3` is the first patched line
+compatible with the current plugins, and there is no patched Vite 5 release.
 [GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp)
-affects Vitest versions below `3.2.6`, so Vitest and `@vitest/coverage-v8` are
-pinned together at `3.2.6`. The exception is accepted only with a frozen Bun
-install, lint, all three TypeScript project checks, unit/security contracts,
-production build plus bundle gate, extension E2E, and a high-severity dependency
-audit passing. It does not authorize any other framework major in this PR.
+affects Vitest versions below `3.2.6`, so Vitest and
+`@vitest/coverage-v8` are pinned together at `3.2.6`.
 
-## Re-running a security scan
+These exceptions do not authorize other framework majors. Frozen install,
+dependency audit, lint, Knip, app/Node/tooling/Edge typechecks, unit coverage,
+production build, actionlint, extension E2E, and browser smoke remain release
+gates.
 
-Treat findings about public SELECT/INSERT/UPDATE on `notes` and public Realtime
-as open until the atomic capability cutover is deployed and verified. Findings
-about anonymous DELETE, legacy cleanup, note metadata, share crawler previews,
-or passphrase reuse should be checked against the containment tests and staging
-rollout evidence, not dismissed from this document alone.
+## Scan triage rule
+
+Treat any finding about deployed direct-table access, public Realtime,
+content-bearing crawler output, raw token paths, or fail-open admin rate limits
+as open until staging and production evidence proves otherwise. The repository
+contains the intended fixes, but merge status is not deployment status.

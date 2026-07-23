@@ -80,6 +80,10 @@ export async function sendReady(
   const protocol = opts.protocol ?? 2;
   const buildId = opts.buildId ?? "test-build";
   const appVersion = opts.appVersion ?? "test";
+  await expect(panel.locator("#app")).toHaveAttribute(
+    "src",
+    /^https:\/\/note\.syrin\.online(?:\/|$)/,
+  );
   await panel.evaluate(
     ({ origin, protocol, buildId, appVersion }) => {
       const ev = new MessageEvent("message", {

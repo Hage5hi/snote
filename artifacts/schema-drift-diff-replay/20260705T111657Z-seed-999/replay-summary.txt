@@ -1,7 +1,0 @@
-mode:                dry-run
-checksum_verified:   ok
-would_run:           bunx vitest run scripts/__tests__/schema-drift-pr-comment.test.ts -t OVERRIDDEN --testTimeout=30000 --reporter=verbose
-seed:                999
-reader_ms:           300
-pattern:             OVERRIDDEN
-timeout_ms:          30000

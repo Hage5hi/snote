@@ -141,9 +141,6 @@ Changing the state to a new invalid signature emits again.
 - Integration: `src/lib/__tests__/pwa-readiness-invalid-event.test.ts`,
   `src/lib/__tests__/pwa-readiness-invalid-edge-fields.test.ts`,
   `src/lib/__tests__/pwa-readiness-invalid-event-batch.test.ts`
-- E2E: `e2e/pwa-readiness-invalid-event.spec.ts`,
-  `e2e/pwa-readiness-invalid-event-order.spec.ts`,
-  `e2e/pwa-readiness-invalid-event-not-emitted-when-valid.spec.ts`,
-  `e2e/pwa-readiness-invalid-single-emit-per-cycle.spec.ts`
+- Browser recovery: `e2e/pwa-update-sw-stall.spec.ts`
 
 

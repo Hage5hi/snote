@@ -11,10 +11,32 @@ async function loadArchiveModule() {
 }
 
 describe("extension package contract", () => {
+  it("pins text inputs to LF and archives as binary across platforms", () => {
+    const attributes = readFileSync(".gitattributes", "utf8");
+
+    for (const extension of ["html", "js", "json", "md"]) {
+      expect(attributes).toContain(`*.${extension} text eol=lf`);
+    }
+    expect(attributes).toContain("*.zip binary");
+  });
+
   it("round-trips source bytes through a deterministic archive", async () => {
     const archive = await loadArchiveModule();
     expect(archive).not.toBeNull();
     if (!archive) return;
+
+    expect(
+      archive.canonicalizeExtensionEntry(
+        "README.md",
+        Buffer.from("one\r\ntwo\rthree\n"),
+      ),
+    ).toEqual(Buffer.from("one\ntwo\nthree\n"));
+    expect(
+      archive.canonicalizeExtensionEntry(
+        "icon.png",
+        Buffer.from([0x0d, 0x0a, 0x00]),
+      ),
+    ).toEqual(Buffer.from([0x0d, 0x0a, 0x00]));
 
     const entries = archive.collectExtensionPackageEntries();
     const first = archive.buildDeterministicZip(entries);

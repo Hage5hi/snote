@@ -28,7 +28,6 @@ test("sidepanel saves lastSlug from postMessage", async ({ context, extensionId,
     window.dispatchEvent(ev);
   });
 
-  await panel.waitForTimeout(100);
   const forged = await serviceWorker.evaluate(
     () => new Promise((resolve) => {
       // @ts-expect-error chrome global in extension service worker
@@ -46,14 +45,17 @@ test("sidepanel saves lastSlug from postMessage", async ({ context, extensionId,
     window.dispatchEvent(ev);
   });
 
-  // Allow chrome.storage.set to flush.
-  await panel.waitForTimeout(200);
-  const stored = await serviceWorker.evaluate(
-    () =>
-      new Promise((resolve) => {
-        // @ts-expect-error chrome global in SW
-        chrome.storage.sync.get({ lastSlug: "" }, resolve);
-      }),
-  );
-  expect(stored).toMatchObject({ lastSlug: "from-app" });
+  await expect
+    .poll(() =>
+      serviceWorker.evaluate(
+        () =>
+          new Promise<string>((resolve) => {
+            // @ts-expect-error chrome global in SW
+            chrome.storage.sync.get({ lastSlug: "" }, (value) =>
+              resolve(value.lastSlug),
+            );
+          }),
+      ),
+    )
+    .toBe("from-app");
 });

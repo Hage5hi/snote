@@ -11,7 +11,7 @@
 // - Optionally "holds" the hard-reload event so tests can inspect the
 //   pending state deterministically and release it on demand.
 
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 export type PwaMockOptions = {
   fromBuildId: string;
@@ -83,12 +83,28 @@ export async function waitForPwaUpdaterReady(
   testInfo: import("@playwright/test").TestInfo,
   timeoutMs = 5000,
 ): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
   let lastState: unknown = null;
-  while (Date.now() < deadline) {
-    lastState = await page.evaluate(() => (window as any).__SNOTE_PWA_UPDATE_STATE__ ?? null);
-    if (lastState && (lastState as { lastRemoteBuildId?: string }).lastRemoteBuildId) return;
-    await page.waitForTimeout(50);
+  try {
+    await expect
+      .poll(
+        async () => {
+          lastState = await page.evaluate(
+            () => (window as any).__SNOTE_PWA_UPDATE_STATE__ ?? null,
+          );
+          return Boolean(
+            lastState &&
+              (lastState as { lastRemoteBuildId?: string }).lastRemoteBuildId,
+          );
+        },
+        {
+          timeout: timeoutMs,
+          message: "version poller should publish its first remote build id",
+        },
+      )
+      .toBe(true);
+    return;
+  } catch {
+    // Attach the exact terminal state below so a timeout is actionable in CI.
   }
   const swState = await page.evaluate(async () => {
     if (!("serviceWorker" in navigator)) return { supported: false };

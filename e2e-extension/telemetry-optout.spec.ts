@@ -80,10 +80,7 @@ test("re-enable: telemetry resumes recording", async ({ context, extensionId, se
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await postBadProtocol(panel);
-  // Give the storage write a beat to flush.
-  await panel.waitForTimeout(200);
-  const events = await readEvents(serviceWorker);
-  expect(events.length).toBeGreaterThan(0);
+  await expect.poll(async () => (await readEvents(serviceWorker)).length).toBeGreaterThan(0);
   await panel.close();
 });
 

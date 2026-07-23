@@ -22,10 +22,11 @@ function dispatchReady(protocol: number, buildId = "test-build") {
 
 test("slow first paint: late ready still hides fallback", async ({ context, extensionId }) => {
   const panel = await context.newPage();
+  await panel.clock.install();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
 
-  // Simulate a slow app: wait 2s then post ready.
-  await panel.waitForTimeout(2000);
+  // Simulate a slow app without making the suite wait on wall-clock time.
+  await panel.clock.fastForward(2_000);
   const d = dispatchReady(2);
   await panel.evaluate(d.fn, d.args);
 

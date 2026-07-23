@@ -1,14 +1,13 @@
-// E2E: WebGL context creation failure → SceneHost falls back to "none".
+// E2E: WebGL context creation failure → SceneHost mounts no animated layer.
 //
 // We override HTMLCanvasElement.prototype.getContext BEFORE any app code
 // runs so SceneHost.hasWebGL() observes a hard failure (returns null for
 // webgl/webgl2). The chosen scene is one that REQUIRES a shader
-// (cyber-linh-khi → not lightweight), so the fallback path is the only
-// way data-scene can end up as "none".
+// (cyber-linh-khi → not lightweight), so the fallback path must avoid
+// mounting the scene host or allocating a canvas.
 //
 // Acceptance:
-//   1. data-scene attribute on [data-app-root] becomes "" or "none" — i.e.
-//      no scene is mounted.
+//   1. no scene host or WebGL canvas is mounted.
 //   2. No "Uncaught" / WebGL-related errors hit the console (we tolerate
 //      a single warning about WebGL being unavailable).
 //   3. The chrome (header + slug input) still renders and is interactive.
@@ -40,7 +39,7 @@ async function killWebGL(page: Page) {
   });
 }
 
-test("WebGL unavailable → scene falls back to none without console errors", async ({ page }) => {
+test("WebGL unavailable → scene renders no animated layer or console errors", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   page.on("console", (m) => {
@@ -58,15 +57,14 @@ test("WebGL unavailable → scene falls back to none without console errors", as
 
   await page.goto("/");
   await page.waitForLoadState("networkidle");
-  await page.waitForTimeout(400);
 
   const root = page.locator("[data-app-root]").first();
   await expect(root).toBeVisible();
 
-  // SceneHost should have detected the absence of WebGL and either left
-  // data-scene empty/none, or marked itself as fallback. Accept any of those.
-  const scene = (await root.getAttribute("data-scene")) ?? "";
-  expect(["", "none"]).toContain(scene);
+  // The selected id may remain on the shell so its static color tokens still
+  // apply, but the guarded SceneHost must not mount or allocate GPU content.
+  await expect(page.locator("[data-scene-ready]")).toHaveCount(0);
+  await expect(page.locator("canvas")).toHaveCount(0);
 
   // Chrome must still be interactive — slug input is present.
   await expect(page.getByRole("button", { name: "Theme settings" })).toBeVisible();
