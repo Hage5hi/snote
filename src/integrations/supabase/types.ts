@@ -58,6 +58,36 @@ export type Database = {
           },
         ]
       }
+      capability_admission_windows: {
+        Row: {
+          bucket_kind: string
+          byte_count: number
+          operation: string
+          request_count: number
+          subject_hash: string
+          updated_at: string
+          window_start: string
+        }
+        Insert: {
+          bucket_kind: string
+          byte_count: number
+          operation: string
+          request_count: number
+          subject_hash: string
+          updated_at?: string
+          window_start: string
+        }
+        Update: {
+          bucket_kind?: string
+          byte_count?: number
+          operation?: string
+          request_count?: number
+          subject_hash?: string
+          updated_at?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       note_capabilities: {
         Row: {
           capability_id: string
@@ -176,6 +206,7 @@ export type Database = {
         Row: {
           capability_managed: boolean
           char_count: number
+          checkpoint_limit_count: number
           content: string
           created_at: string
           deleted_at: string | null
@@ -187,14 +218,17 @@ export type Database = {
           note_id: string
           payload_limit_bytes: number
           slug: string
+          storage_limit_bytes: number
           sync_status: Database["public"]["Enums"]["note_sync_status"]
           tags: string[]
+          update_limit_count: number
           updated_at: string
           ydoc_state: string
         }
         Insert: {
           capability_managed?: boolean
           char_count?: number
+          checkpoint_limit_count?: number
           content?: string
           created_at?: string
           deleted_at?: string | null
@@ -206,14 +240,17 @@ export type Database = {
           note_id?: string
           payload_limit_bytes?: number
           slug: string
+          storage_limit_bytes?: number
           sync_status?: Database["public"]["Enums"]["note_sync_status"]
           tags?: string[]
+          update_limit_count?: number
           updated_at?: string
           ydoc_state?: string
         }
         Update: {
           capability_managed?: boolean
           char_count?: number
+          checkpoint_limit_count?: number
           content?: string
           created_at?: string
           deleted_at?: string | null
@@ -225,8 +262,10 @@ export type Database = {
           note_id?: string
           payload_limit_bytes?: number
           slug?: string
+          storage_limit_bytes?: number
           sync_status?: Database["public"]["Enums"]["note_sync_status"]
           tags?: string[]
+          update_limit_count?: number
           updated_at?: string
           ydoc_state?: string
         }
@@ -237,6 +276,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      capability_admission_consume: {
+        Args: {
+          p_byte_cost?: number
+          p_operation: "create" | "sync"
+          p_request_cost?: number
+          p_subject_hash: string
+        }
+        Returns: boolean
+      }
       capability_note_create: {
         Args: {
           p_edit_token_hash: string

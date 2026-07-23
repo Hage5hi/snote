@@ -36,7 +36,8 @@ mode and never receive an owner capability automatically.
   read-only instead of truncating data.
 - Encryption transitions require an owner capability, the expected encryption
   version, and a checkpoint through the current update sequence in one database
-  transaction. No client may directly toggle the encrypted state.
+  transaction. An exact retry after a lost response recovers the committed
+  checkpoint idempotently. No client may directly toggle the encrypted state.
 - The migration publishes its security-definer functions, revocations, and
   grants in one transaction; a partially applied privilege boundary is never
   committed.
