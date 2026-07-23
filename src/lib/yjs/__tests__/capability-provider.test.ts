@@ -17,6 +17,7 @@ function baseSession(overrides: Partial<NoteSession> = {}): NoteSession {
     realtimeToken: "header.payload.signature",
     realtimeExpiresAt: "2099-01-01T00:00:00.000Z",
     realtimeTopic: `note:${NOTE_ID}`,
+    generation: 1,
     syncStatus: "active",
     currentSequence: 0,
     payloadLimitBytes: 4_194_304,
@@ -45,12 +46,13 @@ function realtimeHarness() {
     send,
     unsubscribe: vi.fn(async () => "ok"),
   };
+  const dispose = vi.fn(async () => {});
   const factory: CapabilityRealtimeFactory = () => ({
     channel,
     setAuth: vi.fn(async () => {}),
-    dispose: vi.fn(async () => {}),
+    dispose,
   });
-  return { handlers, send, factory };
+  return { handlers, send, dispose, factory };
 }
 
 function apiHarness(syncImpl?: CapabilityApi["sync"]) {
@@ -104,13 +106,16 @@ describe("CapabilityYjsProvider", () => {
     doc.getText("content").insert(0, "typed before navigation");
     await provider.whenLocalUpdatesPersisted();
 
-    expect(await outbox.list(NOTE_ID)).toHaveLength(1);
+    expect(await outbox.list(NOTE_ID, "edit", 1)).toHaveLength(1);
     resolveSync({
-      acknowledgements: [{ updateId: (await outbox.list(NOTE_ID))[0].updateId, sequence: 1 }],
+      acknowledgements: [{
+        updateId: (await outbox.list(NOTE_ID, "edit", 1))[0].updateId,
+        sequence: 1,
+      }],
       session: baseSession({ currentSequence: 1 }),
     });
     await provider.flushNow();
-    expect(await outbox.list(NOTE_ID)).toEqual([]);
+    expect(await outbox.list(NOTE_ID, "edit", 1)).toEqual([]);
     await provider.destroy();
   });
 
@@ -129,7 +134,7 @@ describe("CapabilityYjsProvider", () => {
     await provider.destroy();
 
     const reopened = new CapabilityOutbox("snote-capability-provider-test");
-    expect(await reopened.list(NOTE_ID)).toHaveLength(1);
+    expect(await reopened.list(NOTE_ID, "edit", 1)).toHaveLength(1);
     reopened.close();
   });
 
@@ -158,7 +163,7 @@ describe("CapabilityYjsProvider", () => {
     await provider.whenLocalUpdatesPersisted();
 
     expect(doc.getText("content").toString()).toBe("peer edit");
-    expect((await outbox.list(NOTE_ID))[0].updateId).toBe(updateId);
+    expect((await outbox.list(NOTE_ID, "edit", 1))[0].updateId).toBe(updateId);
     await provider.destroy();
   });
 
@@ -189,8 +194,119 @@ describe("CapabilityYjsProvider", () => {
     });
 
     expect(doc.getText("content").toString()).toBe("visible update");
-    expect(await outbox.list(NOTE_ID)).toEqual([]);
+    expect(await outbox.list(NOTE_ID, "edit", 1)).toEqual([]);
     expect(api.sync).not.toHaveBeenCalled();
+    await provider.destroy();
+  });
+
+  it("never exposes a prior editor outbox to a view capability", async () => {
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const source = new Y.Doc();
+    source.getText("content").insert(0, "unpublished private edit");
+    const bytes = Y.encodeStateAsUpdate(source);
+    const updateId = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    await outbox.enqueue({
+      noteId: NOTE_ID,
+      scope: "edit",
+      generation: 1,
+      updateId,
+      payload: encode(bytes),
+      encryptionVersion: 0,
+      createdAt: Date.now(),
+    });
+    const api = apiHarness();
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: null, scope: "view", token: TOKEN },
+      baseSession({ scope: "view" }),
+      doc,
+      { api, outbox, realtimeFactory: realtimeHarness().factory },
+    );
+
+    await provider.connect({ name: "Viewer", color: "#123456" });
+
+    expect(doc.getText("content").toString()).toBe("");
+    expect(provider.getPendingBytes()).toBe(0);
+    expect(api.sync).not.toHaveBeenCalled();
+    await provider.destroy();
+  });
+
+  it("does not replay an outbox created by a revoked capability generation", async () => {
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const source = new Y.Doc();
+    source.getText("content").insert(0, "revoked edit");
+    const bytes = Y.encodeStateAsUpdate(source);
+    const updateId = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    await outbox.enqueue({
+      noteId: NOTE_ID,
+      scope: "edit",
+      generation: 1,
+      updateId,
+      payload: encode(bytes),
+      encryptionVersion: 0,
+      createdAt: Date.now(),
+    });
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession({ generation: 2 } as Partial<NoteSession>),
+      doc,
+      {
+        api: apiHarness(),
+        outbox,
+        realtimeFactory: realtimeHarness().factory,
+      },
+    );
+
+    await provider.connect({ name: "Editor", color: "#123456" });
+
+    expect(doc.getText("content").toString()).toBe("");
+    expect(provider.getPendingBytes()).toBe(0);
+    await provider.destroy();
+  });
+
+  it("durably saves a racing edit, then aborts the fenced encryption transition", async () => {
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const realtime = realtimeHarness();
+    const api = apiHarness();
+    api.sync = vi.fn(async (_token, body) => ({
+      acknowledgements: body.updates.map((update, index) => ({
+        updateId: update.updateId,
+        sequence: index + 1,
+      })),
+      session: baseSession({ scope: "owner", currentSequence: body.updates.length }),
+    }));
+    api.openSession = vi.fn(async () => baseSession({ scope: "owner", currentSequence: 1 }));
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "owner", token: TOKEN },
+      baseSession({ scope: "owner" }),
+      doc,
+      { api, outbox, realtimeFactory: realtime.factory },
+    );
+    const fenced: boolean[] = [];
+    provider.onWriteFence((value) => fenced.push(value));
+    await provider.connect({ name: "Owner", color: "#123456" });
+    doc.getText("content").insert(0, "durable");
+    await provider.whenLocalUpdatesPersisted();
+    await provider.flushNow();
+
+    const preparing = provider.prepareEncryptionTransition();
+    expect(fenced.at(-1)).toBe(true);
+    doc.getText("content").insert(doc.getText("content").length, " raced");
+
+    await expect(preparing).rejects.toThrow("document changed during encryption transition");
+    expect(realtime.dispose).toHaveBeenCalledOnce();
+    expect(api.sync).toHaveBeenCalledTimes(2);
+    expect(await outbox.list(NOTE_ID, "owner", 1)).toEqual([]);
+    expect(() => provider.assertEncryptionTransitionStable())
+      .toThrow("document changed during encryption transition");
     await provider.destroy();
   });
 

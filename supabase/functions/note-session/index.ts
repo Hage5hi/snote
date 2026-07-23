@@ -1,5 +1,7 @@
 import {
   createCapabilityToken,
+  decodeCapabilityPayload,
+  hashCapabilityAdmissionSubject,
   hashCapabilityToken,
   readCapabilityBearer,
 } from "../_shared/capability.ts";
@@ -32,20 +34,31 @@ Deno.serve(async (req) => {
 
     if (body?.action === "create") {
       if (capabilityWritesDisabled()) return capabilityFailure("read_only");
-      if (req.headers.has("authorization") || bearer) {
-        return capabilityJson({ error: "unauthorized" }, 401);
-      }
+      if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
       const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
       if (!SLUG_RE.test(slug)) return capabilityFailure("invalid");
 
-      const owner = createCapabilityToken();
+      const owner = bearer;
       const edit = createCapabilityToken();
       const view = createCapabilityToken();
+      const subjectHash = await hashCapabilityAdmissionSubject(req, environment.hmacSecret);
+      if (!subjectHash) return capabilityFailure("unavailable");
       const [ownerHash, editHash, viewHash] = await Promise.all([
         hashCapabilityToken(owner, environment.hmacSecret),
         hashCapabilityToken(edit, environment.hmacSecret),
         hashCapabilityToken(view, environment.hmacSecret),
       ]);
+      const { data: admitted, error: admissionError } = await environment.client.rpc(
+        "capability_admission_consume",
+        {
+          p_operation: "create",
+          p_subject_hash: subjectHash,
+          p_request_cost: 1,
+          p_byte_cost: 0,
+        },
+      );
+      if (admissionError) return capabilityFailure("unavailable");
+      if (admitted !== true) return capabilityFailure("quota_exceeded");
       const { data: created, error: createError } = await environment.client.rpc(
         "capability_note_create",
         {
@@ -65,7 +78,10 @@ Deno.serve(async (req) => {
         environment.jwtSecret,
       );
       if (!session) return capabilityFailure("unavailable");
-      return capabilityJson({ session, capabilities: { owner, edit, view } }, 201);
+      const capabilities = created?.recovered === true
+        ? { owner }
+        : { owner, edit, view };
+      return capabilityJson({ session, capabilities }, created?.recovered === true ? 200 : 201);
     }
 
     if (body?.action === "import-legacy") {
@@ -90,12 +106,31 @@ Deno.serve(async (req) => {
         || payload.length > MAX_ENCODED_PAYLOAD_CHARS
         || !encryptionMetadataValid
       ) return capabilityFailure("invalid");
+      let decodedPayload: Uint8Array;
+      try {
+        decodedPayload = decodeCapabilityPayload(payload, 4_194_304);
+      } catch {
+        return capabilityFailure("invalid");
+      }
 
       // The client persists this candidate before the first mutating request.
       // A lost response can therefore retry the exact same owner hash.
       const owner = bearer;
       const edit = createCapabilityToken();
       const view = createCapabilityToken();
+      const subjectHash = await hashCapabilityAdmissionSubject(req, environment.hmacSecret);
+      if (!subjectHash) return capabilityFailure("unavailable");
+      const { data: admitted, error: admissionError } = await environment.client.rpc(
+        "capability_admission_consume",
+        {
+          p_operation: "create",
+          p_subject_hash: subjectHash,
+          p_request_cost: 1,
+          p_byte_cost: decodedPayload.byteLength,
+        },
+      );
+      if (admissionError) return capabilityFailure("unavailable");
+      if (admitted !== true) return capabilityFailure("quota_exceeded");
       const [ownerHash, editHash, viewHash] = await Promise.all([
         hashCapabilityToken(owner, environment.hmacSecret),
         hashCapabilityToken(edit, environment.hmacSecret),

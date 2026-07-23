@@ -31,6 +31,9 @@ ALTER TABLE public.notes
   ADD COLUMN IF NOT EXISTS sync_status public.note_sync_status NOT NULL DEFAULT 'legacy',
   ADD COLUMN IF NOT EXISTS encryption_version bigint NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS payload_limit_bytes integer NOT NULL DEFAULT 1048576,
+  ADD COLUMN IF NOT EXISTS storage_limit_bytes bigint NOT NULL DEFAULT 67108864,
+  ADD COLUMN IF NOT EXISTS update_limit_count integer NOT NULL DEFAULT 20000,
+  ADD COLUMN IF NOT EXISTS checkpoint_limit_count integer NOT NULL DEFAULT 256,
   ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
 
 CREATE UNIQUE INDEX IF NOT EXISTS notes_note_id_key ON public.notes(note_id);
@@ -39,6 +42,15 @@ ALTER TABLE public.notes
   DROP CONSTRAINT IF EXISTS notes_payload_limit_valid,
   ADD CONSTRAINT notes_payload_limit_valid
     CHECK (payload_limit_bytes BETWEEN 65536 AND 4194304),
+  DROP CONSTRAINT IF EXISTS notes_storage_limit_valid,
+  ADD CONSTRAINT notes_storage_limit_valid
+    CHECK (storage_limit_bytes BETWEEN 65536 AND 1073741824),
+  DROP CONSTRAINT IF EXISTS notes_update_limit_valid,
+  ADD CONSTRAINT notes_update_limit_valid
+    CHECK (update_limit_count BETWEEN 1 AND 100000),
+  DROP CONSTRAINT IF EXISTS notes_checkpoint_limit_valid,
+  ADD CONSTRAINT notes_checkpoint_limit_valid
+    CHECK (checkpoint_limit_count BETWEEN 1 AND 4096),
   DROP CONSTRAINT IF EXISTS notes_encryption_version_valid,
   ADD CONSTRAINT notes_encryption_version_valid CHECK (encryption_version >= 0),
   DROP CONSTRAINT IF EXISTS notes_encryption_metadata_consistent,
@@ -249,6 +261,144 @@ REVOKE ALL ON TABLE public.note_updates FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.note_checkpoints FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON SEQUENCE public.note_updates_seq_seq FROM PUBLIC, anon, authenticated;
 
+-- Aggregate abuse admission. subject_hash is either the domain-separated HMAC
+-- of a gateway-verified client address (create) or an existing capability HMAC
+-- (sync). Raw addresses, slugs, tokens, and content never enter this table.
+CREATE TABLE public.capability_admission_windows (
+  operation text NOT NULL CHECK (operation IN ('create', 'sync')),
+  bucket_kind text NOT NULL CHECK (bucket_kind IN ('global', 'subject')),
+  subject_hash text NOT NULL CHECK (subject_hash ~ '^[a-f0-9]{64}$'),
+  window_start timestamptz NOT NULL,
+  request_count bigint NOT NULL CHECK (request_count >= 0),
+  byte_count bigint NOT NULL CHECK (byte_count >= 0),
+  updated_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+  PRIMARY KEY (operation, bucket_kind, subject_hash, window_start)
+);
+
+ALTER TABLE public.capability_admission_windows ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.capability_admission_windows FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.capability_admission_consume(
+  p_operation text,
+  p_subject_hash text,
+  p_request_cost bigint DEFAULT 1,
+  p_byte_cost bigint DEFAULT 0
+)
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := statement_timestamp();
+  v_window_seconds integer := 3600;
+  v_window_start timestamptz;
+  v_subject_request_limit bigint;
+  v_subject_byte_limit bigint;
+  v_global_request_limit bigint;
+  v_global_byte_limit bigint;
+  v_subject_requests bigint;
+  v_subject_bytes bigint;
+  v_global_requests bigint;
+  v_global_bytes bigint;
+  v_global_hash text := repeat('0', 64);
+BEGIN
+  IF p_operation NOT IN ('create', 'sync')
+    OR p_subject_hash IS NULL OR p_subject_hash !~ '^[a-f0-9]{64}$'
+    OR p_request_cost NOT BETWEEN 1 AND 100
+    OR p_byte_cost NOT BETWEEN 0 AND 4194304
+  THEN
+    RETURN false;
+  END IF;
+
+  IF p_operation = 'create' THEN
+    v_subject_request_limit := 20;
+    v_subject_byte_limit := 67108864;
+    v_global_request_limit := 5000;
+    v_global_byte_limit := 10737418240;
+  ELSE
+    v_subject_request_limit := 5000;
+    v_subject_byte_limit := 268435456;
+    v_global_request_limit := 1000000;
+    v_global_byte_limit := 53687091200;
+  END IF;
+
+  v_window_start := to_timestamp(
+    floor(extract(epoch FROM v_now) / v_window_seconds) * v_window_seconds
+  );
+
+  -- Serialize the two bucket checks for this operation/window. Both counters
+  -- are compared before either is incremented, so concurrent callers cannot
+  -- oversubscribe the global or subject budget.
+  PERFORM pg_advisory_xact_lock(
+    hashtext('snote-capability-admission'),
+    hashtext(p_operation || ':' || v_window_start::text)
+  );
+
+  SELECT COALESCE(request_count, 0), COALESCE(byte_count, 0)
+  INTO v_global_requests, v_global_bytes
+  FROM public.capability_admission_windows
+  WHERE operation = p_operation
+    AND bucket_kind = 'global'
+    AND subject_hash = v_global_hash
+    AND window_start = v_window_start;
+  IF NOT FOUND THEN
+    v_global_requests := 0;
+    v_global_bytes := 0;
+  END IF;
+
+  SELECT COALESCE(request_count, 0), COALESCE(byte_count, 0)
+  INTO v_subject_requests, v_subject_bytes
+  FROM public.capability_admission_windows
+  WHERE operation = p_operation
+    AND bucket_kind = 'subject'
+    AND subject_hash = p_subject_hash
+    AND window_start = v_window_start;
+  IF NOT FOUND THEN
+    v_subject_requests := 0;
+    v_subject_bytes := 0;
+  END IF;
+
+  IF v_global_requests + p_request_cost > v_global_request_limit
+    OR v_subject_requests + p_request_cost > v_subject_request_limit
+    OR (v_global_byte_limit > 0 AND v_global_bytes + p_byte_cost > v_global_byte_limit)
+    OR (v_subject_byte_limit > 0 AND v_subject_bytes + p_byte_cost > v_subject_byte_limit)
+  THEN
+    RETURN false;
+  END IF;
+
+  INSERT INTO public.capability_admission_windows AS windows (
+    operation, bucket_kind, subject_hash, window_start,
+    request_count, byte_count, updated_at
+  ) VALUES (
+    p_operation, 'global', v_global_hash, v_window_start,
+    p_request_cost, p_byte_cost, v_now
+  )
+  ON CONFLICT (operation, bucket_kind, subject_hash, window_start) DO UPDATE
+  SET request_count = windows.request_count + EXCLUDED.request_count,
+      byte_count = windows.byte_count + EXCLUDED.byte_count,
+      updated_at = EXCLUDED.updated_at;
+
+  INSERT INTO public.capability_admission_windows AS windows (
+    operation, bucket_kind, subject_hash, window_start,
+    request_count, byte_count, updated_at
+  ) VALUES (
+    p_operation, 'subject', p_subject_hash, v_window_start,
+    p_request_cost, p_byte_cost, v_now
+  )
+  ON CONFLICT (operation, bucket_kind, subject_hash, window_start) DO UPDATE
+  SET request_count = windows.request_count + EXCLUDED.request_count,
+      byte_count = windows.byte_count + EXCLUDED.byte_count,
+      updated_at = EXCLUDED.updated_at;
+
+  DELETE FROM public.capability_admission_windows
+  WHERE operation = p_operation
+    AND window_start < v_window_start - interval '48 hours';
+  RETURN true;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.capability_note_create(
   p_slug text,
   p_owner_token_hash text,
@@ -262,6 +412,7 @@ SET search_path = pg_catalog, pg_temp
 AS $$
 DECLARE
   v_note_id uuid;
+  v_recovered boolean := false;
   v_result jsonb;
 BEGIN
   IF p_slug IS NULL OR p_slug !~ '^[a-zA-Z0-9_-]{1,64}$'
@@ -298,14 +449,30 @@ BEGIN
     )
     RETURNING note_id INTO v_note_id;
   EXCEPTION WHEN unique_violation THEN
-    RETURN jsonb_build_object('status', 'slug_unavailable');
+    SELECT n.note_id INTO v_note_id
+    FROM public.notes AS n
+    JOIN public.note_capabilities AS owner_capability
+      ON owner_capability.note_id = n.note_id
+      AND owner_capability.scope = 'owner'
+      AND owner_capability.token_hash = p_owner_token_hash
+      AND owner_capability.revoked_at IS NULL
+    WHERE n.slug = p_slug
+      AND n.capability_managed
+      AND n.deleted_at IS NULL
+      AND n.sync_status <> 'deleted';
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('status', 'slug_unavailable');
+    END IF;
+    v_recovered := true;
   END;
 
-  INSERT INTO public.note_capabilities(note_id, scope, token_hash)
-  VALUES
-    (v_note_id, 'owner', p_owner_token_hash),
-    (v_note_id, 'edit', p_edit_token_hash),
-    (v_note_id, 'view', p_view_token_hash);
+  IF NOT v_recovered THEN
+    INSERT INTO public.note_capabilities(note_id, scope, token_hash)
+    VALUES
+      (v_note_id, 'owner', p_owner_token_hash),
+      (v_note_id, 'edit', p_edit_token_hash),
+      (v_note_id, 'view', p_view_token_hash);
+  END IF;
 
   -- Opening inside the same RPC means an internal failure rolls creation back;
   -- the Edge layer never commits a note before it can return the raw owner key.
@@ -314,7 +481,10 @@ BEGIN
   IF v_result ->> 'status' <> 'ok' THEN
     RAISE EXCEPTION 'capability note creation unavailable';
   END IF;
-  RETURN v_result || jsonb_build_object('noteId', v_note_id);
+  RETURN v_result || jsonb_build_object(
+    'noteId', v_note_id,
+    'recovered', v_recovered
+  );
 END;
 $$;
 
@@ -460,6 +630,11 @@ DECLARE
   v_standard text;
   v_payload bytea;
   v_total_bytes bigint := 0;
+  v_new_bytes bigint := 0;
+  v_existing_bytes bigint := 0;
+  v_existing_updates bigint := 0;
+  v_new_updates integer := 0;
+  v_seen_update_ids text[] := ARRAY[]::text[];
   v_sequence bigint;
   v_acknowledgements jsonb := '[]'::jsonb;
 BEGIN
@@ -471,7 +646,13 @@ BEGIN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
 
-  SELECT n.note_id, n.sync_status, n.encryption_version, n.payload_limit_bytes
+  SELECT
+    n.note_id,
+    n.sync_status,
+    n.encryption_version,
+    n.payload_limit_bytes,
+    n.storage_limit_bytes,
+    n.update_limit_count
   INTO v_note
   FROM public.note_capabilities AS c
   JOIN public.notes AS n ON n.note_id = c.note_id
@@ -480,7 +661,7 @@ BEGIN
     AND c.scope IN ('owner', 'edit')
     AND n.capability_managed
     AND n.deleted_at IS NULL
-  FOR SHARE OF n;
+  FOR UPDATE OF n;
 
   IF NOT FOUND THEN
     RETURN jsonb_build_object('status', 'unauthorized');
@@ -532,7 +713,36 @@ BEGIN
     IF v_total_bytes > 4194304 THEN
       RETURN jsonb_build_object('status', 'payload_too_large');
     END IF;
+
+    IF NOT v_update_id = ANY(v_seen_update_ids)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.note_updates
+        WHERE note_id = v_note.note_id AND update_id = v_update_id
+      )
+    THEN
+      v_seen_update_ids := array_append(v_seen_update_ids, v_update_id);
+      v_new_updates := v_new_updates + 1;
+      v_new_bytes := v_new_bytes + octet_length(v_payload);
+    END IF;
   END LOOP;
+
+  SELECT
+    (SELECT count(*) FROM public.note_updates WHERE note_id = v_note.note_id),
+    (SELECT
+      COALESCE((SELECT sum(octet_length(payload)) FROM public.note_updates WHERE note_id = v_note.note_id), 0)
+      + COALESCE((SELECT sum(octet_length(payload)) FROM public.note_checkpoints WHERE note_id = v_note.note_id), 0)
+    )
+  INTO v_existing_updates, v_existing_bytes;
+
+  IF v_existing_updates + v_new_updates > v_note.update_limit_count
+    OR v_existing_bytes + v_new_bytes > v_note.storage_limit_bytes
+  THEN
+    UPDATE public.notes
+    SET sync_status = 'read_only_quarantine'
+    WHERE note_id = v_note.note_id;
+    RETURN jsonb_build_object('status', 'quota_exceeded');
+  END IF;
 
   FOR v_item IN SELECT value FROM jsonb_array_elements(p_updates)
   LOOP
@@ -605,7 +815,18 @@ BEGIN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
 
-  SELECT n.note_id, n.slug, n.sync_status, n.encryption_version, n.payload_limit_bytes
+  SELECT
+    n.note_id,
+    n.slug,
+    n.sync_status,
+    n.encryption_version,
+    n.is_encrypted,
+    n.enc_salt,
+    n.enc_check,
+    n.enc_iterations,
+    n.payload_limit_bytes,
+    n.storage_limit_bytes,
+    n.checkpoint_limit_count
   INTO v_note
   FROM public.note_capabilities AS c
   JOIN public.notes AS n ON n.note_id = c.note_id
@@ -668,10 +889,11 @@ BEGIN
     v_expected_version := (p_params ->> 'expectedEncryptionVersion')::bigint;
     v_checkpoint := p_params -> 'checkpoint';
     IF v_target_encrypted IS NULL
-      OR v_expected_version IS DISTINCT FROM v_note.encryption_version
+      OR v_expected_version IS NULL
+      OR v_expected_version < 0
       OR jsonb_typeof(v_checkpoint) <> 'object'
     THEN
-      RETURN jsonb_build_object('status', 'version_conflict');
+      RETURN jsonb_build_object('status', 'invalid');
     END IF;
 
     v_checkpoint_id := v_checkpoint ->> 'checkpointId';
@@ -721,6 +943,54 @@ BEGIN
     IF NOT v_target_encrypted THEN
       v_salt := NULL;
       v_check := NULL;
+    END IF;
+
+    IF v_expected_version IS DISTINCT FROM v_note.encryption_version THEN
+      SELECT version INTO v_checkpoint_version
+      FROM public.note_checkpoints
+      WHERE note_id = v_note.note_id
+        AND through_seq = v_through_seq
+        AND checkpoint_id = v_checkpoint_id
+        AND payload = v_payload
+        AND encryption_version = v_expected_version + 1
+      ORDER BY version DESC
+      LIMIT 1;
+      IF v_note.encryption_version = v_expected_version + 1
+        AND v_note.is_encrypted = v_target_encrypted
+        AND v_note.enc_salt IS NOT DISTINCT FROM v_salt
+        AND v_note.enc_check IS NOT DISTINCT FROM v_check
+        AND (
+          NOT v_target_encrypted
+          OR v_note.enc_iterations = v_iterations
+        )
+        AND v_checkpoint_version IS NOT NULL
+      THEN
+        RETURN jsonb_build_object(
+          'status', 'ok',
+          'encryptionVersion', v_note.encryption_version,
+          'checkpointVersion', v_checkpoint_version,
+          'recovered', true
+        );
+      END IF;
+      RETURN jsonb_build_object('status', 'version_conflict');
+    END IF;
+
+    IF (
+      SELECT count(*) >= v_note.checkpoint_limit_count
+      FROM public.note_checkpoints
+      WHERE note_id = v_note.note_id
+    ) OR (
+      SELECT
+        COALESCE((SELECT sum(octet_length(payload)) FROM public.note_updates
+          WHERE note_id = v_note.note_id), 0)
+        + COALESCE((SELECT sum(octet_length(payload)) FROM public.note_checkpoints
+          WHERE note_id = v_note.note_id), 0)
+        + octet_length(v_payload) > v_note.storage_limit_bytes
+    ) THEN
+      UPDATE public.notes
+      SET sync_status = 'read_only_quarantine'
+      WHERE note_id = v_note.note_id;
+      RETURN jsonb_build_object('status', 'quota_exceeded');
     END IF;
 
     SELECT COALESCE(MAX(version), 0) + 1 INTO v_checkpoint_version
@@ -806,6 +1076,16 @@ BEGIN
           SELECT 1 FROM public.note_checkpoints AS c
           WHERE c.note_id = n.note_id AND octet_length(c.payload) > n.payload_limit_bytes
         )
+        OR (SELECT count(*) FROM public.note_updates AS u WHERE u.note_id = n.note_id)
+          > n.update_limit_count
+        OR (SELECT count(*) FROM public.note_checkpoints AS c WHERE c.note_id = n.note_id)
+          > n.checkpoint_limit_count
+        OR (
+          COALESCE((SELECT sum(octet_length(u.payload)) FROM public.note_updates AS u
+            WHERE u.note_id = n.note_id), 0)
+          + COALESCE((SELECT sum(octet_length(c.payload)) FROM public.note_checkpoints AS c
+            WHERE c.note_id = n.note_id), 0)
+        ) > n.storage_limit_bytes
       )
     RETURNING 1
   ) SELECT count(*) INTO v_count FROM quarantined;
@@ -881,6 +1161,7 @@ REVOKE ALL ON FUNCTION public.enforce_note_identity() FROM PUBLIC, anon, authent
 REVOKE ALL ON FUNCTION public.enforce_legacy_share_target() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.legacy_share_rotate(text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.reject_append_only_mutation() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_note_create(text, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_session_open(text, bigint, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_updates_append(text, jsonb, bigint) FROM PUBLIC, anon, authenticated;
@@ -890,6 +1171,8 @@ REVOKE ALL ON FUNCTION public.capability_quarantine_oversized() FROM PUBLIC, ano
 REVOKE ALL ON FUNCTION public.realtime_capability_allows(uuid, uuid, bigint, text, boolean) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.capability_note_create(text, text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.capability_admission_windows TO service_role;
 GRANT EXECUTE ON FUNCTION public.legacy_share_rotate(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_session_open(text, bigint, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_updates_append(text, jsonb, bigint) TO service_role;

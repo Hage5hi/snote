@@ -35,7 +35,13 @@ BEGIN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
 
-  SELECT n.note_id, n.sync_status, n.encryption_version, n.payload_limit_bytes
+  SELECT
+    n.note_id,
+    n.sync_status,
+    n.encryption_version,
+    n.payload_limit_bytes,
+    n.storage_limit_bytes,
+    n.checkpoint_limit_count
   INTO v_note
   FROM public.note_capabilities AS c
   JOIN public.notes AS n ON n.note_id = c.note_id
@@ -100,6 +106,24 @@ BEGIN
     ) <> v_payload_text
   THEN
     RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+
+  IF (
+    SELECT count(*) >= v_note.checkpoint_limit_count
+    FROM public.note_checkpoints
+    WHERE note_id = v_note.note_id
+  ) OR (
+    SELECT
+      COALESCE((SELECT sum(octet_length(payload)) FROM public.note_updates
+        WHERE note_id = v_note.note_id), 0)
+      + COALESCE((SELECT sum(octet_length(payload)) FROM public.note_checkpoints
+        WHERE note_id = v_note.note_id), 0)
+      + octet_length(v_payload) > v_note.storage_limit_bytes
+  ) THEN
+    UPDATE public.notes
+    SET sync_status = 'read_only_quarantine'
+    WHERE note_id = v_note.note_id;
+    RETURN jsonb_build_object('status', 'quota_exceeded');
   END IF;
 
   v_next_version := v_latest_version + 1;
