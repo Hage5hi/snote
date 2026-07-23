@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-05-19T08:53:56.075Z",
+  "generatedAt": "2026-07-23T12:03:28.222Z",
   "baselineLang": "en",
-  "totalKeys": 311,
+  "totalKeys": 380,
   "minCoverage": 100,
   "passed": true,
   "languages": [
     {
       "lang": "en",
       "coverage": 100,
-      "present": 311,
+      "present": 380,
       "missingCount": 0,
       "emptyCount": 0,
       "placeholderMismatchCount": 0,
@@ -19,7 +19,7 @@
     {
       "lang": "vi",
       "coverage": 100,
-      "present": 311,
+      "present": 380,
       "missingCount": 0,
       "emptyCount": 0,
       "placeholderMismatchCount": 0,
@@ -30,7 +30,7 @@
     {
       "lang": "zh",
       "coverage": 100,
-      "present": 311,
+      "present": 380,
       "missingCount": 0,
       "emptyCount": 0,
       "placeholderMismatchCount": 0,
@@ -41,7 +41,7 @@
     {
       "lang": "ja",
       "coverage": 100,
-      "present": 311,
+      "present": 380,
       "missingCount": 0,
       "emptyCount": 0,
       "placeholderMismatchCount": 0,
@@ -52,7 +52,7 @@
     {
       "lang": "ko",
       "coverage": 100,
-      "present": 311,
+      "present": 380,
       "missingCount": 0,
       "emptyCount": 0,
       "placeholderMismatchCount": 0,
@@ -63,7 +63,7 @@
     {
       "lang": "fr",
       "coverage": 100,
-      "present": 311,
+      "present": 380,
       "missingCount": 0,
       "emptyCount": 0,
       "placeholderMismatchCount": 0,
@@ -74,7 +74,29 @@
     {
       "lang": "es",
       "coverage": 100,
-      "present": 311,
+      "present": 380,
+      "missingCount": 0,
+      "emptyCount": 0,
+      "placeholderMismatchCount": 0,
+      "missing": [],
+      "empty": [],
+      "placeholderMismatch": []
+    },
+    {
+      "lang": "de",
+      "coverage": 100,
+      "present": 380,
+      "missingCount": 0,
+      "emptyCount": 0,
+      "placeholderMismatchCount": 0,
+      "missing": [],
+      "empty": [],
+      "placeholderMismatch": []
+    },
+    {
+      "lang": "pt",
+      "coverage": 100,
+      "present": 380,
       "missingCount": 0,
       "emptyCount": 0,
       "placeholderMismatchCount": 0,

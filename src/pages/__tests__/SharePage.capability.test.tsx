@@ -1,4 +1,4 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SharePage from "../SharePage";
@@ -80,6 +80,7 @@ describe("SharePage capability route", () => {
     render(<MemoryRouter initialEntries={[`/s#view=${TOKEN}`]}><SharePage /></MemoryRouter>);
 
     await waitFor(() => expect(harness.preview).toHaveBeenCalled());
+    expect(screen.getByRole("main")).toBeInTheDocument();
     expect(harness.openSession).toHaveBeenCalledWith(TOKEN);
     expect(harness.legacyInvoke).not.toHaveBeenCalled();
     expect(harness.providerConstruct.mock.calls[0][0]).toEqual({ slug: null, scope: "view", token: TOKEN });
@@ -93,5 +94,13 @@ describe("SharePage capability route", () => {
     await waitFor(() => expect(harness.unlock).toHaveBeenCalled());
     expect(harness.providerConstruct).not.toHaveBeenCalled();
     expect(harness.preview).not.toHaveBeenCalled();
+  });
+
+  it("announces capability errors", async () => {
+    harness.openSession.mockRejectedValue(new Error("revoked"));
+
+    render(<MemoryRouter initialEntries={[`/s#view=${TOKEN}`]}><SharePage /></MemoryRouter>);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("revoked");
   });
 });

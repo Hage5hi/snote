@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ArrowLeft, KeyRound, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,10 +13,23 @@ interface UnlockFormProps {
   check: string;
   iterations: number;
   onUnlock: (key: CryptoKey) => void;
+  embedded?: boolean;
 }
 
-export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFormProps) {
+export function UnlockForm({
+  slug,
+  salt,
+  check,
+  iterations,
+  onUnlock,
+  embedded = false,
+}: UnlockFormProps) {
   const { t } = useI18n();
+  const id = useId();
+  const inputId = `${id}-key`;
+  const headingId = `${id}-heading`;
+  const descriptionId = `${id}-description`;
+  const errorId = `${id}-error`;
   const location = useLocation();
   const routerTarget = `${location.key}\u0000${location.pathname}\u0000${location.search}\u0000${location.hash}`;
   const [pass, setPass] = useState("");
@@ -130,32 +143,64 @@ export function UnlockForm({ slug, salt, check, iterations, onUnlock }: UnlockFo
   };
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-background px-4">
+    <div
+      className={`flex items-center justify-center bg-background px-4 ${
+        embedded ? "h-full min-h-0" : "min-h-svh"
+      }`}
+    >
       <form
         onSubmit={submit}
         className="w-full max-w-sm space-y-4 rounded-md border border-border p-6"
+        aria-labelledby={headingId}
       >
         <div className="flex items-center gap-2">
-          <Link to="/" className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
+          {!embedded && (
+            <Link
+              to="/"
+              className="text-muted-foreground hover:text-foreground"
+              aria-label={t("share.back_home_aria")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          )}
           <KeyRound className="h-4 w-4" />
           <h1 className="font-mono text-sm">/{slug}</h1>
         </div>
         <div>
-          <p className="text-sm font-semibold">{t("unlock.heading")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{t("unlock.desc")}</p>
+          <h2 id={headingId} className="text-sm font-semibold">{t("unlock.heading")}</h2>
+          <p id={descriptionId} className="mt-1 text-xs text-muted-foreground">
+            {t("unlock.desc")}
+          </p>
         </div>
+        <label htmlFor={inputId} className="sr-only">{t("unlock.placeholder")}</label>
         <Input
+          id={inputId}
           type="password"
           value={pass}
           onChange={(e) => setPass(e.target.value)}
           placeholder={t("unlock.placeholder")}
-          autoFocus
+          autoFocus={!embedded}
+          aria-invalid={!!error}
+          aria-describedby={`${descriptionId}${error ? ` ${errorId}` : ""}`}
         />
-        {error && <p className="text-xs text-destructive">{error}</p>}
-        <Button type="submit" className="w-full" disabled={busy || !pass.trim()}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : t("unlock.submit")}
+        {error && (
+          <p id={errorId} className="text-xs text-destructive" role="alert">
+            {error}
+          </p>
+        )}
+        <Button
+          type="submit"
+          className="w-full"
+          disabled={busy || !pass.trim()}
+          aria-busy={busy}
+        >
+          {busy && (
+            <Loader2
+              className="h-4 w-4 motion-safe:animate-spin motion-reduce:animate-none"
+              aria-hidden="true"
+            />
+          )}
+          <span>{t("unlock.submit")}</span>
         </Button>
         <p className="text-[11px] text-muted-foreground">
           {t("unlock.hint_prefix")} <code>#&lt;key&gt;</code> {t("unlock.hint_suffix")}

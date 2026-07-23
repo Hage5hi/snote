@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/safe-storage";
 
 const STORAGE_KEY = "note.pagination";
 
@@ -14,17 +15,13 @@ function pageStep(el: HTMLElement) {
 export function usePagination() {
   const [enabled, setEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return localStorage.getItem(STORAGE_KEY) === "1";
+    return safeLocalStorageGet(STORAGE_KEY) === "1";
   });
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, enabled ? "1" : "0");
-    } catch {
-      // ignore
-    }
+    safeLocalStorageSet(STORAGE_KEY, enabled ? "1" : "0");
     document.documentElement.classList.toggle("paginated", enabled);
   }, [enabled]);
 
@@ -32,7 +29,8 @@ export function usePagination() {
     const el = getScroller();
     if (!el) return;
     const step = pageStep(el);
-    el.scrollBy({ top: step * dir, behavior: "smooth" });
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollBy({ top: step * dir, behavior: reducedMotion ? "auto" : "smooth" });
   }, []);
 
   // Keybindings: PageUp/Down always, Cmd+Arrow when paginated.

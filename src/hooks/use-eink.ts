@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/safe-storage";
 
 const KEY = "notes:eink-mode";
 const EVENT = "notes:eink-mode-change";
@@ -12,7 +13,8 @@ function detectAuto(): boolean {
 
 function readPref(): Pref {
   if (typeof window === "undefined") return "auto";
-  return ((window.localStorage.getItem(KEY) as Pref) || "auto");
+  const stored = safeLocalStorageGet(KEY);
+  return stored === "on" || stored === "off" || stored === "auto" ? stored : "auto";
 }
 
 export function useEink() {
@@ -33,12 +35,15 @@ export function useEink() {
     const onStorage = (e: StorageEvent) => {
       if (e.key === KEY) setPref(readPref());
     };
-    const onCustom = () => setPref(readPref());
+    const onCustom = (event: Event) => {
+      const detail = (event as CustomEvent<Pref>).detail;
+      setPref(detail === "on" || detail === "off" || detail === "auto" ? detail : readPref());
+    };
     window.addEventListener("storage", onStorage);
-    window.addEventListener(EVENT, onCustom as EventListener);
+    window.addEventListener(EVENT, onCustom);
     return () => {
       window.removeEventListener("storage", onStorage);
-      window.removeEventListener(EVENT, onCustom as EventListener);
+      window.removeEventListener(EVENT, onCustom);
     };
   }, []);
 
@@ -54,12 +59,8 @@ export function useEink() {
 
   const setMode = useCallback((p: Pref) => {
     setPref(p);
-    try {
-      window.localStorage.setItem(KEY, p);
-      window.dispatchEvent(new CustomEvent(EVENT));
-    } catch {
-      // ignore
-    }
+    safeLocalStorageSet(KEY, p);
+    window.dispatchEvent(new CustomEvent<Pref>(EVENT, { detail: p }));
   }, []);
 
   return { pref, active, autoActive, setMode };

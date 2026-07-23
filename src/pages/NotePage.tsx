@@ -701,6 +701,7 @@ export default function NotePage({
         salt={encMeta.salt!}
         check={encMeta.check!}
         iterations={iterationsFor(encMeta.iterations)}
+        embedded={!!embedSlug}
         onUnlock={(key) => {
           const currentTarget = currentEncTargetRef.current;
           if (currentTarget.slug !== slug || currentTarget.metaVersion !== metaVersion) return;
@@ -728,7 +729,11 @@ export default function NotePage({
         aria-busy="true"
         aria-live="polite"
       >
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <Loader2
+          className="h-5 w-5 motion-safe:animate-spin text-muted-foreground"
+          aria-hidden="true"
+        />
+        <span className="sr-only">{t("common.loading")}</span>
       </div>
     );
 

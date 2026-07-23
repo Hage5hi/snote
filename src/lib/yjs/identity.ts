@@ -1,4 +1,6 @@
 // Random anonymous identity per browser tab session, persisted to localStorage.
+import { safeLocalStorageSet } from "@/lib/safe-storage";
+
 const COLORS = [
   "#ef4444", "#f97316", "#f59e0b", "#eab308", "#84cc16",
   "#22c55e", "#10b981", "#14b8a6", "#06b6d4", "#0ea5e9",
@@ -39,6 +41,6 @@ export function getIdentity(): Identity {
 export function setIdentityName(name: string) {
   const id = getIdentity();
   const next = { ...id, name: name.trim().slice(0, 32) || id.name };
-  localStorage.setItem(KEY, JSON.stringify(next));
+  safeLocalStorageSet(KEY, JSON.stringify(next));
   return next;
 }

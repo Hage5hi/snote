@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/safe-storage";
 
 const KEY = "notes:focus-line";
 
@@ -10,14 +11,14 @@ const KEY = "notes:focus-line";
 export function useFocusLine() {
   const [enabled, setEnabled] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(KEY) === "1";
+    return safeLocalStorageGet(KEY) === "1";
   });
 
   useEffect(() => {
     const root = document.documentElement;
     if (enabled) root.classList.add("focus-line");
     else root.classList.remove("focus-line");
-    window.localStorage.setItem(KEY, enabled ? "1" : "0");
+    safeLocalStorageSet(KEY, enabled ? "1" : "0");
   }, [enabled]);
 
   const toggle = useCallback(() => setEnabled((v) => !v), []);

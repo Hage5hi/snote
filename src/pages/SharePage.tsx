@@ -145,26 +145,28 @@ function CapabilitySharePage({ access }: { access: CapabilityAccess }) {
   const head = <ShareHead />;
   if (error) {
     return (
-      <>{head}<div className="flex min-h-svh items-center justify-center px-4 text-sm text-destructive">{error}</div></>
+      <>{head}<main className="flex min-h-svh items-center justify-center px-4 text-sm text-destructive" role="alert">{error}</main></>
     );
   }
   if (session?.encryption.enabled && unlockRequired && !encryption) {
     return (
       <>
         {head}
-        <UnlockForm
-          slug={t("share.slug_label")}
-          salt={session.encryption.salt!}
-          check={session.encryption.check!}
-          iterations={session.encryption.iterations}
-          onUnlock={(key) => {
-            setEncryption({
-              encrypt: (bytes) => import("@/lib/crypto").then(({ encryptBytes }) => encryptBytes(key, bytes)),
-              decrypt: (bytes) => decryptBytes(key, bytes),
-            });
-            setUnlockRequired(false);
-          }}
-        />
+        <main>
+          <UnlockForm
+            slug={t("share.slug_label")}
+            salt={session.encryption.salt!}
+            check={session.encryption.check!}
+            iterations={session.encryption.iterations}
+            onUnlock={(key) => {
+              setEncryption({
+                encrypt: (bytes) => import("@/lib/crypto").then(({ encryptBytes }) => encryptBytes(key, bytes)),
+                decrypt: (bytes) => decryptBytes(key, bytes),
+              });
+              setUnlockRequired(false);
+            }}
+          />
+        </main>
       </>
     );
   }
@@ -433,10 +435,10 @@ function LegacySharePage() {
     return (
       <>
         {head}
-        <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-          <p className="text-sm text-muted-foreground">{t("share.notfound")}</p>
+        <main className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+          <p className="text-sm text-muted-foreground" role="alert">{t("share.notfound")}</p>
           <Link to="/" className="text-sm text-primary hover:underline">{t("share.back_home")}</Link>
-        </div>
+        </main>
       </>
     );
   }
@@ -445,10 +447,10 @@ function LegacySharePage() {
     return (
       <>
         {head}
-        <div className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
-          <p className="text-sm text-destructive">{state.message}</p>
+        <main className="flex min-h-svh flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+          <p className="text-sm text-destructive" role="alert">{state.message}</p>
           <Link to="/" className="text-sm text-primary hover:underline">{t("share.back_home")}</Link>
-        </div>
+        </main>
       </>
     );
   }
@@ -457,13 +459,15 @@ function LegacySharePage() {
     return (
       <>
         {head}
-        <UnlockForm
-          slug={t("share.slug_label")}
-          salt={state.salt}
-          check={state.check}
-          iterations={state.iterations}
-          onUnlock={onUnlock}
-        />
+        <main>
+          <UnlockForm
+            slug={t("share.slug_label")}
+            salt={state.salt}
+            check={state.check}
+            iterations={state.iterations}
+            onUnlock={onUnlock}
+          />
+        </main>
       </>
     );
   }
@@ -497,9 +501,9 @@ function ShareReady({ head, doc, t }: { head: React.ReactNode; doc: Y.Doc; t: Re
           <Eye className="h-4 w-4 text-muted-foreground" />
           <span className="font-mono text-xs text-muted-foreground">{t("share.read_only")}</span>
         </header>
-        <div className="flex-1 overflow-auto bg-muted/30">
+        <main className="flex-1 overflow-auto bg-muted/30">
           <Preview doc={doc} />
-        </div>
+        </main>
       </AppShell>
     </>
   );

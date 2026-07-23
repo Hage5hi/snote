@@ -64,6 +64,7 @@ export function detectLang(): Lang {
 // Translation dictionary. Keep keys flat and stable. Missing keys fall back to English.
 export const dict = {
   en: {
+    "common.loading": "Loading…",
     "home.tagline": "Online notes, synced instantly.",
     "home.intro_prefix": "Open any note by URL — e.g. ",
     "home.intro_suffix": ". Autosaves, syncs in realtime across devices, and works offline.",
@@ -463,6 +464,7 @@ export const dict = {
     "scene.preview.hint": "Hover to preview, click to apply",
   },
   vi: {
+    "common.loading": "Đang tải…",
     "home.tagline": "Note online, đồng bộ tức thì.",
     "home.intro_prefix": "Mở bất kỳ note nào bằng URL — ví dụ ",
     "home.intro_suffix": ". Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.",
@@ -855,6 +857,7 @@ export const dict = {
     "scene.preview.hint": "Di chuột để xem trước, bấm để áp dụng",
   },
   zh: {
+    "common.loading": "加载中…",
     "home.tagline": "在线笔记，即时同步。",
     "home.intro_prefix": "通过 URL 打开任何笔记 — 例如 ",
     "home.intro_suffix": "。自动保存，跨设备实时同步，离线也能用。",
@@ -1242,6 +1245,7 @@ export const dict = {
     "scene.preview.hint": "悬停预览，点击应用",
   },
   ja: {
+    "common.loading": "読み込み中…",
     "home.tagline": "オンラインメモ、即時同期。",
     "home.intro_prefix": "URL で任意のメモを開く — 例: ",
     "home.intro_suffix": "。自動保存、デバイス間リアルタイム同期、オフラインでも動作。",
@@ -1629,6 +1633,7 @@ export const dict = {
     "scene.preview.hint": "ホバーでプレビュー、クリックで適用",
   },
   ko: {
+    "common.loading": "불러오는 중…",
     "home.tagline": "온라인 노트, 즉시 동기화.",
     "home.intro_prefix": "URL로 어떤 노트든 열기 — 예: ",
     "home.intro_suffix": ". 자동 저장, 기기 간 실시간 동기화, 오프라인에서도 동작.",
@@ -2015,6 +2020,7 @@ export const dict = {
     "scene.preview.hint": "마우스를 올려 미리보기, 클릭하여 적용",
   },
   fr: {
+    "common.loading": "Chargement…",
     "home.tagline": "Notes en ligne, synchronisées instantanément.",
     "home.intro_prefix": "Ouvrez une note par URL — ex. ",
     "home.intro_suffix": ". Sauvegarde automatique, sync temps réel multi-appareils, fonctionne hors-ligne.",
@@ -2401,6 +2407,7 @@ export const dict = {
     "scene.preview.hint": "Survolez pour prévisualiser, cliquez pour appliquer",
   },
   es: {
+    "common.loading": "Cargando…",
     "home.tagline": "Notas online, sincronizadas al instante.",
     "home.intro_prefix": "Abre cualquier nota por URL — p. ej. ",
     "home.intro_suffix": ". Autoguardado, sync en tiempo real entre dispositivos, funciona offline.",
@@ -2787,6 +2794,7 @@ export const dict = {
     "scene.preview.hint": "Pasa el cursor para previsualizar, haz clic para aplicar",
   },
   de: {
+    "common.loading": "Wird geladen…",
     "home.tagline": "Online-Notizen, sofort synchronisiert.",
     "home.intro_prefix": "Öffne Notizen per URL – z. B. ",
     "home.intro_suffix": ". Speichert automatisch, synchronisiert in Echtzeit und funktioniert offline.",
@@ -3167,6 +3175,7 @@ export const dict = {
     "scene.preview.reverted": "Vorschau abgebrochen",
     "scene.preview.hint": "Zum Voransehen darüberfahren, zum Anwenden klicken",
   },  pt: {
+    "common.loading": "A carregar…",
     "home.tagline": "Notas online, sincronizadas instantaneamente.",
     "home.intro_prefix": "Abra qualquer nota por URL — p. ex. ",
     "home.intro_suffix": ". Grava automaticamente, sincroniza em tempo real entre dispositivos e funciona offline.",

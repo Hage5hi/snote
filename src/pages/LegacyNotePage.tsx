@@ -156,7 +156,7 @@ export default function LegacyNotePage({
   );
 
   if (state.kind === "loading") {
-    return <>{head}<div className="flex h-full min-h-svh items-center justify-center"><Loader2 className="h-5 w-5 animate-spin" /></div></>;
+    return <>{head}<div className={`flex h-full items-center justify-center ${embed ? "min-h-0" : "min-h-svh"}`} role="status" aria-label={t("common.loading")}><Loader2 className="h-5 w-5 motion-safe:animate-spin" aria-hidden="true" /></div></>;
   }
   if (state.kind === "notfound" || state.kind === "error") {
     return (
@@ -175,6 +175,7 @@ export default function LegacyNotePage({
         salt={state.note.salt!}
         check={state.note.check!}
         iterations={iterationsFor(state.note.iterations)}
+        embedded={embed}
         onUnlock={(key) => {
           const secret = (() => {
             try { return decodeURIComponent(window.location.hash.slice(1)); } catch { return ""; }
@@ -225,8 +226,13 @@ export default function LegacyNotePage({
             className="h-8 w-36 font-mono text-xs sm:w-48"
             aria-invalid={!!duplicateError}
           />
-          <Button type="submit" size="sm" disabled={duplicating || !SLUG_RE.test(targetSlug.trim())}>
-            {duplicating ? <Loader2 className="h-4 w-4 animate-spin" /> : <CopyPlus className="h-4 w-4" />}
+          <Button
+            type="submit"
+            size="sm"
+            disabled={duplicating || !SLUG_RE.test(targetSlug.trim())}
+            aria-label={t("legacy.duplicate_securely")}
+          >
+            {duplicating ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" /> : <CopyPlus className="h-4 w-4" />}
             <span className="hidden sm:inline">{t("legacy.duplicate_securely")}</span>
           </Button>
         </form>
