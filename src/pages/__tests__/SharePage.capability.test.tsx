@@ -50,6 +50,7 @@ function noteSession(encrypted = false) {
     realtimeToken: "header.payload.signature",
     realtimeExpiresAt: "2099-01-01T00:00:00.000Z",
     realtimeTopic: "note:00000000-0000-4000-8000-000000000001",
+    generation: 1,
     syncStatus: "active",
     currentSequence: 0,
     payloadLimitBytes: 4_194_304,

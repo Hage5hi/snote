@@ -138,6 +138,17 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     ]);
     expect(createdA.status).toBe("ok");
     expect(createdA.session?.noteId).toBe(createdA.noteId);
+    const recoveredA = await rpc(db, "capability_note_create", [
+      "secure-a",
+      tokenHash("a"),
+      tokenHash("7"),
+      tokenHash("8"),
+    ]);
+    expect(recoveredA).toMatchObject({
+      status: "ok",
+      noteId: createdA.noteId,
+      recovered: true,
+    });
     await expect(db.exec(`
       INSERT INTO public.note_shares(token, slug)
       VALUES ('legacy-share-cannot-target-secure', 'secure-a')
@@ -227,6 +238,46 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       [tokenHash("c"), [], 0],
       ["", "::jsonb", ""],
     )).status).toBe("unauthorized");
+
+    await db.query(
+      "UPDATE public.notes SET storage_limit_bytes = 65536 WHERE note_id = $1",
+      [createdA.noteId],
+    );
+    const quotaBytes = Buffer.alloc(65536, 17);
+    expect((await rpc(
+      db,
+      "capability_updates_append",
+      [tokenHash("b"), [{
+        updateId: createHash("sha256").update(quotaBytes).digest("hex"),
+        payload: quotaBytes.toString("base64url"),
+      }], 0],
+      ["", "::jsonb", ""],
+    )).status).toBe("quota_exceeded");
+    expect((await db.query<{ sync_status: string }>(
+      "SELECT sync_status::text FROM public.notes WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].sync_status).toBe("read_only_quarantine");
+    await db.query(
+      "UPDATE public.notes SET sync_status = 'active', storage_limit_bytes = 67108864 WHERE note_id = $1",
+      [createdA.noteId],
+    );
+
+    const admission = async (subject: string) => (await db.query<{ allowed: boolean }>(
+      "SELECT public.capability_admission_consume('create', $1, 1, 0) AS allowed",
+      [subject],
+    )).rows[0].allowed;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expect(await admission(tokenHash("6"))).toBe(true);
+    }
+    expect(await admission(tokenHash("6"))).toBe(false);
+    const importAdmission = async () => (await db.query<{ allowed: boolean }>(
+      "SELECT public.capability_admission_consume('create', $1, 1, 4194304) AS allowed",
+      [tokenHash("5")],
+    )).rows[0].allowed;
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      expect(await importAdmission()).toBe(true);
+    }
+    expect(await importAdmission()).toBe(false);
 
     const createdB = await rpc(db, "capability_note_create", [
       "secure-b",
@@ -323,6 +374,27 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       ["", "", "::jsonb"],
     );
     expect(encrypted).toMatchObject({ status: "ok", encryptionVersion: 1 });
+    expect(await rpc(
+      db,
+      "capability_note_manage",
+      [tokenHash("a"), "set-encryption", {
+        isEncrypted: true,
+        expectedEncryptionVersion: 0,
+        salt: "s".repeat(16),
+        check: "c".repeat(16),
+        iterations: 100000,
+        checkpoint: {
+          checkpointId: createHash("sha256").update(longCheckpointBytes).digest("hex"),
+          payload: longCheckpointBytes.toString("base64url"),
+          throughSequence: sequence,
+        },
+      }],
+      ["", "", "::jsonb"],
+    )).toMatchObject({
+      status: "ok",
+      encryptionVersion: 1,
+      recovered: true,
+    });
     const encryptedSession = await rpc(
       db,
       "capability_session_open",
@@ -411,6 +483,37 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       }, 4, 4],
       ["", "::jsonb", "", ""],
     )).toMatchObject({ status: "version_conflict" });
+    const quotaUpdate = await rpc(
+      db,
+      "capability_updates_append",
+      [tokenHash("b"), [{ updateId: hash([16]), payload: "EA" }], 4],
+      ["", "::jsonb", ""],
+    );
+    expect(quotaUpdate.status).toBe("ok");
+    await db.query(
+      "UPDATE public.notes SET checkpoint_limit_count = 5 WHERE note_id = $1",
+      [createdA.noteId],
+    );
+    expect(await rpc(
+      db,
+      "capability_checkpoint_append",
+      [tokenHash("b"), {
+        checkpointId: hash([17]),
+        payload: "EQ",
+        throughSequence: quotaUpdate.acknowledgements![0].sequence,
+      }, 5, 4],
+      ["", "::jsonb", "", ""],
+    )).toMatchObject({ status: "quota_exceeded" });
+    expect((await db.query<{ sync_status: string }>(
+      "SELECT sync_status::text FROM public.notes WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].sync_status).toBe("read_only_quarantine");
+    await db.query(
+      `UPDATE public.notes
+       SET sync_status = 'active', checkpoint_limit_count = 256
+       WHERE note_id = $1`,
+      [createdA.noteId],
+    );
     await db.query(
       "UPDATE public.notes SET sync_status = 'read_only_quarantine' WHERE note_id = $1",
       [createdA.noteId],

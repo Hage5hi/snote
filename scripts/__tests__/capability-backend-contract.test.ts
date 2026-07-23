@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   createCapabilityToken,
   decodeCapabilityPayload,
+  hashCapabilityAdmissionSubject,
   hashCapabilityToken,
   readCapabilityBearer,
   sha256CapabilityPayload,
@@ -42,6 +43,20 @@ describe("capability primitives", () => {
     expect(first).toBe(second);
     expect(first).toMatch(/^[a-f0-9]{64}$/);
     await expect(hashCapabilityToken(token, "short")).rejects.toThrow("configuration");
+  });
+
+  it("admits only one gateway-verified address and stores a domain-separated hash", async () => {
+    const secret = "B".repeat(43);
+    const subject = await hashCapabilityAdmissionSubject(new Request("https://example.test", {
+      headers: { "x-forwarded-for": "203.0.113.7" },
+    }), secret);
+    expect(subject).toMatch(/^[a-f0-9]{64}$/);
+    expect(subject).not.toBe(await hashCapabilityToken("A".repeat(43), secret));
+    await expect(hashCapabilityAdmissionSubject(new Request("https://example.test"), secret))
+      .resolves.toBeNull();
+    await expect(hashCapabilityAdmissionSubject(new Request("https://example.test", {
+      headers: { "x-forwarded-for": "203.0.113.7, 198.51.100.4" },
+    }), secret)).resolves.toBeNull();
   });
 
   it("decodes bounded canonical payloads without allocating oversized input", () => {
@@ -90,6 +105,15 @@ describe("capability primitives", () => {
 describe("capability database boundary", () => {
   const migrationPath = "supabase/migrations/20260722000000_capability_backend.sql";
 
+  it("keeps generated database types aligned with admission and cumulative quotas", () => {
+    const generatedTypes = source("src/integrations/supabase/types.ts");
+    expect(generatedTypes).toContain("storage_limit_bytes: number");
+    expect(generatedTypes).toContain("update_limit_count: number");
+    expect(generatedTypes).toContain("checkpoint_limit_count: number");
+    expect(generatedTypes).toContain("capability_admission_consume:");
+    expect(generatedTypes).toContain('p_operation: "create" | "sync"');
+  });
+
   it("publishes security-definer RPCs and grants in one transaction", () => {
     const sql = source("supabase/migrations/20260722000000_capability_backend.sql");
     expect(sql).toMatch(/^--[\s\S]*?\nBEGIN;\s/);
@@ -106,6 +130,7 @@ describe("capability database boundary", () => {
     expect(sql).toContain("CREATE TABLE public.note_checkpoints");
     expect(sql).toContain("reject_append_only_mutation");
     expect(sql).toContain("notes_encryption_metadata_consistent");
+    expect(sql).toContain("ADD COLUMN IF NOT EXISTS storage_limit_bytes");
   });
 
   it("keeps secure rows out of legacy public policies and exposes no new direct table grants", () => {
@@ -142,6 +167,20 @@ describe("capability database boundary", () => {
     expect(append).toContain("-- Validate the complete batch before the first append");
     expect(append).toContain("replace(replace(encode(v_payload, 'base64')");
     expect(append).toContain("ON CONFLICT (note_id, update_id) DO NOTHING");
+    expect(append).toContain("read_only_quarantine");
+    expect(append).toContain("storage_limit_bytes");
+    expect(append).toContain("quota_exceeded");
+  });
+
+  it("uses atomic admission windows without retaining raw client addresses", () => {
+    const sql = source(migrationPath);
+    expect(sql).toContain("CREATE TABLE public.capability_admission_windows");
+    expect(sql).toContain("FUNCTION public.capability_admission_consume");
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(sql).toContain("subject_hash");
+    expect(sql).toContain("v_subject_byte_limit := 67108864");
+    expect(sql).toContain("v_global_byte_limit := 10737418240");
+    expect(sql).not.toMatch(/capability_admission_windows[\s\S]{0,500}\bip\b/i);
   });
 
   it("materializes each session from one statement snapshot", () => {
@@ -178,6 +217,9 @@ describe("capability database boundary", () => {
     expect(sql).toContain("p_expected_encryption_version");
     expect(sql).toContain("v_through_seq > v_current_seq");
     expect(sql).toContain("v_through_seq <= v_latest_through_seq");
+    expect(sql).toContain("storage_limit_bytes");
+    expect(sql).toContain("checkpoint_limit_count");
+    expect(sql).toContain("quota_exceeded");
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.capability_checkpoint_append\([^;]+ TO service_role/);
   });
 });
@@ -197,20 +239,27 @@ describe("Edge capability endpoints", () => {
     }
   });
 
-  it("creates and opens a note in one database RPC", () => {
+  it("creates and idempotently recovers a note from a client-held owner candidate", () => {
     const endpoint = source("supabase/functions/note-session/index.ts");
     const createBranch = endpoint.slice(
       endpoint.indexOf('if (body?.action === "create")'),
       endpoint.indexOf('if (body?.action === "import-legacy")'),
     );
-    expect(createBranch.match(/environment\.client\.rpc\(/g)).toHaveLength(1);
+    expect(createBranch).toContain("if (!bearer)");
+    expect(createBranch).toContain("const owner = bearer");
+    expect(createBranch).toContain('"capability_admission_consume"');
     expect(createBranch).toContain("created?.session");
+    expect(createBranch).toContain("created?.recovered");
 
     const importBranch = endpoint.slice(
       endpoint.indexOf('if (body?.action === "import-legacy")'),
       endpoint.indexOf("const tokenHash = await capabilityTokenHash"),
     );
-    expect(importBranch.match(/environment\.client\.rpc\(/g)).toHaveLength(1);
+    expect(importBranch.match(/environment\.client\.rpc\(/g)).toHaveLength(2);
+    expect(importBranch).toContain("decodeCapabilityPayload");
+    expect(importBranch.indexOf('"capability_admission_consume"')).toBeLessThan(
+      importBranch.indexOf('"capability_note_import_legacy"'),
+    );
     expect(importBranch).toContain('"capability_note_import_legacy"');
 
     const sql = source("supabase/migrations/20260722000000_capability_backend.sql");
@@ -219,6 +268,17 @@ describe("Edge capability endpoints", () => {
       sql.indexOf("FUNCTION public.capability_session_open"),
     );
     expect(createRpc).toContain("public.capability_session_open");
+    expect(createRpc).toContain("owner_capability.token_hash = p_owner_token_hash");
+    expect(createRpc).toContain("'recovered', v_recovered");
+  });
+
+  it("admits sync bytes before append and fails closed when admission is unavailable", () => {
+    const endpoint = source("supabase/functions/note-sync/index.ts");
+    const admission = endpoint.indexOf('"capability_admission_consume"');
+    const append = endpoint.indexOf('"capability_updates_append"');
+    expect(admission).toBeGreaterThan(0);
+    expect(admission).toBeLessThan(append);
+    expect(endpoint).toContain("capabilityFailure(\"quota_exceeded\")");
   });
 
   it("lets capability share readers page every missing update", () => {

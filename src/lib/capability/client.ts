@@ -23,6 +23,7 @@ export type NoteSession = {
   realtimeToken: string;
   realtimeExpiresAt: string;
   realtimeTopic: string;
+  generation: number;
   syncStatus: "active" | "read_only_quarantine";
   currentSequence: number;
   payloadLimitBytes: number;
@@ -66,6 +67,8 @@ function assertSession(value: unknown): NoteSession {
     || typeof session.realtimeToken !== "string" || session.realtimeToken.length > 8192
     || typeof session.realtimeExpiresAt !== "string" || !Number.isFinite(Date.parse(session.realtimeExpiresAt))
     || session.realtimeTopic !== `note:${session.noteId}`
+    || !Number.isSafeInteger(session.generation)
+    || Number(session.generation) < 1
     || !["active", "read_only_quarantine"].includes(session.syncStatus ?? "")
     || !isNonNegativeInteger(session.currentSequence)
     || !isNonNegativeInteger(session.checkpointSequence)
@@ -162,21 +165,23 @@ export function createCapabilityApi(options: ApiOptions = {}) {
   };
 
   return {
-    async createNote(slug: string) {
-      const data = await post("note-session", { action: "create", slug });
+    async createNote(slug: string, ownerCandidate: string) {
+      if (!CAPABILITY_TOKEN_RE.test(ownerCandidate)) throw new Error("invalid capability");
+      const data = await post("note-session", { action: "create", slug }, ownerCandidate);
       const capabilities = data.capabilities as Record<string, unknown> | undefined;
       if (
         !capabilities
         || !CAPABILITY_TOKEN_RE.test(String(capabilities.owner ?? ""))
-        || !CAPABILITY_TOKEN_RE.test(String(capabilities.edit ?? ""))
-        || !CAPABILITY_TOKEN_RE.test(String(capabilities.view ?? ""))
+        || String(capabilities.owner) !== ownerCandidate
+        || !(capabilities.edit === undefined || CAPABILITY_TOKEN_RE.test(String(capabilities.edit)))
+        || !(capabilities.view === undefined || CAPABILITY_TOKEN_RE.test(String(capabilities.view)))
       ) throw new Error("invalid capabilities");
       return {
         session: assertSession(data.session),
         capabilities: {
           owner: String(capabilities.owner),
-          edit: String(capabilities.edit),
-          view: String(capabilities.view),
+          ...(capabilities.edit === undefined ? {} : { edit: String(capabilities.edit) }),
+          ...(capabilities.view === undefined ? {} : { view: String(capabilities.view) }),
         },
       };
     },
@@ -220,6 +225,7 @@ export function createCapabilityApi(options: ApiOptions = {}) {
           aggregate.noteId !== next.noteId
           || aggregate.slug !== next.slug
           || aggregate.scope !== next.scope
+          || aggregate.generation !== next.generation
           || aggregate.encryption.version !== next.encryption.version
         )) throw new Error("note session changed");
         const merged = [...(aggregate?.missingUpdates ?? [])];

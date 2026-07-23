@@ -5,6 +5,7 @@ export type CapabilityScope = "owner" | "edit" | "view";
 
 const encoder = new TextEncoder();
 const CAPABILITY_HMAC_DOMAIN = encoder.encode("snote-capability-v1\0");
+const ADMISSION_HMAC_DOMAIN = encoder.encode("snote-capability-admission-v1\0");
 
 function bytesToBase64Url(bytes: Uint8Array): string {
   let binary = "";
@@ -21,6 +22,17 @@ function utf8ToBase64Url(value: string): string {
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
+function isIpLiteral(value: string): boolean {
+  const ipv4 = value.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) return ipv4.slice(1).every((part) => Number(part) <= 255);
+  if (!value.includes(":") || !/^[0-9a-f:.]+$/i.test(value)) return false;
+  try {
+    return new URL(`http://[${value}]/`).hostname.length > 2;
+  } catch {
+    return false;
+  }
 }
 
 export function createCapabilityToken(): string {
@@ -50,6 +62,42 @@ export async function hashCapabilityToken(token: string, secret: string): Promis
   );
   const signature = await crypto.subtle.sign("HMAC", key, material);
   return bytesToHex(new Uint8Array(signature));
+}
+
+/**
+ * Hash the gateway-authenticated request subject without retaining an address.
+ * A forwarded chain is rejected: rollout must first prove that the Supabase
+ * gateway overwrites this header instead of accepting client-supplied values.
+ */
+export async function hashCapabilityAdmissionSubject(
+  req: Request,
+  secret: string,
+): Promise<string | null> {
+  const rawAddress = req.headers.get("x-forwarded-for")?.trim() ?? "";
+  const secretBytes = encoder.encode(secret);
+  if (
+    !rawAddress
+    || rawAddress.includes(",")
+    || rawAddress.length > 45
+    || !isIpLiteral(rawAddress)
+    || secretBytes.byteLength < 32
+  ) return null;
+
+  try {
+    const material = new Uint8Array(ADMISSION_HMAC_DOMAIN.byteLength + rawAddress.length);
+    material.set(ADMISSION_HMAC_DOMAIN);
+    material.set(encoder.encode(rawAddress), ADMISSION_HMAC_DOMAIN.byteLength);
+    const key = await crypto.subtle.importKey(
+      "raw",
+      secretBytes,
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+    return bytesToHex(new Uint8Array(await crypto.subtle.sign("HMAC", key, material)));
+  } catch {
+    return null;
+  }
 }
 
 export function decodeCapabilityPayload(value: unknown, maxBytes: number): Uint8Array {
