@@ -4,8 +4,9 @@
 /**
  * @param {{
  *   versionMismatchReason: string | null,
- *   csp: { ok: boolean, reason: string | null } | null,
+ *   csp: { inspected: boolean, ok: boolean | null, reason: string | null } | null,
  *   ready: boolean,
+ *   iframeLoaded: boolean,
  *   retryCount: number,
  *   appReachable: string | null,
  * }} input
@@ -15,17 +16,21 @@ export function resolveFallbackReason({
   versionMismatchReason,
   csp,
   ready,
+  iframeLoaded,
   retryCount,
   appReachable,
 }) {
   if (versionMismatchReason) {
     return `Handshake protocol mismatch: ${versionMismatchReason}`;
   }
-  if (csp && !csp.ok) {
+  if (csp?.inspected === true && csp.ok === false) {
     return `App CSP blocks embedding: ${csp.reason || "frame-ancestors invalid"}`;
   }
-  if (!ready) {
-    return `App never sent syrin:ready after ${retryCount} retry(ies). App reachable = ${appReachable ?? "unknown"}.`;
-  }
-  return null;
+  if (ready) return null;
+  if (appReachable === "offline") return "Network is offline. Reconnect, then retry.";
+
+  const loadState = iframeLoaded
+    ? "App loaded but never sent syrin:ready"
+    : "App did not load or send syrin:ready";
+  return `${loadState} after ${retryCount} retry(ies). Network = ${appReachable ?? "unknown"}.`;
 }

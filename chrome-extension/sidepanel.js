@@ -394,48 +394,19 @@ function loadIframe(settings, isRetry = false) {
   armWatchdog();
 }
 
-async function probeAppOrigin() {
-  try {
-    const res = await fetch(`${APP_ORIGIN}/version.json?ts=${Date.now()}`, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "omit",
-      mode: "cors",
-    });
-    return `${res.status} ${res.ok ? "ok" : res.statusText || "not ok"}`;
-  } catch (err) {
-    return `error: ${err?.message || err}`;
-  }
+function currentNetworkState() {
+  return typeof navigator !== "undefined" && navigator.onLine === false
+    ? "offline"
+    : "online-unverified";
 }
 
-let cachedCspProbe = null;
-let cachedCspProbeAt = 0;
-const CSP_CACHE_TTL_MS = 5000;
-
-async function verifyFrameAncestorsCsp({ force = false } = {}) {
-  if (!force && cachedCspProbe && Date.now() - cachedCspProbeAt < CSP_CACHE_TTL_MS) {
-    return cachedCspProbe;
-  }
-  let result;
-  try {
-    const res = await fetch(`${APP_ORIGIN}/`, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "omit",
-      mode: "cors",
-    });
-    const csp = res.headers.get("content-security-policy") || "";
-    if (!csp) result = { ok: false, csp: null, reason: "no CSP header" };
-    else if (!/frame-ancestors/i.test(csp)) result = { ok: false, csp, reason: "missing frame-ancestors" };
-    else if (!/chrome-extension:\/\//i.test(csp))
-      result = { ok: false, csp, reason: "frame-ancestors excludes chrome-extension://" };
-    else result = { ok: true, csp, reason: null };
-  } catch (err) {
-    result = { ok: false, csp: null, reason: `fetch failed: ${err?.message || err}` };
-  }
-  cachedCspProbe = result;
-  cachedCspProbeAt = Date.now();
-  return result;
+function uninspectedCsp() {
+  return {
+    inspected: false,
+    ok: null,
+    csp: null,
+    reason: "not-inspected",
+  };
 }
 
 async function showFallback() {
@@ -451,28 +422,28 @@ async function showFallback() {
       ? "received"
       : "not received";
   }
-  if (diagHead) diagHead.textContent = "checking…";
-  const head = await probeAppOrigin();
-  if (diagHead) diagHead.textContent = head;
-  const csp = await verifyFrameAncestorsCsp();
+  const network = currentNetworkState();
+  if (diagHead) diagHead.textContent = network;
+  const csp = uninspectedCsp();
   const reason = resolveFallbackReason({
     versionMismatchReason,
     csp,
     ready,
+    iframeLoaded,
     retryCount,
-    appReachable: head,
+    appReachable: network,
   });
   if (fallbackReason) {
     fallbackReason.hidden = !reason;
     fallbackReason.textContent = reason || "";
   }
   if (fallbackCopyDiag) fallbackCopyDiag.hidden = false;
-  dlog("fallback shown", `head=${head} reason=${reason ?? "none"}`);
+  dlog("fallback shown", `network=${network} reason=${reason ?? "none"}`);
   void renderTelemetryList();
 }
 
 async function buildDiagnosticsBundle() {
-  const csp = await verifyFrameAncestorsCsp();
+  const csp = uninspectedCsp();
   const telemetryEnabled = await readTelemetryEnabledAsync();
   const telemetry = telemetryEnabled ? await readTelemetry() : [];
   const bundle = {
@@ -491,7 +462,7 @@ async function buildDiagnosticsBundle() {
       iframeSrc: currentSrc,
       iframeLoaded,
       retryCount,
-      appReachable: diagHead?.textContent || "unknown",
+      appReachable: currentNetworkState(),
     },
     cspFrameAncestors: csp,
     messageTimeline: messageTimeline.slice(),
@@ -553,6 +524,7 @@ diagDownload?.addEventListener("click", async () => {
   const reasonType = diagnosticsReasonType({
     versionMismatchReason: bundle.handshake.versionMismatch,
     csp: bundle.cspFrameAncestors,
+    appReachable: bundle.load.appReachable,
     ready: bundle.handshake.ready,
   });
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });

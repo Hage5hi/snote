@@ -25,7 +25,7 @@ Markdown notes in Chrome's side panel. Write while you read. Press Alt+S to open
 Syrin Note lives in Chrome's side panel so you can write notes without leaving the page you're reading.
 
 — Press Alt+S anywhere in Chrome to open the panel.
-— Markdown with live preview: GFM, code blocks (Shiki), math (KaTeX), Mermaid diagrams, wiki-links [[like-this]].
+— Markdown with live preview: GFM, code blocks (highlight.js), math (KaTeX), Mermaid diagrams, wiki-links [[like-this]].
 — Realtime autosave (Yjs + IndexedDB). Works offline; syncs when you're back.
 — Optional client-side AES-GCM encryption. The key is derived from your passphrase in your browser and never leaves your device.
 — Choose what opens on launch: a random new note, a specific slug, or the last note you had open. The toolbar badge shows H / S / L so you always know.
@@ -37,13 +37,13 @@ Open source. Privacy policy: https://note.syrin.online/privacy
 
 ---
 
-## What's new — v1.3.5
+## What's new — v1.3.6
 
 ```
-• More precise fallback reasons for handshake, CSP, and timeout failures.
-• Copy a sanitized diagnostics bundle directly from the fallback screen.
+• Honest offline/online-unverified fallback state with no cross-origin diagnostic probes.
+• Sanitized diagnostics schema v3 distinguishes network, handshake, and timeout failures.
 • Bounded device-local telemetry with transparent next-use pruning of events older than 7 days.
-• Shared protocol constants and deterministic coverage for fallback paths.
+• Extension package, release notes, and store listing are verified against the same source version.
 ```
 
 (Previous releases: v1.2.0 added the badge + postMessage handshake;

@@ -19,8 +19,10 @@ export const test = base.extend<{
   // eslint-disable-next-line no-empty-pattern
   context: async ({}, provide) => {
     const extPath = path.resolve(fixtureDir, "..", "..", "chrome-extension");
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     const ctx = await chromium.launchPersistentContext("", {
       headless: false,
+      ...(executablePath ? { executablePath } : {}),
       args: [
         `--disable-extensions-except=${extPath}`,
         `--load-extension=${extPath}`,

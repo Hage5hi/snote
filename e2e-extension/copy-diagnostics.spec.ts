@@ -53,7 +53,7 @@ test("Download diagnostics JSON contains only sanitized keys with fixture-pinned
 
   // Fixture-pinned values.
   expect(bundle.kind).toBe("syrin-note-sidepanel-diagnostics");
-  expect(bundle.schemaVersion).toBe(2);
+  expect(bundle.schemaVersion).toBe(3);
   expect(bundle.handshake.extensionProtocol).toBe(2);
   expect(bundle.handshake.appProtocol).toBe(999);
   expect(bundle.handshake.appBuildId).toBe("<redacted>");

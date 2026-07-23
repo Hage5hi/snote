@@ -246,7 +246,7 @@ describe("diagnostics locator containment", () => {
       kind: DIAGNOSTICS_KIND,
       schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
       at: "2026-07-20T00:00:00.000Z",
-      extensionVersion: "1.3.5",
+      extensionVersion: "1.3.6",
       handshake: {
         extensionProtocol: 2,
         appProtocol: 2,
@@ -261,6 +261,7 @@ describe("diagnostics locator containment", () => {
         appReachable: sentinels.reachable,
       },
       cspFrameAncestors: {
+        inspected: true,
         ok: false,
         csp: sentinels.csp,
         reason: sentinels.cspReason,
@@ -309,7 +310,7 @@ describe("diagnostics locator containment", () => {
       expect(serialized).not.toContain(sentinel);
     }
     expect(output.load.iframeSrc).toBe(redactUrl(iframeSrc));
-    expect(output.load.appReachable).toMatch(/^(?:\d{3} (?:ok|error)|error|unknown)$/);
+    expect(output.load.appReachable).toBe("unknown");
     expect(output.handshake.appBuildId).toBe("<redacted>");
     expect(output.handshake.versionMismatch).toBe("protocol-mismatch");
     expect(output.messageTimeline[0].kind).toBe("ready");
@@ -319,11 +320,42 @@ describe("diagnostics locator containment", () => {
     expect(output.telemetry[0].retryCount).toBe(0);
     expect(output.telemetry[0].detail.appProtocol).toBe(2);
     expect(output.cspFrameAncestors).toEqual({
+      inspected: true,
       ok: false,
       csp: "<redacted>",
       reason: "unknown",
     });
     expect(output.debugLines).toHaveLength(2);
+    expect(validateDiagnostics(output)).toEqual({ ok: true, errors: [] });
+  });
+
+  it("preserves browser-owned network state and never invents CSP inspection", () => {
+    const output = redactModule.redactDiagnosticsBundle({
+      kind: DIAGNOSTICS_KIND,
+      schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
+      at: "2026-07-20T00:00:00.000Z",
+      extensionVersion: "1.3.6",
+      handshake: {},
+      load: { appReachable: "offline" },
+      cspFrameAncestors: {
+        inspected: false,
+        ok: null,
+        csp: "must-not-survive",
+        reason: "not-inspected",
+      },
+      messageTimeline: [],
+      telemetry: [],
+      telemetryEnabled: false,
+      debugLines: [],
+    });
+
+    expect(output.load.appReachable).toBe("offline");
+    expect(output.cspFrameAncestors).toEqual({
+      inspected: false,
+      ok: null,
+      csp: null,
+      reason: "not-inspected",
+    });
     expect(validateDiagnostics(output)).toEqual({ ok: true, errors: [] });
   });
 

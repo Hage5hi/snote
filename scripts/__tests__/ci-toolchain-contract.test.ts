@@ -171,6 +171,9 @@ describe("CI toolchain contract", () => {
       "package.json",
       "bun.lock",
       "scripts/audit-extension.sh",
+      "scripts/build-extension-zip.ts",
+      "scripts/extension-archive.ts",
+      "scripts/verify-extension-zip.ts",
       "scripts/verify-extension-zip.sh",
     ]) {
       expect(extensionWorkflow.split(`- \"${path}\"`).length - 1).toBe(2);

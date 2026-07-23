@@ -41,7 +41,8 @@ describe("extension privacy contract", () => {
     const readme = read("chrome-extension/README.md");
     const privacy = read("src/pages/Privacy.tsx");
 
-    expect(listing).toContain("## What's new — v1.3.5");
+    const manifest = JSON.parse(read("chrome-extension/manifest.json"));
+    expect(listing).toContain(`## What's new — v${manifest.version}`);
     expect(listing).not.toContain("**tabs**");
     expect(listing).toContain(
       "Events older than 7 days are discarded the next time diagnostics are read or written",

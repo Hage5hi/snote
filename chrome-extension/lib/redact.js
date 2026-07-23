@@ -236,16 +236,13 @@ function redactTelemetryDetail(detail) {
 }
 
 function classifyReachability(value) {
-  const match = typeof value === "string" ? /^(\d{3})\b/.exec(value) : null;
-  if (match) {
-    const status = Number(match[1]);
-    return `${match[1]} ${status >= 200 && status < 300 ? "ok" : "error"}`;
-  }
-  return typeof value === "string" && value.startsWith("error") ? "error" : "unknown";
+  if (value === "offline" || value === "online-unverified") return value;
+  return "unknown";
 }
 
 function classifyCspReason(reason) {
   if (reason == null) return null;
+  if (reason === "not-inspected") return "not-inspected";
   if (reason === "no CSP header") return "no-header";
   if (reason === "missing frame-ancestors") return "missing-frame-ancestors";
   if (reason === "frame-ancestors excludes chrome-extension://") return "extension-excluded";
@@ -281,6 +278,7 @@ export function redactDiagnosticsBundle(bundle) {
   const handshake = bundle?.handshake || {};
   const load = bundle?.load || {};
   const csp = bundle?.cspFrameAncestors || {};
+  const cspInspected = csp.inspected === true;
   const extensionVersion = safeVersion(bundle?.extensionVersion);
   return {
     kind: DIAGNOSTICS_KIND,
@@ -305,9 +303,10 @@ export function redactDiagnosticsBundle(bundle) {
       appReachable: classifyReachability(load.appReachable),
     },
     cspFrameAncestors: {
-      ok: !!csp.ok,
-      csp: typeof csp.csp === "string" ? REDACTED_VALUE : null,
-      reason: classifyCspReason(csp.reason),
+      inspected: cspInspected,
+      ok: cspInspected ? csp.ok === true : null,
+      csp: cspInspected && typeof csp.csp === "string" ? REDACTED_VALUE : null,
+      reason: cspInspected ? classifyCspReason(csp.reason) : "not-inspected",
     },
     messageTimeline: (Array.isArray(bundle?.messageTimeline) ? bundle.messageTimeline : [])
       .slice(-30)
