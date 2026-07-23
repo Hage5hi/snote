@@ -141,11 +141,10 @@ describe("CI toolchain contract", () => {
     expect(qualityJob).toContain("name: quality");
     expect(qualityJob).toContain(ACTIONLINT_IMAGE);
     expect(qualityJob).toContain("persist-credentials: false");
-    expect(qualityJob).toMatch(
-      /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run test[ \t]*$/m,
-    );
-    expect(qualityJob).toMatch(
-      /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run test:coverage[ \t]*$/m,
+    expect(qualityJob).toContain("run: bunx vitest run src");
+    expect(qualityJob).toContain("run: bunx vitest run src --coverage");
+    expect(qualityJob).not.toMatch(
+      /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run test(?::coverage)?[ \t]*$/m,
     );
     expect(qualityJob).toMatch(
       /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run build:check[ \t]*$/m,
@@ -173,6 +172,11 @@ describe("CI toolchain contract", () => {
     expect(e2ePrJobStart).toBeGreaterThanOrEqual(0);
     const e2ePrJob = e2ePrWorkflow.slice(e2ePrJobStart);
     expect(e2ePrJob).toMatch(/^\s{4}name:\s*e2e-pr\s*$/m);
+    expect(e2ePrJob).toContain('PLAYWRIGHT_RETRIES: "0"');
+    expect(e2ePrJob).toContain("--retries=${PLAYWRIGHT_RETRIES}");
+    expect(e2ePrWorkflow.match(/e2e\/[^\s\\]+\.spec\.ts/g) ?? []).toEqual([
+      "e2e/theme-toggle-no-system.spec.ts",
+    ]);
   });
 
   it("runs extension verification when its dependencies or audit scripts change", () => {
