@@ -57,6 +57,10 @@ const COUNT_DEBOUNCE_MS = 150;
 interface NotePageProps {
   /** When provided (e.g. from SplitView), use this slug instead of the route param. */
   embedSlug?: string;
+  /** Container-derived layout mode for an embedded split pane. */
+  embedNarrow?: boolean;
+  /** Reports the pane's active scroll element after lazy/encryption gates open. */
+  onPrimaryScroller?: (element: HTMLElement | null) => void;
 }
 
 type EncMeta = {
@@ -100,12 +104,22 @@ export function CutoverNotePage(props: NotePageProps) {
   }, [capabilityAccess, slug]);
 
   if (!capabilityAccess) {
-    return <LegacyNotePage slug={slug} embed={!!props.embedSlug} />;
+    return (
+      <LegacyNotePage
+        slug={slug}
+        embed={!!props.embedSlug}
+        onPrimaryScroller={props.onPrimaryScroller}
+      />
+    );
   }
   return <NotePage {...props} />;
 }
 
-export default function NotePage({ embedSlug }: NotePageProps) {
+export default function NotePage({
+  embedSlug,
+  embedNarrow,
+  onPrimaryScroller,
+}: NotePageProps) {
   const params = useParams();
   const location = useLocation();
   const slug = embedSlug ?? params.slug ?? "";
@@ -127,7 +141,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // editor and rendered markdown. `showPreview` keeps the same semantic
   // meaning ("user wants to see the preview") and is the only piece of state
   // we need — layout logic below derives both modes from it.
-  const narrow = useNarrowViewport();
+  const viewportNarrow = useNarrowViewport();
+  const narrow = embedNarrow ?? viewportNarrow;
   const showEditorPane = !narrow || !showPreview;
   const showPreviewPane = showPreview;
   const { enabled: scrollSync, toggle: toggleScrollSync } = useScrollSyncEnabled();
@@ -136,6 +151,18 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   // Scroll sync only makes sense when BOTH panes are visible at the same
   // time. On narrow viewports only one pane is rendered, so disable.
   useScrollSync(editorScrollEl, previewScrollEl, scrollSync && showPreview && !narrow);
+  useEffect(() => {
+    if (!embedSlug || !onPrimaryScroller) return;
+    const primaryScroller = showEditorPane ? editorScrollEl : previewScrollEl;
+    onPrimaryScroller(primaryScroller);
+    return () => onPrimaryScroller(null);
+  }, [
+    embedSlug,
+    editorScrollEl,
+    onPrimaryScroller,
+    previewScrollEl,
+    showEditorPane,
+  ]);
   const [users, setUsers] = useState<PresenceUser[]>([]);
   const [counts, setCounts] = useState({ chars: 0, words: 0 });
   const { goal } = useWordGoal(slug);
@@ -163,6 +190,8 @@ export default function NotePage({ embedSlug }: NotePageProps) {
   }, [slug, counts.words, goal, t]);
 
   const editorRef = useRef<EditorHandle>(null);
+  const outlineTriggerRef = useRef<HTMLButtonElement>(null);
+  const [outlineOpen, setOutlineOpen] = useState(false);
   const { zen, toggle: toggleZen } = useZenMode();
   const { typewriter, toggle: toggleTypewriter } = useTypewriterMode();
   const { vim } = useVimMode();
@@ -749,6 +778,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
           paginated={paginated}
           onTogglePagination={togglePagination}
           compact
+          narrowOverride={narrow}
         />
         <div
           className={
@@ -759,11 +789,20 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         >
           {showEditorPane && (
             <div className="flex-1 min-h-0 min-w-0">
-              <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" vim={vim} />
+              <Editor
+                doc={doc}
+                awareness={provider.awareness}
+                className="h-full overflow-auto"
+                onScrollEl={setEditorScrollEl}
+                vim={vim}
+              />
             </div>
           )}
           {showPreviewPane && (
-            <div className="flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30">
+            <div
+              ref={setPreviewScrollEl}
+              className="flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30"
+            >
               <Preview doc={doc} />
             </div>
           )}
@@ -772,7 +811,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     );
   }
 
-  const noteUrl = `https://syrin.online/${slug}`;
+  const noteUrl = `https://note.syrin.online/${slug}`;
   const noteTitle = `${slug} — Syrin Notes`;
   const noteDesc = `Note "${slug}" on Syrin Notes — realtime markdown, autosave, synced across devices.`;
 
@@ -817,6 +856,9 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         capabilityAccess={capabilityAccess}
         paginated={paginated}
         onTogglePagination={togglePagination}
+        outlineOpen={outlineOpen}
+        onToggleOutline={() => setOutlineOpen((open) => !open)}
+        outlineTriggerRef={outlineTriggerRef}
       />
 
       <main
@@ -849,7 +891,14 @@ export default function NotePage({ embedSlug }: NotePageProps) {
 
       </main>
 
-      <OutlineSidebar doc={doc} onJump={(line) => editorRef.current?.jumpToLine(line)} />
+      <OutlineSidebar
+        id="note-outline"
+        doc={doc}
+        open={outlineOpen}
+        onOpenChange={setOutlineOpen}
+        onJump={(line) => editorRef.current?.jumpToLine(line)}
+        triggerRef={outlineTriggerRef}
+      />
 
       <GoalConfetti trigger={confettiTrigger} />
 

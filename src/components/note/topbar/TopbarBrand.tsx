@@ -10,11 +10,11 @@
 //     duplicate "Copy URL" action; users have keyboard shortcut + the slug
 //     button for that now, so the icon graduates to the more useful action.
 import { Link } from "react-router-dom";
+import type { RefObject } from "react";
 import * as Y from "yjs";
 import { ArrowLeft, Cloud, Copy, List } from "lucide-react";
 import { SyncIndicator } from "../SyncIndicator";
 import { TagChips } from "../TagChips";
-import { OUTLINE_TOGGLE_EVENT } from "../OutlineSidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { YjsProviderLike } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
@@ -33,9 +33,23 @@ interface TopbarBrandProps {
   hideHome?: boolean;
   /** Click handler for the cloud icon → opens the local history dialog. */
   onOpenHistory?: () => void;
+  outlineOpen?: boolean;
+  onToggleOutline?: () => void;
+  outlineTriggerRef?: RefObject<HTMLButtonElement>;
 }
 
-export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false, onOpenHistory }: TopbarBrandProps) {
+export function TopbarBrand({
+  slug,
+  doc,
+  isEncrypted,
+  provider,
+  getContent,
+  hideHome = false,
+  onOpenHistory,
+  outlineOpen,
+  onToggleOutline,
+  outlineTriggerRef,
+}: TopbarBrandProps) {
 
   const { t } = useI18n();
 
@@ -129,18 +143,24 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hide
         <TooltipContent side="bottom">{t("brand.copy_content")}</TooltipContent>
       </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => window.dispatchEvent(new Event(OUTLINE_TOGGLE_EVENT))}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={t("brand.outline")}
-          >
-            <List className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{t("brand.outline")} (⌘\)</TooltipContent>
-      </Tooltip>
+      {onToggleOutline && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              ref={outlineTriggerRef}
+              type="button"
+              onClick={onToggleOutline}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={t("brand.outline")}
+              aria-controls="note-outline"
+              aria-expanded={outlineOpen ?? false}
+            >
+              <List className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t("brand.outline")} (⌘\)</TooltipContent>
+        </Tooltip>
+      )}
 
       {provider && (
         <div className="ml-2 flex items-center gap-1">

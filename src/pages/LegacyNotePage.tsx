@@ -73,7 +73,15 @@ async function unlockLegacy(note: LegacyNote, key: CryptoKey, secret: string): P
   };
 }
 
-export default function LegacyNotePage({ slug, embed = false }: { slug: string; embed?: boolean }) {
+export default function LegacyNotePage({
+  slug,
+  embed = false,
+  onPrimaryScroller,
+}: {
+  slug: string;
+  embed?: boolean;
+  onPrimaryScroller?: (element: HTMLElement | null) => void;
+}) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -224,7 +232,12 @@ export default function LegacyNotePage({ slug, embed = false }: { slug: string; 
         </form>
         {duplicateError && <p className="basis-full text-right text-xs text-destructive" role="alert">{duplicateError}</p>}
       </header>
-      <main className="min-h-0 flex-1 overflow-auto bg-muted/30"><Preview doc={state.doc} /></main>
+      <main
+        ref={onPrimaryScroller}
+        className="min-h-0 flex-1 overflow-auto bg-muted/30"
+      >
+        <Preview doc={state.doc} />
+      </main>
     </>
   );
 

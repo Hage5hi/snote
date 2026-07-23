@@ -7,7 +7,7 @@
 //     horizontal overflow. Row 1 (44 px) keeps brand + theme + the preview
 //     toggle pinned to the right so it is ALWAYS visible. Row 2 (36 px)
 //     holds the per-note icons and the four dropdown menus.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import * as Y from "yjs";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -63,6 +63,11 @@ interface TopbarProps {
    *  that would be redundant when two topbars are on screen. Keeps per-note
    *  icons + Note + Export. */
   compact?: boolean;
+  /** Override viewport detection with the measured width of an embed pane. */
+  narrowOverride?: boolean;
+  outlineOpen?: boolean;
+  onToggleOutline?: () => void;
+  outlineTriggerRef?: RefObject<HTMLButtonElement>;
 }
 
 export function Topbar({
@@ -89,11 +94,16 @@ export function Topbar({
   paginated,
   onTogglePagination,
   compact = false,
+  narrowOverride,
+  outlineOpen,
+  onToggleOutline,
+  outlineTriggerRef,
 }: TopbarProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const narrow = useNarrowViewport();
+  const viewportNarrow = useNarrowViewport();
+  const narrow = narrowOverride ?? viewportNarrow;
   const isMobile = useIsMobile();
   const showSceneToggle = !compact && !isMobile;
   const { t } = useI18n();
@@ -155,6 +165,9 @@ export function Topbar({
               getContent={getContent}
               hideHome={compact}
               onOpenHistory={() => setHistoryOpen(true)}
+              outlineOpen={outlineOpen}
+              onToggleOutline={onToggleOutline}
+              outlineTriggerRef={outlineTriggerRef}
             />
 
             <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -169,6 +182,7 @@ export function Topbar({
                 onTogglePreview={onTogglePreview}
                 scrollSync={scrollSync}
                 onToggleScrollSync={onToggleScrollSync}
+                narrowOverride={narrow}
               />
             </div>
           </div>
@@ -230,6 +244,9 @@ export function Topbar({
             getContent={getContent}
             hideHome={compact}
             onOpenHistory={() => setHistoryOpen(true)}
+            outlineOpen={outlineOpen}
+            onToggleOutline={onToggleOutline}
+            outlineTriggerRef={outlineTriggerRef}
           />
 
 
@@ -263,6 +280,7 @@ export function Topbar({
               onTogglePreview={onTogglePreview}
               scrollSync={scrollSync}
               onToggleScrollSync={onToggleScrollSync}
+              narrowOverride={narrow}
             />
 
             <Separator orientation="vertical" className="mx-1 h-5" />
