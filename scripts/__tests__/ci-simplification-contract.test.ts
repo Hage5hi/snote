@@ -50,7 +50,11 @@ describe("simplified delivery pipeline contract", () => {
     expect(ci).toContain("--retries=0");
     expect(ci).toContain("e2e/critical-a11y.spec.ts");
     expect(ci).toContain("e2e/pwa-update-sw-stall.spec.ts");
-    expect(ci).not.toContain("VITE_SUPABASE");
+    expect(ci).toContain("VITE_SUPABASE_URL: https://ci.invalid");
+    expect(ci).toContain(
+      "VITE_SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder",
+    );
+    expect(ci).not.toContain("secrets.VITE_SUPABASE");
   });
 
   it("runs the complete three-browser suite only outside pull requests", () => {
