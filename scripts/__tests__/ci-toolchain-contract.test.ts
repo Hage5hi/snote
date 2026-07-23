@@ -175,6 +175,11 @@ describe("CI toolchain contract", () => {
     const e2ePrJob = e2ePrWorkflow.slice(e2ePrJobStart);
     expect(e2ePrJob).toMatch(/^\s{4}name:\s*e2e-pr\s*$/m);
     expect(e2ePrJob).toContain('PLAYWRIGHT_RETRIES: "0"');
+    expect(e2ePrJob).toContain("VITE_SUPABASE_URL: https://ci.invalid");
+    expect(e2ePrJob).toContain(
+      "VITE_SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder",
+    );
+    expect(e2ePrJob).not.toContain("secrets.VITE_SUPABASE");
     expect(e2ePrJob).toContain("--retries=${PLAYWRIGHT_RETRIES}");
     expect(e2ePrJob).not.toContain("vitest run");
     expect(e2ePrWorkflow.match(/e2e\/[^\s\\]+\.spec\.ts/g) ?? []).toEqual([
