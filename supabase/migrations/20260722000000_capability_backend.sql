@@ -820,6 +820,10 @@ BEGIN
     n.slug,
     n.sync_status,
     n.encryption_version,
+    n.is_encrypted,
+    n.enc_salt,
+    n.enc_check,
+    n.enc_iterations,
     n.payload_limit_bytes,
     n.storage_limit_bytes,
     n.checkpoint_limit_count
@@ -885,10 +889,11 @@ BEGIN
     v_expected_version := (p_params ->> 'expectedEncryptionVersion')::bigint;
     v_checkpoint := p_params -> 'checkpoint';
     IF v_target_encrypted IS NULL
-      OR v_expected_version IS DISTINCT FROM v_note.encryption_version
+      OR v_expected_version IS NULL
+      OR v_expected_version < 0
       OR jsonb_typeof(v_checkpoint) <> 'object'
     THEN
-      RETURN jsonb_build_object('status', 'version_conflict');
+      RETURN jsonb_build_object('status', 'invalid');
     END IF;
 
     v_checkpoint_id := v_checkpoint ->> 'checkpointId';
@@ -938,6 +943,36 @@ BEGIN
     IF NOT v_target_encrypted THEN
       v_salt := NULL;
       v_check := NULL;
+    END IF;
+
+    IF v_expected_version IS DISTINCT FROM v_note.encryption_version THEN
+      SELECT version INTO v_checkpoint_version
+      FROM public.note_checkpoints
+      WHERE note_id = v_note.note_id
+        AND through_seq = v_through_seq
+        AND checkpoint_id = v_checkpoint_id
+        AND payload = v_payload
+        AND encryption_version = v_expected_version + 1
+      ORDER BY version DESC
+      LIMIT 1;
+      IF v_note.encryption_version = v_expected_version + 1
+        AND v_note.is_encrypted = v_target_encrypted
+        AND v_note.enc_salt IS NOT DISTINCT FROM v_salt
+        AND v_note.enc_check IS NOT DISTINCT FROM v_check
+        AND (
+          NOT v_target_encrypted
+          OR v_note.enc_iterations = v_iterations
+        )
+        AND v_checkpoint_version IS NOT NULL
+      THEN
+        RETURN jsonb_build_object(
+          'status', 'ok',
+          'encryptionVersion', v_note.encryption_version,
+          'checkpointVersion', v_checkpoint_version,
+          'recovered', true
+        );
+      END IF;
+      RETURN jsonb_build_object('status', 'version_conflict');
     END IF;
 
     IF (

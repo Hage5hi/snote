@@ -221,6 +221,7 @@ export async function materializeNoteSession(
       realtimeToken,
       realtimeExpiresAt: new Date((nowSeconds + 300) * 1000).toISOString(),
       realtimeTopic: `note:${stored.noteId}`,
+      generation: stored.generation,
       syncStatus: stored.syncStatus,
       currentSequence: stored.currentSequence,
       payloadLimitBytes: stored.payloadLimitBytes,

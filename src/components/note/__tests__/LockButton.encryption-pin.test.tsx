@@ -3,6 +3,7 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { LockButton } from "../LockButton";
+import { readEncryptionSecret } from "@/lib/capability/url";
 
 const harness = vi.hoisted(() => ({
   upsert: vi.fn(),
@@ -120,6 +121,7 @@ describe("LockButton encryption downgrade pin", () => {
     harness.clearSnapshots.mockResolvedValue(undefined);
     harness.protectExistingSnapshots.mockResolvedValue(undefined);
     harness.unprotectExistingSnapshots.mockResolvedValue(undefined);
+    window.history.replaceState(null, "", "/secret");
     vi.spyOn(console, "error").mockImplementation((...args) => {
       if (String(args[0]).includes("Not implemented: navigation")) return;
       harness.errors.push(args);
@@ -169,6 +171,11 @@ describe("LockButton encryption downgrade pin", () => {
     const provider = {
       flushNow: vi.fn().mockResolvedValue(undefined),
       refreshNow: vi.fn().mockResolvedValue(undefined),
+      prepareEncryptionTransition: vi.fn().mockResolvedValue({
+        currentSequence: 7,
+        encryption: { version: 2 },
+      }),
+      assertEncryptionTransitionStable: vi.fn(),
       hasUnflushedLocalChanges: () => false,
       getSession: () => ({
         currentSequence: 7,
@@ -189,7 +196,7 @@ describe("LockButton encryption downgrade pin", () => {
     });
     fireEvent.click(view.getByText("lock.encrypt_btn"));
 
-    await waitFor(() => expect(provider.refreshNow).toHaveBeenCalled());
+    await waitFor(() => expect(provider.prepareEncryptionTransition).toHaveBeenCalled());
     expect(harness.errors).toEqual([]);
     await waitFor(() => expect(harness.manage).toHaveBeenCalled());
     expect(harness.upsert).not.toHaveBeenCalled();
@@ -199,10 +206,48 @@ describe("LockButton encryption downgrade pin", () => {
       expectedEncryptionVersion: 2,
       checkpoint: { throughSequence: 7 },
     });
-    expect(provider.flushNow).toHaveBeenCalledBefore(provider.refreshNow);
+    expect(provider.prepareEncryptionTransition).toHaveBeenCalledBefore(harness.manage);
+    expect(provider.assertEncryptionTransitionStable).toHaveBeenCalledBefore(harness.manage);
     await waitFor(() => expect(harness.protectExistingSnapshots).toHaveBeenCalledWith(
       "secret",
       expect.objectContaining({ encrypt: expect.any(Function), decrypt: expect.any(Function) }),
     ));
+  });
+
+  it("stages the passphrase in the fragment before the encryption mutation can commit", async () => {
+    const token = "o".repeat(43);
+    window.history.replaceState(null, "", `/secret#owner=${token}`);
+    const pending = deferred<Record<string, unknown>>();
+    harness.manage.mockReturnValue(pending.promise);
+    const provider = {
+      prepareEncryptionTransition: vi.fn().mockResolvedValue({
+        currentSequence: 7,
+        encryption: { version: 2 },
+      }),
+      assertEncryptionTransitionStable: vi.fn(),
+      flushNow: vi.fn().mockResolvedValue(undefined),
+      refreshNow: vi.fn().mockResolvedValue(undefined),
+      hasUnflushedLocalChanges: () => false,
+      getSession: () => ({ currentSequence: 7, encryption: { version: 2 } }),
+    };
+    const view = render(
+      <LockButton
+        slug="secret"
+        doc={new Y.Doc()}
+        isEncrypted={false}
+        provider={provider as never}
+        capabilityAccess={{ slug: "secret", scope: "owner", token }}
+      />,
+    );
+    fireEvent.change(view.getByPlaceholderText("lock.placeholder"), {
+      target: { value: "recoverable passphrase" },
+    });
+    fireEvent.click(view.getByText("lock.encrypt_btn"));
+
+    await waitFor(() => expect(harness.manage).toHaveBeenCalled());
+    expect(readEncryptionSecret(window.location.hash)).toBe("recoverable passphrase");
+    expect(provider.prepareEncryptionTransition).toHaveBeenCalledOnce();
+    expect(provider.assertEncryptionTransitionStable).toHaveBeenCalledBefore(harness.manage);
+    pending.resolve({ ok: true });
   });
 });

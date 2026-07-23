@@ -66,6 +66,7 @@ type NoteSession = {
   realtimeToken: string
   realtimeExpiresAt: string
   realtimeTopic: `note:${string}`
+  generation: number
   syncStatus: "active" | "read_only_quarantine"
   currentSequence: number
   payloadLimitBytes: number

@@ -204,6 +204,9 @@ describe("capability database boundary", () => {
     expect(sql).toContain("p_expected_encryption_version");
     expect(sql).toContain("v_through_seq > v_current_seq");
     expect(sql).toContain("v_through_seq <= v_latest_through_seq");
+    expect(sql).toContain("storage_limit_bytes");
+    expect(sql).toContain("checkpoint_limit_count");
+    expect(sql).toContain("quota_exceeded");
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.capability_checkpoint_append\([^;]+ TO service_role/);
   });
 });

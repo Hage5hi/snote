@@ -364,6 +364,27 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       ["", "", "::jsonb"],
     );
     expect(encrypted).toMatchObject({ status: "ok", encryptionVersion: 1 });
+    expect(await rpc(
+      db,
+      "capability_note_manage",
+      [tokenHash("a"), "set-encryption", {
+        isEncrypted: true,
+        expectedEncryptionVersion: 0,
+        salt: "s".repeat(16),
+        check: "c".repeat(16),
+        iterations: 100000,
+        checkpoint: {
+          checkpointId: createHash("sha256").update(longCheckpointBytes).digest("hex"),
+          payload: longCheckpointBytes.toString("base64url"),
+          throughSequence: sequence,
+        },
+      }],
+      ["", "", "::jsonb"],
+    )).toMatchObject({
+      status: "ok",
+      encryptionVersion: 1,
+      recovered: true,
+    });
     const encryptedSession = await rpc(
       db,
       "capability_session_open",
@@ -452,6 +473,37 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       }, 4, 4],
       ["", "::jsonb", "", ""],
     )).toMatchObject({ status: "version_conflict" });
+    const quotaUpdate = await rpc(
+      db,
+      "capability_updates_append",
+      [tokenHash("b"), [{ updateId: hash([16]), payload: "EA" }], 4],
+      ["", "::jsonb", ""],
+    );
+    expect(quotaUpdate.status).toBe("ok");
+    await db.query(
+      "UPDATE public.notes SET checkpoint_limit_count = 5 WHERE note_id = $1",
+      [createdA.noteId],
+    );
+    expect(await rpc(
+      db,
+      "capability_checkpoint_append",
+      [tokenHash("b"), {
+        checkpointId: hash([17]),
+        payload: "EQ",
+        throughSequence: quotaUpdate.acknowledgements![0].sequence,
+      }, 5, 4],
+      ["", "::jsonb", "", ""],
+    )).toMatchObject({ status: "quota_exceeded" });
+    expect((await db.query<{ sync_status: string }>(
+      "SELECT sync_status::text FROM public.notes WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].sync_status).toBe("read_only_quarantine");
+    await db.query(
+      `UPDATE public.notes
+       SET sync_status = 'active', checkpoint_limit_count = 256
+       WHERE note_id = $1`,
+      [createdA.noteId],
+    );
     await db.query(
       "UPDATE public.notes SET sync_status = 'read_only_quarantine' WHERE note_id = $1",
       [createdA.noteId],

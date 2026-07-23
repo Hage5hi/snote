@@ -8,7 +8,11 @@ import {
   type NoteSession,
   type PendingUpdate,
 } from "@/lib/capability/client";
-import { CapabilityOutbox, type OutboxUpdate } from "./capability-outbox";
+import {
+  CapabilityOutbox,
+  type OutboxUpdate,
+  type WritableCapabilityScope,
+} from "./capability-outbox";
 import type { AwarenessState, Encryption, SyncEvent, YjsProviderLike } from "./provider";
 import {
   capabilityPayloadId,
@@ -109,6 +113,9 @@ export class CapabilityYjsProvider implements YjsProviderLike {
   private closing = false;
   private destroyed = false;
   private refreshTimer: number | null = null;
+  private writeFenced = false;
+  private transitionDirty = false;
+  private writeFenceListeners = new Set<Listener<boolean>>();
 
   constructor(
     readonly access: CapabilityAccess,
@@ -153,6 +160,27 @@ export class CapabilityYjsProvider implements YjsProviderLike {
   getLastSnapshotAt() { return this.lastSnapshotAt; }
   hasUnflushedLocalChanges() { return this.pendingBytes > 0; }
 
+  onWriteFence(listener: Listener<boolean>) {
+    this.writeFenceListeners.add(listener);
+    listener(this.writeFenced);
+    return () => this.writeFenceListeners.delete(listener);
+  }
+
+  private setWriteFence(value: boolean) {
+    this.writeFenced = value;
+    for (const listener of this.writeFenceListeners) {
+      try { listener(value); } catch { /* isolate UI listeners */ }
+    }
+  }
+
+  private writableAuthority(): {
+    scope: WritableCapabilityScope;
+    generation: number;
+  } {
+    if (this.access.scope === "view") throw new Error("view capability is read only");
+    return { scope: this.access.scope, generation: this.session.generation };
+  }
+
   onSyncEvent(listener: Listener<SyncEvent>) {
     this.syncListeners.add(listener);
     return () => this.syncListeners.delete(listener);
@@ -194,7 +222,11 @@ export class CapabilityYjsProvider implements YjsProviderLike {
   }
 
   private async applyDurableSession(next: NoteSession) {
-    if (next.noteId !== this.session.noteId || next.scope !== this.access.scope) {
+    if (
+      next.noteId !== this.session.noteId
+      || next.scope !== this.access.scope
+      || next.generation !== this.session.generation
+    ) {
       throw new Error("note session changed");
     }
     this.session = next;
@@ -215,7 +247,17 @@ export class CapabilityYjsProvider implements YjsProviderLike {
   }
 
   private async applyPendingOutbox() {
-    const pending = await this.outbox.list(this.session.noteId, Number.MAX_SAFE_INTEGER);
+    if (this.access.scope === "view") {
+      this.pendingBytes = 0;
+      return;
+    }
+    const authority = this.writableAuthority();
+    const pending = await this.outbox.list(
+      this.session.noteId,
+      authority.scope,
+      authority.generation,
+      Number.MAX_SAFE_INTEGER,
+    );
     this.pendingBytes = pending.reduce((sum, row) => sum + decodeCapabilityPayload(row.payload).byteLength, 0);
     for (const update of pending) {
       const bytes = await this.decodeStoredUpdate(update);
@@ -234,21 +276,31 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     this.realtime = this.realtimeFactory(this.session);
     const channel = this.realtime.channel;
     channel.on("broadcast", { event: "y-update" }, async ({ payload }) => {
-      if (!isBroadcastUpdate(payload) || this.destroyed || this.closing) return;
+      if (
+        !isBroadcastUpdate(payload)
+        || this.destroyed
+        || this.closing
+        || this.writeFenced
+      ) return;
       try {
         const stored = decodeCapabilityPayload(payload.payload);
-        const canonical: OutboxUpdate = {
-          noteId: this.session.noteId,
+        const transport: PendingUpdate = {
           updateId: payload.updateId,
           payload: encodeCapabilityPayload(stored),
           encryptionVersion: payload.encryptionVersion,
-          createdAt: this.now(),
         };
         if (this.access.scope === "view") {
-          const bytes = await this.decodeStoredUpdate(canonical);
+          const bytes = await this.decodeStoredUpdate(transport);
           Y.applyUpdate(this.doc, bytes, "capability-remote");
           return;
         }
+        const canonical: OutboxUpdate = {
+          noteId: this.session.noteId,
+          scope: this.writableAuthority().scope,
+          generation: this.session.generation,
+          ...transport,
+          createdAt: this.now(),
+        };
         await this.trackPersistence(async () => {
           await this.outbox.enqueue(canonical);
           this.pendingBytes += stored.byteLength;
@@ -287,41 +339,59 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     void this.flushNow();
   }
 
-  private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
-    if (
-      this.destroyed
-      || this.closing
-      || this.access.scope === "view"
-      || origin === "capability-session"
-      || origin === "capability-remote"
-      || origin === "capability-outbox"
-    ) return;
-    void this.trackPersistence(async () => {
-      let stored = update;
-      if (this.session.encryption.enabled) {
-        if (!this.encryption) throw new Error("encrypted note is locked");
-        stored = await this.encryption.encrypt(update);
-      }
-      if (stored.byteLength === 0 || stored.byteLength > this.session.payloadLimitBytes) {
-        throw new Error("update payload outside audited limit");
-      }
-      const pending: OutboxUpdate = {
-        noteId: this.session.noteId,
-        updateId: await capabilityPayloadId(stored),
-        payload: encodeCapabilityPayload(stored),
-        encryptionVersion: this.session.encryption.version,
-        createdAt: this.now(),
-      };
-      await this.outbox.enqueue(pending);
-      this.pendingBytes += stored.byteLength;
-      this.broadcastStoredUpdate(pending);
-    }).then(() => this.flushNow()).catch((error) => {
-      this.emitSync({ type: "error", message: error instanceof Error ? error.message : String(error) });
+  private isLocallyWritableUpdate(origin: unknown) {
+    return !this.destroyed
+      && !this.closing
+      && this.access.scope !== "view"
+      && origin !== "capability-session"
+      && origin !== "capability-remote"
+      && origin !== "capability-outbox";
+  }
+
+  private async persistWritableUpdate(update: Uint8Array) {
+    let stored = update;
+    if (this.session.encryption.enabled) {
+      if (!this.encryption) throw new Error("encrypted note is locked");
+      stored = await this.encryption.encrypt(update);
+    }
+    if (stored.byteLength === 0 || stored.byteLength > this.session.payloadLimitBytes) {
+      throw new Error("update payload outside audited limit");
+    }
+    const pending: OutboxUpdate = {
+      noteId: this.session.noteId,
+      scope: this.writableAuthority().scope,
+      generation: this.session.generation,
+      updateId: await capabilityPayloadId(stored),
+      payload: encodeCapabilityPayload(stored),
+      encryptionVersion: this.session.encryption.version,
+      createdAt: this.now(),
+    };
+    await this.outbox.enqueue(pending);
+    this.pendingBytes += stored.byteLength;
+    this.broadcastStoredUpdate(pending);
+  }
+
+  private emitPersistenceError(error: unknown) {
+    this.emitSync({
+      type: "error",
+      message: error instanceof Error ? error.message : String(error),
     });
+  }
+
+  private handleDocUpdate = (update: Uint8Array, origin: unknown) => {
+    if (this.writeFenced || !this.isLocallyWritableUpdate(origin)) return;
+    void this.trackPersistence(() => this.persistWritableUpdate(update))
+      .then(() => this.flushNow())
+      .catch((error) => this.emitPersistenceError(error));
   };
 
   private broadcastStoredUpdate(update: PendingUpdate) {
-    if (!this.connected || !this.realtime || decodeCapabilityPayload(update.payload).byteLength > MAX_REALTIME_UPDATE_BYTES) return;
+    if (
+      this.writeFenced
+      || !this.connected
+      || !this.realtime
+      || decodeCapabilityPayload(update.payload).byteLength > MAX_REALTIME_UPDATE_BYTES
+    ) return;
     void this.realtime.channel.send({
       type: "broadcast",
       event: "y-update",
@@ -358,6 +428,7 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     if (
       this.destroyed
       || this.closing
+      || this.writeFenced
       || this.access.scope === "view"
       || this.session.currentSequence - this.session.checkpointSequence < this.compactionThresholdUpdates
     ) return Promise.resolve();
@@ -415,8 +486,14 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     if (this.flushPromise) return this.flushPromise;
     this.flushPromise = (async () => {
       await this.pendingPersistence;
+      const authority = this.writableAuthority();
       while (!this.destroyed) {
-        const rows = await this.outbox.list(this.session.noteId, 100);
+        const rows = await this.outbox.list(
+          this.session.noteId,
+          authority.scope,
+          authority.generation,
+          100,
+        );
         if (rows.length === 0) {
           this.pendingBytes = 0;
           if (!keepalive) await this.compactIfNeeded();
@@ -444,8 +521,18 @@ export class CapabilityYjsProvider implements YjsProviderLike {
           const acknowledged = new Set(response.acknowledgements.map((item) => item.updateId));
           const expected = selected.map((item) => item.updateId).filter((id) => acknowledged.has(id));
           if (expected.length === 0) throw new Error("server did not acknowledge update batch");
-          await this.outbox.acknowledge(this.session.noteId, expected);
-          const remaining = await this.outbox.list(this.session.noteId, Number.MAX_SAFE_INTEGER);
+          await this.outbox.acknowledge(
+            this.session.noteId,
+            authority.scope,
+            authority.generation,
+            expected,
+          );
+          const remaining = await this.outbox.list(
+            this.session.noteId,
+            authority.scope,
+            authority.generation,
+            Number.MAX_SAFE_INTEGER,
+          );
           this.pendingBytes = remaining.reduce((sum, row) => sum + decodeCapabilityPayload(row.payload).byteLength, 0);
           this.lastSnapshotAt = this.now();
           this.emitSync({ type: "synced-durable" });
@@ -487,10 +574,70 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     }
   }
 
+  private handleTransitionDocUpdate = (update: Uint8Array, origin: unknown) => {
+    if (!this.isLocallyWritableUpdate(origin)) return;
+    this.transitionDirty = true;
+    // A browser input task can race React's read-only reconfiguration. Save it
+    // under the still-current encryption version before aborting/reloading.
+    void this.trackPersistence(() => this.persistWritableUpdate(update))
+      .catch((error) => this.emitPersistenceError(error));
+  };
+
+  /**
+   * Terminal fence for an encryption mode transition. The caller must reload
+   * after either success or failure so no stale-mode provider can resume.
+   */
+  async prepareEncryptionTransition(): Promise<NoteSession> {
+    if (this.access.scope !== "owner") throw new Error("owner capability required");
+    if (this.destroyed || this.closing) throw new Error("provider unavailable");
+    if (this.writeFenced) throw new Error("encryption transition already active");
+
+    // Synchronous before the first await: React can make CodeMirror read-only
+    // before another browser input task runs, while this observer detects any
+    // programmatic mutation that still races the UI commit.
+    this.transitionDirty = false;
+    this.setWriteFence(true);
+    this.doc.off("update", this.handleDocUpdate);
+    this.doc.on("update", this.handleTransitionDocUpdate);
+
+    await this.pendingPersistence;
+    await this.flushNow();
+    if (this.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
+
+    if (this.refreshTimer !== null) {
+      window.clearTimeout(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    try { await this.realtime?.dispose(); } catch { /* fail closed below */ }
+    this.realtime = null;
+    this.connected = false;
+
+    // Detach first, then read the durable cursor twice. Any remote writer that
+    // wins before the backend row lock advances currentSequence and is merged;
+    // a later writer is serialized by the backend encryption-version CAS.
+    const first = await this.api.openSession(this.access.token, this.session.currentSequence);
+    await this.applyDurableSession(first);
+    await this.pendingPersistence;
+    await this.flushNow();
+    const second = await this.api.openSession(this.access.token, this.session.currentSequence);
+    await this.applyDurableSession(second);
+    await this.pendingPersistence;
+    await this.flushNow();
+    if (this.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
+    this.assertEncryptionTransitionStable();
+    return this.session;
+  }
+
+  assertEncryptionTransitionStable() {
+    if (!this.writeFenced) throw new Error("encryption transition is not fenced");
+    if (this.transitionDirty) throw new Error("document changed during encryption transition");
+  }
+
   async destroy() {
     if (this.destroyed || this.closing) return;
     this.closing = true;
     this.doc.off("update", this.handleDocUpdate);
+    this.doc.off("update", this.handleTransitionDocUpdate);
     this.awareness.off("update", this.handleAwarenessUpdate);
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     await this.pendingPersistence.catch(() => {});

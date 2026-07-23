@@ -18,18 +18,11 @@ import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
 import { createCapabilityApi } from "@/lib/capability/client";
 import { buildCapabilityUrl } from "@/lib/capability/url";
-
-// Cross-fade navigation when the browser supports the View Transitions API.
-function softNavigate(navigate: (path: string) => void, path: string) {
-  const w = document as unknown as {
-    startViewTransition?: (cb: () => void) => unknown;
-  };
-  if (w.startViewTransition) {
-    w.startViewTransition(() => navigate(path));
-  } else {
-    navigate(path);
-  }
-}
+import {
+  clearCreateRecovery,
+  loadOrCreateOwnerCandidate,
+} from "@/lib/capability/create-recovery";
+import { softNavigate } from "@/lib/soft-navigate";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
@@ -170,9 +163,14 @@ export default function Home() {
   }, [isMobile]);
 
   const createSecure = async (trimmed: string) => {
-    const created = await createCapabilityApi().createNote(trimmed);
+    const ownerCandidate = loadOrCreateOwnerCandidate(trimmed);
+    const created = await createCapabilityApi().createNote(trimmed, ownerCandidate);
+    if (created.capabilities.owner !== ownerCandidate) {
+      throw new Error("secure note recovery conflict");
+    }
     const secureUrl = new URL(buildCapabilityUrl("owner", created.capabilities.owner, trimmed));
-    softNavigate(navigate, `${secureUrl.pathname}${secureUrl.hash}`);
+    await softNavigate(navigate, `${secureUrl.pathname}${secureUrl.hash}`);
+    clearCreateRecovery(trimmed, ownerCandidate);
   };
 
   const open = async (s: string) => {

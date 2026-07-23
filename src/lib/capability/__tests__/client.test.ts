@@ -11,6 +11,7 @@ function session(overrides: Partial<NoteSession> = {}): NoteSession {
     realtimeToken: "header.payload.signature",
     realtimeExpiresAt: "2099-01-01T00:00:00.000Z",
     realtimeTopic: "note:00000000-0000-4000-8000-000000000001",
+    generation: 1,
     syncStatus: "active",
     currentSequence: 0,
     payloadLimitBytes: 4_194_304,
@@ -25,20 +26,22 @@ function session(overrides: Partial<NoteSession> = {}): NoteSession {
 }
 
 describe("capability API client", () => {
-  it("creates a note without putting any capability in the request", async () => {
+  it("creates or recovers a note with the client-held owner candidate only in Authorization", async () => {
     const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
-      expect(init?.headers).not.toMatchObject({ Authorization: expect.anything() });
+      expect(init?.headers).toMatchObject({ Authorization: `Bearer ${TOKEN}` });
       expect(JSON.parse(String(init?.body))).toEqual({ action: "create", slug: "daily" });
       return Response.json({
         session: session(),
-        capabilities: { owner: TOKEN, edit: "c".repeat(43), view: "d".repeat(43) },
-      }, { status: 201 });
+        capabilities: { owner: TOKEN },
+      }, { status: 200 });
     });
     const api = createCapabilityApi({ baseUrl: "https://project.supabase.co", fetcher });
 
-    const created = await api.createNote("daily");
+    const created = await api.createNote("daily", TOKEN);
 
     expect(created.capabilities.owner).toBe(TOKEN);
+    expect(created.capabilities.edit).toBeUndefined();
+    expect(created.capabilities.view).toBeUndefined();
     expect(String(fetcher.mock.calls[0][0])).toBe(
       "https://project.supabase.co/functions/v1/note-session",
     );
