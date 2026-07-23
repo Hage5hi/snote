@@ -220,6 +220,16 @@ export default function NotePage({ embedSlug }: NotePageProps) {
     && resources.providerEpoch === providerEpoch;
   const doc = resourcesAreCurrent ? resources.doc : null;
   const provider = resourcesAreCurrent ? resources.provider : null;
+  const [writeFenced, setWriteFenced] = useState(false);
+
+  useEffect(() => {
+    setWriteFenced(false);
+    if (!provider || !("onWriteFence" in provider)) return;
+    const transitionProvider = provider as YjsProviderLike & {
+      onWriteFence: (listener: (value: boolean) => void) => () => void;
+    };
+    return transitionProvider.onWriteFence(setWriteFenced);
+  }, [provider]);
 
   const observeHash = useCallback((nextHash: string) => {
     if (observedHashRef.current === nextHash) return;
@@ -759,7 +769,13 @@ export default function NotePage({ embedSlug }: NotePageProps) {
         >
           {showEditorPane && (
             <div className="flex-1 min-h-0 min-w-0">
-              <Editor doc={doc} awareness={provider.awareness} className="h-full overflow-auto" vim={vim} />
+              <Editor
+                doc={doc}
+                awareness={provider.awareness}
+                className="h-full overflow-auto"
+                vim={vim}
+                editable={!writeFenced}
+              />
             </div>
           )}
           {showPreviewPane && (
@@ -832,6 +848,7 @@ export default function NotePage({ embedSlug }: NotePageProps) {
               ref={editorRef}
               doc={doc}
               awareness={provider.awareness}
+              editable={!writeFenced}
               className="h-full overflow-auto"
               onScrollEl={setEditorScrollEl}
               vim={vim}

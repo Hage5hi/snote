@@ -93,6 +93,18 @@ Deno.serve(async (req) => {
       };
     }
 
+    const { data: admitted, error: admissionError } = await environment.client.rpc(
+      "capability_admission_consume",
+      {
+        p_operation: "sync",
+        p_subject_hash: tokenHash,
+        p_request_cost: 1,
+        p_byte_cost: totalBytes,
+      },
+    );
+    if (admissionError) return capabilityFailure("unavailable");
+    if (admitted !== true) return capabilityFailure("quota_exceeded");
+
     const { data: appended, error: appendError } = await environment.client.rpc(
       "capability_updates_append",
       {

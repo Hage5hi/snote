@@ -56,16 +56,27 @@ interface LockButtonProps {
 }
 
 type CapabilityProviderSurface = YjsProviderLike & {
-  flushNow: () => Promise<void>;
-  refreshNow: () => Promise<void>;
-  getSession: () => NoteSession;
+  prepareEncryptionTransition: () => Promise<NoteSession>;
+  assertEncryptionTransitionStable: () => void;
 };
 
 function isCapabilityProvider(provider: YjsProviderLike | null | undefined): provider is CapabilityProviderSurface {
   return !!provider
-    && "flushNow" in provider
-    && "refreshNow" in provider
-    && "getSession" in provider;
+    && "prepareEncryptionTransition" in provider
+    && "assertEncryptionTransitionStable" in provider;
+}
+
+function stageCapabilityEncryptionSecret(
+  access: CapabilityAccess,
+  slug: string,
+  secret: string,
+) {
+  const target = new URL(buildCapabilityUrl(access.scope, access.token, slug, secret));
+  window.history.replaceState(
+    window.history.state,
+    "",
+    `${target.pathname}${target.search}${target.hash}`,
+  );
 }
 
 async function purgePlaintextLocalState(slug: string, protection: SnapshotProtection) {
@@ -144,12 +155,14 @@ export function LockButton({
         if (capabilityAccess.scope !== "owner" || !isCapabilityProvider(provider)) {
           throw new Error("owner capability required");
         }
-        await provider.flushNow();
-        if (provider.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
-        await provider.refreshNow();
-        const session = provider.getSession();
+        // Preserve the only decryption secret in the non-network fragment
+        // before the server can commit. A lost response can then recover by
+        // reloading the authoritative encryption metadata with this key.
+        stageCapabilityEncryptionSecret(capabilityAccess, slug, passphrase);
+        const session = await provider.prepareEncryptionTransition();
         const freshEncrypted = await encryptBytes(key, Y.encodeStateAsUpdate(doc));
         const checkpointId = await capabilityPayloadId(freshEncrypted);
+        provider.assertEncryptionTransitionStable();
         await createCapabilityApi().manage(capabilityAccess.token, {
           action: "set-encryption",
           isEncrypted: true,
@@ -211,6 +224,7 @@ export function LockButton({
         variant: "destructive",
       });
       setBusy(false);
+      if (capabilityAccess) window.location.reload();
     }
   };
 
@@ -223,11 +237,9 @@ export function LockButton({
         if (capabilityAccess.scope !== "owner" || !isCapabilityProvider(provider)) {
           throw new Error("owner capability required");
         }
-        await provider.flushNow();
-        if (provider.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
-        await provider.refreshNow();
-        const session = provider.getSession();
+        const session = await provider.prepareEncryptionTransition();
         const freshState = Y.encodeStateAsUpdate(doc);
+        provider.assertEncryptionTransitionStable();
         await createCapabilityApi().manage(capabilityAccess.token, {
           action: "set-encryption",
           isEncrypted: false,
@@ -278,6 +290,7 @@ export function LockButton({
         variant: "destructive",
       });
       setBusy(false);
+      if (capabilityAccess) window.location.reload();
     }
   };
 
