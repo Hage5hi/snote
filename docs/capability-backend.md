@@ -8,6 +8,9 @@ mode and never receive an owner capability automatically.
 
 - Raw owner, edit, and view capabilities are returned only at secure-note
   creation or rotation. They are never stored in Postgres.
+- The browser generates and durably retains the owner candidate before the
+  create request. A retry with the same owner HMAC recovers the exact note;
+  another caller still receives `slug_unavailable`.
 - `note_capabilities.token_hash` stores a domain-separated HMAC-SHA-256 made
   with `CAPABILITY_HMAC_SECRET`. A database-only leak cannot be used to mint or
   verify candidate capabilities offline without that separate secret.
@@ -27,6 +30,10 @@ mode and never receive an owner capability automatically.
   They are removed only when an authorized database deletion removes the whole
   parent note. A repeated update with the same SHA-256 `updateId` is idempotent
   and resolves to its original sequence.
+- Atomic hourly admission windows bound create/sync operations globally and by
+  a one-way subject hash. Per-note update/checkpoint counts and cumulative
+  opaque bytes are also bounded; crossing a durable limit quarantines the note
+  read-only instead of truncating data.
 - Encryption transitions require an owner capability, the expected encryption
   version, and a checkpoint through the current update sequence in one database
   transaction. No client may directly toggle the encrypted state.
@@ -42,10 +49,11 @@ return `503` without including database error text.
 
 ### `note-session`
 
-`POST { "action": "create", "slug": "..." }` creates a secure note when no
-Authorization header is present. The `201` response contains `{ session,
-capabilities: { owner, edit, view } }`; this is the only time all three raw
-capabilities are returned.
+`POST { "action": "create", "slug": "..." }` uses the client-generated owner
+candidate in `Authorization: Bearer <candidate>`. The first `201` response
+contains `{ session, capabilities: { owner, edit, view } }`. If the response is
+lost, retrying the same candidate returns `200` with the recovered owner only;
+the raw edit/view keys are never regenerated for an existing note.
 
 Otherwise, send `Authorization: Bearer <capability>` and optionally
 `{ "afterSequence": 42 }`. The response contains a `NoteSession`:
@@ -101,7 +109,8 @@ validates the complete batch before the first write, inserts it atomically, and
 returns `{ acknowledgements, session }`.
 Calling it again with the same `{ updateId, payload }` is idempotent and returns
 the same sequence. A view capability is rejected. A stale encryption version or
-`read_only_quarantine` note cannot accept writes.
+`read_only_quarantine` note cannot accept writes. Admission failure returns
+`429` and database/admission unavailability fails closed with `503`.
 
 An owner/editor may also send an optional checkpoint
 `{ checkpointId, payload, throughSequence, expectedCheckpointVersion }`.
@@ -140,8 +149,16 @@ select * from public.capability_payload_audit(1048576);
 The result is aggregate-only: counts and maximum byte sizes, never content,
 slug, token, or IP. Set `notes.payload_limit_bytes` above the largest valid
 production payload while remaining below the verified Edge/gateway request
-limit. Run `capability_quarantine_oversized()` after changing a limit. It marks
-exceptions `read_only_quarantine`; it never truncates or deletes data.
+limit. Also verify `storage_limit_bytes`, `update_limit_count`, and
+`checkpoint_limit_count` against synthetic production-like histories. Run
+`capability_quarantine_oversized()` after changing a limit. It marks exceptions
+`read_only_quarantine`; it never truncates or deletes data.
+
+Create admission hashes the single gateway-overwritten `x-forwarded-for`
+address with a separate HMAC domain; forwarded chains and missing/unverified
+addresses fail closed. Staging must prove the gateway overwrites client input
+before enabling note creation. The database stores only the resulting
+`subject_hash`, never a raw address.
 
 ## Migration and rollout order
 
@@ -153,8 +170,10 @@ exceptions `read_only_quarantine`; it never truncates or deletes data.
    exceptions.
 5. Deploy `note-session`, `note-sync`, `note-manage`, and `share-view` with JWT
    gateway verification disabled; each function performs its own Bearer check.
-6. Verify private-channel RLS for owner/edit/view and revoked generations.
-7. Soak with synthetic capability notes before any client or table cutover.
+6. Prove the gateway-owned address header cannot be spoofed, then exercise
+   admission concurrency, `429`, and fail-closed `503` paths.
+7. Verify private-channel RLS for owner/edit/view and revoked generations.
+8. Soak with synthetic capability notes before any client or table cutover.
 
 ## Rollback
 

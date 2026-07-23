@@ -11,6 +11,7 @@ type RpcResult = {
   noteId?: string;
   encryptionVersion?: number;
   checkpointVersion?: number;
+  recovered?: boolean;
   session?: {
     checkpointPayload?: string | null;
     missingUpdates?: Array<{ payload: string }>;
@@ -135,6 +136,17 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     ]);
     expect(createdA.status).toBe("ok");
     expect(createdA.session?.noteId).toBe(createdA.noteId);
+    const recoveredA = await rpc(db, "capability_note_create", [
+      "secure-a",
+      tokenHash("a"),
+      tokenHash("7"),
+      tokenHash("8"),
+    ]);
+    expect(recoveredA).toMatchObject({
+      status: "ok",
+      noteId: createdA.noteId,
+      recovered: true,
+    });
     await expect(db.exec(`
       INSERT INTO public.note_shares(token, slug)
       VALUES ('legacy-share-cannot-target-secure', 'secure-a')
@@ -224,6 +236,38 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       [tokenHash("c"), [], 0],
       ["", "::jsonb", ""],
     )).status).toBe("unauthorized");
+
+    await db.query(
+      "UPDATE public.notes SET storage_limit_bytes = 65536 WHERE note_id = $1",
+      [createdA.noteId],
+    );
+    const quotaBytes = Buffer.alloc(65536, 17);
+    expect((await rpc(
+      db,
+      "capability_updates_append",
+      [tokenHash("b"), [{
+        updateId: createHash("sha256").update(quotaBytes).digest("hex"),
+        payload: quotaBytes.toString("base64url"),
+      }], 0],
+      ["", "::jsonb", ""],
+    )).status).toBe("quota_exceeded");
+    expect((await db.query<{ sync_status: string }>(
+      "SELECT sync_status::text FROM public.notes WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].sync_status).toBe("read_only_quarantine");
+    await db.query(
+      "UPDATE public.notes SET sync_status = 'active', storage_limit_bytes = 67108864 WHERE note_id = $1",
+      [createdA.noteId],
+    );
+
+    const admission = async (subject: string) => (await db.query<{ allowed: boolean }>(
+      "SELECT public.capability_admission_consume('create', $1, 1, 0) AS allowed",
+      [subject],
+    )).rows[0].allowed;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      expect(await admission(tokenHash("6"))).toBe(true);
+    }
+    expect(await admission(tokenHash("6"))).toBe(false);
 
     const createdB = await rpc(db, "capability_note_create", [
       "secure-b",
