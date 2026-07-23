@@ -2,7 +2,8 @@
 // translation in every locale — never empty, never equal to the key
 // itself (which is what useI18n falls back to when a key is missing).
 import { describe, it, expect } from "vitest";
-import { dict, SUPPORTED_LANGS } from "@/i18n";
+import { SUPPORTED_LANGS } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 
 const STATUS_KEYS = [
   "install.status_installed_label",

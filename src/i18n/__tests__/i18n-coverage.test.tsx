@@ -1,8 +1,9 @@
 // E2E-style i18n coverage: cross-tab sync, persistence across reload,
 // and Export/Help label rendering per language including toast strings.
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { dict, STORAGE_KEY, SUPPORTED_LANGS, useI18n, type Lang } from "@/i18n";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { STORAGE_KEY, SUPPORTED_LANGS, useI18n, type Lang } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 import { I18nProvider } from "@/i18n/provider";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { ExportMenu } from "@/components/note/topbar/ExportMenu";
@@ -76,9 +77,11 @@ describe("E2E — cross-tab language sync via storage event", () => {
       );
     });
     expect(screen.getByTestId("lang").textContent).toBe("vi");
-    expect(screen.getByTestId("menu-export").textContent).toBe(dict.vi["menu.export"]);
-    expect(screen.getByTestId("menu-help").textContent).toBe(dict.vi["menu.help"]);
-    expect(screen.getByTestId("toast-empty").textContent).toBe(dict.vi["toast.note_empty"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("menu-export").textContent).toBe(dict.vi["menu.export"]);
+      expect(screen.getByTestId("menu-help").textContent).toBe(dict.vi["menu.help"]);
+      expect(screen.getByTestId("toast-empty").textContent).toBe(dict.vi["toast.note_empty"]);
+    });
 
     await act(async () => {
       localStorage.setItem(STORAGE_KEY, "es");
@@ -86,8 +89,10 @@ describe("E2E — cross-tab language sync via storage event", () => {
         new StorageEvent("storage", { key: STORAGE_KEY, newValue: "es" }),
       );
     });
-    expect(screen.getByTestId("menu-export").textContent).toBe(dict.es["menu.export"]);
-    expect(screen.getByTestId("help-shortcuts").textContent).toBe(dict.es["help.shortcuts"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("menu-export").textContent).toBe(dict.es["menu.export"]);
+      expect(screen.getByTestId("help-shortcuts").textContent).toBe(dict.es["help.shortcuts"]);
+    });
 
     unmountA();
   });
@@ -116,7 +121,9 @@ describe("Persistence — language survives reload", () => {
       fireEvent.click(screen.getByTestId("pick-fr"));
     });
     expect(localStorage.getItem(STORAGE_KEY)).toBe("fr");
-    expect(screen.getByTestId("menu-export").textContent).toBe(dict.fr["menu.export"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("menu-export").textContent).toBe(dict.fr["menu.export"]);
+    });
     unmount();
 
     // Simulated reload: brand new provider tree reads localStorage on init.
@@ -126,11 +133,13 @@ describe("Persistence — language survives reload", () => {
       </Wrap>,
     );
     expect(screen.getByTestId("lang").textContent).toBe("fr");
-    expect(screen.getByTestId("menu-help").textContent).toBe(dict.fr["menu.help"]);
-    expect(screen.getByTestId("export-ai").textContent).toBe(dict.fr["export.ai"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("menu-help").textContent).toBe(dict.fr["menu.help"]);
+      expect(screen.getByTestId("export-ai").textContent).toBe(dict.fr["export.ai"]);
+    });
   });
 
-  it("LanguageToggle button shows current language code", () => {
+  it("LanguageToggle button shows current language code", async () => {
     localStorage.setItem(STORAGE_KEY, "ja");
     render(
       <Wrap>
@@ -138,7 +147,7 @@ describe("Persistence — language survives reload", () => {
       </Wrap>,
     );
     // The toggle renders the lang code in uppercase.
-    expect(screen.getByRole("button", { name: /言語/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /言語/ })).toBeInTheDocument();
     expect(screen.getByText("ja")).toBeInTheDocument();
   });
 });
@@ -159,7 +168,7 @@ describe("Export menu — localized trigger + dict coverage", () => {
     "export.raw_tooltip",
   ] as const;
 
-  it.each(SUPPORTED_LANGS)("renders ExportMenu trigger in %s", (lang: Lang) => {
+  it.each(SUPPORTED_LANGS)("renders ExportMenu trigger in %s", async (lang: Lang) => {
     localStorage.setItem(STORAGE_KEY, lang);
     render(
       <Wrap>
@@ -167,7 +176,9 @@ describe("Export menu — localized trigger + dict coverage", () => {
       </Wrap>,
     );
     const expected = (dict[lang] as Record<string, string>)["menu.export"];
-    expect(screen.getByRole("button", { name: new RegExp(expected) })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: new RegExp(expected) }),
+    ).toBeInTheDocument();
   });
 
   it("every Export string is non-empty and distinct from English for non-English langs", () => {
@@ -189,7 +200,7 @@ describe("Export menu — localized trigger + dict coverage", () => {
 });
 
 describe("Shortcuts trigger (HelpMenu) — localized aria-label", () => {
-  it.each(SUPPORTED_LANGS)("renders HelpMenu trigger in %s", (lang: Lang) => {
+  it.each(SUPPORTED_LANGS)("renders HelpMenu trigger in %s", async (lang: Lang) => {
     localStorage.setItem(STORAGE_KEY, lang);
     render(
       <Wrap>
@@ -197,7 +208,9 @@ describe("Shortcuts trigger (HelpMenu) — localized aria-label", () => {
       </Wrap>,
     );
     const expected = (dict[lang] as Record<string, string>)["help.shortcuts"];
-    expect(screen.getByRole("button", { name: new RegExp(expected.slice(0, 6)) })).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: new RegExp(expected.slice(0, 6)) }),
+    ).toBeInTheDocument();
   });
 });
 

@@ -4,7 +4,7 @@
 // latest captured event), proving the component holds a single
 // reference and doesn't accumulate handlers across re-mounts.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

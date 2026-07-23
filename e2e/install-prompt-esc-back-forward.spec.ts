@@ -3,7 +3,7 @@
 // button must remain in a consistent state (single, visible, clickable
 // once a fresh BIP arrives — no accumulated flows).
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

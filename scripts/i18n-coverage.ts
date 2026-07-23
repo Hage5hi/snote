@@ -1,5 +1,5 @@
 // i18n coverage gate.
-// Scans src/i18n/index.ts dictionary, reports per-language coverage:
+// Scans the static test/tooling catalog, reports per-language coverage:
 //   - missing keys vs English baseline
 //   - placeholder mismatches (e.g. {n}, {code}, {bytes}, {when})
 //   - empty values
@@ -7,7 +7,8 @@
 // or when any placeholder mismatch exists. Override via env:
 //   I18N_MIN_COVERAGE=95 bun run scripts/i18n-coverage.ts
 //   I18N_ALLOW_PLACEHOLDER_MISMATCH=1 ...
-import { dict, SUPPORTED_LANGS } from "../src/i18n";
+import { SUPPORTED_LANGS } from "../src/i18n";
+import { dict } from "../src/i18n/catalog";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 

@@ -3,7 +3,7 @@
 // listener must not accumulate — dispatching a second BIP after
 // dismissal captures exactly one new event (one flow), not multiple.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

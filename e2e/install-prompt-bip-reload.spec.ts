@@ -4,7 +4,7 @@
 // behave correctly. Re-dispatching BIP post-reload should restore the
 // Install button without any stale state from before the reload.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

@@ -14,7 +14,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { SceneToggle } from "@/components/SceneToggle";
 import { I18nProvider } from "@/i18n/provider";
-import { STORAGE_KEY as LANG_KEY, dict } from "@/i18n";
+import { STORAGE_KEY as LANG_KEY } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 import { SCENE_STORAGE_KEY } from "@/hooks/use-scene-theme";
 
 function renderToggle() {

@@ -2,7 +2,7 @@
 // After reload a fresh BIP must yield exactly ONE install flow — proving
 // no listener leaked across the reload boundary.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

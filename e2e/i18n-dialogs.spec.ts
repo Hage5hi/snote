@@ -3,7 +3,8 @@
 // Strings are pulled directly from src/i18n so assertions stay exact and
 // auto-update when translations change.
 import { test, expect, type Page } from "@playwright/test";
-import { dict, SUPPORTED_LANGS, type Lang, type TKey } from "../src/i18n/index";
+import { SUPPORTED_LANGS, type Lang, type TKey } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 import {
   expectToastLifecycle,
   TOAST_TIMEOUT,

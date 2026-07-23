@@ -6,7 +6,7 @@
 // it and the focus trap is fully released (Tab can move to a sibling
 // focusable element outside the closed dialog).
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

@@ -3,7 +3,7 @@
 // counter by strictly 1 per open, never 2+ (which would indicate an
 // accumulated listener).
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 import { noteFocus, resetFocusHistory, resetPromptSpy } from "./helpers/install-prompt";
 
 test.beforeEach(async ({ page }) => {

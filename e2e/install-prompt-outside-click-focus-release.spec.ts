@@ -4,7 +4,7 @@
 // the focus trap must be fully released so Tab can move to elements
 // outside the closed dialog.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

@@ -3,7 +3,7 @@
 // finally click Install, `prompt()` must fire exactly once (last-write-
 // wins on the most recently dispatched event).
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

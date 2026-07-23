@@ -4,7 +4,7 @@
 // trap must still hold, and the Install button visibility must match
 // whether a live BIP event is currently held.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

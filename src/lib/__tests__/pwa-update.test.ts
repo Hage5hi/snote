@@ -23,16 +23,15 @@ vi.mock("sonner", () => ({
 vi.mock("@/i18n", () => ({
   detectLang: () => "en",
   STORAGE_KEY: "lang",
-  dict: {
-    en: {
+  translateLoaded: (_lang: string, key: string) =>
+    ({
       "update.title": "New version available",
       "update.pending_title": "Update pending",
       "update.pending_desc": "Applying the update.",
       "update.description": "Reload for the latest version.",
       "update.fallback_cleanup": "If this still fails, clear this site's data/cookies.",
       "update.btn_reload": "Update",
-    },
-  },
+    })[key] ?? key,
 }));
 
 async function fresh() {

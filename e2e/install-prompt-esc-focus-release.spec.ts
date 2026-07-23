@@ -3,7 +3,7 @@
 // fully released so keyboard focus can move freely to elements OUTSIDE
 // the (now-closed) dialog.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

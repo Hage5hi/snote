@@ -4,7 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { I18nProvider } from "@/i18n/provider";
-import { STORAGE_KEY as LANG_KEY, dict } from "@/i18n";
+import { STORAGE_KEY as LANG_KEY } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 
 const themeMocks = vi.hoisted(() => ({
   resolvedTheme: "light",
@@ -42,10 +43,12 @@ describe("ThemeToggle — direct color-scheme toggle", () => {
   afterEach(() => cleanup());
 
   for (const lang of ["en", "vi"] as const) {
-    it(`uses the localized accessible name in ${lang}`, () => {
+    it(`uses the localized accessible name in ${lang}`, async () => {
       localStorage.setItem(LANG_KEY, lang);
       renderToggle();
-      expect(screen.getByRole("button", { name: dict[lang]["theme.aria"] })).toBeInTheDocument();
+      expect(
+        await screen.findByRole("button", { name: dict[lang]["theme.aria"] }),
+      ).toBeInTheDocument();
     });
   }
 

@@ -5,7 +5,7 @@
 // clickable state and the in-dialog Install button reappears when
 // BIP is re-dispatched.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

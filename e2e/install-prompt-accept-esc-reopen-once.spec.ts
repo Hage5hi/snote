@@ -2,7 +2,7 @@
 // and verify the second Install click fires exactly once — no listener
 // accumulation would double the call count for a single activation.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 import { resetPromptSpy } from "./helpers/install-prompt";
 
 test.beforeEach(async ({ page }) => {

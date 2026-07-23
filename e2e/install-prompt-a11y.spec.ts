@@ -12,7 +12,7 @@
 //     violations vs. the baseline taken before opening.
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 type Violation = { id: string; impact?: string | null };
 

@@ -4,7 +4,7 @@
 // still work: BIP fires exactly once, dialog opens, focus stays
 // trapped, ESC closes cleanly.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

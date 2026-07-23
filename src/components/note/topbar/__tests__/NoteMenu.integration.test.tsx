@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
-import { dict } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 
 const RENAME_RE = /rename|đổi tên/i;
 const DUP_RE = /duplicate|nhân bản/i;

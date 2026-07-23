@@ -4,7 +4,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { dict, SUPPORTED_LANGS } from "@/i18n";
+import { SUPPORTED_LANGS } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 
 const SRC = resolve(__dirname, "../../components/note/InstallPrompt.tsx");
 

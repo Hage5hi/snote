@@ -2,7 +2,7 @@
 // dialog must NOT close it — onPointerDownOutside / onInteractOutside
 // are preventDefault'd. Focus trap must still be active afterwards.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

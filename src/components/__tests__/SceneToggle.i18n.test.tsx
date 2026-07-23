@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { SceneToggle } from "@/components/SceneToggle";
 import { I18nProvider } from "@/i18n/provider";
-import { STORAGE_KEY as LANG_KEY, dict } from "@/i18n";
+import { STORAGE_KEY as LANG_KEY } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 import { SCENE_REGISTRY, SCENE_NONE } from "@/components/home/scenes/registry";
 import { SCENE_STORAGE_KEY } from "@/hooks/use-scene-theme";
 
@@ -32,7 +33,9 @@ describe("SceneToggle — scene menuitem aria-label + i18n", () => {
       localStorage.setItem(LANG_KEY, lang);
       const user = userEvent.setup();
       renderToggle();
-      await user.click(screen.getByRole("button", { name: dict[lang]["scene.toggle.aria"] }));
+      await user.click(
+        await screen.findByRole("button", { name: dict[lang]["scene.toggle.aria"] }),
+      );
 
       for (const scene of enabledScenes) {
         const label = dict[lang][scene.labelKey];

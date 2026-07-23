@@ -2,7 +2,7 @@
 // Tab forward past the last focusable to force a wrap and confirm
 // focus lands back on the first focusable (still inside the trap).
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

@@ -3,7 +3,7 @@
 // repeatedly must keep focus wrapping inside the dialog and never
 // escape to the underlying page.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 import { expectFocusInsideDialog, resetPromptSpy } from "./helpers/install-prompt";
 
 test.beforeEach(async ({ page }) => {

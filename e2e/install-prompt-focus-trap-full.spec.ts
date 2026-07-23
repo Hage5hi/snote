@@ -3,7 +3,7 @@
 // across the full count + a few extra cycles to confirm focus never
 // escapes to the document body or to elements outside the dialog.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

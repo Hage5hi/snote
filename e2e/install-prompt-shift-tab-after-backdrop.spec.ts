@@ -3,7 +3,7 @@
 // interactions), Shift+Tab cycles must stay inside the focus trap and
 // never escape to the underlying page.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 import { expectFocusInsideDialog, resetPromptSpy } from "./helpers/install-prompt";
 
 test.beforeEach(async ({ page }) => {

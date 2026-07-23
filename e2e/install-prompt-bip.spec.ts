@@ -3,7 +3,7 @@
 // the event (the common Firefox / Safari case), the dialog must fall
 // back to the OS install-icon instructions and not render the button.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

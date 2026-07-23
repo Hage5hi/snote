@@ -5,7 +5,7 @@
 //   reopening and pressing Space) must trigger prompt() exactly once
 //   per activation — and never fire when the button is absent.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

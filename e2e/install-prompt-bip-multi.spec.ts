@@ -2,7 +2,7 @@
 // only the latest event drives the in-dialog "Install" button, and the
 // button must render exactly once regardless of how many events fired.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

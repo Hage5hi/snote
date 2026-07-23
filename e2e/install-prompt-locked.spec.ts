@@ -1,7 +1,7 @@
 // E2E: the "Install as an app" dialog must not be dismissible via an X
 // (close) button. ESC and focus-trap behavior continue to work.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

@@ -8,7 +8,13 @@
 import { createElement, type MouseEvent, type ReactNode } from "react";
 import { registerSW } from "virtual:pwa-register";
 import { toast as sonnerToast } from "sonner";
-import { detectLang, dict, STORAGE_KEY, type Lang } from "@/i18n";
+import {
+  detectLang,
+  STORAGE_KEY,
+  translateLoaded,
+  type Lang,
+  type TKey,
+} from "@/i18n";
 import type { PwaReloadStrategy, PwaUpdateReadinessState } from "@/lib/pwa-update-readiness";
 
 declare const __BUILD_ID__: string;
@@ -49,11 +55,8 @@ declare global {
   }
 }
 
-type FlatDict = Record<string, string>;
-
-function tr(lang: Lang, key: string): string {
-  const d = dict as unknown as Record<Lang, FlatDict>;
-  return d[lang]?.[key] ?? d.en[key] ?? key;
+function tr(lang: Lang, key: TKey): string {
+  return translateLoaded(lang, key);
 }
 
 function isLovablePreviewHost(): boolean {

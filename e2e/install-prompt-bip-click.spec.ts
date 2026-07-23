@@ -6,7 +6,7 @@
 // transitions to a stable post-install state (button gone, status row
 // flipped to "ready"/"installed", dialog remains usable / closable).
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

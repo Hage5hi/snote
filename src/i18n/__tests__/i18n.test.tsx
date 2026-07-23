@@ -1,15 +1,16 @@
 // Tests for i18n: dict coverage, browser-locale detection, storage sync across tabs,
 // and component label rendering per language.
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { act, render, screen, cleanup } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import {
   detectFromNavigator,
   detectLang,
-  dict,
   isLang,
+  loadDictionary,
   STORAGE_KEY,
   SUPPORTED_LANGS,
 } from "@/i18n";
+import { dict } from "@/i18n/catalog";
 import { I18nProvider } from "@/i18n/provider";
 import { useI18n } from "@/i18n";
 import { ModeMenu } from "@/components/note/topbar/ModeMenu";
@@ -122,7 +123,9 @@ describe("I18nProvider — browser locale & storage sync", () => {
       );
     });
     expect(screen.getByTestId("lang").textContent).toBe("vi");
-    expect(screen.getByTestId("zen").textContent).toBe(dict.vi["mode.zen.enter"]);
+    await waitFor(() => {
+      expect(screen.getByTestId("zen").textContent).toBe(dict.vi["mode.zen.enter"]);
+    });
 
     // Invalid storage values are ignored.
     await act(async () => {
@@ -153,14 +156,14 @@ describe("ModeMenu — labels follow current language", () => {
     );
   }
 
-  it("renders Vietnamese trigger + shortcut hints", () => {
+  it("renders Vietnamese trigger + shortcut hints", async () => {
     setup("vi");
-    expect(screen.getByRole("button", { name: /Chế độ/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Chế độ/ })).toBeInTheDocument();
   });
 
-  it("renders Japanese trigger", () => {
+  it("renders Japanese trigger", async () => {
     setup("ja");
-    expect(screen.getByRole("button", { name: /モード/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /モード/ })).toBeInTheDocument();
   });
 
   it("renders English trigger by default", () => {
@@ -171,4 +174,29 @@ describe("ModeMenu — labels follow current language", () => {
     expect(dict.vi["mode.zen.desc"]).not.toBe(dict.en["mode.zen.desc"]);
   });
 
+  it("keeps the latest choice when locale chunks resolve after rapid switches", async () => {
+    function RapidPicker() {
+      const { setLang, t } = useI18n();
+      return (
+        <>
+          <button onClick={() => setLang("fr")}>fr</button>
+          <button onClick={() => setLang("ja")}>ja</button>
+          <span data-testid="rapid-label">{t("menu.export")}</span>
+        </>
+      );
+    }
+
+    render(
+      <I18nProvider>
+        <RapidPicker />
+      </I18nProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "fr" }));
+    fireEvent.click(screen.getByRole("button", { name: "ja" }));
+    await Promise.all([loadDictionary("fr"), loadDictionary("ja")]);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("rapid-label")).toHaveTextContent(dict.ja["menu.export"]);
+    });
+  });
 });

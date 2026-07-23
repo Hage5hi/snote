@@ -4,7 +4,7 @@
 // the dialog (i.e. must not land on document.body or on elements
 // outside the dialog container).
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

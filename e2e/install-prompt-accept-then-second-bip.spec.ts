@@ -4,7 +4,7 @@
 // callable exactly once, and only the second event's prompt() should
 // have been invoked in that round.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

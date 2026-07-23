@@ -1,6 +1,6 @@
 // Shared helpers for install-prompt e2e specs.
 import { expect, type Locator, type Page, type TestInfo } from "@playwright/test";
-import { dict } from "../../src/i18n/index";
+import { dict } from "../../src/i18n/catalog";
 
 const TRIGGER_NONCE_ATTR = "data-e2e-trigger-nonce";
 

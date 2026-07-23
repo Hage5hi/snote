@@ -3,7 +3,7 @@
 // the tree (not merely disabled), so keyboard/mouse activation cannot
 // call prompt(), and no ghost listeners accumulate.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

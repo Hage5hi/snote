@@ -2,7 +2,7 @@
 // close the dialog with ESC, reopen and click Install — only the LATEST
 // prompt must fire, and exactly once.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

@@ -2,7 +2,7 @@
 // dispatched. Clicking Install must invoke ONLY the latest event's
 // prompt — the earlier one must never fire.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {

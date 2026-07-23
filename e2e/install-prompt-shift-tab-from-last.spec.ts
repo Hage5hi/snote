@@ -2,7 +2,7 @@
 // Shift+Tab backward through the whole set — plus one extra — to force
 // a wrap. Focus must never escape the dialog's focus trap.
 import { test, expect } from "@playwright/test";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
