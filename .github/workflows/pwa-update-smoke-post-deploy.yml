@@ -12,7 +12,7 @@ on:
       target_url:
         description: "Base URL to smoke-test (defaults to production)"
         required: false
-        default: "https://snote.lovable.app"
+        default: "https://note.syrin.online"
       environment:
         description: "GitHub Environment name (staging | production)"
         required: false
@@ -45,7 +45,7 @@ jobs:
       SMOKE_BASE_URL: >-
         ${{ github.event.deployment_status.target_url
             || github.event.inputs.target_url
-            || 'https://snote.lovable.app' }}
+            || 'https://note.syrin.online' }}
       SMOKE_ENVIRONMENT: >-
         ${{ github.event.deployment_status.environment
             || github.event.inputs.environment

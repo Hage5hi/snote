@@ -54,7 +54,7 @@ export function TopbarBrand({
   const { t } = useI18n();
 
   const copyUrl = async () => {
-    // Always canonicalize to https://syrin.online/<slug>, regardless of the
+    // Always canonicalize to https://note.syrin.online/<slug>, regardless of the
     // current host (note.syrin.online, *.lovable.app, localhost, etc.).
     // Preserve current query string and hash so shared links keep context.
     const { search, hash } = window.location;

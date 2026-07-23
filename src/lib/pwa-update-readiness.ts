@@ -121,7 +121,7 @@ declare global {
  *  runtime, or feed the JSON Schema to any generic validator (ajv, etc.). */
 export const PwaReadinessInvalidEventDetailJsonSchema = {
   $schema: "http://json-schema.org/draft-07/schema#",
-  $id: "https://snote.lovable.app/schemas/pwa-readiness-invalid-event-detail.json",
+  $id: "https://note.syrin.online/schemas/pwa-readiness-invalid-event-detail.json",
   title: "PwaReadinessInvalidEventDetail",
   type: "object",
   required: ["field", "path", "reason", "received"],

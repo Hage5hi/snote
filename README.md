@@ -2,7 +2,7 @@
 
 Realtime markdown notes by URL. Create, share, and edit notes that sync across devices and work offline.
 
-**Live:** [syrin.online](https://syrin.online/)
+**Live:** [note.syrin.online](https://note.syrin.online/)
 
 ## Features
 
