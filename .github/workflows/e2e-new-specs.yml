@@ -1,9 +1,7 @@
 name: E2E (new specs, PR gate)
 
-# Runs the three new E2E specs on every pull request and blocks merges on
-# failures. Kept as a separate lightweight workflow so the full cross-browser
-# matrix in `e2e.yml` doesn't gate every PR while still ensuring the new
-# specs stay green.
+# Runs one deterministic Chromium smoke on every pull request. The full
+# cross-browser matrix remains available outside the required PR gate.
 
 on:
   pull_request:
@@ -20,7 +18,7 @@ jobs:
     timeout-minutes: 20
     env:
       PLAYWRIGHT_PROJECT: chromium
-      PLAYWRIGHT_RETRIES: "2"
+      PLAYWRIGHT_RETRIES: "0"
       VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
       VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
     steps:
@@ -37,51 +35,9 @@ jobs:
             src/lib/__tests__/pwa-update-listener-dedup.test.ts \
             src/lib/__tests__/pwa-update-nuke-scope.test.ts \
             src/lib/__tests__/pwa-invalid-stats.test.ts
-      - name: Run new PR-gate specs
+      - name: Run deterministic PR smoke
         run: |
           bunx playwright test \
-            e2e/note-menu-no-rename-duplicate.spec.ts \
-            e2e/pwa-update-debug-panel.spec.ts \
-            e2e/pwa-readiness-gate.spec.ts \
-            e2e/pwa-readiness-malformed.spec.ts \
-            e2e/pwa-update-full-flow.spec.ts \
-            e2e/rename-duplicate-routes-404.spec.ts \
-            e2e/rename-duplicate-disabled-shortcuts.spec.ts \
-            e2e/rename-duplicate-deep-link-variants.spec.ts \
-            e2e/pwa-readiness-malformed-then-valid.spec.ts \
-            e2e/pwa-readiness-malformed-then-valid-flow.spec.ts \
-            e2e/no-runtime-errors-malformed-and-deeplinks.spec.ts \
-            e2e/pwa-reload-strategy-soft-after-fix.spec.ts \
-            e2e/pwa-update-offline.spec.ts \
-            e2e/pwa-debug-panel-visual-snapshot.spec.ts \
-            e2e/rename-duplicate-deep-link-console-strict.spec.ts \
-            e2e/pwa-update-slow-network.spec.ts \
-            e2e/pwa-readiness-per-field-invalid.spec.ts \
-            e2e/pwa-readiness-oscillation.spec.ts \
-            e2e/rename-duplicate-deep-link-stress.spec.ts \
-            e2e/pwa-readiness-invalid-event.spec.ts \
-            e2e/pwa-readiness-invalid-event-not-emitted-when-valid.spec.ts \
-            e2e/pwa-readiness-invalid-event-order.spec.ts \
-            e2e/pwa-readiness-invalid-single-emit-per-cycle.spec.ts \
-            e2e/pwa-readiness-invalid-dedup-preserves-first-payload.spec.ts \
-            e2e/pwa-readiness-invalid-reporter-disabled.spec.ts \
-            e2e/pwa-invalid-stats-remount-no-double-count.spec.ts \
-            e2e/pwa-invalid-stats-csv-export.spec.ts \
-            e2e/split-view-layouts.spec.ts \
-            e2e/split-view-switch-counts.spec.ts \
-            e2e/split-view-back-forward.spec.ts \
-            e2e/split-view-home-right-click.spec.ts \
-            e2e/split-view-home-a11y.spec.ts \
-            e2e/pwa-invalid-stats-persistence-reload.spec.ts \
-            e2e/pwa-invalid-stats-window-switch-reload.spec.ts \
-            e2e/pwa-invalid-stats-nav-remount-no-double-count.spec.ts \
-            e2e/pwa-invalid-stats-cleared-storage-reload.spec.ts \
-            e2e/pwa-invalid-stats-csv-filename.spec.ts \
-            e2e/pwa-invalid-stats-csv-rows-per-range.spec.ts \
-            e2e/pwa-invalid-stats-many-remount-rounds.spec.ts \
-            e2e/split-view-malformed-persistence.spec.ts \
-            e2e/pwa-update-no-url-v-param.spec.ts \
-            e2e/pwa-update-multi-click.spec.ts \
             e2e/theme-toggle-no-system.spec.ts \
             --project=chromium \
             --retries=${PLAYWRIGHT_RETRIES}

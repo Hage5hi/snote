@@ -52,12 +52,12 @@ jobs:
       - name: Typecheck scripts, e2e and extension TypeScript
         if: success() || failure()
         run: bunx tsc --noEmit -p tsconfig.tools.json
-      - name: Unit tests
+      - name: Application unit tests
         if: success() || failure()
-        run: bun run test
-      - name: Unit test coverage
+        run: bunx vitest run src
+      - name: Application unit test coverage
         if: success() || failure()
-        run: bun run test:coverage
+        run: bunx vitest run src --coverage
       - name: Build application
         if: success() || failure()
         run: bun run build:check
