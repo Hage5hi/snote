@@ -132,6 +132,17 @@ describe("CI toolchain contract", () => {
     expect(ci).toContain("bun run build:check");
   });
 
+  it("keeps one stable PR E2E check context without blanket retries", () => {
+    const e2ePrWorkflows = [...workflows]
+      .filter(([, workflow]) => workflow.includes("\n  e2e-pr:\n"))
+      .map(([path]) => path);
+    expect(e2ePrWorkflows).toEqual([".github/workflows/ci.yml"]);
+    expect(ci).toContain("e2e/critical-a11y.spec.ts");
+    expect(ci).toContain("e2e/pwa-update-sw-stall.spec.ts");
+    expect(ci).toContain("--retries=0");
+    expect(ci).not.toContain("PLAYWRIGHT_RETRIES");
+  });
+
   it("runs extension verification when package inputs change", () => {
     for (const path of [
       "package.json",
