@@ -9,13 +9,17 @@ const WORKFLOW_FILES = readdirSync(".github/workflows")
   .map((name) => `.github/workflows/${name}`);
 
 const workflows = new Map(
-  WORKFLOW_FILES.map((path) => [path, readFileSync(path, "utf8")]),
+  WORKFLOW_FILES.map((path) => [
+    path,
+    readFileSync(path, "utf8").replaceAll("\r\n", "\n"),
+  ]),
 );
 const allWorkflows = [...workflows.values()].join("\n");
 const ci = workflows.get(".github/workflows/ci.yml")!;
 const workflowStructure = workflows.get(".github/workflows/workflow-structure.yml")!;
 const extensionWorkflow = workflows.get(".github/workflows/extension-e2e.yml")!;
-const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
+const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8")
+  .replaceAll("\r\n", "\n");
 const securityFindings = readFileSync("docs/security-findings.md", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   packageManager?: string;
@@ -65,6 +69,11 @@ describe("CI toolchain contract", () => {
     expect(securityFindings).toContain("GHSA-fx2h-pf6j-xcff");
     expect(securityFindings).toContain("there is no patched Vite 5 release");
     expect(securityFindings).toContain("GHSA-5xrq-8626-4rwp");
+  });
+
+  it("pins the patched PostCSS security floor", () => {
+    expect(packageJson.devDependencies.postcss).toBe("8.5.12");
+    expect(packageJson.overrides?.postcss).toBe("8.5.12");
   });
 
   it("runs explicit app, node and tools TypeScript projects", () => {
