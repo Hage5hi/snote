@@ -134,8 +134,10 @@ describe("CI toolchain contract", () => {
     expect(qualityJob).toContain("name: quality");
     expect(qualityJob).toContain(ACTIONLINT_IMAGE);
     expect(qualityJob).toContain("persist-credentials: false");
-    expect(qualityJob).toContain("run: bunx vitest run src");
     expect(qualityJob).toContain("run: bunx vitest run src --coverage");
+    expect(
+      qualityJob.match(/run:\s*bunx vitest run src(?: --coverage)?/g) ?? [],
+    ).toEqual(["run: bunx vitest run src --coverage"]);
     expect(qualityJob).not.toMatch(
       /^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run test(?::coverage)?[ \t]*$/m,
     );
@@ -167,8 +169,9 @@ describe("CI toolchain contract", () => {
     expect(e2ePrJob).toMatch(/^\s{4}name:\s*e2e-pr\s*$/m);
     expect(e2ePrJob).toContain('PLAYWRIGHT_RETRIES: "0"');
     expect(e2ePrJob).toContain("--retries=${PLAYWRIGHT_RETRIES}");
+    expect(e2ePrJob).not.toContain("vitest run");
     expect(e2ePrWorkflow.match(/e2e\/[^\s\\]+\.spec\.ts/g) ?? []).toEqual([
-      "e2e/theme-toggle-no-system.spec.ts",
+      "e2e/ci-baseline-smoke.spec.ts",
     ]);
   });
 
