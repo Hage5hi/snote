@@ -10,6 +10,7 @@ type RpcResult = {
   status: string;
   noteId?: string;
   encryptionVersion?: number;
+  checkpointVersion?: number;
   recovered?: boolean;
   session?: {
     checkpointPayload?: string | null;
@@ -359,6 +360,27 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       ["", "", "::jsonb"],
     );
     expect(encrypted).toMatchObject({ status: "ok", encryptionVersion: 1 });
+    expect(await rpc(
+      db,
+      "capability_note_manage",
+      [tokenHash("a"), "set-encryption", {
+        isEncrypted: true,
+        expectedEncryptionVersion: 0,
+        salt: "s".repeat(16),
+        check: "c".repeat(16),
+        iterations: 100000,
+        checkpoint: {
+          checkpointId: createHash("sha256").update(longCheckpointBytes).digest("hex"),
+          payload: longCheckpointBytes.toString("base64url"),
+          throughSequence: sequence,
+        },
+      }],
+      ["", "", "::jsonb"],
+    )).toMatchObject({
+      status: "ok",
+      encryptionVersion: 1,
+      recovered: true,
+    });
     const encryptedSession = await rpc(
       db,
       "capability_session_open",
