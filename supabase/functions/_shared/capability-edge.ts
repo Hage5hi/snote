@@ -60,6 +60,15 @@ type CapabilityDatabase = {
         };
         Returns: CapabilityRpcResponse;
       };
+      capability_admission_consume: {
+        Args: {
+          p_operation: "create" | "sync";
+          p_subject_hash: string;
+          p_request_cost?: number;
+          p_byte_cost?: number;
+        };
+        Returns: boolean;
+      };
       capability_session_open: {
         Args: { p_token_hash: string; p_after_seq?: number; p_limit?: number };
         Returns: CapabilityRpcResponse;
@@ -230,6 +239,18 @@ export function capabilityFailure(status: string): Response {
   if (status === "read_only") return capabilityJson({ error: "read only" }, 409);
   if (status === "version_conflict") return capabilityJson({ error: "version conflict" }, 409);
   if (status === "slug_unavailable") return capabilityJson({ error: "slug unavailable" }, 409);
+  if (status === "quota_exceeded") {
+    return new Response(JSON.stringify({ error: "capacity temporarily exceeded" }), {
+      status: 429,
+      headers: {
+        ...capabilityCorsHeaders,
+        "Content-Type": "application/json",
+        "Cache-Control": "no-store",
+        "CDN-Cache-Control": "no-store",
+        "Retry-After": "3600",
+      },
+    });
+  }
   if (status === "invalid" || status === "payload_too_large") {
     return capabilityJson({ error: "invalid request" }, 400);
   }
