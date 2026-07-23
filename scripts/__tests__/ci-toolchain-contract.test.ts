@@ -9,13 +9,17 @@ const WORKFLOW_FILES = readdirSync(".github/workflows")
   .map((name) => `.github/workflows/${name}`);
 
 const workflows = new Map(
-  WORKFLOW_FILES.map((path) => [path, readFileSync(path, "utf8")]),
+  WORKFLOW_FILES.map((path) => [
+    path,
+    readFileSync(path, "utf8").replaceAll("\r\n", "\n"),
+  ]),
 );
 const allWorkflows = [...workflows.values()].join("\n");
 const ci = workflows.get(".github/workflows/ci.yml")!;
 const workflowStructure = workflows.get(".github/workflows/workflow-structure.yml")!;
 const extensionWorkflow = workflows.get(".github/workflows/extension-e2e.yml")!;
-const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8");
+const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8")
+  .replaceAll("\r\n", "\n");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   packageManager?: string;
   scripts: Record<string, string>;
@@ -52,10 +56,17 @@ describe("CI toolchain contract", () => {
     expect(allWorkflows).not.toContain("bun.lockb");
   });
 
-  it("keeps Vitest and its V8 coverage provider on 3.2.4", () => {
-    expect(packageJson.devDependencies.vitest).toBe("3.2.4");
-    expect(packageJson.devDependencies["@vitest/coverage-v8"]).toBe("3.2.4");
+  it("keeps Vitest and its V8 coverage provider on patched 3.2.6", () => {
+    expect(packageJson.devDependencies.vitest).toBe("3.2.6");
+    expect(packageJson.devDependencies["@vitest/coverage-v8"]).toBe("3.2.6");
     expect(packageJson.scripts["test:coverage"]).toBe("vitest run --coverage");
+  });
+
+  it("pins the patched Vite and PostCSS security floors", () => {
+    expect(packageJson.devDependencies.vite).toBe("^6.4.3");
+    expect(packageJson.overrides?.vite).toBe("^6.4.3");
+    expect(packageJson.devDependencies.postcss).toBe("8.5.12");
+    expect(packageJson.overrides?.postcss).toBe("8.5.12");
   });
 
   it("runs explicit app, node and tools TypeScript projects", () => {

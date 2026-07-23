@@ -10,15 +10,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "▶ bun audit (prod, high+)"
-if bun pm audit --help >/dev/null 2>&1; then
-  # bun pm audit exits non-zero on any finding; --prod scopes to runtime deps.
-  bun pm audit --prod --severity high || {
-    echo "✗ high-severity advisory in production dependencies" >&2
-    exit 1
-  }
-else
-  echo "  (bun pm audit unavailable, skipping)"
-fi
+bun audit --prod --audit-level=high || {
+  echo "✗ high-severity advisory in production dependencies" >&2
+  exit 1
+}
 
 echo "▶ ESLint on chrome-extension/"
 bunx eslint chrome-extension --ext .js,.ts --max-warnings=0
