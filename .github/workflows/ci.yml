@@ -15,6 +15,12 @@ concurrency:
 permissions:
   contents: read
 
+# Application checks exercise only local behavior. Keep them deterministic and
+# available to fork PRs without exposing or depending on repository secrets.
+env:
+  VITE_SUPABASE_URL: https://ci.invalid
+  VITE_SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder
+
 jobs:
   quality:
     name: quality

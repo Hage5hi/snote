@@ -141,6 +141,11 @@ describe("CI toolchain contract", () => {
     expect(ci).toContain("e2e/pwa-update-sw-stall.spec.ts");
     expect(ci).toContain("--retries=0");
     expect(ci).not.toContain("PLAYWRIGHT_RETRIES");
+    expect(ci).toContain("VITE_SUPABASE_URL: https://ci.invalid");
+    expect(ci).toContain(
+      "VITE_SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder",
+    );
+    expect(ci).not.toContain("secrets.VITE_SUPABASE");
   });
 
   it("runs extension verification when package inputs change", () => {
