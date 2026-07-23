@@ -103,6 +103,15 @@ describe("capability primitives", () => {
 describe("capability database boundary", () => {
   const migrationPath = "supabase/migrations/20260722000000_capability_backend.sql";
 
+  it("keeps generated database types aligned with admission and cumulative quotas", () => {
+    const generatedTypes = source("src/integrations/supabase/types.ts");
+    expect(generatedTypes).toContain("storage_limit_bytes: number");
+    expect(generatedTypes).toContain("update_limit_count: number");
+    expect(generatedTypes).toContain("checkpoint_limit_count: number");
+    expect(generatedTypes).toContain("capability_admission_consume:");
+    expect(generatedTypes).toContain('p_operation: "create" | "sync"');
+  });
+
   it("publishes security-definer RPCs and grants in one transaction", () => {
     const sql = source("supabase/migrations/20260722000000_capability_backend.sql");
     expect(sql).toMatch(/^--[\s\S]*?\nBEGIN;\s/);
