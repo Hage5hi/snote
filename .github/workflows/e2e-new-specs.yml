@@ -19,8 +19,10 @@ jobs:
     env:
       PLAYWRIGHT_PROJECT: chromium
       PLAYWRIGHT_RETRIES: "0"
-      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
-      VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
+      # Home smoke must be deterministic and must not require repository
+      # secrets. No backend request is made by this test.
+      VITE_SUPABASE_URL: https://ci.invalid
+      VITE_SUPABASE_PUBLISHABLE_KEY: ci-public-placeholder
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
