@@ -151,6 +151,37 @@ describe("capability API client", () => {
     expect(opened.realtimeToken).toBeNull();
   });
 
+  it("fails soft without logging when managed Auth rejects", async () => {
+    const rejection = new Error("managed auth unavailable");
+    const source = {
+      accessTokenFor: vi.fn<CapabilityAuthSource["accessTokenFor"]>()
+        .mockRejectedValue(rejection),
+    };
+    const fetcher = vi.fn<typeof fetch>(async (_input, init) => {
+      expect(init?.headers).toEqual({
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${TOKEN}`,
+      });
+      return Response.json({ session: pollingSession() });
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const api = createCapabilityApi({
+      baseUrl: "https://project.supabase.co",
+      fetcher,
+      authSource: source,
+    });
+
+    try {
+      const opened = await api.openSession(TOKEN);
+
+      expect(opened.syncTransport).toBe("polling");
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(consoleError).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
   it.each([
     ["private realtime", privateSession()],
     ["polling", pollingSession()],
@@ -182,8 +213,27 @@ describe("capability API client", () => {
       { ...privateSession(), realtimeToken: "a".repeat(8193) },
     ],
     [
-      "private realtime with an invalid expiry",
-      { ...privateSession(), realtimeExpiresAt: "not-a-date" },
+      "private realtime with an empty expiry",
+      { ...privateSession(), realtimeExpiresAt: "" },
+    ],
+    [
+      "private realtime with a non-ISO legacy expiry",
+      {
+        ...privateSession(),
+        realtimeExpiresAt: "January 1, 2099 00:00:00 UTC",
+      },
+    ],
+    [
+      "private realtime with a timezone-less expiry",
+      { ...privateSession(), realtimeExpiresAt: "2099-01-01T00:00:00.000" },
+    ],
+    [
+      "private realtime with an impossible calendar expiry",
+      { ...privateSession(), realtimeExpiresAt: "2023-02-29T00:00:00.000Z" },
+    ],
+    [
+      "private realtime with an overlong expiry",
+      { ...privateSession(), realtimeExpiresAt: "2099-01-01T00:00:00.0000Z" },
     ],
     [
       "polling with a token",
@@ -470,7 +520,27 @@ describe("capability API client", () => {
     expect(opened.realtimeExpiresAt).toBeNull();
   });
 
-  it("keeps pagination identity and encryption consistency checks", async () => {
+  it.each([
+    [
+      "note ID",
+      {
+        noteId: "00000000-0000-4000-8000-000000000002",
+        realtimeTopic: "note:00000000-0000-4000-8000-000000000002",
+      },
+    ],
+    ["slug", { slug: "changed" }],
+    ["scope", { scope: "view" }],
+    ["generation", { generation: 2 }],
+    [
+      "encryption version",
+      {
+        encryption: {
+          ...BASE_SESSION.encryption,
+          version: 1,
+        },
+      },
+    ],
+  ])("rejects a pagination %s mismatch", async (_label, overrides) => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({
         session: privateSession({
@@ -485,8 +555,6 @@ describe("capability API client", () => {
       }))
       .mockResolvedValueOnce(Response.json({
         session: pollingSession({
-          noteId: "00000000-0000-4000-8000-000000000002",
-          realtimeTopic: "note:00000000-0000-4000-8000-000000000002",
           currentSequence: 2,
           missingUpdates: [{
             updateId: "2".repeat(64),
@@ -494,6 +562,7 @@ describe("capability API client", () => {
             sequence: 2,
             encryptionVersion: 0,
           }],
+          ...overrides as Partial<PollingNoteSession>,
         }),
       }));
     const api = createCapabilityApi({
@@ -720,6 +789,7 @@ describe("capability API client", () => {
   });
 
   it("preserves capability input and response validation", async () => {
+    const source = authSource(null);
     const fetcher = vi.fn<typeof fetch>(async () => Response.json({
       session: pollingSession(),
       capabilities: { owner: "c".repeat(43) },
@@ -727,12 +797,13 @@ describe("capability API client", () => {
     const api = createCapabilityApi({
       baseUrl: "https://project.supabase.co",
       fetcher,
-      authSource: authSource(null),
+      authSource: source,
     });
 
     await expect(api.openSession("not-a-capability")).rejects.toThrow(
       "invalid capability",
     );
+    expect(source.accessTokenFor).not.toHaveBeenCalled();
     await expect(api.createNote("daily", TOKEN)).rejects.toThrow(
       "invalid capabilities",
     );

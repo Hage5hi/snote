@@ -72,6 +72,12 @@ function isNonNegativeInteger(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
+function isCanonicalUtcTimestamp(value: unknown): value is string {
+  if (typeof value !== "string" || value.length !== 24) return false;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString() === value;
+}
+
 function endpoint(baseUrl: string, name: string) {
   return `${baseUrl.replace(/\/$/, "")}/functions/v1/${name}`;
 }
@@ -84,8 +90,7 @@ function assertSession(value: unknown): NoteSession {
       ? typeof session.realtimeToken === "string"
         && session.realtimeToken.length > 0
         && session.realtimeToken.length <= 8192
-        && typeof session.realtimeExpiresAt === "string"
-        && Number.isFinite(Date.parse(session.realtimeExpiresAt))
+        && isCanonicalUtcTimestamp(session.realtimeExpiresAt)
       : session.syncTransport === "polling"
         && session.realtimeToken === null
         && session.realtimeExpiresAt === null;
@@ -180,12 +185,17 @@ export function createCapabilityApi(options: ApiOptions = {}) {
 
   const post = async (name: string, body: unknown, token?: string, keepalive = false) => {
     if (token && !CAPABILITY_TOKEN_RE.test(token)) throw new Error("invalid capability");
-    const authToken = token
-      ? await authSource.accessTokenFor(
+    let authToken: string | null = null;
+    if (token) {
+      try {
+        authToken = await authSource.accessTokenFor(
           token,
           keepalive ? "cached-only" : "ensure",
-        )
-      : null;
+        );
+      } catch {
+        authToken = null;
+      }
+    }
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
     if (authToken && authToken.length <= 8192) {
