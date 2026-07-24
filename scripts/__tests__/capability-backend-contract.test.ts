@@ -13,6 +13,20 @@ import {
 
 const root = process.cwd();
 const source = (path: string) => readFileSync(resolve(root, path), "utf8");
+const capabilityMigrationPaths = [
+  "supabase/migrations/20260722000000_capability_backend.sql",
+  "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql",
+  "supabase/migrations/20260724000000_atomic_capability_cutover.sql",
+];
+const allCapabilityMigrations = capabilityMigrationPaths.map(source).join("\n");
+const allCapabilitySources = [
+  allCapabilityMigrations,
+  source("supabase/functions/_shared/capability.ts"),
+  source("supabase/functions/_shared/capability-edge.ts"),
+  source("supabase/functions/note-session/index.ts"),
+  source("supabase/functions/note-sync/index.ts"),
+  source("supabase/functions/note-manage/index.ts"),
+].join("\n");
 
 describe("capability primitives", () => {
   it("creates 32-byte base64url capabilities", () => {
@@ -81,7 +95,6 @@ describe("capability primitives", () => {
       issuer: "https://example.supabase.co/auth/v1",
       secret: "jwt-secret-material-that-is-at-least-thirty-two-bytes",
       nowSeconds: 1_700_000_000,
-      writeDisabled: true,
     });
     const [, encodedPayload] = jwt.split(".");
     const payload = JSON.parse(
@@ -92,12 +105,12 @@ describe("capability primitives", () => {
       note_id: "123e4567-e89b-12d3-a456-426614174000",
       note_scope: "edit",
       capability_generation: 7,
-      note_write_disabled: true,
       role: "authenticated",
       aud: "authenticated",
       iat: 1_700_000_000,
       exp: 1_700_000_300,
     });
+    expect(payload).not.toHaveProperty("note_write_disabled");
     expect(jwt).not.toContain(token);
   });
 });
@@ -112,12 +125,71 @@ describe("capability database boundary", () => {
     expect(generatedTypes).toContain("checkpoint_limit_count: number");
     expect(generatedTypes).toContain("capability_admission_consume:");
     expect(generatedTypes).toContain('p_operation: "create" | "sync"');
+    expect(generatedTypes).toContain("capability_runtime_settings:");
+    expect(generatedTypes).toContain("private_realtime_enabled: boolean");
+    expect(generatedTypes).toContain("writes_enabled: boolean");
+    expect(generatedTypes).toContain("capability_runtime_state:");
+    expect(generatedTypes).toContain("capability_runtime_set:");
   });
 
   it("publishes security-definer RPCs and grants in one transaction", () => {
     const sql = source("supabase/migrations/20260722000000_capability_backend.sql");
     expect(sql).toMatch(/^--[\s\S]*?\nBEGIN;\s/);
     expect(sql.trimEnd()).toMatch(/COMMIT;$/);
+  });
+
+  it("stores one fail-closed runtime row behind service-only controls", () => {
+    const sql = source(migrationPath);
+    expect(sql).toMatch(
+      /CREATE TABLE public\.capability_runtime_settings[\s\S]+singleton boolean PRIMARY KEY DEFAULT true CHECK \(singleton\)/,
+    );
+    expect(sql).toMatch(/writes_enabled boolean NOT NULL DEFAULT false/);
+    expect(sql).toMatch(/private_realtime_enabled boolean NOT NULL DEFAULT false/);
+    expect(sql).toMatch(
+      /INSERT INTO public\.capability_runtime_settings[\s\S]+VALUES \(true, false, false\)/,
+    );
+    expect(sql).toContain(
+      "ALTER TABLE public.capability_runtime_settings ENABLE ROW LEVEL SECURITY",
+    );
+    expect(sql).toMatch(
+      /REVOKE ALL ON TABLE public\.capability_runtime_settings\s+FROM PUBLIC, anon, authenticated, service_role/,
+    );
+    expect(sql).toMatch(
+      /FUNCTION public\.capability_writes_enabled\(\)[\s\S]+COALESCE[\s\S]+false/,
+    );
+    expect(sql).toContain("FUNCTION public.capability_runtime_state()");
+    expect(sql).toContain(
+      "FUNCTION public.capability_runtime_set(\n  p_writes_enabled boolean,\n  p_private_realtime_enabled boolean",
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.capability_runtime_state\(\) TO service_role/,
+    );
+    expect(sql).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.capability_runtime_set\(boolean, boolean\)[\s\S]+TO service_role/,
+    );
+    expect(sql).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.capability_writes_enabled\(\) TO service_role/,
+    );
+  });
+
+  it.each([
+    "capability_note_create",
+    "capability_updates_append",
+    "capability_note_manage",
+    "capability_checkpoint_append",
+    "capability_note_import_legacy",
+  ])("%s is fenced by the database runtime row", (functionName) => {
+    expect(allCapabilityMigrations).toMatch(
+      new RegExp(
+        `FUNCTION public\\.${functionName}[\\s\\S]+?IF NOT public\\.capability_writes_enabled\\(\\)`,
+      ),
+    );
+  });
+
+  it("removes custom write claims and environment switches", () => {
+    expect(allCapabilitySources).not.toContain("note_write_disabled");
+    expect(allCapabilitySources).not.toContain("CAPABILITY_WRITE_DISABLED");
+    expect(allCapabilitySources).not.toContain("capabilityWritesDisabled");
   });
 
   it("adds immutable note ids, scoped HMAC capabilities, append-only updates, and checkpoints", () => {

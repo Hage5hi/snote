@@ -36,16 +36,16 @@ REVOKE ALL ON TABLE public.note_checkpoints FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON SEQUENCE public.note_updates_seq_seq FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.legacy_share_rotate(text, text) FROM PUBLIC, anon, authenticated, service_role;
 
--- The operational rollback also closes Realtime writes. Sessions remain able
--- to receive presence/broadcast, but JWTs minted while the kill switch is on
--- carry note_write_disabled=true and cannot satisfy this INSERT policy.
+-- Operational rollback is API read-only:
+--   SELECT public.capability_runtime_set(false, false);
+-- Mutating RPCs then return writes_disabled, which Edge maps to HTTP 503.
+-- The existing capability predicate reads the same runtime control for sends.
 DROP POLICY IF EXISTS "Snote editors can send private messages" ON realtime.messages;
 CREATE POLICY "Snote editors can send private messages"
 ON realtime.messages
 FOR INSERT TO authenticated
 WITH CHECK (
   extension IN ('broadcast', 'presence')
-  AND COALESCE(((SELECT auth.jwt()) ->> 'note_write_disabled')::boolean, false) = false
   AND (SELECT realtime.topic()) = 'note:' || ((SELECT auth.jwt()) ->> 'note_id')
   AND public.realtime_capability_allows(
     (SELECT auth.uid()),
@@ -85,6 +85,10 @@ DECLARE
   v_recovered boolean := false;
   v_result jsonb;
 BEGIN
+  IF NOT public.capability_writes_enabled() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
   IF p_slug IS NULL OR p_slug !~ '^[a-zA-Z0-9_-]{1,64}$'
     OR p_owner_token_hash IS NULL OR p_owner_token_hash !~ '^[a-f0-9]{64}$'
     OR p_edit_token_hash IS NULL OR p_edit_token_hash !~ '^[a-f0-9]{64}$'

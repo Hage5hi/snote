@@ -22,20 +22,26 @@ type RpcResult = {
   acknowledgements?: Array<{ updateId: string; sequence: number }>;
 };
 
+type RuntimeState = {
+  writesEnabled: boolean;
+  privateRealtimeEnabled: boolean;
+  updatedAt: string | null;
+};
+
 const hash = (value: number[]) =>
   createHash("sha256").update(Buffer.from(value)).digest("hex");
 const tokenHash = (character: string) => character.repeat(64);
 
-async function rpc(
+async function rpc<T = RpcResult>(
   db: PGlite,
   name: string,
   values: unknown[],
   casts: string[] = [],
-): Promise<RpcResult> {
+): Promise<T> {
   const placeholders = values
     .map((_, index) => `$${index + 1}${casts[index] ?? ""}`)
     .join(",");
-  const response = await db.query<{ result: RpcResult }>(
+  const response = await db.query<{ result: T }>(
     `select public.${name}(${placeholders}) as result`,
     values,
   );
@@ -48,14 +54,12 @@ async function setRealtimeClaims(
   noteId: string,
   scope: "owner" | "edit" | "view",
   generation: number,
-  writeDisabled = false,
 ) {
   const claims = JSON.stringify({
     sub: capabilityId,
     note_id: noteId,
     note_scope: scope,
     capability_generation: generation,
-    note_write_disabled: writeDisabled,
   });
   await db.query(
     "select set_config('request.jwt.claim.sub', $1, false), "
@@ -129,6 +133,52 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       resolve(process.cwd(), "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql"),
       "utf8",
     ));
+
+    expect((await db.query<{ count: number; rls_enabled: boolean }>(`
+      SELECT
+        count(*)::integer AS count,
+        (SELECT relrowsecurity
+          FROM pg_catalog.pg_class
+          WHERE oid = 'public.capability_runtime_settings'::regclass) AS rls_enabled
+      FROM public.capability_runtime_settings
+    `)).rows[0]).toEqual({ count: 1, rls_enabled: true });
+    expect(await rpc<RuntimeState>(db, "capability_runtime_state", []))
+      .toMatchObject({
+        writesEnabled: false,
+        privateRealtimeEnabled: false,
+      });
+    expect((await rpc(db, "capability_note_create", [
+      "disabled-at-start",
+      tokenHash("d"),
+      tokenHash("e"),
+      tokenHash("f"),
+    ])).status).toBe("writes_disabled");
+
+    for (const role of ["anon", "authenticated"]) {
+      await db.exec(`SET ROLE ${role}`);
+      await expect(db.query("SELECT * FROM public.capability_runtime_settings"))
+        .rejects.toMatchObject({ code: "42501" });
+      await expect(db.query("SELECT public.capability_runtime_state()"))
+        .rejects.toMatchObject({ code: "42501" });
+      await expect(db.query("SELECT public.capability_runtime_set(true, false)"))
+        .rejects.toMatchObject({ code: "42501" });
+      await db.exec("RESET ROLE");
+    }
+
+    await db.exec("SET ROLE service_role");
+    await expect(db.query("SELECT * FROM public.capability_runtime_settings"))
+      .rejects.toMatchObject({ code: "42501" });
+    await expect(db.query("SELECT public.capability_writes_enabled()"))
+      .rejects.toMatchObject({ code: "42501" });
+    expect(await rpc<RuntimeState>(
+      db,
+      "capability_runtime_set",
+      [true, true],
+    )).toMatchObject({
+      writesEnabled: true,
+      privateRealtimeEnabled: true,
+    });
+    await db.exec("RESET ROLE");
 
     const createdA = await rpc(db, "capability_note_create", [
       "secure-a",
@@ -666,12 +716,17 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       imported.session!.noteId,
       "owner",
       1,
-      true,
     );
+    await db.exec("SET ROLE service_role");
+    await rpc<RuntimeState>(db, "capability_runtime_set", [false, false]);
+    await db.exec("RESET ROLE");
     await db.exec("SET ROLE authenticated");
     await expect(db.exec(
       "INSERT INTO realtime.messages(extension) VALUES ('broadcast')",
     )).rejects.toMatchObject({ code: "42501" });
+    await db.exec("RESET ROLE");
+    await db.exec("SET ROLE service_role");
+    await rpc<RuntimeState>(db, "capability_runtime_set", [true, false]);
     await db.exec("RESET ROLE");
 
     const invalidImport = await rpc(db, "capability_note_import_legacy", [
@@ -690,6 +745,79 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     expect((await db.query<{ count: number }>(
       "SELECT count(*)::integer AS count FROM public.notes WHERE slug = 'orphan-must-not-exist'",
     )).rows[0].count).toBe(0);
+
+    await db.exec("SET ROLE service_role");
+    expect(await rpc<RuntimeState>(
+      db,
+      "capability_runtime_set",
+      [false, false],
+    )).toMatchObject({
+      writesEnabled: false,
+      privateRealtimeEnabled: false,
+    });
+    await db.exec("RESET ROLE");
+
+    expect((await rpc(db, "capability_note_create", [
+      "disabled-create",
+      tokenHash("d"),
+      tokenHash("e"),
+      tokenHash("f"),
+    ])).status).toBe("writes_disabled");
+    expect((await rpc(
+      db,
+      "capability_updates_append",
+      [tokenHash("a"), [], 0],
+      ["", "::jsonb", ""],
+    )).status).toBe("writes_disabled");
+    expect((await rpc(
+      db,
+      "capability_note_manage",
+      [tokenHash("a"), "rename", { slug: "disabled-rename" }],
+      ["", "", "::jsonb"],
+    )).status).toBe("writes_disabled");
+    expect((await rpc(
+      db,
+      "capability_checkpoint_append",
+      [tokenHash("a"), {}, 0, 0],
+      ["", "::jsonb", "", ""],
+    )).status).toBe("writes_disabled");
+    expect((await rpc(db, "capability_note_import_legacy", [
+      "disabled-import",
+      tokenHash("4"),
+      tokenHash("5"),
+      tokenHash("6"),
+      hash([99]),
+      importBytes.toString("base64url"),
+      false,
+      null,
+      null,
+      null,
+    ], ["", "", "", "", "", "", "", "", "", "::integer"])).status)
+      .toBe("writes_disabled");
+    expect((await rpc(
+      db,
+      "capability_session_open",
+      [tokenHash("a"), 0, 20],
+    )).status).toBe("ok");
+
+    await db.exec("DELETE FROM public.capability_runtime_settings");
+    expect(await rpc<RuntimeState>(db, "capability_runtime_state", []))
+      .toEqual({
+        writesEnabled: false,
+        privateRealtimeEnabled: false,
+        updatedAt: null,
+      });
+    expect((await rpc(db, "capability_note_create", [
+      "missing-runtime-row",
+      tokenHash("d"),
+      tokenHash("e"),
+      tokenHash("f"),
+    ])).status).toBe("writes_disabled");
+    await expect(rpc<RuntimeState>(
+      db,
+      "capability_runtime_set",
+      [true, true],
+    )).rejects.toThrow("capability runtime row missing");
   } finally {
     await db.close();
   }

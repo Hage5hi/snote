@@ -136,7 +136,6 @@ type RealtimeJwtInput = {
   issuer: string;
   secret: string;
   nowSeconds?: number;
-  writeDisabled?: boolean;
 };
 
 export async function signRealtimeJwt(input: RealtimeJwtInput): Promise<string> {
@@ -161,7 +160,6 @@ export async function signRealtimeJwt(input: RealtimeJwtInput): Promise<string> 
     note_id: input.noteId,
     note_scope: input.scope,
     capability_generation: input.generation,
-    note_write_disabled: !!input.writeDisabled,
     iat: now,
     nbf: now - 5,
     exp: now + 300,

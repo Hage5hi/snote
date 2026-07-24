@@ -228,7 +228,6 @@ export async function materializeNoteSession(
       issuer: `${supabaseUrl.replace(/\/$/, "")}/auth/v1`,
       secret: jwtSecret,
       nowSeconds,
-      writeDisabled: capabilityWritesDisabled(),
     });
     return {
       noteId: stored.noteId,
@@ -262,6 +261,9 @@ export function rpcStatus(value: unknown): string {
 
 export function capabilityFailure(status: string): Response {
   if (status === "unauthorized") return capabilityJson({ error: "unauthorized" }, 401);
+  if (status === "writes_disabled") {
+    return capabilityJson({ error: "temporarily unavailable" }, 503);
+  }
   if (status === "read_only") return capabilityJson({ error: "read only" }, 409);
   if (status === "version_conflict") return capabilityJson({ error: "version conflict" }, 409);
   if (status === "slug_unavailable") return capabilityJson({ error: "slug unavailable" }, 409);
@@ -281,11 +283,4 @@ export function capabilityFailure(status: string): Response {
     return capabilityJson({ error: "invalid request" }, 400);
   }
   return capabilityJson({ error: "temporarily unavailable" }, 503);
-}
-
-/** Operational rollback keeps capability reads online while rejecting writes. */
-export function capabilityWritesDisabled(): boolean {
-  return ["1", "true", "yes", "on"].includes(
-    (Deno.env.get("CAPABILITY_WRITE_DISABLED") ?? "").trim().toLowerCase(),
-  );
 }

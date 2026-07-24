@@ -88,6 +88,27 @@ export type Database = {
         }
         Relationships: []
       }
+      capability_runtime_settings: {
+        Row: {
+          private_realtime_enabled: boolean
+          singleton: boolean
+          updated_at: string
+          writes_enabled: boolean
+        }
+        Insert: {
+          private_realtime_enabled?: boolean
+          singleton?: boolean
+          updated_at?: string
+          writes_enabled?: boolean
+        }
+        Update: {
+          private_realtime_enabled?: boolean
+          singleton?: boolean
+          updated_at?: string
+          writes_enabled?: boolean
+        }
+        Relationships: []
+      }
       note_capabilities: {
         Row: {
           capability_id: string
@@ -309,6 +330,14 @@ export type Database = {
         }[]
       }
       capability_quarantine_oversized: { Args: never; Returns: number }
+      capability_runtime_set: {
+        Args: {
+          p_private_realtime_enabled: boolean
+          p_writes_enabled: boolean
+        }
+        Returns: Json
+      }
+      capability_runtime_state: { Args: never; Returns: Json }
       capability_session_open: {
         Args: { p_after_seq?: number; p_limit?: number; p_token_hash: string }
         Returns: Json

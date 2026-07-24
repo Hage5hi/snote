@@ -24,6 +24,10 @@ DECLARE
   v_latest_through_seq bigint;
   v_next_version bigint;
 BEGIN
+  IF NOT public.capability_writes_enabled() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
   IF p_token_hash !~ '^[a-f0-9]{64}$'
     OR p_checkpoint IS NULL
     OR jsonb_typeof(p_checkpoint) <> 'object'

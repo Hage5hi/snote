@@ -6,6 +6,10 @@ const migration = readFileSync(resolve(
   process.cwd(),
   "supabase/migrations/20260724000000_atomic_capability_cutover.sql",
 ), "utf8");
+const capabilityMigration = readFileSync(resolve(
+  process.cwd(),
+  "supabase/migrations/20260722000000_capability_backend.sql",
+), "utf8");
 const legacyShareEdge = readFileSync(resolve(
   process.cwd(),
   "supabase/functions/share-view/index.ts",
@@ -19,6 +23,10 @@ const viteConfig = readFileSync(resolve(process.cwd(), "vite.config.ts"), "utf8"
 const cutoverVerifier = readFileSync(resolve(
   process.cwd(),
   "scripts/verify-capability-cutover.ts",
+), "utf8");
+const capabilityEdge = readFileSync(resolve(
+  process.cwd(),
+  "supabase/functions/_shared/capability-edge.ts",
 ), "utf8");
 
 describe("atomic cutover migration", () => {
@@ -57,8 +65,19 @@ describe("atomic cutover migration", () => {
     expect(migration).toMatch(/GRANT EXECUTE ON FUNCTION public\.capability_note_import_legacy[\s\S]+TO service_role/);
   });
 
-  it("makes Realtime broadcast read-only when the rollback JWT says writes are disabled", () => {
-    expect(migration).toMatch(/Snote editors can send private messages[\s\S]+note_write_disabled/);
+  it("uses the database runtime control for read-only rollback", () => {
+    expect(migration).toContain("capability_runtime_set(false, false)");
+    expect(migration).toMatch(
+      /Snote editors can send private messages[\s\S]+realtime_capability_allows/,
+    );
+    expect(capabilityMigration).toMatch(
+      /FUNCTION public\.realtime_capability_allows[\s\S]+capability_writes_enabled\(\)/,
+    );
+    expect(migration).not.toContain("note_write_disabled");
+    expect(capabilityEdge).toMatch(
+      /status === "writes_disabled"[\s\S]+temporarily unavailable[\s\S]+503/,
+    );
+    expect(capabilityEdge).not.toContain("CAPABILITY_WRITE_DISABLED");
   });
 
   it("sets no-referrer before every precached-shell subresource", () => {

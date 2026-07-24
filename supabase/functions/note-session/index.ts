@@ -11,7 +11,6 @@ import {
   capabilityFailure,
   capabilityJson,
   capabilityTokenHash,
-  capabilityWritesDisabled,
   materializeNoteSession,
   rpcStatus,
 } from "../_shared/capability-edge.ts";
@@ -33,7 +32,6 @@ Deno.serve(async (req) => {
     const bearer = readCapabilityBearer(req);
 
     if (body?.action === "create") {
-      if (capabilityWritesDisabled()) return capabilityFailure("read_only");
       if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
       const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
       if (!SLUG_RE.test(slug)) return capabilityFailure("invalid");
@@ -85,7 +83,6 @@ Deno.serve(async (req) => {
     }
 
     if (body?.action === "import-legacy") {
-      if (capabilityWritesDisabled()) return capabilityFailure("read_only");
       if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
       const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
       const checkpointId = typeof body?.checkpointId === "string" ? body.checkpointId : "";

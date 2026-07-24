@@ -10,7 +10,6 @@ import {
   capabilityFailure,
   capabilityJson,
   capabilityTokenHash,
-  capabilityWritesDisabled,
   materializeNoteSession,
   rpcStatus,
 } from "../_shared/capability-edge.ts";
@@ -20,7 +19,6 @@ const MAX_BATCH_BYTES = 4 * 1024 * 1024;
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: capabilityCorsHeaders });
   if (req.method !== "POST") return capabilityJson({ error: "method not allowed" }, 405);
-  if (capabilityWritesDisabled()) return capabilityFailure("read_only");
 
   const bearer = readCapabilityBearer(req);
   if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);

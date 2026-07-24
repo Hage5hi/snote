@@ -261,6 +261,93 @@ REVOKE ALL ON TABLE public.note_updates FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.note_checkpoints FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON SEQUENCE public.note_updates_seq_seq FROM PUBLIC, anon, authenticated;
 
+-- One service-controlled row is the fail-closed write and private-Realtime
+-- control plane. The boolean primary key plus CHECK permits only singleton=true.
+CREATE TABLE public.capability_runtime_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  writes_enabled boolean NOT NULL DEFAULT false,
+  private_realtime_enabled boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.capability_runtime_settings(
+  singleton,
+  writes_enabled,
+  private_realtime_enabled
+) VALUES (true, false, false);
+
+ALTER TABLE public.capability_runtime_settings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.capability_runtime_settings
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.capability_writes_enabled()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT COALESCE((
+    SELECT settings.writes_enabled
+    FROM public.capability_runtime_settings AS settings
+    WHERE settings.singleton
+  ), false);
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_runtime_state()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT jsonb_build_object(
+        'writesEnabled', settings.writes_enabled,
+        'privateRealtimeEnabled', settings.private_realtime_enabled,
+        'updatedAt', settings.updated_at
+      )
+      FROM public.capability_runtime_settings AS settings
+      WHERE settings.singleton
+    ),
+    jsonb_build_object(
+      'writesEnabled', false,
+      'privateRealtimeEnabled', false,
+      'updatedAt', null
+    )
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_runtime_set(
+  p_writes_enabled boolean,
+  p_private_realtime_enabled boolean
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  UPDATE public.capability_runtime_settings
+  SET writes_enabled = p_writes_enabled,
+      private_realtime_enabled = p_private_realtime_enabled,
+      updated_at = now()
+  WHERE singleton
+  RETURNING jsonb_build_object(
+    'writesEnabled', writes_enabled,
+    'privateRealtimeEnabled', private_realtime_enabled,
+    'updatedAt', updated_at
+  ) INTO v_result;
+  IF v_result IS NULL THEN
+    RAISE EXCEPTION 'capability runtime row missing';
+  END IF;
+  RETURN v_result;
+END;
+$$;
+
 -- Aggregate abuse admission. subject_hash is either the domain-separated HMAC
 -- of a gateway-verified client address (create) or an existing capability HMAC
 -- (sync). Raw addresses, slugs, tokens, and content never enter this table.
@@ -415,6 +502,10 @@ DECLARE
   v_recovered boolean := false;
   v_result jsonb;
 BEGIN
+  IF NOT public.capability_writes_enabled() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
   IF p_slug IS NULL OR p_slug !~ '^[a-zA-Z0-9_-]{1,64}$'
     OR p_owner_token_hash IS NULL OR p_owner_token_hash !~ '^[a-f0-9]{64}$'
     OR p_edit_token_hash IS NULL OR p_edit_token_hash !~ '^[a-f0-9]{64}$'
@@ -638,6 +729,10 @@ DECLARE
   v_sequence bigint;
   v_acknowledgements jsonb := '[]'::jsonb;
 BEGIN
+  IF NOT public.capability_writes_enabled() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
   IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$'
     OR jsonb_typeof(p_updates) <> 'array'
     OR jsonb_array_length(p_updates) > 100
@@ -807,6 +902,10 @@ DECLARE
   v_check text;
   v_iterations integer;
 BEGIN
+  IF NOT public.capability_writes_enabled() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
   IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$'
     OR p_action IS NULL
     OR p_params IS NULL
@@ -1120,7 +1219,14 @@ AS $$
       AND n.capability_managed
       AND n.deleted_at IS NULL
       AND n.sync_status <> 'deleted'
-      AND (NOT p_write OR (c.scope IN ('owner', 'edit') AND n.sync_status = 'active'))
+      AND (
+        NOT p_write
+        OR (
+          public.capability_writes_enabled()
+          AND c.scope IN ('owner', 'edit')
+          AND n.sync_status = 'active'
+        )
+      )
   );
 $$;
 
@@ -1161,6 +1267,12 @@ REVOKE ALL ON FUNCTION public.enforce_note_identity() FROM PUBLIC, anon, authent
 REVOKE ALL ON FUNCTION public.enforce_legacy_share_target() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.legacy_share_rotate(text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.reject_append_only_mutation() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_writes_enabled()
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_runtime_state()
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_runtime_set(boolean, boolean)
+  FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_note_create(text, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_session_open(text, bigint, integer) FROM PUBLIC, anon, authenticated;
@@ -1171,6 +1283,9 @@ REVOKE ALL ON FUNCTION public.capability_quarantine_oversized() FROM PUBLIC, ano
 REVOKE ALL ON FUNCTION public.realtime_capability_allows(uuid, uuid, bigint, text, boolean) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.capability_note_create(text, text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_runtime_state() TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_runtime_set(boolean, boolean)
+  TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.capability_admission_windows TO service_role;
 GRANT EXECUTE ON FUNCTION public.legacy_share_rotate(text, text) TO service_role;
