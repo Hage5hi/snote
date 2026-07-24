@@ -175,12 +175,12 @@ export function createTurnstileTokenSource(
         const cleanup = () => {
           if (widgetId === undefined) {
             cleanupPending = true;
-          } else {
-            try {
-              turnstile.remove(widgetId);
-            } catch {
-              // Turnstile cleanup must not expose SDK errors.
-            }
+            return;
+          }
+          try {
+            turnstile.remove(widgetId);
+          } catch {
+            // Turnstile cleanup must not expose SDK errors.
           }
           removeHost(host);
         };
@@ -207,11 +207,16 @@ export function createTurnstileTokenSource(
           });
 
           if (cleanupPending) {
-            cleanup();
+            try {
+              turnstile.execute(widgetId);
+            } finally {
+              cleanup();
+            }
             return;
           }
           turnstile.execute(widgetId);
         } catch {
+          if (widgetId === undefined) removeHost(host);
           settle(null);
         }
       });

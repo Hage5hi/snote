@@ -178,6 +178,14 @@ describe("capabilityAuthStorageKey", () => {
     expect(first).not.toContain(CAPABILITY_A);
   });
 
+  it("matches the known SHA-256 vector for the exact versioned capability input", async () => {
+    await expect(
+      capabilityAuthStorageKey("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
+    ).resolves.toBe(
+      "snote-auth-v1-6dfcf0a845e9c14c817170a2fe33f2ce66fa3cab82ff70cb16fcebfcb1024131",
+    );
+  });
+
   it("uses distinct partitions for distinct capabilities", async () => {
     await expect(capabilityAuthStorageKey(CAPABILITY_A)).resolves.not.toBe(
       await capabilityAuthStorageKey(CAPABILITY_B),

@@ -220,4 +220,90 @@ describe("createTurnstileTokenSource", () => {
     harness.callbacks[0].callback("retry-token");
     await expect(retry).resolves.toBe("retry-token");
   });
+
+  it("times out an eventless existing script and permits a fresh loader", async () => {
+    vi.useFakeTimers();
+    const documentLike = document.implementation.createHTMLDocument("turnstile");
+    const staleScript = documentLike.createElement("script");
+    staleScript.id = "snote-turnstile-api";
+    documentLike.head.appendChild(staleScript);
+    expect(
+      (staleScript as HTMLScriptElement & { readyState?: string }).readyState,
+    ).toBeUndefined();
+    const windowLike = {} as Window;
+    const source = createTurnstileTokenSource({
+      siteKey: "1x00000000000000000000AA",
+      windowLike,
+      documentLike,
+      timeoutMs: 2,
+    });
+
+    const pending = source.token();
+    await vi.advanceTimersByTimeAsync(2);
+    await expect(pending).resolves.toBeNull();
+    expect(documentLike.getElementById("snote-turnstile-api")).toBeNull();
+
+    const harness = turnstileHarness();
+    const originalAppend = documentLike.head.appendChild.bind(documentLike.head);
+    const append = vi.spyOn(documentLike.head, "appendChild").mockImplementation((node) => {
+      const appended = originalAppend(node);
+      if (node instanceof HTMLScriptElement) {
+        queueMicrotask(() => {
+          Object.assign(windowLike, { turnstile: harness.api });
+          node.dispatchEvent(new Event("load"));
+        });
+      }
+      return appended;
+    });
+
+    const retry = source.token();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(append).toHaveBeenCalledOnce();
+    harness.callbacks[0].callback("fresh-loader-token");
+    await expect(retry).resolves.toBe("fresh-loader-token");
+  });
+
+  it("settles a synchronous render callback once after the widget ID is known", async () => {
+    vi.useFakeTimers();
+    const documentLike = document.implementation.createHTMLDocument("turnstile");
+    let renderInvocations = 0;
+    const render = vi.fn((_host: HTMLElement, configuration: TurnstileCallbacks) => {
+      renderInvocations += 1;
+      configuration.callback("synchronous-token");
+      configuration.callback("ignored-token");
+      return "synchronous-widget";
+    });
+    const execute = vi.fn();
+    const remove = vi.fn();
+    const windowLike = {
+      turnstile: { render, execute, remove },
+    } as unknown as Window;
+    const source = createTurnstileTokenSource({
+      siteKey: "1x00000000000000000000AA",
+      windowLike,
+      documentLike,
+      timeoutMs: 290_000,
+    });
+    let resolutions = 0;
+
+    const pending = source.token().then((token) => {
+      resolutions += 1;
+      return token;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    await expect(pending).resolves.toBe("synchronous-token");
+    expect(renderInvocations).toBe(1);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledWith("synchronous-widget");
+    expect(remove).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledWith("synchronous-widget");
+    expect(documentLike.body.children).toHaveLength(0);
+    expect(resolutions).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(290_000);
+    expect(execute).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(resolutions).toBe(1);
+  });
 });
