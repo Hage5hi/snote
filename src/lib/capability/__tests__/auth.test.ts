@@ -1,4 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  AuthRetryableFetchError,
+  AuthSessionMissingError,
+} from "@supabase/supabase-js";
 
 import {
   capabilityAuthStorageKey,
@@ -47,12 +51,14 @@ function memoryStorage(): Storage {
 function authHarness({
   sessions,
   refreshError,
+  getSessionError,
   enabled = true,
   storage = memoryStorage(),
   lockManager = serialLockManager(),
 }: {
   sessions?: Record<string, Session | null>;
   refreshError?: { code?: string; message: string };
+  getSessionError?: unknown;
   enabled?: boolean;
   storage?: Storage;
   lockManager?: LockManager;
@@ -65,6 +71,7 @@ function authHarness({
   const turnstileToken = vi.fn(async () => "captcha-token");
   const clients: string[] = [];
   let signupCount = 0;
+  let nextGetSessionError = getSessionError;
 
   const createAuthClient: NonNullable<CapabilityAuthOptions["createAuthClient"]> = vi.fn(
     (_url, _key, storageKey) => {
@@ -80,9 +87,15 @@ function authHarness({
         auth: {
           getSession: vi.fn(async () => {
             getSession(storageKey);
+            const error = nextGetSessionError;
+            nextGetSessionError = undefined;
             return {
-              data: { session: sessionByStorageKey.get(storageKey) ?? null },
-              error: null,
+              data: {
+                session: error
+                  ? null
+                  : sessionByStorageKey.get(storageKey) ?? null,
+              },
+              error: error ?? null,
             };
           }),
           refreshSession: vi.fn(async () => {
@@ -120,7 +133,10 @@ function authHarness({
   const sessionByCapability = new Map<string, string>();
   const prepare = async () => {
     for (const capability of Object.keys(sessions ?? {})) {
-      sessionByCapability.set(capability, await capabilityAuthStorageKey(capability));
+      const storageKey = await capabilityAuthStorageKey(capability);
+      sessionByCapability.set(capability, storageKey);
+      const session = sessions?.[capability];
+      if (session) storage.setItem(storageKey, JSON.stringify(session));
     }
   };
 
@@ -229,7 +245,65 @@ describe("createCapabilityAuthSource", () => {
     await expect(source.accessTokenFor(CAPABILITY_A, "cached-only")).resolves.toBeNull();
     expect(harness.signInAnonymously).not.toHaveBeenCalled();
     expect(harness.refreshSession).not.toHaveBeenCalled();
+    expect(harness.getSession).not.toHaveBeenCalled();
     expect(harness.turnstileToken).not.toHaveBeenCalled();
+  });
+
+  it("cached-only reads a near-expiry persisted session without SDK or network access", async () => {
+    const storage = memoryStorage();
+    const storageKey = await capabilityAuthStorageKey(CAPABILITY_A);
+    const now = Date.now();
+    storage.setItem(storageKey, JSON.stringify({
+      access_token: "cached-boundary-access",
+      refresh_token: "cached-boundary-refresh",
+      token_type: "bearer",
+      expires_in: 30,
+      expires_at: (now + 30_000) / 1000,
+      user: { id: "cached-boundary-user" },
+    }));
+    const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const turnstileToken = vi.fn(async () => "unused-captcha");
+    const source = createCapabilityAuthSource({
+      supabaseUrl: "https://example.supabase.co",
+      publishableKey: "publishable-key",
+      enabled: true,
+      turnstile: { token: turnstileToken },
+      storage,
+      lockManager: serialLockManager(),
+      now: () => now,
+    });
+
+    await expect(
+      source.accessTokenFor(CAPABILITY_A, "cached-only"),
+    ).resolves.toBe("cached-boundary-access");
+    expect(fetch).not.toHaveBeenCalled();
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(turnstileToken).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["malformed JSON", "{"],
+    ["wrong shape", JSON.stringify({ access_token: 17, expires_at: "tomorrow" })],
+  ])("cached-only fails closed for %s persisted storage", async (_name, persisted) => {
+    const storage = memoryStorage();
+    storage.setItem(await capabilityAuthStorageKey(CAPABILITY_A), persisted);
+    const createAuthClient = vi.fn();
+    const source = createCapabilityAuthSource({
+      supabaseUrl: "https://example.supabase.co",
+      publishableKey: "publishable-key",
+      enabled: true,
+      turnstile: { token: vi.fn() },
+      storage,
+      lockManager: serialLockManager(),
+      now: () => NOW,
+      createAuthClient,
+    });
+
+    await expect(
+      source.accessTokenFor(CAPABILITY_A, "cached-only"),
+    ).resolves.toBeNull();
+    expect(createAuthClient).not.toHaveBeenCalled();
   });
 
   it("cached-only returns only a current unexpired token", async () => {
@@ -309,6 +383,39 @@ describe("createCapabilityAuthSource", () => {
     expect(harness.signInAnonymously).toHaveBeenCalledWith(partitionA, {
       options: { captchaToken: "captcha-token" },
     });
+  });
+
+  it.each([
+    [
+      "an invalid automatic refresh",
+      {
+        code: "refresh_token_not_found",
+        message: "Invalid Refresh Token: Refresh Token Not Found",
+      },
+    ],
+    ["a deleted session", new AuthSessionMissingError()],
+  ])("clears and recreates after getSession reports %s", async (_name, getSessionError) => {
+    const harness = authHarness({ getSessionError });
+    const source = createCapabilityAuthSource(harness.options);
+
+    await expect(source.accessTokenFor(CAPABILITY_A)).resolves.toBe("access-1");
+    const partition = await capabilityAuthStorageKey(CAPABILITY_A);
+    expect(harness.signOut).toHaveBeenCalledOnce();
+    expect(harness.signOut).toHaveBeenCalledWith(partition, { scope: "local" });
+    expect(harness.turnstileToken).toHaveBeenCalledOnce();
+    expect(harness.signInAnonymously).toHaveBeenCalledOnce();
+  });
+
+  it("does not clear or recreate after a transient getSession failure", async () => {
+    const harness = authHarness({
+      getSessionError: new AuthRetryableFetchError("Service unavailable", 503),
+    });
+    const source = createCapabilityAuthSource(harness.options);
+
+    await expect(source.accessTokenFor(CAPABILITY_A)).resolves.toBeNull();
+    expect(harness.signOut).not.toHaveBeenCalled();
+    expect(harness.turnstileToken).not.toHaveBeenCalled();
+    expect(harness.signInAnonymously).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -1,5 +1,6 @@
 import {
   createClient,
+  isAuthSessionMissingError,
   type Session,
   type SupabaseClient,
 } from "@supabase/supabase-js";
@@ -102,6 +103,7 @@ function currentTokenOutsideRefreshWindow(
 }
 
 function isInvalidRefresh(error: unknown): boolean {
+  if (isAuthSessionMissingError(error)) return true;
   if (!error || typeof error !== "object") return false;
   const code = "code" in error ? String(error.code) : "";
   const message = "message" in error ? String(error.message) : "";
@@ -135,6 +137,33 @@ export function createCapabilityAuthSource(
   const now = options.now ?? Date.now;
   const createAuthClient = options.createAuthClient ?? defaultAuthClient;
 
+  function cachedTokenFromStorage(storageKey: string): string | null {
+    const storage = configuredStorage(options.storage);
+    if (!storage) return null;
+
+    try {
+      const persisted = storage.getItem(storageKey);
+      if (!persisted) return null;
+      const session: unknown = JSON.parse(persisted);
+      if (!session || typeof session !== "object" || Array.isArray(session)) return null;
+
+      const accessToken = "access_token" in session ? session.access_token : null;
+      const expiresAt = "expires_at" in session ? session.expires_at : null;
+      if (
+        typeof accessToken !== "string"
+        || accessToken.length === 0
+        || typeof expiresAt !== "number"
+        || !Number.isFinite(expiresAt)
+        || expiresAt * 1000 <= now()
+      ) {
+        return null;
+      }
+      return accessToken;
+    } catch {
+      return null;
+    }
+  }
+
   async function clientFor(storageKey: string): Promise<AuthClient | null> {
     const digest = storageKey.slice(`${STORAGE_PREFIX}-`.length);
     const cached = clients.get(digest);
@@ -158,13 +187,17 @@ export function createCapabilityAuthSource(
     }
   }
 
-  async function readSession(client: AuthClient): Promise<Session | null | undefined> {
+  async function readSession(
+    client: AuthClient,
+  ): Promise<{ session: Session | null; error: unknown }> {
     try {
       const result = await client.auth.getSession();
-      if (result.error) return undefined;
-      return result.data.session;
-    } catch {
-      return undefined;
+      return {
+        session: result.data.session,
+        error: result.error,
+      };
+    } catch (error) {
+      return { session: null, error };
     }
   }
 
@@ -199,8 +232,12 @@ export function createCapabilityAuthSource(
   async function ensureExisting(
     client: AuthClient,
   ): Promise<{ token: string | null; create: boolean }> {
-    const session = await readSession(client);
-    if (session === undefined) return { token: null, create: false };
+    const { session, error } = await readSession(client);
+    if (error) {
+      if (!isInvalidRefresh(error)) return { token: null, create: false };
+      const cleared = await clearInvalidSession(client);
+      return { token: null, create: cleared };
+    }
     if (!session) return { token: null, create: true };
 
     const current = currentTokenOutsideRefreshWindow(session, now());
@@ -247,13 +284,12 @@ export function createCapabilityAuthSource(
         return null;
       }
 
+      if (mode === "cached-only") {
+        return cachedTokenFromStorage(storageKey);
+      }
+
       const client = await clientFor(storageKey);
       if (!client) return null;
-
-      if (mode === "cached-only") {
-        const session = await readSession(client);
-        return session === undefined ? null : unexpiredToken(session, now());
-      }
 
       const existing = await ensureExisting(client);
       if (existing.token || !existing.create) return existing.token;

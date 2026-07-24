@@ -40,7 +40,11 @@ declare global {
 
 const scriptLoads = new WeakMap<Document, Promise<boolean>>();
 
-function loadTurnstile(windowLike: Window, documentLike: Document): Promise<boolean> {
+function loadTurnstile(
+  windowLike: Window,
+  documentLike: Document,
+  timeoutMs: number,
+): Promise<boolean> {
   if (windowLike.turnstile) return Promise.resolve(true);
 
   const cached = scriptLoads.get(documentLike);
@@ -62,17 +66,30 @@ function loadTurnstile(windowLike: Window, documentLike: Document): Promise<bool
     const finish = (available: boolean) => {
       if (settled) return;
       settled = true;
+      clearTimeout(loadTimer);
       script.removeEventListener("load", loaded);
       script.removeEventListener("error", failed);
+      if (!available) {
+        try {
+          script.remove();
+        } catch {
+          // A stale loader may already have been detached.
+        }
+      }
       resolve(available);
     };
     const loaded = () => finish(Boolean(windowLike.turnstile));
     const failed = () => finish(false);
+    const loadTimer = setTimeout(failed, timeoutMs);
 
     script.addEventListener("load", loaded, { once: true });
     script.addEventListener("error", failed, { once: true });
 
-    if (script.id === SCRIPT_ID) return;
+    if (script.id === SCRIPT_ID) {
+      const readyState = (script as HTMLScriptElement & { readyState?: string }).readyState;
+      if (readyState === "complete" || readyState === "loaded") finish(false);
+      return;
+    }
 
     script.id = SCRIPT_ID;
     script.src = SCRIPT_URL;
@@ -92,6 +109,11 @@ function loadTurnstile(windowLike: Window, documentLike: Document): Promise<bool
   });
 
   scriptLoads.set(documentLike, promise);
+  void promise.then((available) => {
+    if (!available && scriptLoads.get(documentLike) === promise) {
+      scriptLoads.delete(documentLike);
+    }
+  });
   return promise;
 }
 
@@ -121,7 +143,11 @@ export function createTurnstileTokenSource(
 
       let loaded: boolean;
       try {
-        loaded = await loadTurnstile(windowLike, documentLike);
+        loaded = await loadTurnstile(
+          windowLike,
+          documentLike,
+          options.timeoutMs ?? TOKEN_TIMEOUT_MS,
+        );
       } catch {
         return null;
       }

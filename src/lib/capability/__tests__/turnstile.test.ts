@@ -174,4 +174,50 @@ describe("createTurnstileTokenSource", () => {
     await expect(missingDom.token()).resolves.toBeNull();
     await expect(unavailableScript.token()).resolves.toBeNull();
   });
+
+  it("bounds a completed stale script load and allows a later retry", async () => {
+    vi.useFakeTimers();
+    const documentLike = document.implementation.createHTMLDocument("turnstile");
+    const staleScript = documentLike.createElement("script");
+    staleScript.id = "snote-turnstile-api";
+    Object.defineProperty(staleScript, "readyState", { value: "complete" });
+    documentLike.head.appendChild(staleScript);
+    const windowLike = {} as Window;
+    const source = createTurnstileTokenSource({
+      siteKey: "1x00000000000000000000AA",
+      windowLike,
+      documentLike,
+      timeoutMs: 1,
+    });
+
+    const pending = source.token();
+    const bounded = Promise.race([
+      pending,
+      new Promise<"still-pending">((resolve) => {
+        setTimeout(() => resolve("still-pending"), 10);
+      }),
+    ]);
+    await vi.advanceTimersByTimeAsync(10);
+    await expect(bounded).resolves.toBeNull();
+    expect(documentLike.getElementById("snote-turnstile-api")).toBeNull();
+
+    const harness = turnstileHarness();
+    const originalAppend = documentLike.head.appendChild.bind(documentLike.head);
+    const append = vi.spyOn(documentLike.head, "appendChild").mockImplementation((node) => {
+      const appended = originalAppend(node);
+      if (node instanceof HTMLScriptElement) {
+        queueMicrotask(() => {
+          Object.assign(windowLike, { turnstile: harness.api });
+          node.dispatchEvent(new Event("load"));
+        });
+      }
+      return appended;
+    });
+    const retry = source.token();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(append).toHaveBeenCalledOnce();
+    expect(harness.api.render).toHaveBeenCalledOnce();
+    harness.callbacks[0].callback("retry-token");
+    await expect(retry).resolves.toBe("retry-token");
+  });
 });
