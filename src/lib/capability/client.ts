@@ -1,5 +1,9 @@
 import { CAPABILITY_TOKEN_RE, type CapabilityScope } from "./url";
 import { decodeCapabilityPayload } from "./encoding";
+import {
+  createDefaultCapabilityAuthSource,
+  type CapabilityAuthSource,
+} from "./auth";
 
 export type EncryptionMetadata = {
   enabled: boolean;
@@ -16,13 +20,11 @@ export type NoteUpdate = {
   encryptionVersion: number;
 };
 
-export type NoteSession = {
+export type NoteSessionBase = {
   noteId: string;
   slug: string;
   scope: CapabilityScope;
-  realtimeToken: string;
-  realtimeExpiresAt: string;
-  realtimeTopic: string;
+  realtimeTopic: `note:${string}`;
   generation: number;
   syncStatus: "active" | "read_only_quarantine";
   currentSequence: number;
@@ -35,6 +37,22 @@ export type NoteSession = {
   encryption: EncryptionMetadata;
 };
 
+export type PrivateRealtimeNoteSession = NoteSessionBase & {
+  syncTransport: "private-realtime";
+  realtimeToken: string;
+  realtimeExpiresAt: string;
+};
+
+export type PollingNoteSession = NoteSessionBase & {
+  syncTransport: "polling";
+  realtimeToken: null;
+  realtimeExpiresAt: null;
+};
+
+export type NoteSession =
+  | PrivateRealtimeNoteSession
+  | PollingNoteSession;
+
 export type PendingUpdate = Omit<NoteUpdate, "sequence">;
 
 export type CapabilityApi = ReturnType<typeof createCapabilityApi>;
@@ -42,6 +60,7 @@ export type CapabilityApi = ReturnType<typeof createCapabilityApi>;
 type ApiOptions = {
   baseUrl?: string;
   fetcher?: typeof fetch;
+  authSource?: CapabilityAuthSource;
 };
 
 const UPDATE_ID_RE = /^[a-f0-9]{64}$/;
@@ -60,12 +79,21 @@ function endpoint(baseUrl: string, name: string) {
 function assertSession(value: unknown): NoteSession {
   if (!value || typeof value !== "object") throw new Error("invalid note session");
   const session = value as Partial<NoteSession>;
+  const validTransport =
+    session.syncTransport === "private-realtime"
+      ? typeof session.realtimeToken === "string"
+        && session.realtimeToken.length > 0
+        && session.realtimeToken.length <= 8192
+        && typeof session.realtimeExpiresAt === "string"
+        && Number.isFinite(Date.parse(session.realtimeExpiresAt))
+      : session.syncTransport === "polling"
+        && session.realtimeToken === null
+        && session.realtimeExpiresAt === null;
   if (
     !UUID_RE.test(session.noteId ?? "")
     || !SLUG_RE.test(session.slug ?? "")
     || !["owner", "edit", "view"].includes(session.scope ?? "")
-    || typeof session.realtimeToken !== "string" || session.realtimeToken.length > 8192
-    || typeof session.realtimeExpiresAt !== "string" || !Number.isFinite(Date.parse(session.realtimeExpiresAt))
+    || !validTransport
     || session.realtimeTopic !== `note:${session.noteId}`
     || !Number.isSafeInteger(session.generation)
     || Number(session.generation) < 1
@@ -147,12 +175,22 @@ async function readJson(response: Response) {
 export function createCapabilityApi(options: ApiOptions = {}) {
   const baseUrl = options.baseUrl ?? import.meta.env.VITE_SUPABASE_URL;
   const fetcher = options.fetcher ?? fetch;
+  const authSource = options.authSource ?? createDefaultCapabilityAuthSource();
   if (!baseUrl) throw new Error("capability API unavailable");
 
   const post = async (name: string, body: unknown, token?: string, keepalive = false) => {
     if (token && !CAPABILITY_TOKEN_RE.test(token)) throw new Error("invalid capability");
+    const authToken = token
+      ? await authSource.accessTokenFor(
+          token,
+          keepalive ? "cached-only" : "ensure",
+        )
+      : null;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
+    if (authToken && authToken.length <= 8192) {
+      headers["X-Snote-Auth"] = authToken;
+    }
     const response = await fetcher(endpoint(baseUrl, name), {
       method: "POST",
       headers,

@@ -47,6 +47,7 @@ function noteSession(encrypted = false) {
     noteId: "00000000-0000-4000-8000-000000000001",
     slug: "hidden-locator",
     scope: "view",
+    syncTransport: "private-realtime",
     realtimeToken: "header.payload.signature",
     realtimeExpiresAt: "2099-01-01T00:00:00.000Z",
     realtimeTopic: "note:00000000-0000-4000-8000-000000000001",

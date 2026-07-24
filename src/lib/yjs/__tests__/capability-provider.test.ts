@@ -3,17 +3,23 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { CapabilityYjsProvider, type CapabilityRealtimeFactory } from "../capability-provider";
 import { CapabilityOutbox } from "../capability-outbox";
-import type { CapabilityApi, NoteSession } from "@/lib/capability/client";
+import type {
+  CapabilityApi,
+  PrivateRealtimeNoteSession,
+} from "@/lib/capability/client";
 import { decodeCapabilityPayload } from "@/lib/capability/encoding";
 
 const TOKEN = "e".repeat(43);
 const NOTE_ID = "00000000-0000-4000-8000-000000000001";
 
-function baseSession(overrides: Partial<NoteSession> = {}): NoteSession {
+function baseSession(
+  overrides: Partial<PrivateRealtimeNoteSession> = {},
+): PrivateRealtimeNoteSession {
   return {
     noteId: NOTE_ID,
     slug: "daily",
     scope: "edit",
+    syncTransport: "private-realtime",
     realtimeToken: "header.payload.signature",
     realtimeExpiresAt: "2099-01-01T00:00:00.000Z",
     realtimeTopic: `note:${NOTE_ID}`,
@@ -255,7 +261,7 @@ describe("CapabilityYjsProvider", () => {
     const doc = new Y.Doc();
     const provider = new CapabilityYjsProvider(
       { slug: "daily", scope: "edit", token: TOKEN },
-      baseSession({ generation: 2 } as Partial<NoteSession>),
+      baseSession({ generation: 2 }),
       doc,
       {
         api: apiHarness(),
