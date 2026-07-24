@@ -2,9 +2,11 @@
 
 **Date:** 2026-07-24
 
-**Status:** Approved design, awaiting written-spec review
+**Status:** Approved by the user on 2026-07-24
 
 **Baseline:** `17819f9ca3aa313d5042b6f908c70da1c0205931`
+
+**Implementation plan:** `docs/superpowers/plans/2026-07-24-lovable-managed-realtime-auth.md`
 
 ## Context
 
