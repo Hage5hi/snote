@@ -7,6 +7,7 @@ import {
   type CapabilityApi,
   type NoteSession,
   type PendingUpdate,
+  type PrivateRealtimeNoteSession,
 } from "@/lib/capability/client";
 import {
   CapabilityOutbox,
@@ -39,7 +40,9 @@ export type CapabilityRealtimeHandle = {
   dispose: () => void | Promise<void>;
 };
 
-export type CapabilityRealtimeFactory = (session: NoteSession) => CapabilityRealtimeHandle;
+export type CapabilityRealtimeFactory = (
+  session: PrivateRealtimeNoteSession,
+) => Promise<CapabilityRealtimeHandle>;
 
 type ProviderDependencies = {
   api?: CapabilityApi;
@@ -63,15 +66,16 @@ function isBroadcastUpdate(value: unknown): value is PendingUpdate {
     && Number.isSafeInteger(update.encryptionVersion);
 }
 
-function defaultRealtimeFactory(session: NoteSession): CapabilityRealtimeHandle {
+async function defaultRealtimeFactory(
+  session: PrivateRealtimeNoteSession,
+): Promise<CapabilityRealtimeHandle> {
   const url = import.meta.env.VITE_SUPABASE_URL as string;
   const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string;
   if (!url || !key) throw new Error("Realtime unavailable");
   const client = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-    accessToken: async () => session.realtimeToken,
   });
-  void client.realtime.setAuth(session.realtimeToken);
+  await client.realtime.setAuth(session.realtimeToken);
   const channel = client.channel(session.realtimeTopic, {
     config: {
       private: true,
@@ -102,9 +106,14 @@ export class CapabilityYjsProvider implements YjsProviderLike {
   private readonly now: () => number;
   private readonly compactionThresholdUpdates: number;
   private realtime: CapabilityRealtimeHandle | null = null;
+  private realtimeStartEpoch = 0;
   private syncListeners = new Set<Listener<SyncEvent>>();
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
   private pendingPersistence: Promise<void> = Promise.resolve();
+  // Session responses carry both durable state and a short-lived Realtime
+  // credential. Keep their network/apply/reconcile lifecycles ordered so a
+  // slower response cannot install an older transport after a newer one.
+  private sessionOperation: Promise<void> | null = null;
   private flushPromise: Promise<void> | null = null;
   private compactionPromise: Promise<void> | null = null;
   private pendingBytes = 0;
@@ -203,6 +212,30 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     return this.pendingPersistence;
   }
 
+  private serializeSessionOperation<T>(operation: () => Promise<T>): Promise<T> {
+    let result: Promise<T>;
+    if (this.sessionOperation) {
+      result = this.sessionOperation.then(operation, operation);
+    } else {
+      try {
+        // Preserve the immediate request start that callers use for lifecycle
+        // fencing, while still serializing every later response behind it.
+        result = Promise.resolve(operation());
+      } catch (error) {
+        result = Promise.reject(error);
+      }
+    }
+    const tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.sessionOperation = tail;
+    void tail.then(() => {
+      if (this.sessionOperation === tail) this.sessionOperation = null;
+    });
+    return result;
+  }
+
   async whenLocalUpdatesPersisted() {
     await this.pendingPersistence;
   }
@@ -273,14 +306,42 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     if (this.access.scope !== "view") this.doc.on("update", this.handleDocUpdate);
     this.awareness.on("update", this.handleAwarenessUpdate);
 
-    this.realtime = this.realtimeFactory(this.session);
-    const channel = this.realtime.channel;
+    if (this.session.syncTransport === "private-realtime") {
+      await this.startPrivateRealtime(this.session);
+      if (this.realtime) this.schedulePrivateRefresh();
+    } else {
+      await this.stopPrivateRealtime();
+    }
+    void this.flushNow();
+  }
+
+  private async startPrivateRealtime(
+    session: PrivateRealtimeNoteSession,
+    allowWhileWriteFenced = false,
+  ): Promise<void> {
+    if (this.destroyed || this.closing || (this.writeFenced && !allowWhileWriteFenced)) return;
+    if (this.realtime) await this.stopPrivateRealtime();
+
+    const startEpoch = ++this.realtimeStartEpoch;
+    const realtime = await this.realtimeFactory(session);
+    if (
+      this.destroyed
+      || this.closing
+      || (this.writeFenced && !allowWhileWriteFenced)
+      || this.realtimeStartEpoch !== startEpoch
+      || this.session.syncTransport !== "private-realtime"
+      || this.session.realtimeToken !== session.realtimeToken
+    ) {
+      try { await realtime.dispose(); } catch { /* provider already detached */ }
+      return;
+    }
+
+    this.realtime = realtime;
+    const channel = realtime.channel;
     channel.on("broadcast", { event: "y-update" }, async ({ payload }) => {
       if (
         !isBroadcastUpdate(payload)
-        || this.destroyed
-        || this.closing
-        || this.writeFenced
+        || !this.canReceivePrivateRealtimeUpdate(realtime)
       ) return;
       try {
         const stored = decodeCapabilityPayload(payload.payload);
@@ -291,6 +352,7 @@ export class CapabilityYjsProvider implements YjsProviderLike {
         };
         if (this.access.scope === "view") {
           const bytes = await this.decodeStoredUpdate(transport);
+          if (!this.canReceivePrivateRealtimeUpdate(realtime)) return;
           Y.applyUpdate(this.doc, bytes, "capability-remote");
           return;
         }
@@ -305,14 +367,19 @@ export class CapabilityYjsProvider implements YjsProviderLike {
           await this.outbox.enqueue(canonical);
           this.pendingBytes += stored.byteLength;
         });
+        if (!this.canReceivePrivateRealtimeUpdate(realtime)) return;
         const bytes = await this.decodeStoredUpdate(canonical);
+        if (!this.canReceivePrivateRealtimeUpdate(realtime)) return;
         Y.applyUpdate(this.doc, bytes, "capability-remote");
-        void this.flushNow();
+        if (this.canReceivePrivateRealtimeUpdate(realtime)) void this.flushNow();
       } catch {
-        this.emitSync({ type: "error", message: "invalid peer update" });
+        if (this.canReceivePrivateRealtimeUpdate(realtime)) {
+          this.emitSync({ type: "error", message: "invalid peer update" });
+        }
       }
     });
     channel.on("broadcast", { event: "awareness" }, ({ payload }) => {
+      if (!this.canReceivePrivateRealtimeUpdate(realtime)) return;
       try {
         if (!payload || typeof payload !== "object") return;
         const encoded = (payload as { update?: unknown }).update;
@@ -322,8 +389,8 @@ export class CapabilityYjsProvider implements YjsProviderLike {
         applyAwarenessUpdate(this.awareness, bytes, "capability-remote");
       } catch { /* discard malformed awareness */ }
     });
-    channel.subscribe(async (status) => {
-      if (this.destroyed || this.closing) return;
+    await channel.subscribe(async (status) => {
+      if (this.destroyed || this.closing || this.realtime !== realtime) return;
       if (status === "SUBSCRIBED") {
         const wasOffline = !this.connected;
         this.connected = true;
@@ -335,8 +402,44 @@ export class CapabilityYjsProvider implements YjsProviderLike {
         this.connected = false;
       }
     });
-    this.scheduleTokenRefresh();
-    void this.flushNow();
+  }
+
+  private canReceivePrivateRealtimeUpdate(realtime: CapabilityRealtimeHandle) {
+    return !this.destroyed
+      && !this.closing
+      && !this.writeFenced
+      && this.realtime === realtime;
+  }
+
+  private async stopPrivateRealtime(): Promise<void> {
+    // Invalidate any factory call that has not resolved before detaching the
+    // active handle. A subsequent start receives its own fresh epoch.
+    this.realtimeStartEpoch += 1;
+    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
+    const realtime = this.realtime;
+    this.realtime = null;
+    this.connected = false;
+    if (!realtime) return;
+    try { await realtime.dispose(); } catch { /* local transport remains detached */ }
+  }
+
+  private async reconcileTransport(
+    previous: NoteSession,
+    next: NoteSession,
+    allowWhileWriteFenced = false,
+  ): Promise<void> {
+    if (next.syncTransport === "polling" || (this.writeFenced && !allowWhileWriteFenced)) {
+      await this.stopPrivateRealtime();
+      return;
+    }
+
+    if (previous.syncTransport === "private-realtime" && this.realtime) {
+      await this.realtime.setAuth(next.realtimeToken);
+    } else {
+      await this.startPrivateRealtime(next, allowWhileWriteFenced);
+    }
+    if (this.realtime) this.schedulePrivateRefresh();
   }
 
   private isLocallyWritableUpdate(origin: unknown) {
@@ -446,19 +549,24 @@ export class CapabilityYjsProvider implements YjsProviderLike {
       if (stored.byteLength === 0 || stored.byteLength > this.session.payloadLimitBytes) {
         throw new Error("checkpoint payload outside audited limit");
       }
-      const response = await this.api.sync(this.access.token, {
-        updates: [],
-        expectedEncryptionVersion,
-        afterSequence: throughSequence,
-        checkpoint: {
-          checkpointId: await capabilityPayloadId(stored),
-          payload: encodeCapabilityPayload(stored),
-          throughSequence,
-          expectedCheckpointVersion,
-        },
+      const response = await this.serializeSessionOperation(async () => {
+        const previous = this.session;
+        const response = await this.api.sync(this.access.token, {
+          updates: [],
+          expectedEncryptionVersion,
+          afterSequence: throughSequence,
+          checkpoint: {
+            checkpointId: await capabilityPayloadId(stored),
+            payload: encodeCapabilityPayload(stored),
+            throughSequence,
+            expectedCheckpointVersion,
+          },
+        });
+        await this.applyDurableSession(response.session);
+        await this.reconcileTransport(previous, response.session);
+        return response;
       });
-      await this.applyDurableSession(response.session);
-      if (this.session.checkpointSequence < throughSequence) {
+      if (response.session.checkpointSequence < throughSequence) {
         throw new Error("server did not advance checkpoint");
       }
     })().catch(async (error) => {
@@ -466,10 +574,12 @@ export class CapabilityYjsProvider implements YjsProviderLike {
       // checkpoint cursor without re-entering flushNow so future compactions
       // use the winning version instead of retrying stale state forever.
       try {
-        const next = await this.api.openSession(this.access.token, this.session.currentSequence);
-        await this.applyDurableSession(next);
-        await this.realtime?.setAuth(next.realtimeToken);
-        this.scheduleTokenRefresh();
+        await this.serializeSessionOperation(async () => {
+          const previous = this.session;
+          const next = await this.api.openSession(this.access.token, this.session.currentSequence);
+          await this.applyDurableSession(next);
+          await this.reconcileTransport(previous, next);
+        });
       } catch {
         // The durable update acknowledgement already succeeded. A later
         // reconnect will retry this metadata refresh.
@@ -508,16 +618,21 @@ export class CapabilityYjsProvider implements YjsProviderLike {
           bytes += size;
         }
         try {
-          const response = await this.api.sync(this.access.token, {
-            updates: selected.map(({ updateId, payload, encryptionVersion }) => ({
-              updateId,
-              payload,
-              encryptionVersion,
-            })),
-            expectedEncryptionVersion: this.session.encryption.version,
-            afterSequence: this.session.currentSequence,
-          }, keepalive);
-          await this.applyDurableSession(response.session);
+          const response = await this.serializeSessionOperation(async () => {
+            const previous = this.session;
+            const response = await this.api.sync(this.access.token, {
+              updates: selected.map(({ updateId, payload, encryptionVersion }) => ({
+                updateId,
+                payload,
+                encryptionVersion,
+              })),
+              expectedEncryptionVersion: this.session.encryption.version,
+              afterSequence: this.session.currentSequence,
+            }, keepalive);
+            await this.applyDurableSession(response.session);
+            await this.reconcileTransport(previous, response.session);
+            return response;
+          });
           const acknowledged = new Set(response.acknowledgements.map((item) => item.updateId));
           const expected = selected.map((item) => item.updateId).filter((id) => acknowledged.has(id));
           if (expected.length === 0) throw new Error("server did not acknowledge update batch");
@@ -549,27 +664,60 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     void this.flushNow(true);
   }
 
-  private scheduleTokenRefresh() {
+  private schedulePrivateRefresh(retryInMs?: number) {
     if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
+    this.refreshTimer = null;
+    if (
+      this.destroyed
+      || this.closing
+      || this.writeFenced
+      || this.session.syncTransport !== "private-realtime"
+    ) return;
     const expiry = Date.parse(this.session.realtimeExpiresAt);
-    if (!Number.isFinite(expiry)) return;
-    const delay = Math.max(1_000, expiry - this.now() - 60_000);
+    if (retryInMs === undefined && !Number.isFinite(expiry)) return;
+    const delay = retryInMs ?? Math.max(1_000, expiry - this.now() - 60_000);
     this.refreshTimer = window.setTimeout(() => {
-      void this.refreshNow().catch(() => {});
+      // A timer captured for an old private session must not resurrect a
+      // channel after another response has selected polling.
+      void this.refreshNow(true).catch(() => {});
     }, Math.min(delay, 2_147_000_000));
   }
 
-  async refreshNow() {
-    if (this.destroyed || this.closing) return;
+  async refreshNow(privateOnly = false) {
+    if (
+      this.destroyed
+      || this.closing
+      || this.writeFenced
+      || (privateOnly && this.session.syncTransport !== "private-realtime")
+    ) return;
     try {
-      const next = await this.api.openSession(this.access.token, this.session.currentSequence);
-      await this.applyDurableSession(next);
-      await this.realtime?.setAuth(next.realtimeToken);
-      this.scheduleTokenRefresh();
-      void this.flushNow();
+      const refreshed = await this.serializeSessionOperation(async () => {
+        if (
+          this.destroyed
+          || this.closing
+          || this.writeFenced
+          || (privateOnly && this.session.syncTransport !== "private-realtime")
+        ) return false;
+        const previous = this.session;
+        const next = await this.api.openSession(this.access.token, this.session.currentSequence);
+        if (
+          this.destroyed
+          || this.closing
+          || this.writeFenced
+        ) return false;
+        await this.applyDurableSession(next);
+        if (
+          this.destroyed
+          || this.closing
+          || this.writeFenced
+        ) return false;
+        await this.reconcileTransport(previous, next);
+        return true;
+      });
+      if (refreshed) void this.flushNow();
     } catch (error) {
       this.emitSync({ type: "error", message: error instanceof Error ? error.message : String(error) });
-      this.refreshTimer = window.setTimeout(() => void this.refreshNow().catch(() => {}), 10_000);
+      this.schedulePrivateRefresh(10_000);
       throw error;
     }
   }
@@ -604,27 +752,28 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     await this.flushNow();
     if (this.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
 
-    if (this.refreshTimer !== null) {
-      window.clearTimeout(this.refreshTimer);
-      this.refreshTimer = null;
-    }
-    try { await this.realtime?.dispose(); } catch { /* fail closed below */ }
-    this.realtime = null;
-    this.connected = false;
+    await this.stopPrivateRealtime();
 
     // Detach first, then read the durable cursor twice. Any remote writer that
     // wins before the backend row lock advances currentSequence and is merged;
     // a later writer is serialized by the backend encryption-version CAS.
-    const first = await this.api.openSession(this.access.token, this.session.currentSequence);
-    await this.applyDurableSession(first);
+    const first = await this.serializeSessionOperation(async () => {
+      const next = await this.api.openSession(this.access.token, this.session.currentSequence);
+      await this.applyDurableSession(next);
+      return next;
+    });
     await this.pendingPersistence;
     await this.flushNow();
-    const second = await this.api.openSession(this.access.token, this.session.currentSequence);
-    await this.applyDurableSession(second);
+    const second = await this.serializeSessionOperation(async () => {
+      const next = await this.api.openSession(this.access.token, this.session.currentSequence);
+      await this.applyDurableSession(next);
+      return next;
+    });
     await this.pendingPersistence;
     await this.flushNow();
     if (this.hasUnflushedLocalChanges()) throw new Error("pending updates are not durable");
     this.assertEncryptionTransitionStable();
+    await this.reconcileTransport(first, second, true);
     return this.session;
   }
 
@@ -639,13 +788,10 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     this.doc.off("update", this.handleDocUpdate);
     this.doc.off("update", this.handleTransitionDocUpdate);
     this.awareness.off("update", this.handleAwarenessUpdate);
-    if (this.refreshTimer !== null) window.clearTimeout(this.refreshTimer);
     await this.pendingPersistence.catch(() => {});
     await this.flushNow(true);
     this.destroyed = true;
-    this.connected = false;
-    try { await this.realtime?.dispose(); } catch { /* best effort */ }
-    this.realtime = null;
+    await this.stopPrivateRealtime();
     this.outbox.close();
   }
 }

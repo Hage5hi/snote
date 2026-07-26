@@ -1,16 +1,39 @@
 import "fake-indexeddb/auto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
-import { CapabilityYjsProvider, type CapabilityRealtimeFactory } from "../capability-provider";
+import {
+  CapabilityYjsProvider,
+  type CapabilityRealtimeFactory,
+  type CapabilityRealtimeHandle,
+} from "../capability-provider";
 import { CapabilityOutbox } from "../capability-outbox";
 import type {
   CapabilityApi,
+  PollingNoteSession,
   PrivateRealtimeNoteSession,
 } from "@/lib/capability/client";
 import { decodeCapabilityPayload } from "@/lib/capability/encoding";
 
 const TOKEN = "e".repeat(43);
 const NOTE_ID = "00000000-0000-4000-8000-000000000001";
+const root = process.cwd();
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
+function providerSource() {
+  return readFileSync(resolve(root, "src/lib/yjs/capability-provider.ts"), "utf8")
+    .replace(/\r\n/g, "\n");
+}
 
 function baseSession(
   overrides: Partial<PrivateRealtimeNoteSession> = {},
@@ -37,6 +60,24 @@ function baseSession(
   };
 }
 
+function pollingSession(
+  overrides: Partial<PollingNoteSession> = {},
+): PollingNoteSession {
+  const {
+    syncTransport: _syncTransport,
+    realtimeToken: _token,
+    realtimeExpiresAt: _expiresAt,
+    ...durable
+  } = baseSession();
+  return {
+    ...durable,
+    syncTransport: "polling",
+    realtimeToken: null,
+    realtimeExpiresAt: null,
+    ...overrides,
+  };
+}
+
 function realtimeHarness() {
   const handlers = new Map<string, (message: { payload: unknown }) => void | Promise<void>>();
   const send = vi.fn(async () => "ok");
@@ -53,12 +94,91 @@ function realtimeHarness() {
     unsubscribe: vi.fn(async () => "ok"),
   };
   const dispose = vi.fn(async () => {});
-  const factory: CapabilityRealtimeFactory = () => ({
+  const factory: CapabilityRealtimeFactory = async () => ({
     channel,
     setAuth: vi.fn(async () => {}),
     dispose,
   });
   return { handlers, send, dispose, factory };
+}
+
+function lifecycleRealtimeHarness(events: string[]) {
+  const handles: Array<{
+    setAuth: ReturnType<typeof vi.fn>;
+    dispose: ReturnType<typeof vi.fn>;
+  }> = [];
+  const factory = vi.fn(async (session: PrivateRealtimeNoteSession) => {
+    const channel = {
+      on: vi.fn(() => channel),
+      subscribe: vi.fn(async (handler: (status: string) => void | Promise<void>) => {
+        events.push("subscribe");
+        await handler("SUBSCRIBED");
+        return channel;
+      }),
+      send: vi.fn(async () => "ok"),
+      unsubscribe: vi.fn(async () => "ok"),
+    };
+    const setAuth = vi.fn(async (token: string) => {
+      events.push(`set-auth:${token}`);
+    });
+    const dispose = vi.fn(async () => {
+      events.push(`dispose:${session.realtimeToken}`);
+    });
+    await setAuth(session.realtimeToken);
+    handles.push({ setAuth, dispose });
+    return { channel, setAuth, dispose };
+  });
+  return {
+    factory: factory as CapabilityRealtimeFactory,
+    handles,
+    realtimeFactory: factory,
+  };
+}
+
+function realtimeHandle(): CapabilityRealtimeHandle {
+  const channel = {
+    on: vi.fn(() => channel),
+    subscribe: vi.fn(async (handler: (status: string) => void | Promise<void>) => {
+      await handler("SUBSCRIBED");
+      return channel;
+    }),
+    send: vi.fn(async () => "ok"),
+    unsubscribe: vi.fn(async () => "ok"),
+  };
+  return {
+    channel,
+    setAuth: vi.fn(async () => {}),
+    dispose: vi.fn(async () => {}),
+  };
+}
+
+function controllableRealtimeHarness() {
+  const broadcastHandlers = new Map<string, (message: { payload: unknown }) => void | Promise<void>>();
+  let statusHandler: ((status: string) => void | Promise<void>) | undefined;
+  const channel = {
+    on: vi.fn((_type: string, filter: { event?: string }, handler: (message: { payload: unknown }) => void) => {
+      if (filter.event) broadcastHandlers.set(filter.event, handler);
+      return channel;
+    }),
+    subscribe: vi.fn(async (handler: (status: string) => void | Promise<void>) => {
+      statusHandler = handler;
+      return channel;
+    }),
+    send: vi.fn(async () => "ok"),
+    unsubscribe: vi.fn(async () => "ok"),
+  };
+  const dispose = vi.fn(async () => {});
+  const factory: CapabilityRealtimeFactory = async () => ({
+    channel,
+    setAuth: vi.fn(async () => {}),
+    dispose,
+  });
+  return {
+    dispose,
+    factory,
+    emitStatus: async (status: string) => statusHandler?.(status),
+    emitBroadcast: async (event: string, payload: unknown) => broadcastHandlers.get(event)?.({ payload }),
+  };
 }
 
 function apiHarness(syncImpl?: CapabilityApi["sync"]) {
@@ -90,6 +210,581 @@ describe("CapabilityYjsProvider", () => {
       request.onerror = () => resolve();
       request.onblocked = () => resolve();
     });
+  });
+
+  it("waits for managed platform auth before subscribing to an initial private channel", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      new Y.Doc(),
+      {
+        api: apiHarness(),
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+    );
+
+    await provider.connect({ name: "Tester", color: "#123456" });
+
+    expect(events).toEqual([
+      "set-auth:header.payload.signature",
+      "subscribe",
+    ]);
+    expect(realtime.handles[0].setAuth).toHaveBeenCalledExactlyOnceWith("header.payload.signature");
+    await provider.destroy();
+  });
+
+  it("opens a fresh session before refreshing private channel auth with its returned token", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const api = apiHarness();
+    api.openSession = vi.fn(async () => {
+      events.push("open-session");
+      return baseSession({
+        realtimeToken: "platform.jwt.new",
+        realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+      });
+    });
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      new Y.Doc(),
+      {
+        api,
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+    events.length = 0;
+
+    await provider.refreshNow();
+
+    expect(events).toEqual(["open-session", "set-auth:platform.jwt.new"]);
+    expect(realtime.handles).toHaveLength(1);
+    expect(realtime.handles[0].setAuth).toHaveBeenLastCalledWith("platform.jwt.new");
+    await provider.destroy();
+  });
+
+  it("disposes private realtime and never sends a null token when a refreshed session falls back to polling", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const api = apiHarness();
+    api.openSession = vi.fn(async () => pollingSession());
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      new Y.Doc(),
+      {
+        api,
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+
+    await provider.refreshNow();
+
+    expect(realtime.handles[0].dispose).toHaveBeenCalledOnce();
+    expect(realtime.realtimeFactory).not.toHaveBeenCalledWith(
+      expect.objectContaining({ syncTransport: "polling" }),
+    );
+    expect(realtime.handles[0].setAuth).not.toHaveBeenCalledWith(null);
+    await provider.destroy();
+    expect(realtime.handles[0].dispose).toHaveBeenCalledOnce();
+  });
+
+  it("creates a private channel only after a polling session refresh returns managed realtime auth", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const api = apiHarness();
+    api.openSession = vi.fn(async () => {
+      events.push("open-session");
+      return baseSession({
+        realtimeToken: "platform.jwt.new",
+        realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+      });
+    });
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      pollingSession(),
+      new Y.Doc(),
+      {
+        api,
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+
+    expect(realtime.realtimeFactory).not.toHaveBeenCalled();
+    await provider.refreshNow();
+
+    expect(events).toEqual([
+      "open-session",
+      "set-auth:platform.jwt.new",
+      "subscribe",
+    ]);
+    expect(realtime.realtimeFactory).not.toHaveBeenCalledWith(
+      expect.objectContaining({ syncTransport: "polling" }),
+    );
+    await provider.destroy();
+  });
+
+  it("fences encryption while stopping the old transport and restarts only the final selected private transport", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const api = apiHarness();
+    api.openSession = vi.fn()
+      .mockResolvedValueOnce(pollingSession({ scope: "owner" }))
+      .mockResolvedValueOnce(baseSession({
+        scope: "owner",
+        realtimeToken: "platform.jwt.after-transition",
+        realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+      }));
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "owner", token: TOKEN },
+      baseSession({ scope: "owner" }),
+      new Y.Doc(),
+      {
+        api,
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+    );
+    await provider.connect({ name: "Owner", color: "#123456" });
+    events.length = 0;
+
+    const session = await provider.prepareEncryptionTransition();
+
+    expect(session).toMatchObject({ syncTransport: "private-realtime", realtimeToken: "platform.jwt.after-transition" });
+    expect(realtime.handles[0].dispose).toHaveBeenCalledOnce();
+    expect(realtime.realtimeFactory).toHaveBeenCalledTimes(2);
+    expect(realtime.realtimeFactory).not.toHaveBeenCalledWith(
+      expect.objectContaining({ syncTransport: "polling" }),
+    );
+    expect(events).toEqual([
+      "dispose:header.payload.signature",
+      "set-auth:platform.jwt.after-transition",
+      "subscribe",
+    ]);
+    await provider.destroy();
+    expect(realtime.handles[1].dispose).toHaveBeenCalledOnce();
+  });
+
+  it("disposes an active private transport exactly once when destroyed repeatedly", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      new Y.Doc(),
+      {
+        api: apiHarness(),
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+
+    await provider.destroy();
+    await provider.destroy();
+
+    expect(realtime.handles[0].dispose).toHaveBeenCalledOnce();
+  });
+
+  it("sets managed Auth before the default factory creates its private channel", () => {
+    const implementation = providerSource();
+    const auth = implementation.indexOf("await client.realtime.setAuth(session.realtimeToken)");
+    const channel = implementation.indexOf("const channel = client.channel(session.realtimeTopic");
+
+    expect(auth).toBeGreaterThan(-1);
+    expect(channel).toBeGreaterThan(auth);
+    expect(implementation).not.toContain("accessToken: async");
+  });
+
+  it("disposes private Realtime when a sync response falls back to polling", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const pendingSync = deferred<Awaited<ReturnType<CapabilityApi["sync"]>>>();
+    const api = apiHarness(async () => pendingSync.promise);
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      doc,
+      { api, outbox, realtimeFactory: realtime.factory },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+    events.length = 0;
+
+    doc.getText("content").insert(0, "sync fallback");
+    await provider.whenLocalUpdatesPersisted();
+    const [pending] = await outbox.list(NOTE_ID, "edit", 1);
+    pendingSync.resolve({
+      acknowledgements: [{ updateId: pending.updateId, sequence: 1 }],
+      session: pollingSession({ currentSequence: 1 }),
+    });
+    await provider.flushNow();
+    const disposeCallsBeforeDestroy = realtime.handles[0].dispose.mock.calls.length;
+    await provider.destroy();
+
+    expect(disposeCallsBeforeDestroy).toBe(1);
+    expect(realtime.realtimeFactory).not.toHaveBeenCalledWith(
+      expect.objectContaining({ syncTransport: "polling" }),
+    );
+  });
+
+  it("creates private Realtime when a polling sync response receives managed Auth", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const pendingSync = deferred<Awaited<ReturnType<CapabilityApi["sync"]>>>();
+    const api = apiHarness(async () => pendingSync.promise);
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      pollingSession(),
+      doc,
+      { api, outbox, realtimeFactory: realtime.factory },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+
+    doc.getText("content").insert(0, "sync upgrade");
+    await provider.whenLocalUpdatesPersisted();
+    const [pending] = await outbox.list(NOTE_ID, "edit", 1);
+    pendingSync.resolve({
+      acknowledgements: [{ updateId: pending.updateId, sequence: 1 }],
+      session: baseSession({
+        currentSequence: 1,
+        realtimeToken: "platform.jwt.from-sync",
+        realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+      }),
+    });
+    await provider.flushNow();
+    const eventsBeforeDestroy = [...events];
+    const factoryCallsBeforeDestroy = realtime.realtimeFactory.mock.calls.length;
+    await provider.destroy();
+
+    expect(eventsBeforeDestroy).toEqual([
+      "set-auth:platform.jwt.from-sync",
+      "subscribe",
+    ]);
+    expect(factoryCallsBeforeDestroy).toBe(1);
+  });
+
+  it("refreshes active private Realtime with the token returned by sync", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const pendingSync = deferred<Awaited<ReturnType<CapabilityApi["sync"]>>>();
+    const api = apiHarness(async () => pendingSync.promise);
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      doc,
+      { api, outbox, realtimeFactory: realtime.factory },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+    events.length = 0;
+
+    doc.getText("content").insert(0, "sync token refresh");
+    await provider.whenLocalUpdatesPersisted();
+    const [pending] = await outbox.list(NOTE_ID, "edit", 1);
+    pendingSync.resolve({
+      acknowledgements: [{ updateId: pending.updateId, sequence: 1 }],
+      session: baseSession({
+        currentSequence: 1,
+        realtimeToken: "platform.jwt.from-sync",
+        realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+      }),
+    });
+    await provider.flushNow();
+    const eventsBeforeDestroy = [...events];
+    const handlesBeforeDestroy = realtime.handles.length;
+    await provider.destroy();
+
+    expect(eventsBeforeDestroy).toEqual(["set-auth:platform.jwt.from-sync"]);
+    expect(handlesBeforeDestroy).toBe(1);
+  });
+
+  it("does not restart Realtime from an in-flight refresh during an encryption fence", async () => {
+    const events: string[] = [];
+    const realtime = lifecycleRealtimeHarness(events);
+    const refreshSession = deferred<PrivateRealtimeNoteSession>();
+    const firstTransitionSession = deferred<PollingNoteSession>();
+    let enteredFirstTransition!: () => void;
+    const firstTransitionEntered = new Promise<void>((resolve) => {
+      enteredFirstTransition = resolve;
+    });
+    const api = apiHarness();
+    api.openSession = vi.fn()
+      .mockImplementationOnce(() => refreshSession.promise)
+      .mockImplementationOnce(() => {
+        enteredFirstTransition();
+        return firstTransitionSession.promise;
+      })
+      .mockResolvedValueOnce(baseSession({
+        scope: "owner",
+        realtimeToken: "platform.jwt.after-fence",
+        realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+      }));
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "owner", token: TOKEN },
+      baseSession({ scope: "owner" }),
+      new Y.Doc(),
+      {
+        api,
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+    );
+    await provider.connect({ name: "Owner", color: "#123456" });
+    events.length = 0;
+
+    const refresh = provider.refreshNow();
+    expect(api.openSession).toHaveBeenCalledOnce();
+    const transition = provider.prepareEncryptionTransition();
+    await vi.waitFor(() => expect(realtime.handles[0].dispose).toHaveBeenCalledOnce());
+    // The transition waits behind an in-flight refresh rather than issuing an
+    // out-of-order durable read. Its write fence still detaches the channel
+    // before that refresh is allowed to finish.
+    expect(api.openSession).toHaveBeenCalledOnce();
+
+    refreshSession.resolve(baseSession({
+      scope: "owner",
+      realtimeToken: "platform.jwt.racing-refresh",
+      realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+    }));
+    await refresh;
+    await firstTransitionEntered;
+    const handlesDuringFence = realtime.handles.length;
+    const eventsDuringFence = [...events];
+
+    firstTransitionSession.resolve(pollingSession({ scope: "owner" }));
+    const session = await transition;
+    const handlesAfterTransition = realtime.handles.length;
+    const eventsAfterTransition = [...events];
+    await provider.destroy();
+
+    expect(handlesDuringFence).toBe(1);
+    expect(eventsDuringFence).toEqual(["dispose:header.payload.signature"]);
+    expect(session).toMatchObject({
+      syncTransport: "private-realtime",
+      realtimeToken: "platform.jwt.after-fence",
+    });
+    expect(handlesAfterTransition).toBe(2);
+    expect(eventsAfterTransition).toEqual([
+      "dispose:header.payload.signature",
+      "set-auth:platform.jwt.after-fence",
+      "subscribe",
+    ]);
+  });
+
+  it("serializes a refresh behind an in-flight sync session reconciliation", async () => {
+    const syncResponse = deferred<Awaited<ReturnType<CapabilityApi["sync"]>>>();
+    const firstRealtime = deferred<CapabilityRealtimeHandle>();
+    let enteredSync!: () => void;
+    let startedRealtime!: () => void;
+    const syncEntered = new Promise<void>((resolve) => { enteredSync = resolve; });
+    const realtimeStarted = new Promise<void>((resolve) => { startedRealtime = resolve; });
+    const api = apiHarness();
+    api.sync = vi.fn(async () => {
+      enteredSync();
+      return syncResponse.promise;
+    });
+    const openSession = vi.fn(async () => baseSession({
+      currentSequence: 1,
+      realtimeToken: "platform.jwt.concurrent",
+      realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+    }));
+    api.openSession = openSession;
+    const factory = vi.fn(async () => {
+      startedRealtime();
+      return firstRealtime.promise;
+    });
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      pollingSession(),
+      doc,
+      { api, outbox, realtimeFactory: factory as CapabilityRealtimeFactory },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+
+    doc.getText("content").insert(0, "sync and refresh race");
+    await provider.whenLocalUpdatesPersisted();
+    const [pending] = await outbox.list(NOTE_ID, "edit", 1);
+    const syncing = provider.flushNow();
+    await syncEntered;
+    syncResponse.resolve({
+      acknowledgements: [{ updateId: pending.updateId, sequence: 1 }],
+      session: baseSession({
+        currentSequence: 1,
+        realtimeToken: "platform.jwt.concurrent",
+        realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+      }),
+    });
+    await realtimeStarted;
+
+    const refreshing = provider.refreshNow();
+    const openCallsWhileSyncReconciles = openSession.mock.calls.length;
+    firstRealtime.resolve(realtimeHandle());
+    await Promise.all([syncing, refreshing]);
+    const factoryCalls = factory.mock.calls.length;
+    await provider.destroy();
+
+    expect(openCallsWhileSyncReconciles).toBe(0);
+    expect(factoryCalls).toBe(1);
+  });
+
+  it("disposes a superseded same-token private Realtime factory result", async () => {
+    const firstFactoryResult = deferred<CapabilityRealtimeHandle>();
+    const secondFactoryResult = deferred<CapabilityRealtimeHandle>();
+    const firstHandle = realtimeHandle();
+    const secondHandle = realtimeHandle();
+    const factory = vi.fn()
+      .mockImplementationOnce(() => firstFactoryResult.promise)
+      .mockImplementationOnce(() => secondFactoryResult.promise);
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      new Y.Doc(),
+      {
+        api: apiHarness(),
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: factory as CapabilityRealtimeFactory,
+      },
+    );
+
+    const firstConnect = provider.connect({ name: "Tester", color: "#123456" });
+    await vi.waitFor(() => expect(factory).toHaveBeenCalledTimes(1));
+    const secondConnect = provider.connect({ name: "Tester", color: "#123456" });
+    await vi.waitFor(() => expect(factory).toHaveBeenCalledTimes(2));
+    firstFactoryResult.resolve(firstHandle);
+    await vi.waitFor(() => expect(firstHandle.dispose).toHaveBeenCalledOnce());
+    secondFactoryResult.resolve(secondHandle);
+    await Promise.all([firstConnect, secondConnect]);
+    await provider.destroy();
+
+    expect(firstHandle.dispose).toHaveBeenCalledOnce();
+    expect(secondHandle.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("ignores callbacks emitted by a disposed private channel", async () => {
+    const realtime = controllableRealtimeHarness();
+    const api = apiHarness(async () => { throw new Error("offline"); });
+    api.openSession = vi.fn(async () => pollingSession());
+    const outbox = new CapabilityOutbox("snote-capability-provider-test");
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      baseSession(),
+      doc,
+      { api, outbox, realtimeFactory: realtime.factory },
+    );
+    await provider.connect({ name: "Tester", color: "#123456" });
+    await realtime.emitStatus("SUBSCRIBED");
+    await provider.refreshNow();
+    expect(api.openSession).toHaveBeenCalledOnce();
+    expect(provider.getSession().syncTransport).toBe("polling");
+    expect(realtime.dispose).toHaveBeenCalledOnce();
+
+    const remote = new Y.Doc();
+    remote.getText("content").insert(0, "late update");
+    const bytes = Y.encodeStateAsUpdate(remote);
+    const updateId = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(bytes))),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    await realtime.emitStatus("SUBSCRIBED");
+    await realtime.emitBroadcast("y-update", {
+      updateId,
+      payload: encode(bytes),
+      encryptionVersion: 0,
+    });
+    await provider.whenLocalUpdatesPersisted();
+    const connectedAfterLateCallback = provider.connected;
+    const contentAfterLateCallback = doc.getText("content").toString();
+    await provider.destroy();
+
+    expect(realtime.dispose).toHaveBeenCalledOnce();
+    expect(connectedAfterLateCallback).toBe(false);
+    expect(contentAfterLateCallback).toBe("");
+  });
+
+  it("does not apply a peer update that was suspended when encryption fenced the transport", async () => {
+    const realtime = controllableRealtimeHarness();
+    const decryptGate = deferred<Uint8Array>();
+    let decryptStarted!: () => void;
+    const decrypting = new Promise<void>((resolve) => { decryptStarted = resolve; });
+    const encryptionMetadata = {
+      enabled: true,
+      version: 1,
+      salt: "salt",
+      check: "check",
+      iterations: 600_000,
+    } as const;
+    const encryptedOwnerSession = (overrides: Partial<PrivateRealtimeNoteSession> = {}) => baseSession({
+      scope: "owner",
+      encryption: encryptionMetadata,
+      ...overrides,
+    });
+    const encryption = {
+      encrypt: vi.fn(async (bytes: Uint8Array) => bytes),
+      decrypt: vi.fn(async () => {
+        decryptStarted();
+        return decryptGate.promise;
+      }),
+    };
+    const api = apiHarness(async (_token, body) => ({
+      acknowledgements: body.updates.map((update, index) => ({
+        updateId: update.updateId,
+        sequence: index + 1,
+      })),
+      session: encryptedOwnerSession({ currentSequence: body.updates.length }),
+    }));
+    api.openSession = vi.fn(async () => encryptedOwnerSession({ currentSequence: 1 }));
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "owner", token: TOKEN },
+      encryptedOwnerSession(),
+      new Y.Doc(),
+      {
+        api,
+        outbox: new CapabilityOutbox("snote-capability-provider-test"),
+        realtimeFactory: realtime.factory,
+      },
+      encryption,
+    );
+    await provider.connect({ name: "Owner", color: "#123456" });
+
+    const peer = new Y.Doc();
+    peer.getText("content").insert(0, "late encrypted peer update");
+    const plaintext = Y.encodeStateAsUpdate(peer);
+    const ciphertext = new Uint8Array([1, 2, 3]);
+    const updateId = Array.from(
+      new Uint8Array(await crypto.subtle.digest("SHA-256", ciphertext)),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+    const inbound = realtime.emitBroadcast("y-update", {
+      updateId,
+      payload: encode(ciphertext),
+      encryptionVersion: 1,
+    });
+    await decrypting;
+
+    await provider.prepareEncryptionTransition();
+    decryptGate.resolve(plaintext);
+    await inbound;
+    const contentAfterFence = provider.doc.getText("content").toString();
+    await provider.destroy();
+
+    expect(contentAfterFence).toBe("");
   });
 
   it("persists an edit before acknowledgement and deletes it only after ack", async () => {
@@ -349,6 +1044,7 @@ describe("CapabilityYjsProvider", () => {
 
   it("compacts acknowledged updates into a checkpoint with sequence and version CAS", async () => {
     const checkpointBodies: Array<Parameters<CapabilityApi["sync"]>[1]> = [];
+    const realtime = lifecycleRealtimeHarness([]);
     let call = 0;
     const api = apiHarness(async (_token, body) => {
       call += 1;
@@ -361,7 +1057,7 @@ describe("CapabilityYjsProvider", () => {
       }
       return {
         acknowledgements: [],
-        session: baseSession({
+        session: pollingSession({
           currentSequence: 1,
           checkpointSequence: 1,
           checkpointVersion: 1,
@@ -378,7 +1074,7 @@ describe("CapabilityYjsProvider", () => {
       {
         api,
         outbox: new CapabilityOutbox("snote-capability-provider-test"),
-        realtimeFactory: realtimeHarness().factory,
+        realtimeFactory: realtime.factory,
         compactionThresholdUpdates: 1,
       },
     );
@@ -397,10 +1093,12 @@ describe("CapabilityYjsProvider", () => {
     Y.applyUpdate(restored, decodeCapabilityPayload(checkpointBodies[0].checkpoint!.payload));
     expect(restored.getText("content").toString()).toBe("durable checkpoint");
     expect(provider.getSession().checkpointSequence).toBe(1);
+    expect(realtime.handles[0].dispose).toHaveBeenCalledOnce();
     await provider.destroy();
   });
 
   it("refreshes checkpoint state after a concurrent compaction wins the CAS", async () => {
+    const realtime = lifecycleRealtimeHarness([]);
     let call = 0;
     const api = apiHarness(async (_token, body) => {
       call += 1;
@@ -412,7 +1110,7 @@ describe("CapabilityYjsProvider", () => {
       }
       throw new Error("version conflict");
     });
-    api.openSession = vi.fn(async () => baseSession({
+    api.openSession = vi.fn(async () => pollingSession({
       currentSequence: 1,
       checkpointSequence: 1,
       checkpointVersion: 1,
@@ -425,7 +1123,7 @@ describe("CapabilityYjsProvider", () => {
       {
         api,
         outbox: new CapabilityOutbox("snote-capability-provider-test"),
-        realtimeFactory: realtimeHarness().factory,
+        realtimeFactory: realtime.factory,
         compactionThresholdUpdates: 1,
       },
     );
@@ -437,6 +1135,7 @@ describe("CapabilityYjsProvider", () => {
 
     expect(api.openSession).toHaveBeenCalledWith(TOKEN, 1);
     expect(provider.getSession().checkpointVersion).toBe(1);
+    expect(realtime.handles[0].dispose).toHaveBeenCalledOnce();
     await provider.destroy();
   });
 });
