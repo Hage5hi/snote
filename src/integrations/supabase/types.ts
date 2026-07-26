@@ -304,7 +304,7 @@ export type Database = {
           p_request_cost?: number
           p_subject_hash: string
         }
-        Returns: boolean
+        Returns: Json
       }
       capability_note_create: {
         Args: {

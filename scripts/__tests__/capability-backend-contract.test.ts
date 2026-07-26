@@ -12,7 +12,7 @@ import {
 } from "../../supabase/functions/_shared/capability.ts";
 
 const root = process.cwd();
-const source = (path: string) => readFileSync(resolve(root, path), "utf8");
+const source = (path: string) => readFileSync(resolve(root, path), "utf8").replace(/\r\n/g, "\n");
 const capabilityMigrationPaths = [
   "supabase/migrations/20260722000000_capability_backend.sql",
   "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql",
@@ -27,6 +27,12 @@ const allCapabilitySources = [
   source("supabase/functions/note-sync/index.ts"),
   source("supabase/functions/note-manage/index.ts"),
 ].join("\n");
+const sqlFunction = (sql: string, functionName: string) => {
+  const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${functionName}`);
+  if (start < 0) return "";
+  const end = sql.indexOf("\n$$;", start);
+  return end < 0 ? sql.slice(start) : sql.slice(start, end + 4);
+};
 
 describe("capability primitives", () => {
   it("creates 32-byte base64url capabilities", () => {
@@ -125,6 +131,9 @@ describe("capability database boundary", () => {
     expect(generatedTypes).toContain("checkpoint_limit_count: number");
     expect(generatedTypes).toContain("capability_admission_consume:");
     expect(generatedTypes).toContain('p_operation: "create" | "sync"');
+    expect(generatedTypes).toMatch(
+      /capability_admission_consume:[\s\S]+?Returns: Json/,
+    );
     expect(generatedTypes).toContain("capability_runtime_settings:");
     expect(generatedTypes).toContain("private_realtime_enabled: boolean");
     expect(generatedTypes).toContain("writes_enabled: boolean");
@@ -172,6 +181,21 @@ describe("capability database boundary", () => {
     );
   });
 
+  it("uses a conflicting row-lock protocol for runtime cutover", () => {
+    const sql = source(migrationPath);
+    const lockingGate = sqlFunction(sql, "capability_writes_acquire");
+    const nonLockingGate = sqlFunction(sql, "capability_writes_enabled");
+    const setter = sqlFunction(sql, "capability_runtime_set");
+    const realtimePredicate = sqlFunction(sql, "realtime_capability_allows");
+
+    expect(lockingGate).toContain("FOR SHARE");
+    expect(lockingGate).toContain("capability_runtime_settings");
+    expect(nonLockingGate).not.toContain("FOR SHARE");
+    expect(setter).toContain("UPDATE public.capability_runtime_settings");
+    expect(realtimePredicate).toContain("public.capability_writes_enabled()");
+    expect(realtimePredicate).not.toContain("public.capability_writes_acquire()");
+  });
+
   it.each([
     "capability_note_create",
     "capability_updates_append",
@@ -179,11 +203,12 @@ describe("capability database boundary", () => {
     "capability_checkpoint_append",
     "capability_note_import_legacy",
   ])("%s is fenced by the database runtime row", (functionName) => {
-    expect(allCapabilityMigrations).toMatch(
-      new RegExp(
-        `FUNCTION public\\.${functionName}[\\s\\S]+?IF NOT public\\.capability_writes_enabled\\(\\)`,
-      ),
-    );
+    const body = sqlFunction(allCapabilityMigrations, functionName);
+    const gate = body.indexOf("IF NOT public.capability_writes_acquire()");
+    const validation = body.search(/\n  IF p_/);
+    expect(body).not.toBe("");
+    expect(gate).toBeGreaterThan(0);
+    expect(validation).toBeGreaterThan(gate);
   });
 
   it("removes custom write claims and environment switches", () => {
@@ -246,12 +271,24 @@ describe("capability database boundary", () => {
 
   it("uses atomic admission windows without retaining raw client addresses", () => {
     const sql = source(migrationPath);
+    const admission = sqlFunction(sql, "capability_admission_consume");
     expect(sql).toContain("CREATE TABLE public.capability_admission_windows");
-    expect(sql).toContain("FUNCTION public.capability_admission_consume");
-    expect(sql).toContain("pg_advisory_xact_lock");
-    expect(sql).toContain("subject_hash");
-    expect(sql).toContain("v_subject_byte_limit := 67108864");
-    expect(sql).toContain("v_global_byte_limit := 10737418240");
+    expect(admission).toContain("pg_advisory_xact_lock");
+    expect(admission).toContain("subject_hash");
+    expect(admission).toContain("v_subject_byte_limit := 67108864");
+    expect(admission).toContain("v_global_byte_limit := 10737418240");
+    expect(admission).toMatch(
+      /BEGIN\s+IF NOT public\.capability_writes_acquire\(\)[\s\S]+writes_disabled/,
+    );
+    expect(admission.indexOf("capability_writes_acquire()")).toBeLessThan(
+      admission.indexOf("pg_advisory_xact_lock"),
+    );
+    expect(admission.indexOf("capability_writes_acquire()")).toBeLessThan(
+      admission.indexOf("INSERT INTO public.capability_admission_windows"),
+    );
+    for (const status of ["ok", "writes_disabled", "quota_exceeded"]) {
+      expect(admission).toContain(`'status', '${status}'`);
+    }
     expect(sql).not.toMatch(/capability_admission_windows[\s\S]{0,500}\bip\b/i);
   });
 
@@ -320,6 +357,8 @@ describe("Edge capability endpoints", () => {
     expect(createBranch).toContain("if (!bearer)");
     expect(createBranch).toContain("const owner = bearer");
     expect(createBranch).toContain('"capability_admission_consume"');
+    expect(createBranch).toContain("rpcStatus(admitted)");
+    expect(createBranch).not.toContain("admitted !== true");
     expect(createBranch).toContain("created?.session");
     expect(createBranch).toContain("created?.recovered");
 
@@ -332,6 +371,8 @@ describe("Edge capability endpoints", () => {
     expect(importBranch.indexOf('"capability_admission_consume"')).toBeLessThan(
       importBranch.indexOf('"capability_note_import_legacy"'),
     );
+    expect(importBranch).toContain("rpcStatus(admitted)");
+    expect(importBranch).not.toContain("admitted !== true");
     expect(importBranch).toContain('"capability_note_import_legacy"');
 
     const sql = source("supabase/migrations/20260722000000_capability_backend.sql");
@@ -350,7 +391,8 @@ describe("Edge capability endpoints", () => {
     const append = endpoint.indexOf('"capability_updates_append"');
     expect(admission).toBeGreaterThan(0);
     expect(admission).toBeLessThan(append);
-    expect(endpoint).toContain("capabilityFailure(\"quota_exceeded\")");
+    expect(endpoint).toContain("rpcStatus(admitted)");
+    expect(endpoint).not.toContain("admitted !== true");
   });
 
   it("lets capability share readers page every missing update", () => {

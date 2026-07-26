@@ -85,7 +85,7 @@ DECLARE
   v_recovered boolean := false;
   v_result jsonb;
 BEGIN
-  IF NOT public.capability_writes_enabled() THEN
+  IF NOT public.capability_writes_acquire() THEN
     RETURN jsonb_build_object('status', 'writes_disabled');
   END IF;
 

@@ -294,6 +294,29 @@ AS $$
   ), false);
 $$;
 
+CREATE OR REPLACE FUNCTION public.capability_writes_acquire()
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_writes_enabled boolean;
+BEGIN
+  SELECT settings.writes_enabled
+  INTO v_writes_enabled
+  FROM public.capability_runtime_settings AS settings
+  WHERE settings.singleton
+  FOR SHARE;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+  RETURN v_writes_enabled;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.capability_runtime_state()
 RETURNS jsonb
 LANGUAGE sql
@@ -371,7 +394,7 @@ CREATE OR REPLACE FUNCTION public.capability_admission_consume(
   p_request_cost bigint DEFAULT 1,
   p_byte_cost bigint DEFAULT 0
 )
-RETURNS boolean
+RETURNS jsonb
 LANGUAGE plpgsql
 VOLATILE
 SECURITY DEFINER
@@ -391,12 +414,16 @@ DECLARE
   v_global_bytes bigint;
   v_global_hash text := repeat('0', 64);
 BEGIN
+  IF NOT public.capability_writes_acquire() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
   IF p_operation NOT IN ('create', 'sync')
     OR p_subject_hash IS NULL OR p_subject_hash !~ '^[a-f0-9]{64}$'
     OR p_request_cost NOT BETWEEN 1 AND 100
     OR p_byte_cost NOT BETWEEN 0 AND 4194304
   THEN
-    RETURN false;
+    RETURN jsonb_build_object('status', 'invalid');
   END IF;
 
   IF p_operation = 'create' THEN
@@ -452,7 +479,7 @@ BEGIN
     OR (v_global_byte_limit > 0 AND v_global_bytes + p_byte_cost > v_global_byte_limit)
     OR (v_subject_byte_limit > 0 AND v_subject_bytes + p_byte_cost > v_subject_byte_limit)
   THEN
-    RETURN false;
+    RETURN jsonb_build_object('status', 'quota_exceeded');
   END IF;
 
   INSERT INTO public.capability_admission_windows AS windows (
@@ -482,7 +509,7 @@ BEGIN
   DELETE FROM public.capability_admission_windows
   WHERE operation = p_operation
     AND window_start < v_window_start - interval '48 hours';
-  RETURN true;
+  RETURN jsonb_build_object('status', 'ok');
 END;
 $$;
 
@@ -502,7 +529,7 @@ DECLARE
   v_recovered boolean := false;
   v_result jsonb;
 BEGIN
-  IF NOT public.capability_writes_enabled() THEN
+  IF NOT public.capability_writes_acquire() THEN
     RETURN jsonb_build_object('status', 'writes_disabled');
   END IF;
 
@@ -729,7 +756,7 @@ DECLARE
   v_sequence bigint;
   v_acknowledgements jsonb := '[]'::jsonb;
 BEGIN
-  IF NOT public.capability_writes_enabled() THEN
+  IF NOT public.capability_writes_acquire() THEN
     RETURN jsonb_build_object('status', 'writes_disabled');
   END IF;
 
@@ -902,7 +929,7 @@ DECLARE
   v_check text;
   v_iterations integer;
 BEGIN
-  IF NOT public.capability_writes_enabled() THEN
+  IF NOT public.capability_writes_acquire() THEN
     RETURN jsonb_build_object('status', 'writes_disabled');
   END IF;
 
@@ -1268,6 +1295,8 @@ REVOKE ALL ON FUNCTION public.enforce_legacy_share_target() FROM PUBLIC, anon, a
 REVOKE ALL ON FUNCTION public.legacy_share_rotate(text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.reject_append_only_mutation() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_writes_enabled()
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_writes_acquire()
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_runtime_state()
   FROM PUBLIC, anon, authenticated;

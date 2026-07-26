@@ -147,6 +147,26 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
         writesEnabled: false,
         privateRealtimeEnabled: false,
       });
+    await expect(db.exec(`
+      INSERT INTO public.capability_runtime_settings(singleton)
+      VALUES (true)
+    `)).rejects.toMatchObject({ code: "23505" });
+    await expect(db.exec(`
+      INSERT INTO public.capability_runtime_settings(singleton)
+      VALUES (false)
+    `)).rejects.toMatchObject({ code: "23514" });
+    const disabledAdmissionRows = (await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.capability_admission_windows",
+    )).rows[0].count;
+    expect(await rpc<RpcResult>(db, "capability_admission_consume", [
+      "create",
+      tokenHash("9"),
+      1,
+      0,
+    ])).toMatchObject({ status: "writes_disabled" });
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.capability_admission_windows",
+    )).rows[0].count).toBe(disabledAdmissionRows);
     expect((await rpc(db, "capability_note_create", [
       "disabled-at-start",
       tokenHash("d"),
@@ -312,22 +332,29 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       [createdA.noteId],
     );
 
-    const admission = async (subject: string) => (await db.query<{ allowed: boolean }>(
-      "SELECT public.capability_admission_consume('create', $1, 1, 0) AS allowed",
-      [subject],
-    )).rows[0].allowed;
+    const admission = async (subject: string) =>
+      rpc<RpcResult>(db, "capability_admission_consume", [
+        "create",
+        subject,
+        1,
+        0,
+      ]);
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      expect(await admission(tokenHash("6"))).toBe(true);
+      expect(await admission(tokenHash("6"))).toMatchObject({ status: "ok" });
     }
-    expect(await admission(tokenHash("6"))).toBe(false);
-    const importAdmission = async () => (await db.query<{ allowed: boolean }>(
-      "SELECT public.capability_admission_consume('create', $1, 1, 4194304) AS allowed",
-      [tokenHash("5")],
-    )).rows[0].allowed;
+    expect(await admission(tokenHash("6")))
+      .toMatchObject({ status: "quota_exceeded" });
+    const importAdmission = async () =>
+      rpc<RpcResult>(db, "capability_admission_consume", [
+        "create",
+        tokenHash("5"),
+        1,
+        4194304,
+      ]);
     for (let attempt = 0; attempt < 16; attempt += 1) {
-      expect(await importAdmission()).toBe(true);
+      expect(await importAdmission()).toMatchObject({ status: "ok" });
     }
-    expect(await importAdmission()).toBe(false);
+    expect(await importAdmission()).toMatchObject({ status: "quota_exceeded" });
 
     const createdB = await rpc(db, "capability_note_create", [
       "secure-b",
@@ -757,6 +784,29 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     });
     await db.exec("RESET ROLE");
 
+    const sideEffectCounts = async () => (await db.query<{
+      admissions: number;
+      capabilities: number;
+      checkpoints: number;
+      notes: number;
+      updates: number;
+    }>(`
+      SELECT
+        (SELECT count(*)::integer FROM public.capability_admission_windows) AS admissions,
+        (SELECT count(*)::integer FROM public.note_capabilities) AS capabilities,
+        (SELECT count(*)::integer FROM public.note_checkpoints) AS checkpoints,
+        (SELECT count(*)::integer FROM public.notes) AS notes,
+        (SELECT count(*)::integer FROM public.note_updates) AS updates
+    `)).rows[0];
+    const beforeDisabledWrites = await sideEffectCounts();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      expect(await rpc<RpcResult>(db, "capability_admission_consume", [
+        "sync",
+        tokenHash("a"),
+        1,
+        1024,
+      ])).toMatchObject({ status: "writes_disabled" });
+    }
     expect((await rpc(db, "capability_note_create", [
       "disabled-create",
       tokenHash("d"),
@@ -799,6 +849,7 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       "capability_session_open",
       [tokenHash("a"), 0, 20],
     )).status).toBe("ok");
+    expect(await sideEffectCounts()).toEqual(beforeDisabledWrites);
 
     await db.exec("DELETE FROM public.capability_runtime_settings");
     expect(await rpc<RuntimeState>(db, "capability_runtime_state", []))

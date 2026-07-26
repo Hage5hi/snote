@@ -101,7 +101,9 @@ Deno.serve(async (req) => {
       },
     );
     if (admissionError) return capabilityFailure("unavailable");
-    if (admitted !== true) return capabilityFailure("quota_exceeded");
+    if (rpcStatus(admitted) !== "ok") {
+      return capabilityFailure(rpcStatus(admitted));
+    }
 
     const { data: appended, error: appendError } = await environment.client.rpc(
       "capability_updates_append",

@@ -56,7 +56,9 @@ Deno.serve(async (req) => {
         },
       );
       if (admissionError) return capabilityFailure("unavailable");
-      if (admitted !== true) return capabilityFailure("quota_exceeded");
+      if (rpcStatus(admitted) !== "ok") {
+        return capabilityFailure(rpcStatus(admitted));
+      }
       const { data: created, error: createError } = await environment.client.rpc(
         "capability_note_create",
         {
@@ -127,7 +129,9 @@ Deno.serve(async (req) => {
         },
       );
       if (admissionError) return capabilityFailure("unavailable");
-      if (admitted !== true) return capabilityFailure("quota_exceeded");
+      if (rpcStatus(admitted) !== "ok") {
+        return capabilityFailure(rpcStatus(admitted));
+      }
       const [ownerHash, editHash, viewHash] = await Promise.all([
         hashCapabilityToken(owner, environment.hmacSecret),
         hashCapabilityToken(edit, environment.hmacSecret),

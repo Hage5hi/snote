@@ -82,7 +82,7 @@ type CapabilityDatabase = {
           p_request_cost?: number;
           p_byte_cost?: number;
         };
-        Returns: boolean;
+        Returns: CapabilityRpcResponse;
       };
       capability_session_open: {
         Args: { p_token_hash: string; p_after_seq?: number; p_limit?: number };
