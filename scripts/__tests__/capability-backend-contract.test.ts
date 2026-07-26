@@ -8,7 +8,6 @@ import {
   hashCapabilityToken,
   readCapabilityBearer,
   sha256CapabilityPayload,
-  signRealtimeJwt,
 } from "../../supabase/functions/_shared/capability.ts";
 
 const root = process.cwd();
@@ -91,34 +90,6 @@ describe("capability primitives", () => {
     );
   });
 
-  it("mints a five-minute scoped Realtime JWT without embedding the raw capability", async () => {
-    const token = createCapabilityToken();
-    const jwt = await signRealtimeJwt({
-      capabilityId: "550e8400-e29b-41d4-a716-446655440000",
-      noteId: "123e4567-e89b-12d3-a456-426614174000",
-      scope: "edit",
-      generation: 7,
-      issuer: "https://example.supabase.co/auth/v1",
-      secret: "jwt-secret-material-that-is-at-least-thirty-two-bytes",
-      nowSeconds: 1_700_000_000,
-    });
-    const [, encodedPayload] = jwt.split(".");
-    const payload = JSON.parse(
-      Buffer.from(encodedPayload, "base64url").toString("utf8"),
-    );
-    expect(payload).toMatchObject({
-      sub: "550e8400-e29b-41d4-a716-446655440000",
-      note_id: "123e4567-e89b-12d3-a456-426614174000",
-      note_scope: "edit",
-      capability_generation: 7,
-      role: "authenticated",
-      aud: "authenticated",
-      iat: 1_700_000_000,
-      exp: 1_700_000_300,
-    });
-    expect(payload).not.toHaveProperty("note_write_disabled");
-    expect(jwt).not.toContain(token);
-  });
 });
 
 describe("capability database boundary", () => {

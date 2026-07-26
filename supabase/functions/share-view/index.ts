@@ -6,7 +6,9 @@ import {
   capabilityJson,
   capabilityTokenHash,
   materializeNoteSession,
+  resolveMaterialization,
   rpcStatus,
+  verifyRealtimeAuth,
 } from "../_shared/capability-edge.ts";
 
 const LEGACY_TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
@@ -40,6 +42,8 @@ Deno.serve(async (req) => {
       }
       const tokenHash = await capabilityTokenHash(bearer, environment.hmacSecret);
       if (!tokenHash) return capabilityFailure("unavailable");
+      const auth = await verifyRealtimeAuth(req, environment);
+      if (auth.mode === "unavailable") return capabilityFailure("unavailable");
       const { data, error } = await environment.client.rpc("capability_session_open", {
         p_token_hash: tokenHash,
         p_after_seq: afterSequence,
@@ -48,14 +52,15 @@ Deno.serve(async (req) => {
       if (error || rpcStatus(data) !== "ok") {
         return capabilityFailure(error ? "unavailable" : rpcStatus(data));
       }
-      const session = await materializeNoteSession(
+      const materialized = resolveMaterialization(await materializeNoteSession(
         data?.session,
-        environment.supabaseUrl,
-        environment.jwtSecret,
-      );
-      return session
-        ? capabilityJson({ session }, 200)
-        : capabilityFailure("unavailable");
+        tokenHash,
+        auth,
+        environment,
+      ));
+      return materialized.ok
+        ? capabilityJson({ session: materialized.session }, 200)
+        : materialized.response;
     }
 
     // Temporary dual-mode compatibility only. New capabilities are never

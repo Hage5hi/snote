@@ -16,10 +16,6 @@ function bytesToBase64Url(bytes: Uint8Array): string {
     .replace(/=+$/, "");
 }
 
-function utf8ToBase64Url(value: string): string {
-  return bytesToBase64Url(encoder.encode(value));
-}
-
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
 }
@@ -126,54 +122,6 @@ export function decodeCapabilityPayload(value: unknown, maxBytes: number): Uint8
     if (error instanceof Error && error.message === "payload too large") throw error;
     throw new Error("invalid payload");
   }
-}
-
-type RealtimeJwtInput = {
-  capabilityId: string;
-  noteId: string;
-  scope: CapabilityScope;
-  generation: number;
-  issuer: string;
-  secret: string;
-  nowSeconds?: number;
-};
-
-export async function signRealtimeJwt(input: RealtimeJwtInput): Promise<string> {
-  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  const secretBytes = encoder.encode(input.secret);
-  if (
-    !uuid.test(input.capabilityId)
-    || !uuid.test(input.noteId)
-    || !["owner", "edit", "view"].includes(input.scope)
-    || !Number.isSafeInteger(input.generation)
-    || input.generation < 1
-    || secretBytes.byteLength < 32
-  ) throw new Error("realtime JWT configuration unavailable");
-
-  const now = input.nowSeconds ?? Math.floor(Date.now() / 1000);
-  const header = utf8ToBase64Url(JSON.stringify({ alg: "HS256", typ: "JWT" }));
-  const payload = utf8ToBase64Url(JSON.stringify({
-    iss: input.issuer,
-    aud: "authenticated",
-    role: "authenticated",
-    sub: input.capabilityId,
-    note_id: input.noteId,
-    note_scope: input.scope,
-    capability_generation: input.generation,
-    iat: now,
-    nbf: now - 5,
-    exp: now + 300,
-  }));
-  const signingInput = `${header}.${payload}`;
-  const key = await crypto.subtle.importKey(
-    "raw",
-    secretBytes,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(signingInput));
-  return `${signingInput}.${bytesToBase64Url(new Uint8Array(signature))}`;
 }
 
 export function encodeCapabilityPayload(bytes: Uint8Array): string {

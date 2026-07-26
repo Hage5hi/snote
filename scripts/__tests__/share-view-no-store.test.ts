@@ -15,7 +15,7 @@ describe("share-view revocation cache contract", () => {
 
     expect(shared).toMatch(/function capabilityJson[\s\S]*?"Cache-Control":\s*"no-store"/);
     expect(shared).toContain('"CDN-Cache-Control": "no-store"');
-    expect(shared).toContain('"Vary": "Authorization, X-Legacy-Share"');
+    expect(shared).toContain('"Vary": "Authorization, X-Snote-Auth, X-Legacy-Share"');
     expect(endpoint).not.toMatch(/console\.(?:log|info|warn|error)/);
     expect(endpoint).not.toContain("String(e)");
     expect(endpoint).toContain('capabilityFailure("unavailable")');

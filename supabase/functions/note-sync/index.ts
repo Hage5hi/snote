@@ -11,7 +11,9 @@ import {
   capabilityJson,
   capabilityTokenHash,
   materializeNoteSession,
+  resolveMaterialization,
   rpcStatus,
+  verifyRealtimeAuth,
 } from "../_shared/capability-edge.ts";
 
 const MAX_BATCH_BYTES = 4 * 1024 * 1024;
@@ -28,6 +30,8 @@ Deno.serve(async (req) => {
   try {
     const tokenHash = await capabilityTokenHash(bearer, environment.hmacSecret);
     if (!tokenHash) return capabilityFailure("unavailable");
+    const auth = await verifyRealtimeAuth(req, environment);
+    if (auth.mode === "unavailable") return capabilityFailure("unavailable");
     const body = await req.json().catch(() => ({}));
     const updates = body?.updates;
     const expectedEncryptionVersion = Number(body?.expectedEncryptionVersion);
@@ -139,16 +143,17 @@ Deno.serve(async (req) => {
     if (openError || rpcStatus(opened) !== "ok") {
       return capabilityFailure(openError ? "unavailable" : rpcStatus(opened));
     }
-    const session = await materializeNoteSession(
+    const materialized = resolveMaterialization(await materializeNoteSession(
       opened?.session,
-      environment.supabaseUrl,
-      environment.jwtSecret,
-    );
-    if (!session) return capabilityFailure("unavailable");
+      tokenHash,
+      auth,
+      environment,
+    ));
+    if (!materialized.ok) return materialized.response;
     return capabilityJson({
       acknowledgements: appended?.acknowledgements ?? [],
       ...(compacted ? { checkpoint: compacted } : {}),
-      session,
+      session: materialized.session,
     }, 200);
   } catch (error) {
     if (error instanceof Error && /payload|invalid/.test(error.message)) {

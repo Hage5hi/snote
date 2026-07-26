@@ -12,7 +12,9 @@ import {
   capabilityJson,
   capabilityTokenHash,
   materializeNoteSession,
+  resolveMaterialization,
   rpcStatus,
+  verifyRealtimeAuth,
 } from "../_shared/capability-edge.ts";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -35,6 +37,8 @@ Deno.serve(async (req) => {
       if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
       const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
       if (!SLUG_RE.test(slug)) return capabilityFailure("invalid");
+      const auth = await verifyRealtimeAuth(req, environment);
+      if (auth.mode === "unavailable") return capabilityFailure("unavailable");
 
       const owner = bearer;
       const edit = createCapabilityToken();
@@ -72,16 +76,20 @@ Deno.serve(async (req) => {
         return capabilityFailure(createError ? "unavailable" : rpcStatus(created));
       }
 
-      const session = await materializeNoteSession(
+      const materialized = resolveMaterialization(await materializeNoteSession(
         created?.session,
-        environment.supabaseUrl,
-        environment.jwtSecret,
-      );
-      if (!session) return capabilityFailure("unavailable");
+        ownerHash,
+        auth,
+        environment,
+      ));
+      if (!materialized.ok) return materialized.response;
       const capabilities = created?.recovered === true
         ? { owner }
         : { owner, edit, view };
-      return capabilityJson({ session, capabilities }, created?.recovered === true ? 200 : 201);
+      return capabilityJson(
+        { session: materialized.session, capabilities },
+        created?.recovered === true ? 200 : 201,
+      );
     }
 
     if (body?.action === "import-legacy") {
@@ -105,6 +113,8 @@ Deno.serve(async (req) => {
         || payload.length > MAX_ENCODED_PAYLOAD_CHARS
         || !encryptionMetadataValid
       ) return capabilityFailure("invalid");
+      const auth = await verifyRealtimeAuth(req, environment);
+      if (auth.mode === "unavailable") return capabilityFailure("unavailable");
       let decodedPayload: Uint8Array;
       try {
         decodedPayload = decodeCapabilityPayload(payload, 4_194_304);
@@ -155,21 +165,27 @@ Deno.serve(async (req) => {
       if (createError || rpcStatus(created) !== "ok") {
         return capabilityFailure(createError ? "unavailable" : rpcStatus(created));
       }
-      const session = await materializeNoteSession(
+      const materialized = resolveMaterialization(await materializeNoteSession(
         created?.session,
-        environment.supabaseUrl,
-        environment.jwtSecret,
-      );
-      if (!session) return capabilityFailure("unavailable");
+        ownerHash,
+        auth,
+        environment,
+      ));
+      if (!materialized.ok) return materialized.response;
       const capabilities = created?.recovered === true
         ? { owner }
         : { owner, edit, view };
-      return capabilityJson({ session, capabilities }, created?.recovered === true ? 200 : 201);
+      return capabilityJson(
+        { session: materialized.session, capabilities },
+        created?.recovered === true ? 200 : 201,
+      );
     }
 
     if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
     const tokenHash = await capabilityTokenHash(bearer, environment.hmacSecret);
     if (!tokenHash) return capabilityFailure("unavailable");
+    const auth = await verifyRealtimeAuth(req, environment);
+    if (auth.mode === "unavailable") return capabilityFailure("unavailable");
     const afterSequence = Number(body?.afterSequence ?? 0);
     if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
       return capabilityFailure("invalid");
@@ -183,14 +199,15 @@ Deno.serve(async (req) => {
     if (error || rpcStatus(data) !== "ok") {
       return capabilityFailure(error ? "unavailable" : rpcStatus(data));
     }
-    const session = await materializeNoteSession(
+    const materialized = resolveMaterialization(await materializeNoteSession(
       data?.session,
-      environment.supabaseUrl,
-      environment.jwtSecret,
-    );
-    return session
-      ? capabilityJson({ session }, 200)
-      : capabilityFailure("unavailable");
+      tokenHash,
+      auth,
+      environment,
+    ));
+    return materialized.ok
+      ? capabilityJson({ session: materialized.session }, 200)
+      : materialized.response;
   } catch {
     return capabilityFailure("unavailable");
   }

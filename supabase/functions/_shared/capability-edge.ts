@@ -5,13 +5,19 @@ import {
 import {
   type CapabilityScope,
   hashCapabilityToken,
-  signRealtimeJwt,
 } from "./capability.ts";
+import {
+  assessVerifiedClaims,
+  classifyGetUserError,
+  decodeUntrustedJwtPayload,
+  readSnoteAuthHeader,
+  type VerifiedRealtimeAuth,
+} from "./capability-auth.ts";
 
 export const capabilityCorsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-legacy-share",
+    "authorization, x-client-info, apikey, content-type, x-snote-auth, x-legacy-share",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
@@ -77,7 +83,7 @@ type CapabilityDatabase = {
       };
       capability_admission_consume: {
         Args: {
-          p_operation: "create" | "sync";
+          p_operation: "create" | "sync" | "membership";
           p_subject_hash: string;
           p_request_cost?: number;
           p_byte_cost?: number;
@@ -109,50 +115,60 @@ type CapabilityDatabase = {
         };
         Returns: CapabilityRpcResponse;
       };
+      capability_realtime_membership_bind: {
+        Args: {
+          p_token_hash: string;
+          p_auth_user_id: string;
+          p_expires_at: string;
+        };
+        Returns: CapabilityRpcResponse;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
   };
 };
 
-export function capabilityJson(body: unknown, status: number): Response {
+export function capabilityJson(
+  body: unknown,
+  status: number,
+  additionalHeaders: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: {
       ...capabilityCorsHeaders,
+      ...additionalHeaders,
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
       "CDN-Cache-Control": "no-store",
-      "Vary": "Authorization, X-Legacy-Share",
+      "Vary": "Authorization, X-Snote-Auth, X-Legacy-Share",
     },
   });
 }
 
+export type CapabilityEnvironment = {
+  supabaseUrl: string;
+  hmacSecret: string;
+  client: SupabaseClient<CapabilityDatabase>;
+};
+
 export function capabilityEnvironment():
   | { ok: false }
-  | {
-    ok: true;
-    supabaseUrl: string;
-    hmacSecret: string;
-    jwtSecret: string;
-    client: SupabaseClient<CapabilityDatabase>;
-  } {
+  | ({ ok: true } & CapabilityEnvironment) {
   const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const hmacSecret = Deno.env.get("CAPABILITY_HMAC_SECRET") ?? "";
-  const jwtSecret = Deno.env.get("SUPABASE_JWT_SECRET") ?? "";
   if (
     !supabaseUrl
     || !serviceRoleKey
     || new TextEncoder().encode(hmacSecret).byteLength < 32
-    || new TextEncoder().encode(jwtSecret).byteLength < 32
   ) return { ok: false };
 
   return {
     ok: true,
     supabaseUrl,
     hmacSecret,
-    jwtSecret,
     client: createClient<CapabilityDatabase>(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     }),
@@ -167,6 +183,40 @@ export async function capabilityTokenHash(
     return await hashCapabilityToken(token, hmacSecret);
   } catch {
     return null;
+  }
+}
+
+export async function verifyRealtimeAuth(
+  req: Request,
+  environment: CapabilityEnvironment,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<VerifiedRealtimeAuth> {
+  const token = readSnoteAuthHeader(req);
+  if (!token) return { mode: "polling" };
+
+  try {
+    const { data, error } = await environment.client.auth.getUser(token);
+    if (error) {
+      return classifyGetUserError((error as { status?: unknown }).status);
+    }
+
+    const user = data.user;
+    const claims = decodeUntrustedJwtPayload(token);
+    if (
+      !user
+      || !claims
+      || claims.sub !== user.id
+      || (user as { is_anonymous?: unknown }).is_anonymous !== true
+    ) return { mode: "polling" };
+
+    return assessVerifiedClaims(
+      token,
+      claims,
+      `${environment.supabaseUrl.replace(/\/$/, "")}/auth/v1`,
+      nowSeconds,
+    );
+  } catch {
+    return { mode: "unavailable" };
   }
 }
 
@@ -212,43 +262,95 @@ function isStoredSession(value: unknown): value is StoredSession {
     && typeof candidate.encryption === "object";
 }
 
+export type SessionMaterialization =
+  | { status: "ok"; session: Record<string, unknown> }
+  | { status: "identity_conflict" | "unauthorized" | "unavailable" };
+
+function materializedSession(
+  stored: StoredSession,
+  transport:
+    | { syncTransport: "polling"; realtimeToken: null; realtimeExpiresAt: null }
+    | {
+      syncTransport: "private-realtime";
+      realtimeToken: string;
+      realtimeExpiresAt: string;
+    },
+): Record<string, unknown> {
+  return {
+    noteId: stored.noteId,
+    slug: stored.slug,
+    scope: stored.scope,
+    ...transport,
+    realtimeTopic: `note:${stored.noteId}`,
+    generation: stored.generation,
+    syncStatus: stored.syncStatus,
+    currentSequence: stored.currentSequence,
+    payloadLimitBytes: stored.payloadLimitBytes,
+    checkpointSequence: stored.checkpointSequence,
+    checkpointVersion: stored.checkpointVersion,
+    checkpointPayload: stored.checkpointPayload,
+    checkpointEncryptionVersion: stored.checkpointEncryptionVersion,
+    missingUpdates: stored.missingUpdates,
+    encryption: stored.encryption,
+  };
+}
+
 export async function materializeNoteSession(
-  stored: unknown,
-  supabaseUrl: string,
-  jwtSecret: string,
-): Promise<Record<string, unknown> | null> {
-  if (!isStoredSession(stored)) return null;
-  const nowSeconds = Math.floor(Date.now() / 1000);
+  storedValue: unknown,
+  tokenHash: string,
+  auth: VerifiedRealtimeAuth,
+  environment: CapabilityEnvironment,
+  nowSeconds = Math.floor(Date.now() / 1000),
+): Promise<SessionMaterialization> {
+  if (!isStoredSession(storedValue)) return { status: "unavailable" };
+  const stored = storedValue;
+  const polling = (): SessionMaterialization => ({
+    status: "ok",
+    session: materializedSession(stored, {
+      syncTransport: "polling",
+      realtimeToken: null,
+      realtimeExpiresAt: null,
+    }),
+  });
+
+  if (auth.mode === "polling") return polling();
+  if (auth.mode === "unavailable") return { status: "unavailable" };
+
+  const expiresAtSeconds = Math.min(auth.expiresAt, nowSeconds + 300);
+  if (!Number.isSafeInteger(nowSeconds) || expiresAtSeconds <= nowSeconds) return polling();
+  const expiresAt = new Date(expiresAtSeconds * 1000).toISOString();
+
   try {
-    const realtimeToken = await signRealtimeJwt({
-      capabilityId: stored.capabilityId,
-      noteId: stored.noteId,
-      scope: stored.scope,
-      generation: stored.generation,
-      issuer: `${supabaseUrl.replace(/\/$/, "")}/auth/v1`,
-      secret: jwtSecret,
-      nowSeconds,
-    });
+    const { data, error } = await environment.client.rpc(
+      "capability_realtime_membership_bind",
+      {
+        p_token_hash: tokenHash,
+        p_auth_user_id: auth.userId,
+        p_expires_at: expiresAt,
+      },
+    );
+    if (error) return { status: "unavailable" };
+
+    const status = rpcStatus(data);
+    if (status === "polling") return polling();
+    if (status === "identity_conflict" || status === "unauthorized") return { status };
+    if (
+      status !== "ok"
+      || data?.noteId !== stored.noteId
+      || data?.capabilityId !== stored.capabilityId
+      || data?.scope !== stored.scope
+    ) return { status: "unavailable" };
+
     return {
-      noteId: stored.noteId,
-      slug: stored.slug,
-      scope: stored.scope,
-      realtimeToken,
-      realtimeExpiresAt: new Date((nowSeconds + 300) * 1000).toISOString(),
-      realtimeTopic: `note:${stored.noteId}`,
-      generation: stored.generation,
-      syncStatus: stored.syncStatus,
-      currentSequence: stored.currentSequence,
-      payloadLimitBytes: stored.payloadLimitBytes,
-      checkpointSequence: stored.checkpointSequence,
-      checkpointVersion: stored.checkpointVersion,
-      checkpointPayload: stored.checkpointPayload,
-      checkpointEncryptionVersion: stored.checkpointEncryptionVersion,
-      missingUpdates: stored.missingUpdates,
-      encryption: stored.encryption,
+      status: "ok",
+      session: materializedSession(stored, {
+        syncTransport: "private-realtime",
+        realtimeToken: auth.token,
+        realtimeExpiresAt: expiresAt,
+      }),
     };
   } catch {
-    return null;
+    return { status: "unavailable" };
   }
 }
 
@@ -261,6 +363,9 @@ export function rpcStatus(value: unknown): string {
 
 export function capabilityFailure(status: string): Response {
   if (status === "unauthorized") return capabilityJson({ error: "unauthorized" }, 401);
+  if (status === "identity_conflict") {
+    return capabilityJson({ error: "realtime identity conflict" }, 409);
+  }
   if (status === "writes_disabled") {
     return capabilityJson({ error: "temporarily unavailable" }, 503);
   }
@@ -268,19 +373,24 @@ export function capabilityFailure(status: string): Response {
   if (status === "version_conflict") return capabilityJson({ error: "version conflict" }, 409);
   if (status === "slug_unavailable") return capabilityJson({ error: "slug unavailable" }, 409);
   if (status === "quota_exceeded") {
-    return new Response(JSON.stringify({ error: "capacity temporarily exceeded" }), {
-      status: 429,
-      headers: {
-        ...capabilityCorsHeaders,
-        "Content-Type": "application/json",
-        "Cache-Control": "no-store",
-        "CDN-Cache-Control": "no-store",
-        "Retry-After": "3600",
-      },
-    });
+    return capabilityJson(
+      { error: "capacity temporarily exceeded" },
+      429,
+      { "Retry-After": "3600" },
+    );
   }
   if (status === "invalid" || status === "payload_too_large") {
     return capabilityJson({ error: "invalid request" }, 400);
   }
   return capabilityJson({ error: "temporarily unavailable" }, 503);
+}
+
+export function resolveMaterialization(
+  result: SessionMaterialization,
+):
+  | { ok: true; session: Record<string, unknown> }
+  | { ok: false; response: Response } {
+  return result.status === "ok"
+    ? { ok: true, session: result.session }
+    : { ok: false, response: capabilityFailure(result.status) };
 }

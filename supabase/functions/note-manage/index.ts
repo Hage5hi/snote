@@ -13,7 +13,9 @@ import {
   capabilityJson,
   capabilityTokenHash,
   materializeNoteSession,
+  resolveMaterialization,
   rpcStatus,
+  verifyRealtimeAuth,
 } from "../_shared/capability-edge.ts";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -31,6 +33,8 @@ Deno.serve(async (req) => {
   try {
     const tokenHash = await capabilityTokenHash(bearer, environment.hmacSecret);
     if (!tokenHash) return capabilityFailure("unavailable");
+    const auth = await verifyRealtimeAuth(req, environment);
+    if (auth.mode === "unavailable") return capabilityFailure("unavailable");
     const body = await req.json().catch(() => ({}));
     const action = typeof body?.action === "string" ? body.action : "";
     let params: Record<string, unknown> = {};
@@ -98,15 +102,16 @@ Deno.serve(async (req) => {
       { p_token_hash: tokenHash, p_after_seq: 0, p_limit: 200 },
     );
     if (openError || rpcStatus(opened) !== "ok") return capabilityFailure("unavailable");
-    const session = await materializeNoteSession(
+    const materialized = resolveMaterialization(await materializeNoteSession(
       opened?.session,
-      environment.supabaseUrl,
-      environment.jwtSecret,
-    );
-    if (!session) return capabilityFailure("unavailable");
+      tokenHash,
+      auth,
+      environment,
+    ));
+    if (!materialized.ok) return materialized.response;
     return capabilityJson({
       ok: true,
-      session,
+      session: materialized.session,
       ...(rotated ? { rotated: { scope: rotated.scope, capability: rotated.capability } } : {}),
     }, 200);
   } catch (error) {
