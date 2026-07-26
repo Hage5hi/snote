@@ -130,7 +130,7 @@ describe("capability database boundary", () => {
     expect(generatedTypes).toContain("update_limit_count: number");
     expect(generatedTypes).toContain("checkpoint_limit_count: number");
     expect(generatedTypes).toContain("capability_admission_consume:");
-    expect(generatedTypes).toContain('p_operation: "create" | "sync"');
+    expect(generatedTypes).toContain('p_operation: "create" | "sync" | "membership"');
     expect(generatedTypes).toMatch(
       /capability_admission_consume:[\s\S]+?Returns: Json/,
     );
@@ -139,6 +139,14 @@ describe("capability database boundary", () => {
     expect(generatedTypes).toContain("writes_enabled: boolean");
     expect(generatedTypes).toContain("capability_runtime_state:");
     expect(generatedTypes).toContain("capability_runtime_set:");
+    expect(generatedTypes).toContain("note_realtime_memberships:");
+    expect(generatedTypes).toContain("auth_user_id: string");
+    expect(generatedTypes).toContain("capability_realtime_membership_bind:");
+    expect(generatedTypes).toContain("capability_realtime_memberships_prune:");
+    expect(generatedTypes).toContain("capability_realtime_cleanup_candidates:");
+    expect(generatedTypes).toContain("note_realtime_memberships_capability_id_note_id_fkey");
+    expect(generatedTypes).toContain("note_realtime_memberships_note_id_fkey");
+    expect(generatedTypes).toContain("realtime_capability_allows:");
   });
 
   it("publishes security-definer RPCs and grants in one transaction", () => {
@@ -192,7 +200,10 @@ describe("capability database boundary", () => {
     expect(lockingGate).toContain("capability_runtime_settings");
     expect(nonLockingGate).not.toContain("FOR SHARE");
     expect(setter).toContain("UPDATE public.capability_runtime_settings");
-    expect(realtimePredicate).toContain("public.capability_writes_enabled()");
+    expect(realtimePredicate).toContain(
+      "JOIN public.capability_runtime_settings AS runtime ON runtime.singleton",
+    );
+    expect(realtimePredicate).toContain("runtime.writes_enabled");
     expect(realtimePredicate).not.toContain("public.capability_writes_acquire()");
   });
 
@@ -241,13 +252,116 @@ describe("capability database boundary", () => {
     expect(sql).toContain("FUNCTION public.legacy_share_rotate");
   });
 
-  it("authorizes private Realtime topics against active capabilities", () => {
+  it("defines deny-all short-lived Realtime memberships with service-only lifecycle RPCs", () => {
     const sql = source(migrationPath);
-    expect(sql).toContain("ON realtime.messages");
-    expect(sql).toContain("realtime.topic()");
-    expect(sql).toContain("auth.jwt()");
-    expect(sql).toContain("revoked_at IS NULL");
-    expect(sql).toContain("extension IN ('broadcast', 'presence')");
+    expect(sql).toContain(
+      "ADD CONSTRAINT note_capabilities_capability_note_unique\n  UNIQUE (capability_id, note_id)",
+    );
+    expect(sql).toMatch(
+      /CREATE TABLE public\.note_realtime_memberships[\s\S]+PRIMARY KEY \(auth_user_id, note_id\)[\s\S]+UNIQUE \(auth_user_id\)/,
+    );
+    expect(sql).toContain(
+      "REFERENCES auth.users(id) ON DELETE CASCADE",
+    );
+    expect(sql).toContain(
+      "FOREIGN KEY (capability_id, note_id)",
+    );
+    expect(sql).toContain(
+      "CHECK (expires_at > refreshed_at)",
+    );
+    expect(sql).toContain(
+      "CHECK (expires_at <= refreshed_at + interval '5 minutes')",
+    );
+    expect(sql).toContain(
+      "ALTER TABLE public.note_realtime_memberships ENABLE ROW LEVEL SECURITY",
+    );
+    expect(sql).toMatch(
+      /REVOKE ALL ON TABLE public\.note_realtime_memberships\s+FROM PUBLIC, anon, authenticated, service_role/,
+    );
+    for (const fn of [
+      "capability_realtime_membership_bind",
+      "capability_realtime_memberships_prune",
+      "capability_realtime_cleanup_candidates",
+    ]) {
+      expect(sql).toContain(`FUNCTION public.${fn}`);
+      expect(sql).toMatch(
+        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${fn}\\([^;]+ TO service_role`),
+      );
+      expect(sql).toMatch(
+        new RegExp(`REVOKE ALL ON FUNCTION public\\.${fn}\\([^;]+ FROM PUBLIC, anon, authenticated`),
+      );
+    }
+  });
+
+  it("extends membership admission without weakening existing status semantics", () => {
+    const sql = source(migrationPath);
+    const admission = sqlFunction(sql, "capability_admission_consume");
+    expect(sql).toContain(
+      "operation text NOT NULL CHECK (operation IN ('create', 'sync', 'membership'))",
+    );
+    expect(admission).toContain("p_operation = 'membership'");
+    expect(admission).toContain("v_subject_request_limit := 1000");
+    expect(admission).toContain("v_global_request_limit := 250000");
+    for (const status of ["ok", "writes_disabled", "quota_exceeded", "invalid"]) {
+      expect(admission).toContain(`'status', '${status}'`);
+    }
+  });
+
+  it("serializes membership binds and locks notes before capabilities", () => {
+    const sql = source(migrationPath);
+    const bind = sqlFunction(sql, "capability_realtime_membership_bind");
+
+    const runtimeLock = bind.indexOf("FROM public.capability_runtime_settings AS runtime");
+    const noteLock = bind.indexOf("FROM public.notes AS note");
+    const noteLockEnd = bind.indexOf("FOR SHARE;", noteLock);
+    const capabilityLock = bind.indexOf(
+      "FROM public.note_capabilities AS capability",
+      noteLockEnd,
+    );
+    const capabilityLockEnd = bind.indexOf("FOR SHARE;", capabilityLock);
+
+    expect(runtimeLock).toBeGreaterThan(0);
+    expect(noteLock).toBeGreaterThan(runtimeLock);
+    expect(capabilityLock).toBeGreaterThan(noteLockEnd);
+    expect(runtimeLock).toBeLessThan(noteLock);
+    expect(noteLockEnd).toBeLessThan(capabilityLock);
+    expect(capabilityLockEnd).toBeGreaterThan(capabilityLock);
+    expect(bind).toContain("pg_advisory_xact_lock");
+    expect(bind).toContain("ON CONFLICT (auth_user_id, note_id) DO UPDATE");
+    expect(bind).toContain("'quota_exceeded'");
+    expect(bind).toMatch(/p_expires_at IS NULL[\s\S]+?'status', 'polling'/);
+  });
+
+  it("authorizes private Realtime topics from UID, topic, membership, and runtime rows only", () => {
+    const sql = source(migrationPath);
+    const atomic = source("supabase/migrations/20260724000000_atomic_capability_cutover.sql");
+    const predicate = sqlFunction(sql, "realtime_capability_allows");
+    expect(predicate).toContain(
+      "p_auth_user_id uuid,\n  p_topic text,\n  p_write boolean",
+    );
+    expect(predicate).toContain("membership.auth_user_id = p_auth_user_id");
+    expect(predicate).toContain("membership.expires_at > now()");
+    expect(predicate).toContain("p_topic = 'note:' || membership.note_id::text");
+    expect(predicate).toContain("runtime.private_realtime_enabled");
+    expect(predicate).toContain("capability.scope IN ('owner', 'edit')");
+    expect(predicate).toContain("runtime.writes_enabled");
+    for (const policy of [
+      "Snote capabilities can receive private messages",
+      "Snote editors can send private messages",
+    ]) {
+      const start = sql.indexOf(`CREATE POLICY "${policy}"`);
+      const end = sql.indexOf(");", start);
+      const body = sql.slice(start, end < 0 ? undefined : end + 2);
+      expect(body).toContain("(SELECT auth.uid())");
+      expect(body).toContain("(SELECT realtime.topic())");
+      expect(body).toContain("public.realtime_capability_allows");
+      expect(body).not.toContain("auth.jwt()");
+    }
+    expect(sql).not.toContain("auth.jwt()");
+    expect(atomic).not.toContain("auth.jwt()");
+    expect(atomic).toContain("public.realtime_capability_allows");
+    expect(atomic).toContain("(SELECT auth.uid())");
+    expect(atomic).toContain("(SELECT realtime.topic())");
   });
 
   it("binds every update to the authorized note, exact payload hash, scope, version, and write state", () => {

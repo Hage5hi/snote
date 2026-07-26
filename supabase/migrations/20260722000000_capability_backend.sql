@@ -202,6 +202,32 @@ CREATE UNIQUE INDEX note_capabilities_one_active_scope
 CREATE INDEX note_capabilities_active_lookup
   ON public.note_capabilities(token_hash)
   WHERE revoked_at IS NULL;
+ALTER TABLE public.note_capabilities
+  ADD CONSTRAINT note_capabilities_capability_note_unique
+  UNIQUE (capability_id, note_id);
+
+CREATE TABLE public.note_realtime_memberships (
+  auth_user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  note_id uuid NOT NULL REFERENCES public.notes(note_id) ON DELETE CASCADE,
+  capability_id uuid NOT NULL,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  refreshed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (auth_user_id, note_id),
+  UNIQUE (auth_user_id),
+  FOREIGN KEY (capability_id, note_id)
+    REFERENCES public.note_capabilities(capability_id, note_id)
+    ON DELETE CASCADE,
+  CHECK (expires_at > refreshed_at),
+  CHECK (expires_at <= refreshed_at + interval '5 minutes')
+);
+
+CREATE INDEX note_realtime_memberships_expiry_idx
+  ON public.note_realtime_memberships(expires_at);
+
+ALTER TABLE public.note_realtime_memberships ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.note_realtime_memberships
+  FROM PUBLIC, anon, authenticated, service_role;
 
 CREATE TABLE public.note_updates (
   seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -375,7 +401,7 @@ $$;
 -- of a gateway-verified client address (create) or an existing capability HMAC
 -- (sync). Raw addresses, slugs, tokens, and content never enter this table.
 CREATE TABLE public.capability_admission_windows (
-  operation text NOT NULL CHECK (operation IN ('create', 'sync')),
+  operation text NOT NULL CHECK (operation IN ('create', 'sync', 'membership')),
   bucket_kind text NOT NULL CHECK (bucket_kind IN ('global', 'subject')),
   subject_hash text NOT NULL CHECK (subject_hash ~ '^[a-f0-9]{64}$'),
   window_start timestamptz NOT NULL,
@@ -418,7 +444,7 @@ BEGIN
     RETURN jsonb_build_object('status', 'writes_disabled');
   END IF;
 
-  IF p_operation NOT IN ('create', 'sync')
+  IF p_operation NOT IN ('create', 'sync', 'membership')
     OR p_subject_hash IS NULL OR p_subject_hash !~ '^[a-f0-9]{64}$'
     OR p_request_cost NOT BETWEEN 1 AND 100
     OR p_byte_cost NOT BETWEEN 0 AND 4194304
@@ -426,7 +452,12 @@ BEGIN
     RETURN jsonb_build_object('status', 'invalid');
   END IF;
 
-  IF p_operation = 'create' THEN
+  IF p_operation = 'membership' THEN
+    v_subject_request_limit := 1000;
+    v_subject_byte_limit := 0;
+    v_global_request_limit := 250000;
+    v_global_byte_limit := 0;
+  ELSIF p_operation = 'create' THEN
     v_subject_request_limit := 20;
     v_subject_byte_limit := 67108864;
     v_global_request_limit := 5000;
@@ -510,6 +541,230 @@ BEGIN
   WHERE operation = p_operation
     AND window_start < v_window_start - interval '48 hours';
   RETURN jsonb_build_object('status', 'ok');
+END;
+$$;
+
+-- Bind a short-lived anonymous Auth identity to one active capability. The
+-- capability remains the authority; the platform UID is only a Realtime key.
+CREATE OR REPLACE FUNCTION public.capability_realtime_membership_bind(
+  p_token_hash text,
+  p_auth_user_id uuid,
+  p_expires_at timestamptz
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := statement_timestamp();
+  v_private_realtime_enabled boolean;
+  v_admission jsonb;
+  v_capability_id uuid;
+  v_note_id uuid;
+  v_scope public.note_capability_scope;
+  v_expires_at timestamptz;
+  v_existing_note_id uuid;
+  v_existing_capability_id uuid;
+  v_bound_user uuid;
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$'
+    OR p_auth_user_id IS NULL
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF p_expires_at IS NULL OR p_expires_at <= v_now THEN
+    -- Auth expiry can race Edge verification; retain secure polling reads.
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  PERFORM 1
+  FROM auth.users AS auth_user
+  WHERE auth_user.id = p_auth_user_id
+    AND auth_user.is_anonymous IS TRUE
+  FOR SHARE;
+  IF NOT FOUND THEN
+    -- Missing or non-anonymous platform Auth never weakens capability access.
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  SELECT runtime.private_realtime_enabled
+  INTO v_private_realtime_enabled
+  FROM public.capability_runtime_settings AS runtime
+  WHERE runtime.singleton
+  FOR SHARE;
+  IF NOT FOUND OR NOT COALESCE(v_private_realtime_enabled, false) THEN
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  -- The UID-wide lock makes the separate UNIQUE(auth_user_id) authority rule
+  -- deterministic under concurrent first binds and refreshes.
+  PERFORM pg_advisory_xact_lock(
+    hashtext('snote-realtime-membership'),
+    hashtext(p_auth_user_id::text)
+  );
+
+  v_admission := public.capability_admission_consume(
+    'membership',
+    p_token_hash,
+    1,
+    0
+  );
+  IF v_admission ->> 'status' IN (
+    'writes_disabled',
+    'quota_exceeded'
+  ) THEN
+    -- The write kill switch must not turn a readable capability into a 503.
+    -- Transport pressure also degrades to the same secure polling path.
+    RETURN jsonb_build_object('status', 'polling');
+  ELSIF v_admission ->> 'status' <> 'ok' THEN
+    RETURN v_admission;
+  END IF;
+
+  -- Discover the immutable locator without a lock, then lock in the same
+  -- runtime -> note -> capability order used by management operations.
+  SELECT capability.note_id
+  INTO v_note_id
+  FROM public.note_capabilities AS capability
+  WHERE capability.token_hash = p_token_hash
+    AND capability.revoked_at IS NULL;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  PERFORM 1
+  FROM public.notes AS note
+  WHERE note.note_id = v_note_id
+    AND note.capability_managed
+    AND note.deleted_at IS NULL
+    AND note.sync_status <> 'deleted'
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  SELECT capability.capability_id, capability.scope
+  INTO v_capability_id, v_scope
+  FROM public.note_capabilities AS capability
+  WHERE capability.note_id = v_note_id
+    AND capability.token_hash = p_token_hash
+    AND capability.revoked_at IS NULL
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  SELECT membership.note_id, membership.capability_id
+  INTO v_existing_note_id, v_existing_capability_id
+  FROM public.note_realtime_memberships AS membership
+  WHERE membership.auth_user_id = p_auth_user_id
+  FOR UPDATE;
+  IF FOUND AND (
+    v_existing_note_id IS DISTINCT FROM v_note_id
+    OR v_existing_capability_id IS DISTINCT FROM v_capability_id
+  ) THEN
+    RETURN jsonb_build_object('status', 'identity_conflict');
+  END IF;
+
+  -- Re-read the clock after waiting on the runtime/note/capability locks so a
+  -- request that expires while blocked cannot publish an already-expired row.
+  v_now := statement_timestamp();
+  IF p_expires_at <= v_now THEN
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  v_expires_at := LEAST(p_expires_at, v_now + interval '5 minutes');
+  INSERT INTO public.note_realtime_memberships AS existing (
+    auth_user_id,
+    note_id,
+    capability_id,
+    expires_at,
+    created_at,
+    refreshed_at
+  ) VALUES (
+    p_auth_user_id,
+    v_note_id,
+    v_capability_id,
+    v_expires_at,
+    v_now,
+    v_now
+  )
+  ON CONFLICT (auth_user_id, note_id) DO UPDATE
+  SET expires_at = EXCLUDED.expires_at,
+      refreshed_at = EXCLUDED.refreshed_at
+  WHERE existing.capability_id = EXCLUDED.capability_id
+  RETURNING auth_user_id INTO v_bound_user;
+
+  IF v_bound_user IS NULL THEN
+    RETURN jsonb_build_object('status', 'identity_conflict');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'status', 'ok',
+    'noteId', v_note_id,
+    'capabilityId', v_capability_id,
+    'scope', v_scope,
+    'expiresAt', v_expires_at
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_realtime_memberships_prune()
+RETURNS integer
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_deleted integer;
+BEGIN
+  DELETE FROM public.note_realtime_memberships AS membership
+  WHERE membership.expires_at <= statement_timestamp();
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_realtime_cleanup_candidates(
+  p_auth_user_ids uuid[]
+)
+RETURNS uuid[]
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := statement_timestamp();
+  v_candidates uuid[];
+BEGIN
+  IF p_auth_user_ids IS NULL OR cardinality(p_auth_user_ids) > 500 THEN
+    RAISE EXCEPTION 'auth user candidate list must contain at most 500 IDs'
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT COALESCE(
+    array_agg(candidate.id ORDER BY candidate.id),
+    ARRAY[]::uuid[]
+  )
+  INTO v_candidates
+  FROM (
+    SELECT DISTINCT auth_user.id
+    FROM auth.users AS auth_user
+    WHERE auth_user.id = ANY(p_auth_user_ids)
+      AND auth_user.is_anonymous IS TRUE
+      AND auth_user.created_at <= v_now - interval '30 days'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.note_realtime_memberships AS membership
+        WHERE membership.auth_user_id = auth_user.id
+          AND membership.expires_at > v_now
+      )
+  ) AS candidate;
+
+  RETURN v_candidates;
 END;
 $$;
 
@@ -1002,6 +1257,13 @@ BEGIN
     UPDATE public.note_capabilities
     SET revoked_at = COALESCE(revoked_at, now())
     WHERE note_id = v_note.note_id AND scope = v_scope AND revoked_at IS NULL;
+    DELETE FROM public.note_realtime_memberships AS membership
+    USING public.note_capabilities AS capability
+    WHERE membership.capability_id = capability.capability_id
+      AND membership.note_id = capability.note_id
+      AND capability.note_id = v_note.note_id
+      AND capability.scope = v_scope
+      AND capability.revoked_at IS NOT NULL;
     INSERT INTO public.note_capabilities(note_id, scope, token_hash, generation)
     VALUES (v_note.note_id, v_scope, v_new_hash, v_generation);
     RETURN jsonb_build_object('status', 'ok', 'scope', v_scope, 'generation', v_generation);
@@ -1221,11 +1483,13 @@ $$;
 
 -- Realtime policies call this narrow SECURITY DEFINER predicate because the
 -- capability table itself remains deny-all to authenticated clients.
+DROP POLICY IF EXISTS "Snote capabilities can receive private messages" ON realtime.messages;
+DROP POLICY IF EXISTS "Snote editors can send private messages" ON realtime.messages;
+DROP FUNCTION IF EXISTS public.realtime_capability_allows(uuid, uuid, bigint, text, boolean);
+
 CREATE OR REPLACE FUNCTION public.realtime_capability_allows(
-  p_capability_id uuid,
-  p_note_id uuid,
-  p_generation bigint,
-  p_claim_scope text,
+  p_auth_user_id uuid,
+  p_topic text,
   p_write boolean
 )
 RETURNS boolean
@@ -1236,41 +1500,39 @@ SET search_path = pg_catalog, pg_temp
 AS $$
   SELECT EXISTS (
     SELECT 1
-    FROM public.note_capabilities AS c
-    JOIN public.notes AS n ON n.note_id = c.note_id
-    WHERE c.capability_id = p_capability_id
-      AND c.note_id = p_note_id
-      AND c.generation = p_generation
-      AND c.scope::text = p_claim_scope
-      AND c.revoked_at IS NULL
-      AND n.capability_managed
-      AND n.deleted_at IS NULL
-      AND n.sync_status <> 'deleted'
+    FROM public.note_realtime_memberships AS membership
+    JOIN public.note_capabilities AS capability
+      ON capability.capability_id = membership.capability_id
+     AND capability.note_id = membership.note_id
+    JOIN public.notes AS note ON note.note_id = membership.note_id
+    JOIN public.capability_runtime_settings AS runtime ON runtime.singleton
+    WHERE membership.auth_user_id = p_auth_user_id
+      AND membership.expires_at > now()
+      AND p_topic = 'note:' || membership.note_id::text
+      AND capability.revoked_at IS NULL
+      AND note.capability_managed
+      AND note.deleted_at IS NULL
+      AND note.sync_status <> 'deleted'
+      AND runtime.private_realtime_enabled
       AND (
         NOT p_write
         OR (
-          public.capability_writes_enabled()
-          AND c.scope IN ('owner', 'edit')
-          AND n.sync_status = 'active'
+          capability.scope IN ('owner', 'edit')
+          AND note.sync_status = 'active'
+          AND runtime.writes_enabled
         )
       )
   );
 $$;
-
-DROP POLICY IF EXISTS "Snote capabilities can receive private messages" ON realtime.messages;
-DROP POLICY IF EXISTS "Snote editors can send private messages" ON realtime.messages;
 
 CREATE POLICY "Snote capabilities can receive private messages"
 ON realtime.messages
 FOR SELECT TO authenticated
 USING (
   extension IN ('broadcast', 'presence')
-  AND (SELECT realtime.topic()) = 'note:' || ((SELECT auth.jwt()) ->> 'note_id')
   AND public.realtime_capability_allows(
     (SELECT auth.uid()),
-    ((SELECT auth.jwt()) ->> 'note_id')::uuid,
-    ((SELECT auth.jwt()) ->> 'capability_generation')::bigint,
-    (SELECT auth.jwt()) ->> 'note_scope',
+    (SELECT realtime.topic()),
     false
   )
 );
@@ -1280,12 +1542,9 @@ ON realtime.messages
 FOR INSERT TO authenticated
 WITH CHECK (
   extension IN ('broadcast', 'presence')
-  AND (SELECT realtime.topic()) = 'note:' || ((SELECT auth.jwt()) ->> 'note_id')
   AND public.realtime_capability_allows(
     (SELECT auth.uid()),
-    ((SELECT auth.jwt()) ->> 'note_id')::uuid,
-    ((SELECT auth.jwt()) ->> 'capability_generation')::bigint,
-    (SELECT auth.jwt()) ->> 'note_scope',
+    (SELECT realtime.topic()),
     true
   )
 );
@@ -1303,19 +1562,25 @@ REVOKE ALL ON FUNCTION public.capability_runtime_state()
 REVOKE ALL ON FUNCTION public.capability_runtime_set(boolean, boolean)
   FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_realtime_membership_bind(text, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_realtime_memberships_prune() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_realtime_cleanup_candidates(uuid[]) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_note_create(text, text, text, text) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_session_open(text, bigint, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_updates_append(text, jsonb, bigint) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_note_manage(text, text, jsonb) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_payload_audit(integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.capability_quarantine_oversized() FROM PUBLIC, anon, authenticated;
-REVOKE ALL ON FUNCTION public.realtime_capability_allows(uuid, uuid, bigint, text, boolean) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.realtime_capability_allows(uuid, text, boolean) FROM PUBLIC, anon, authenticated;
 
 GRANT EXECUTE ON FUNCTION public.capability_note_create(text, text, text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_runtime_state() TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_runtime_set(boolean, boolean)
   TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_realtime_membership_bind(text, uuid, timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_realtime_memberships_prune() TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_realtime_cleanup_candidates(uuid[]) TO service_role;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.capability_admission_windows TO service_role;
 GRANT EXECUTE ON FUNCTION public.legacy_share_rotate(text, text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_session_open(text, bigint, integer) TO service_role;
@@ -1323,6 +1588,6 @@ GRANT EXECUTE ON FUNCTION public.capability_updates_append(text, jsonb, bigint) 
 GRANT EXECUTE ON FUNCTION public.capability_note_manage(text, text, jsonb) TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_payload_audit(integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.capability_quarantine_oversized() TO service_role;
-GRANT EXECUTE ON FUNCTION public.realtime_capability_allows(uuid, uuid, bigint, text, boolean) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.realtime_capability_allows(uuid, text, boolean) TO authenticated;
 
 COMMIT;

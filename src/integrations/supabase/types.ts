@@ -150,6 +150,48 @@ export type Database = {
           },
         ]
       }
+      note_realtime_memberships: {
+        Row: {
+          auth_user_id: string
+          capability_id: string
+          created_at: string
+          expires_at: string
+          note_id: string
+          refreshed_at: string
+        }
+        Insert: {
+          auth_user_id: string
+          capability_id: string
+          created_at?: string
+          expires_at: string
+          note_id: string
+          refreshed_at?: string
+        }
+        Update: {
+          auth_user_id?: string
+          capability_id?: string
+          created_at?: string
+          expires_at?: string
+          note_id?: string
+          refreshed_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_realtime_memberships_capability_id_note_id_fkey"
+            columns: ["capability_id", "note_id"]
+            isOneToOne: false
+            referencedRelation: "note_capabilities"
+            referencedColumns: ["capability_id", "note_id"]
+          },
+          {
+            foreignKeyName: "note_realtime_memberships_note_id_fkey"
+            columns: ["note_id"]
+            isOneToOne: false
+            referencedRelation: "notes"
+            referencedColumns: ["note_id"]
+          },
+        ]
+      }
       note_checkpoints: {
         Row: {
           checkpoint_id: string
@@ -300,11 +342,27 @@ export type Database = {
       capability_admission_consume: {
         Args: {
           p_byte_cost?: number
-          p_operation: "create" | "sync"
+          p_operation: "create" | "sync" | "membership"
           p_request_cost?: number
           p_subject_hash: string
         }
         Returns: Json
+      }
+      capability_realtime_cleanup_candidates: {
+        Args: { p_auth_user_ids: string[] }
+        Returns: string[]
+      }
+      capability_realtime_membership_bind: {
+        Args: {
+          p_auth_user_id: string
+          p_expires_at: string
+          p_token_hash: string
+        }
+        Returns: Json
+      }
+      capability_realtime_memberships_prune: {
+        Args: never
+        Returns: number
       }
       capability_note_create: {
         Args: {
@@ -352,6 +410,14 @@ export type Database = {
       }
       legacy_share_rotate: {
         Args: { p_slug: string; p_token: string }
+        Returns: boolean
+      }
+      realtime_capability_allows: {
+        Args: {
+          p_auth_user_id: string
+          p_topic: string
+          p_write: boolean
+        }
         Returns: boolean
       }
     }

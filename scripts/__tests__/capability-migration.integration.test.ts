@@ -48,24 +48,15 @@ async function rpc<T = RpcResult>(
   return response.rows[0].result;
 }
 
-async function setRealtimeClaims(
+async function setRealtimeIdentity(
   db: PGlite,
-  capabilityId: string,
+  authUserId: string,
   noteId: string,
-  scope: "owner" | "edit" | "view",
-  generation: number,
 ) {
-  const claims = JSON.stringify({
-    sub: capabilityId,
-    note_id: noteId,
-    note_scope: scope,
-    capability_generation: generation,
-  });
   await db.query(
     "select set_config('request.jwt.claim.sub', $1, false), "
-      + "set_config('request.jwt.claims', $2, false), "
-      + "set_config('realtime.topic', $3, false)",
-    [capabilityId, claims, `note:${noteId}`],
+      + "set_config('realtime.topic', $2, false)",
+    [authUserId, `note:${noteId}`],
   );
 }
 
@@ -80,14 +71,13 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       CREATE EXTENSION pgcrypto WITH SCHEMA extensions;
       CREATE SCHEMA auth;
       CREATE SCHEMA realtime;
+      CREATE TABLE auth.users (
+        id uuid PRIMARY KEY,
+        is_anonymous boolean NOT NULL DEFAULT true,
+        created_at timestamptz NOT NULL DEFAULT now()
+      );
       CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$
         SELECT NULLIF(current_setting('request.jwt.claim.sub', true), '')::uuid
-      $$;
-      CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$
-        SELECT COALESCE(
-          NULLIF(current_setting('request.jwt.claims', true), '')::jsonb,
-          '{}'::jsonb
-        )
       $$;
       CREATE FUNCTION realtime.topic() RETURNS text LANGUAGE sql STABLE AS $$
         SELECT current_setting('realtime.topic', true)
@@ -123,6 +113,14 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       CREATE POLICY "Anyone can update notes"
         ON public.notes FOR UPDATE TO anon, authenticated
         USING (true) WITH CHECK (true);
+      INSERT INTO auth.users(id, is_anonymous, created_at) VALUES
+        ('11111111-1111-4111-8111-111111111111', true, now()),
+        ('22222222-2222-4222-8222-222222222222', true, now()),
+        ('33333333-3333-4333-8333-333333333333', true, now()),
+        ('44444444-4444-4444-8444-444444444444', true, now()),
+        ('55555555-5555-4555-8555-555555555555', false, now() - interval '31 days'),
+        ('66666666-6666-4666-8666-666666666666', true, now() - interval '31 days'),
+        ('88888888-8888-4888-8888-888888888888', true, now());
       INSERT INTO public.notes(slug, content) VALUES ('legacy-row', 'legacy');
     `);
     await db.exec(readFileSync(
@@ -182,6 +180,10 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
         .rejects.toMatchObject({ code: "42501" });
       await expect(db.query("SELECT public.capability_runtime_set(true, false)"))
         .rejects.toMatchObject({ code: "42501" });
+      await expect(db.query("SELECT * FROM public.note_realtime_memberships"))
+        .rejects.toMatchObject({ code: "42501" });
+      await expect(db.query("SELECT public.capability_realtime_memberships_prune()"))
+        .rejects.toMatchObject({ code: "42501" });
       await db.exec("RESET ROLE");
     }
 
@@ -190,6 +192,9 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       .rejects.toMatchObject({ code: "42501" });
     await expect(db.query("SELECT public.capability_writes_enabled()"))
       .rejects.toMatchObject({ code: "42501" });
+    await expect(db.query("SELECT * FROM public.note_realtime_memberships"))
+      .rejects.toMatchObject({ code: "42501" });
+    expect(await rpc<number>(db, "capability_realtime_memberships_prune", [])).toBe(0);
     expect(await rpc<RuntimeState>(
       db,
       "capability_runtime_set",
@@ -394,9 +399,103 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       ORDER BY scope
     `, [createdA.noteId]);
     const oldView = capabilityRows.rows.find((row) => row.scope === "view")!;
-    const edit = capabilityRows.rows.find((row) => row.scope === "edit")!;
+    const ownerAuthId = "11111111-1111-4111-8111-111111111111";
+    const editAuthId = "22222222-2222-4222-8222-222222222222";
+    const viewAuthId = "33333333-3333-4333-8333-333333333333";
+    const noteBAuthId = "44444444-4444-4444-8444-444444444444";
+    const nonAnonymousAuthId = "55555555-5555-4555-8555-555555555555";
+    const oldAnonymousAuthId = "66666666-6666-4666-8666-666666666666";
+    const newAnonymousAuthId = "88888888-8888-4888-8888-888888888888";
+    const expiresFromNow = (seconds: number) =>
+      new Date(Date.now() + seconds * 1000).toISOString();
+    const bindMembership = (
+      token: string,
+      authUserId: string,
+      seconds: number,
+    ) => rpc<RpcResult>(
+      db,
+      "capability_realtime_membership_bind",
+      [token, authUserId, expiresFromNow(seconds)],
+      ["", "::uuid", "::timestamptz"],
+    );
+    const allowsRealtime = async (
+      authUserId: string,
+      topic: string,
+      write: boolean,
+    ) => (await db.query<{ allowed: boolean }>(
+      "SELECT public.realtime_capability_allows($1::uuid, $2::text, $3::boolean) AS allowed",
+      [authUserId, topic, write],
+    )).rows[0].allowed;
+    expect(await bindMembership("not-a-token-hash", ownerAuthId, 300))
+      .toMatchObject({ status: "invalid" });
+    expect(await bindMembership(tokenHash("a"), ownerAuthId, -1))
+      .toMatchObject({ status: "polling" });
+    expect(await bindMembership(tokenHash("a"), ownerAuthId, 600))
+      .toMatchObject({ status: "ok" });
+    expect(await bindMembership(tokenHash("b"), editAuthId, 300))
+      .toMatchObject({ status: "ok" });
+    expect(await bindMembership(tokenHash("c"), viewAuthId, 300))
+      .toMatchObject({ status: "ok" });
+    expect(await bindMembership(tokenHash("d"), noteBAuthId, 300))
+      .toMatchObject({ status: "ok" });
+    expect(await bindMembership(tokenHash("b"), ownerAuthId, 300))
+      .toMatchObject({ status: "identity_conflict" });
+    expect(await bindMembership(tokenHash("d"), ownerAuthId, 300))
+      .toMatchObject({ status: "identity_conflict" });
+    expect(await bindMembership(tokenHash("d"), nonAnonymousAuthId, 300))
+      .toMatchObject({ status: "polling" });
+    expect(await bindMembership(tokenHash("d"), "77777777-7777-4777-8777-777777777777", 300))
+      .toMatchObject({ status: "polling" });
+    expect(await allowsRealtime(ownerAuthId, `note:${createdA.noteId}`, true)).toBe(true);
+    expect(await allowsRealtime(editAuthId, `note:${createdA.noteId}`, true)).toBe(true);
+    expect(await allowsRealtime(viewAuthId, `note:${createdA.noteId}`, false)).toBe(true);
+    expect(await allowsRealtime(viewAuthId, `note:${createdA.noteId}`, true)).toBe(false);
+    expect(await allowsRealtime(ownerAuthId, `note:${createdB.noteId}`, false)).toBe(false);
+    expect(await allowsRealtime(ownerAuthId, "note:00000000-0000-4000-8000-000000000000", false))
+      .toBe(false);
+
+    const duplicateRefreshes = await Promise.all([
+      bindMembership(tokenHash("a"), ownerAuthId, 90),
+      bindMembership(tokenHash("a"), ownerAuthId, 180),
+      bindMembership(tokenHash("a"), ownerAuthId, 600),
+    ]);
+    expect(duplicateRefreshes.every((result) => result.status === "ok")).toBe(true);
+    expect(await bindMembership(tokenHash("a"), ownerAuthId, 600))
+      .toMatchObject({ status: "ok" });
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_realtime_memberships WHERE auth_user_id = $1",
+      [ownerAuthId],
+    )).rows[0].count).toBe(1);
+    const expiryBounds = (await db.query<{ seconds: number }>(`
+      SELECT extract(epoch FROM (expires_at - refreshed_at))::integer AS seconds
+      FROM public.note_realtime_memberships
+      WHERE auth_user_id = $1
+    `, [ownerAuthId])).rows[0].seconds;
+    expect(expiryBounds).toBeGreaterThan(0);
+    expect(expiryBounds).toBeLessThanOrEqual(300);
+    await rpc<RuntimeState>(db, "capability_runtime_set", [true, false]);
+    expect(await bindMembership(tokenHash("a"), ownerAuthId, 300))
+      .toMatchObject({ status: "polling" });
+    expect(await allowsRealtime(ownerAuthId, `note:${createdA.noteId}`, false)).toBe(false);
+    await rpc<RuntimeState>(db, "capability_runtime_set", [true, true]);
+    await rpc<RuntimeState>(db, "capability_runtime_set", [false, true]);
+    expect(await allowsRealtime(ownerAuthId, `note:${createdA.noteId}`, false)).toBe(true);
+    expect(await allowsRealtime(ownerAuthId, `note:${createdA.noteId}`, true)).toBe(false);
+    expect(await bindMembership(tokenHash("a"), ownerAuthId, 300))
+      .toMatchObject({ status: "polling" });
+    await rpc<RuntimeState>(db, "capability_runtime_set", [true, true]);
+    await db.query(`
+      UPDATE public.capability_admission_windows
+      SET request_count = 1000
+      WHERE operation = 'membership'
+        AND bucket_kind = 'subject'
+        AND subject_hash = $1
+    `, [tokenHash("a")]);
+    expect(await bindMembership(tokenHash("a"), ownerAuthId, 300))
+      .toMatchObject({ status: "polling" });
+
     await db.exec("INSERT INTO realtime.messages(extension) VALUES ('broadcast')");
-    await setRealtimeClaims(db, oldView.capability_id, oldView.note_id, "view", 1);
+    await setRealtimeIdentity(db, viewAuthId, createdA.noteId);
     await db.exec("SET ROLE authenticated");
     expect((await db.query<{ count: number }>(
       "SELECT count(*)::integer AS count FROM realtime.messages",
@@ -406,12 +505,42 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     )).rejects.toMatchObject({ code: "42501" });
     await db.exec("RESET ROLE");
 
-    await setRealtimeClaims(db, edit.capability_id, edit.note_id, "edit", 1);
+    await setRealtimeIdentity(db, editAuthId, createdA.noteId);
     await db.exec("SET ROLE authenticated");
     await expect(db.exec(
       "INSERT INTO realtime.messages(extension) VALUES ('broadcast')",
     )).resolves.toBeDefined();
     await db.exec("RESET ROLE");
+
+    await db.query(`
+      UPDATE public.note_realtime_memberships
+      SET refreshed_at = now() - interval '10 minutes',
+          expires_at = now() - interval '9 minutes'
+      WHERE auth_user_id = $1
+    `, [viewAuthId]);
+    expect(await allowsRealtime(viewAuthId, `note:${createdA.noteId}`, false)).toBe(false);
+    const pruned = await rpc<number>(db, "capability_realtime_memberships_prune", []);
+    expect(pruned).toBeGreaterThanOrEqual(1);
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_realtime_memberships WHERE auth_user_id = $1",
+      [viewAuthId],
+    )).rows[0].count).toBe(0);
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_realtime_memberships WHERE auth_user_id = $1",
+      [ownerAuthId],
+    )).rows[0].count).toBe(1);
+    expect(await bindMembership(tokenHash("c"), viewAuthId, 300))
+      .toMatchObject({ status: "ok" });
+
+    const candidateRows = await db.query<{ ids: string[] }>(
+      "SELECT public.capability_realtime_cleanup_candidates($1::uuid[]) AS ids",
+      [[oldAnonymousAuthId, ownerAuthId, noteBAuthId, nonAnonymousAuthId, newAnonymousAuthId]],
+    );
+    expect(candidateRows.rows[0].ids).toEqual([oldAnonymousAuthId]);
+    await expect(db.query(
+      "SELECT public.capability_realtime_cleanup_candidates($1::uuid[])",
+      [Array.from({ length: 501 }, () => oldAnonymousAuthId)],
+    )).rejects.toMatchObject({ code: "22023" });
 
     expect((await rpc(
       db,
@@ -424,7 +553,11 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       "capability_session_open",
       [tokenHash("c"), 0, 20],
     )).status).toBe("unauthorized");
-    await setRealtimeClaims(db, oldView.capability_id, oldView.note_id, "view", 1);
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_realtime_memberships WHERE auth_user_id = $1",
+      [viewAuthId],
+    )).rows[0].count).toBe(0);
+    await setRealtimeIdentity(db, viewAuthId, oldView.note_id);
     await db.exec("SET ROLE authenticated");
     expect((await db.query<{ count: number }>(
       "SELECT count(*)::integer AS count FROM realtime.messages",
@@ -732,18 +865,7 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     `);
     expect(importedRows.rows[0]).toEqual({ notes: 1, capabilities: 3, checkpoints: 1 });
 
-    const importedOwner = await db.query<{ capability_id: string }>(`
-      SELECT capability_id
-      FROM public.note_capabilities
-      WHERE token_hash = $1
-    `, [tokenHash("1")]);
-    await setRealtimeClaims(
-      db,
-      importedOwner.rows[0].capability_id,
-      imported.session!.noteId,
-      "owner",
-      1,
-    );
+    await setRealtimeIdentity(db, ownerAuthId, imported.session!.noteId);
     await db.exec("SET ROLE service_role");
     await rpc<RuntimeState>(db, "capability_runtime_set", [false, false]);
     await db.exec("RESET ROLE");

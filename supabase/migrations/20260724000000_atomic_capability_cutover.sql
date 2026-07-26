@@ -33,25 +33,36 @@ REVOKE ALL ON TABLE public.note_shares FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.note_capabilities FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.note_updates FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON TABLE public.note_checkpoints FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.note_realtime_memberships FROM PUBLIC, anon, authenticated, service_role;
 REVOKE ALL ON SEQUENCE public.note_updates_seq_seq FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.legacy_share_rotate(text, text) FROM PUBLIC, anon, authenticated, service_role;
 
 -- Operational rollback is API read-only:
 --   SELECT public.capability_runtime_set(false, false);
 -- Mutating RPCs then return writes_disabled, which Edge maps to HTTP 503.
--- The existing capability predicate reads the same runtime control for sends.
+-- The capability predicate reads the membership and runtime rows for sends.
+DROP POLICY IF EXISTS "Snote capabilities can receive private messages" ON realtime.messages;
 DROP POLICY IF EXISTS "Snote editors can send private messages" ON realtime.messages;
+CREATE POLICY "Snote capabilities can receive private messages"
+ON realtime.messages
+FOR SELECT TO authenticated
+USING (
+  extension IN ('broadcast', 'presence')
+  AND public.realtime_capability_allows(
+    (SELECT auth.uid()),
+    (SELECT realtime.topic()),
+    false
+  )
+);
+
 CREATE POLICY "Snote editors can send private messages"
 ON realtime.messages
 FOR INSERT TO authenticated
 WITH CHECK (
   extension IN ('broadcast', 'presence')
-  AND (SELECT realtime.topic()) = 'note:' || ((SELECT auth.jwt()) ->> 'note_id')
   AND public.realtime_capability_allows(
     (SELECT auth.uid()),
-    ((SELECT auth.jwt()) ->> 'note_id')::uuid,
-    ((SELECT auth.jwt()) ->> 'capability_generation')::bigint,
-    (SELECT auth.jwt()) ->> 'note_scope',
+    (SELECT realtime.topic()),
     true
   )
 );

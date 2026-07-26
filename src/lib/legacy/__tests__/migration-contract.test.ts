@@ -71,7 +71,7 @@ describe("atomic cutover migration", () => {
       /Snote editors can send private messages[\s\S]+realtime_capability_allows/,
     );
     expect(capabilityMigration).toMatch(
-      /FUNCTION public\.realtime_capability_allows[\s\S]+capability_writes_enabled\(\)/,
+      /FUNCTION public\.realtime_capability_allows[\s\S]+runtime\.writes_enabled/,
     );
     expect(migration).not.toContain("note_write_disabled");
     expect(capabilityEdge).toMatch(
