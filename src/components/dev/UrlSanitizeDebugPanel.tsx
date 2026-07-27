@@ -3,7 +3,7 @@
 // Not mounted in production. Purely observational — does NOT rewrite the URL.
 
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { sanitizeUrl } from "@/lib/url-sanitize";
 
 // Query params allowed to survive on note routes. Keep in sync with the
@@ -36,7 +36,6 @@ export function UrlSanitizeDebugPanel() {
         const event: StripInfo = { at: Date.now(), ...i };
         // Structured trace event — mirrors what the panel renders so it can
         // be grepped from console logs or captured by Playwright.
-        // eslint-disable-next-line no-console
         console.info("[url-sanitize:event]", event);
         setHistory((prev) => [event, ...prev].slice(0, MAX_HISTORY));
       },

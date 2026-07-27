@@ -1,17 +1,29 @@
 import { test, expect } from "./fixtures/extension";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-// Contract check for the app the side panel embeds:
-// note.syrin.online MUST send a Content-Security-Policy header with
-// `frame-ancestors 'self' chrome-extension://*` or Chrome refuses to
-// render the app inside the side panel (users see "Couldn't load
-// Syrin Note"). This spec fails loudly with a diagnostic message so a
-// deploy that silently drops the header can't ship.
+// Source contract for the app the side panel embeds. The live equivalent is
+// intentionally owned by the post-deploy PWA smoke workflow so a PR is not
+// judged against an older production deployment.
 
 const APP_ORIGIN = "https://note.syrin.online";
 
-test("app sends frame-ancestors CSP that allows chrome-extension://*", async ({
+test("hosting configs allow chrome-extension:// frame ancestors", () => {
+  const expected = "frame-ancestors 'self' chrome-extension://*";
+  const vercel = readFileSync(resolve(process.cwd(), "vercel.json"), "utf8");
+  const fallbackHeaders = readFileSync(resolve(process.cwd(), "public/_headers"), "utf8");
+
+  expect(vercel).toContain(expected);
+  expect(fallbackHeaders).toContain(expected);
+});
+
+test("deployed app sends the extension frame-ancestors CSP", async ({
   context,
 }) => {
+  test.skip(
+    process.env.SNOTE_RUN_DEPLOYED_CSP_CHECK !== "1",
+    "Live CSP is verified by pwa-update-smoke-post-deploy.yml",
+  );
   const res = await context.request.fetch(`${APP_ORIGIN}/`, {
     headers: { "cache-control": "no-cache" },
   });

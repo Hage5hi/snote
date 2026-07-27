@@ -1,0 +1,29 @@
+name = "syrin-prerender"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+workers_dev = false
+
+routes = [
+  { pattern = "note.syrin.online/*", zone_name = "syrin.online" },
+  { pattern = "syrin.online/*", zone_name = "syrin.online" },
+  { pattern = "www.syrin.online/*", zone_name = "syrin.online" }
+]
+
+[vars]
+ORIGIN_HOST = "snote.lovable.app"
+SUPABASE_PROJECT = "onfzjmfjldsbthchssfr"
+SITE_URL = "https://note.syrin.online"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+# Invocation messages contain the request URL. Share capabilities live in the
+# path during the legacy containment window, so only sanitized custom logs are
+# permitted.
+invocation_logs = false
+
+[observability.traces]
+# Trace spans can also retain request URLs before application redaction.
+enabled = false

@@ -3,20 +3,31 @@
 import { isValidSlug } from "./validate-slug.js";
 
 export const DEFAULT_APP_ORIGIN = "https://note.syrin.online";
+const EDIT_CAPABILITY_RE = /^[A-Za-z0-9_-]{43}$/;
 
 export function buildSrc({
   openMode = "home",
   defaultSlug = "",
   lastSlug = "",
+  editCapabilities = {},
   appOrigin = DEFAULT_APP_ORIGIN,
 } = {}) {
   let path = "/";
+  let selectedSlug = "";
   if (openMode === "slug" && isValidSlug(defaultSlug)) {
     path = `/${defaultSlug}`;
+    selectedSlug = defaultSlug;
   } else if (openMode === "last" && isValidSlug(lastSlug)) {
     path = `/${lastSlug}`;
+    selectedSlug = lastSlug;
   }
-  return `${appOrigin}${path}?from=ext`;
+  const candidate = editCapabilities && typeof editCapabilities === "object"
+    ? editCapabilities[selectedSlug]
+    : "";
+  const fragment = selectedSlug && EDIT_CAPABILITY_RE.test(candidate ?? "")
+    ? `#edit=${candidate}`
+    : "";
+  return `${appOrigin}${path}?from=ext${fragment}`;
 }
 
 // Single-letter badge text the toolbar icon shows so the user knows what

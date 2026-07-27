@@ -1,132 +1,111 @@
-import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import bcrypt from "https://esm.sh/bcryptjs@2.4.3";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
-  checkAdminLockout,
-  getClientIp,
-  lockoutResponse,
-  recordAdminAuthAttempt,
-} from "../_shared/admin-rate-limit.ts";
+  adminAuthResponse,
+  authorizeAdminSession,
+  serviceUnavailableResponse,
+} from "../_shared/admin-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-admin-session, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
-
-async function verifyPass(supabase: SupabaseClient, input: string): Promise<boolean> {
-  const { data } = await supabase
-    .from("admin_config")
-    .select("pass_hash")
-    .eq("id", 1)
-    .maybeSingle();
-  const storedHash = typeof data?.pass_hash === "string" ? data.pass_hash : "";
-  if (storedHash) {
-    try { return await bcrypt.compare(input, storedHash); } catch { return false; }
-  }
-  const expected = Deno.env.get("ADMIN_PASSPHRASE") ?? "";
-  if (!expected) return false;
-  return constantTimeEqual(input, expected);
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+    },
+  });
 }
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "method not allowed" }), {
-      status: 405,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!supabaseUrl || !serviceRoleKey) return serviceUnavailableResponse(corsHeaders);
+  const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+  const authorization = await authorizeAdminSession(req, supabase);
+  if (authorization.status !== "authorized") {
+    return adminAuthResponse(authorization, corsHeaders);
   }
 
+  const body = await req.json().catch(() => ({}));
+  const search = typeof body?.search === "string" ? body.search.trim() : "";
+  const tag = typeof body?.tag === "string" ? body.tag.trim().toLowerCase() : "";
+  const limit = Math.min(
+    Math.max(Number.parseInt(body?.limit ?? "100", 10) || 100, 1),
+    500,
+  );
+  const offset = Math.max(Number.parseInt(body?.offset ?? "0", 10) || 0, 0);
+  const safeSearch = search.replace(/[%_,()"*\\]/g, "").slice(0, 100);
+  const safeTag = tag.replace(/[^a-z0-9_-]/g, "").slice(0, 32);
+
+  let result: unknown;
   try {
-    const body = await req.json().catch(() => ({}));
-    const passphrase = String(body?.passphrase ?? "");
-    const search = typeof body?.search === "string" ? body.search.trim() : "";
-    const tag = typeof body?.tag === "string" ? body.tag.trim().toLowerCase() : "";
-    const limit = Math.min(Math.max(parseInt(body?.limit ?? "100", 10) || 100, 1), 500);
-    const offset = Math.max(parseInt(body?.offset ?? "0", 10) || 0, 0);
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
-
-    const ip = getClientIp(req);
-    const gate = await checkAdminLockout(supabase, ip);
-    if (!gate.allowed) return lockoutResponse(gate.retryAfterSeconds, corsHeaders);
-
-    const ok = await verifyPass(supabase, passphrase);
-    await recordAdminAuthAttempt(supabase, ip, ok);
-    if (!ok) {
-      return new Response(JSON.stringify({ error: "unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    let query = supabase
-      .from("notes")
-      .select("slug, char_count, is_encrypted, updated_at, created_at, content, tags", {
-        count: "exact",
-      })
-      .order("updated_at", { ascending: false })
-      .range(offset, offset + limit - 1);
-
-    if (search) {
-      const safe = search.replace(/[%_,()"*\\]/g, "").slice(0, 100);
-      if (safe) {
-        query = query.or(`slug.ilike.%${safe}%,content.ilike.%${safe}%`);
-      }
-    }
-
-    if (tag) {
-      const safeTag = tag.replace(/[^a-z0-9_-]/g, "").slice(0, 32);
-      if (safeTag) query = query.contains("tags", [safeTag]);
-    }
-
-    const { data, error, count } = await query;
-    if (error) throw error;
-
-    const items = (data ?? []).map((r) => ({
-      slug: r.slug,
-      char_count: r.char_count,
-      is_encrypted: r.is_encrypted,
-      updated_at: r.updated_at,
-      created_at: r.created_at,
-      tags: r.tags ?? [],
-      preview: r.is_encrypted ? "🔒 encrypted" : (r.content ?? "").slice(0, 200),
-    }));
-
-    const tagCount = new Map<string, number>();
-    for (const it of items) {
-      for (const t of it.tags as string[]) {
-        tagCount.set(t, (tagCount.get(t) ?? 0) + 1);
-      }
-    }
-    const topTags = [...tagCount.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 30)
-      .map(([name, count]) => ({ name, count }));
-
-    return new Response(
-      JSON.stringify({ items, total: count ?? items.length, topTags }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
-    );
-  } catch (e) {
-    console.error("admin-list error", e);
-    return new Response(JSON.stringify({ error: String(e) }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    const { data, error } = await supabase.rpc("admin_notes_list", {
+      p_token_hash: authorization.tokenHash,
+      p_subject_hash: authorization.subjectHash,
+      p_search: safeSearch,
+      p_tag: safeTag,
+      p_limit: limit,
+      p_offset: offset,
     });
+    if (error) return serviceUnavailableResponse(corsHeaders);
+    result = data;
+  } catch {
+    return serviceUnavailableResponse(corsHeaders);
   }
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return serviceUnavailableResponse(corsHeaders);
+  }
+  const response = result as Record<string, unknown>;
+  if (response.authorized !== true) {
+    return adminAuthResponse({ status: "unauthorized" }, corsHeaders);
+  }
+  if (!Array.isArray(response.items)) return serviceUnavailableResponse(corsHeaders);
+
+  const items = response.items.map((rawRow) => {
+    const row = rawRow && typeof rawRow === "object"
+      ? rawRow as Record<string, unknown>
+      : {};
+    return {
+    slug: row.slug,
+    char_count: row.char_count,
+    is_encrypted: row.is_encrypted,
+    updated_at: row.updated_at,
+    created_at: row.created_at,
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    preview: row.is_encrypted === true
+      ? "encrypted"
+      : typeof row.content === "string"
+        ? row.content.slice(0, 200)
+        : "",
+    };
+  });
+
+  const tagCount = new Map<string, number>();
+  for (const item of items) {
+    for (const itemTag of item.tags as string[]) {
+      tagCount.set(itemTag, (tagCount.get(itemTag) ?? 0) + 1);
+    }
+  }
+  const topTags = [...tagCount.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 30)
+    .map(([name, itemCount]) => ({ name, count: itemCount }));
+
+  const total = Number(response.total);
+  if (!Number.isSafeInteger(total) || total < 0) {
+    return serviceUnavailableResponse(corsHeaders);
+  }
+
+  return json({ items, total, topTags }, 200);
 });

@@ -1,0 +1,1593 @@
+-- Capability backend (additive phase).
+--
+-- Legacy rows intentionally receive a note_id but no capability. This avoids
+-- the unsafe "first visitor becomes owner" pattern. Secure rows are hidden
+-- from the temporary legacy policies until the atomic direct-table cutover.
+
+BEGIN;
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA extensions;
+
+DO $$
+BEGIN
+  CREATE TYPE public.note_capability_scope AS ENUM ('owner', 'edit', 'view');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE TYPE public.note_sync_status AS ENUM (
+    'legacy',
+    'active',
+    'read_only_quarantine',
+    'deleted'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE public.notes
+  ADD COLUMN IF NOT EXISTS note_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  ADD COLUMN IF NOT EXISTS capability_managed boolean NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS sync_status public.note_sync_status NOT NULL DEFAULT 'legacy',
+  ADD COLUMN IF NOT EXISTS encryption_version bigint NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS payload_limit_bytes integer NOT NULL DEFAULT 1048576,
+  ADD COLUMN IF NOT EXISTS storage_limit_bytes bigint NOT NULL DEFAULT 67108864,
+  ADD COLUMN IF NOT EXISTS update_limit_count integer NOT NULL DEFAULT 20000,
+  ADD COLUMN IF NOT EXISTS checkpoint_limit_count integer NOT NULL DEFAULT 256,
+  ADD COLUMN IF NOT EXISTS deleted_at timestamptz;
+
+CREATE UNIQUE INDEX IF NOT EXISTS notes_note_id_key ON public.notes(note_id);
+
+ALTER TABLE public.notes
+  DROP CONSTRAINT IF EXISTS notes_payload_limit_valid,
+  ADD CONSTRAINT notes_payload_limit_valid
+    CHECK (payload_limit_bytes BETWEEN 65536 AND 4194304),
+  DROP CONSTRAINT IF EXISTS notes_storage_limit_valid,
+  ADD CONSTRAINT notes_storage_limit_valid
+    CHECK (storage_limit_bytes BETWEEN 65536 AND 1073741824),
+  DROP CONSTRAINT IF EXISTS notes_update_limit_valid,
+  ADD CONSTRAINT notes_update_limit_valid
+    CHECK (update_limit_count BETWEEN 1 AND 100000),
+  DROP CONSTRAINT IF EXISTS notes_checkpoint_limit_valid,
+  ADD CONSTRAINT notes_checkpoint_limit_valid
+    CHECK (checkpoint_limit_count BETWEEN 1 AND 4096),
+  DROP CONSTRAINT IF EXISTS notes_encryption_version_valid,
+  ADD CONSTRAINT notes_encryption_version_valid CHECK (encryption_version >= 0),
+  DROP CONSTRAINT IF EXISTS notes_encryption_metadata_consistent,
+  ADD CONSTRAINT notes_encryption_metadata_consistent CHECK (
+    NOT capability_managed
+    OR (
+      is_encrypted
+      AND enc_salt IS NOT NULL
+      AND length(enc_salt) BETWEEN 16 AND 512
+      AND enc_check IS NOT NULL
+      AND length(enc_check) BETWEEN 16 AND 2048
+      AND enc_iterations BETWEEN 100000 AND 2000000
+    )
+    OR (
+      NOT is_encrypted
+      AND enc_salt IS NULL
+      AND enc_check IS NULL
+    )
+  ) NOT VALID;
+
+CREATE OR REPLACE FUNCTION public.enforce_note_identity()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF NEW.note_id IS DISTINCT FROM OLD.note_id THEN
+    RAISE EXCEPTION 'note identity is immutable' USING ERRCODE = '22023';
+  END IF;
+  IF OLD.capability_managed AND NOT NEW.capability_managed THEN
+    RAISE EXCEPTION 'capability ownership cannot be removed' USING ERRCODE = '22023';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS notes_immutable_identity ON public.notes;
+CREATE TRIGGER notes_immutable_identity
+  BEFORE UPDATE OF note_id, capability_managed ON public.notes
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_note_identity();
+
+-- During the additive/dual-mode phase, old clients may continue to use only
+-- legacy rows. Capability-managed rows are never visible or writable through
+-- the public notes table. PR5 removes these policies and grants atomically.
+DROP POLICY IF EXISTS "Anyone can read notes" ON public.notes;
+DROP POLICY IF EXISTS "Anyone can create notes" ON public.notes;
+DROP POLICY IF EXISTS "Anyone can update notes" ON public.notes;
+DROP POLICY IF EXISTS "Legacy notes remain readable" ON public.notes;
+DROP POLICY IF EXISTS "Legacy notes remain creatable" ON public.notes;
+DROP POLICY IF EXISTS "Legacy notes remain writable" ON public.notes;
+
+CREATE POLICY "Legacy notes remain readable"
+  ON public.notes FOR SELECT TO anon, authenticated
+  USING (NOT capability_managed);
+
+CREATE POLICY "Legacy notes remain creatable"
+  ON public.notes FOR INSERT TO anon, authenticated
+  WITH CHECK (NOT capability_managed AND sync_status = 'legacy');
+
+CREATE POLICY "Legacy notes remain writable"
+  ON public.notes FOR UPDATE TO anon, authenticated
+  USING (NOT capability_managed)
+  WITH CHECK (NOT capability_managed AND sync_status = 'legacy');
+
+-- Legacy share creation runs with the service role. Keep both the old deployed
+-- bundle and the replacement RPC from ever attaching a slug FK to a secure
+-- note: such a row would otherwise let an unauthenticated caller block owner
+-- rename. The row lock also serializes target deletion/rename with creation.
+CREATE OR REPLACE FUNCTION public.enforce_legacy_share_target()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  PERFORM 1
+  FROM public.notes AS n
+  WHERE n.slug = NEW.slug
+    AND NOT n.capability_managed
+    AND n.sync_status = 'legacy'
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'legacy share target unavailable'
+      USING ERRCODE = '23503';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS note_shares_legacy_targets_only ON public.note_shares;
+CREATE TRIGGER note_shares_legacy_targets_only
+  BEFORE INSERT OR UPDATE OF slug ON public.note_shares
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_legacy_share_target();
+
+CREATE OR REPLACE FUNCTION public.legacy_share_rotate(
+  p_slug text,
+  p_token text
+)
+RETURNS boolean
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  IF p_slug IS NULL OR p_slug !~ '^[a-zA-Z0-9_-]{1,64}$'
+    OR p_token IS NULL OR p_token !~ '^[A-Za-z0-9_-]{16,64}$'
+  THEN
+    RETURN false;
+  END IF;
+
+  INSERT INTO public.notes(slug)
+  VALUES (p_slug)
+  ON CONFLICT (slug) DO NOTHING;
+
+  PERFORM 1
+  FROM public.notes AS n
+  WHERE n.slug = p_slug
+    AND NOT n.capability_managed
+    AND n.sync_status = 'legacy'
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+
+  INSERT INTO public.note_shares(token, slug, created_at)
+  VALUES (p_token, p_slug, statement_timestamp())
+  ON CONFLICT (slug) DO UPDATE
+  SET token = EXCLUDED.token,
+      created_at = EXCLUDED.created_at;
+  RETURN true;
+END;
+$$;
+
+CREATE TABLE public.note_capabilities (
+  capability_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  note_id uuid NOT NULL REFERENCES public.notes(note_id) ON DELETE CASCADE,
+  scope public.note_capability_scope NOT NULL,
+  token_hash text NOT NULL UNIQUE CHECK (token_hash ~ '^[a-f0-9]{64}$'),
+  generation bigint NOT NULL DEFAULT 1 CHECK (generation >= 1),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz,
+  revoked_at timestamptz,
+  UNIQUE (note_id, scope, generation)
+);
+
+CREATE UNIQUE INDEX note_capabilities_one_active_scope
+  ON public.note_capabilities(note_id, scope)
+  WHERE revoked_at IS NULL;
+CREATE INDEX note_capabilities_active_lookup
+  ON public.note_capabilities(token_hash)
+  WHERE revoked_at IS NULL;
+ALTER TABLE public.note_capabilities
+  ADD CONSTRAINT note_capabilities_capability_note_unique
+  UNIQUE (capability_id, note_id);
+
+CREATE TABLE public.note_realtime_memberships (
+  auth_user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  note_id uuid NOT NULL REFERENCES public.notes(note_id) ON DELETE CASCADE,
+  capability_id uuid NOT NULL,
+  expires_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  refreshed_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (auth_user_id, note_id),
+  UNIQUE (auth_user_id),
+  FOREIGN KEY (capability_id, note_id)
+    REFERENCES public.note_capabilities(capability_id, note_id)
+    ON DELETE CASCADE,
+  CHECK (expires_at > refreshed_at),
+  CHECK (expires_at <= refreshed_at + interval '5 minutes')
+);
+
+CREATE INDEX note_realtime_memberships_expiry_idx
+  ON public.note_realtime_memberships(expires_at);
+
+ALTER TABLE public.note_realtime_memberships ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.note_realtime_memberships
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE TABLE public.note_updates (
+  seq bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  note_id uuid NOT NULL REFERENCES public.notes(note_id) ON DELETE CASCADE,
+  update_id text NOT NULL CHECK (update_id ~ '^[a-f0-9]{64}$'),
+  payload bytea NOT NULL CHECK (octet_length(payload) BETWEEN 1 AND 4194304),
+  encryption_version bigint NOT NULL CHECK (encryption_version >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (note_id, update_id)
+);
+
+CREATE INDEX note_updates_note_sequence ON public.note_updates(note_id, seq);
+
+CREATE TABLE public.note_checkpoints (
+  note_id uuid NOT NULL REFERENCES public.notes(note_id) ON DELETE CASCADE,
+  version bigint NOT NULL CHECK (version >= 1),
+  through_seq bigint NOT NULL CHECK (through_seq >= 0),
+  checkpoint_id text NOT NULL CHECK (checkpoint_id ~ '^[a-f0-9]{64}$'),
+  payload bytea NOT NULL CHECK (octet_length(payload) BETWEEN 1 AND 4194304),
+  encryption_version bigint NOT NULL CHECK (encryption_version >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (note_id, version)
+);
+
+CREATE OR REPLACE FUNCTION public.reject_append_only_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $$
+BEGIN
+  -- UPDATE and direct child-row DELETE are forbidden. A database-authorized
+  -- deletion of the parent note may cascade so user/admin deletion actually
+  -- erases the note's opaque history instead of leaving orphaned content.
+  IF TG_OP = 'DELETE' AND pg_trigger_depth() > 1 THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION 'append-only relation cannot be mutated' USING ERRCODE = '55000';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS note_updates_append_only ON public.note_updates;
+CREATE TRIGGER note_updates_append_only
+  BEFORE UPDATE OR DELETE ON public.note_updates
+  FOR EACH ROW EXECUTE FUNCTION public.reject_append_only_mutation();
+
+DROP TRIGGER IF EXISTS note_checkpoints_append_only ON public.note_checkpoints;
+CREATE TRIGGER note_checkpoints_append_only
+  BEFORE UPDATE OR DELETE ON public.note_checkpoints
+  FOR EACH ROW EXECUTE FUNCTION public.reject_append_only_mutation();
+
+ALTER TABLE public.note_capabilities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.note_updates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.note_checkpoints ENABLE ROW LEVEL SECURITY;
+
+REVOKE ALL ON TABLE public.note_capabilities FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.note_updates FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON TABLE public.note_checkpoints FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON SEQUENCE public.note_updates_seq_seq FROM PUBLIC, anon, authenticated;
+
+-- One service-controlled row is the fail-closed write and private-Realtime
+-- control plane. The boolean primary key plus CHECK permits only singleton=true.
+CREATE TABLE public.capability_runtime_settings (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  writes_enabled boolean NOT NULL DEFAULT false,
+  private_realtime_enabled boolean NOT NULL DEFAULT false,
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+INSERT INTO public.capability_runtime_settings(
+  singleton,
+  writes_enabled,
+  private_realtime_enabled
+) VALUES (true, false, false);
+
+ALTER TABLE public.capability_runtime_settings ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.capability_runtime_settings
+  FROM PUBLIC, anon, authenticated, service_role;
+
+CREATE OR REPLACE FUNCTION public.capability_writes_enabled()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT COALESCE((
+    SELECT settings.writes_enabled
+    FROM public.capability_runtime_settings AS settings
+    WHERE settings.singleton
+  ), false);
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_writes_acquire()
+RETURNS boolean
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_writes_enabled boolean;
+BEGIN
+  SELECT settings.writes_enabled
+  INTO v_writes_enabled
+  FROM public.capability_runtime_settings AS settings
+  WHERE settings.singleton
+  FOR SHARE;
+
+  IF NOT FOUND THEN
+    RETURN false;
+  END IF;
+  RETURN v_writes_enabled;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_runtime_state()
+RETURNS jsonb
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT COALESCE(
+    (
+      SELECT jsonb_build_object(
+        'writesEnabled', settings.writes_enabled,
+        'privateRealtimeEnabled', settings.private_realtime_enabled,
+        'updatedAt', settings.updated_at
+      )
+      FROM public.capability_runtime_settings AS settings
+      WHERE settings.singleton
+    ),
+    jsonb_build_object(
+      'writesEnabled', false,
+      'privateRealtimeEnabled', false,
+      'updatedAt', null
+    )
+  );
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_runtime_set(
+  p_writes_enabled boolean,
+  p_private_realtime_enabled boolean
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_result jsonb;
+BEGIN
+  UPDATE public.capability_runtime_settings
+  SET writes_enabled = p_writes_enabled,
+      private_realtime_enabled = p_private_realtime_enabled,
+      updated_at = now()
+  WHERE singleton
+  RETURNING jsonb_build_object(
+    'writesEnabled', writes_enabled,
+    'privateRealtimeEnabled', private_realtime_enabled,
+    'updatedAt', updated_at
+  ) INTO v_result;
+  IF v_result IS NULL THEN
+    RAISE EXCEPTION 'capability runtime row missing';
+  END IF;
+  RETURN v_result;
+END;
+$$;
+
+-- Aggregate abuse admission. subject_hash is either the domain-separated HMAC
+-- of a gateway-verified client address (create) or an existing capability HMAC
+-- (sync). Raw addresses, slugs, tokens, and content never enter this table.
+CREATE TABLE public.capability_admission_windows (
+  operation text NOT NULL CHECK (operation IN ('create', 'sync', 'membership')),
+  bucket_kind text NOT NULL CHECK (bucket_kind IN ('global', 'subject')),
+  subject_hash text NOT NULL CHECK (subject_hash ~ '^[a-f0-9]{64}$'),
+  window_start timestamptz NOT NULL,
+  request_count bigint NOT NULL CHECK (request_count >= 0),
+  byte_count bigint NOT NULL CHECK (byte_count >= 0),
+  updated_at timestamptz NOT NULL DEFAULT statement_timestamp(),
+  PRIMARY KEY (operation, bucket_kind, subject_hash, window_start)
+);
+
+ALTER TABLE public.capability_admission_windows ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.capability_admission_windows FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.capability_admission_consume(
+  p_operation text,
+  p_subject_hash text,
+  p_request_cost bigint DEFAULT 1,
+  p_byte_cost bigint DEFAULT 0
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := statement_timestamp();
+  v_window_seconds integer := 3600;
+  v_window_start timestamptz;
+  v_subject_request_limit bigint;
+  v_subject_byte_limit bigint;
+  v_global_request_limit bigint;
+  v_global_byte_limit bigint;
+  v_subject_requests bigint;
+  v_subject_bytes bigint;
+  v_global_requests bigint;
+  v_global_bytes bigint;
+  v_global_hash text := repeat('0', 64);
+BEGIN
+  IF NOT public.capability_writes_acquire() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
+  IF p_operation NOT IN ('create', 'sync', 'membership')
+    OR p_subject_hash IS NULL OR p_subject_hash !~ '^[a-f0-9]{64}$'
+    OR p_request_cost NOT BETWEEN 1 AND 100
+    OR p_byte_cost NOT BETWEEN 0 AND 4194304
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+
+  IF p_operation = 'membership' THEN
+    v_subject_request_limit := 1000;
+    v_subject_byte_limit := 0;
+    v_global_request_limit := 250000;
+    v_global_byte_limit := 0;
+  ELSIF p_operation = 'create' THEN
+    v_subject_request_limit := 20;
+    v_subject_byte_limit := 67108864;
+    v_global_request_limit := 5000;
+    v_global_byte_limit := 10737418240;
+  ELSE
+    v_subject_request_limit := 5000;
+    v_subject_byte_limit := 268435456;
+    v_global_request_limit := 1000000;
+    v_global_byte_limit := 53687091200;
+  END IF;
+
+  v_window_start := to_timestamp(
+    floor(extract(epoch FROM v_now) / v_window_seconds) * v_window_seconds
+  );
+
+  -- Serialize the two bucket checks for this operation/window. Both counters
+  -- are compared before either is incremented, so concurrent callers cannot
+  -- oversubscribe the global or subject budget.
+  PERFORM pg_advisory_xact_lock(
+    hashtext('snote-capability-admission'),
+    hashtext(p_operation || ':' || v_window_start::text)
+  );
+
+  SELECT COALESCE(request_count, 0), COALESCE(byte_count, 0)
+  INTO v_global_requests, v_global_bytes
+  FROM public.capability_admission_windows
+  WHERE operation = p_operation
+    AND bucket_kind = 'global'
+    AND subject_hash = v_global_hash
+    AND window_start = v_window_start;
+  IF NOT FOUND THEN
+    v_global_requests := 0;
+    v_global_bytes := 0;
+  END IF;
+
+  SELECT COALESCE(request_count, 0), COALESCE(byte_count, 0)
+  INTO v_subject_requests, v_subject_bytes
+  FROM public.capability_admission_windows
+  WHERE operation = p_operation
+    AND bucket_kind = 'subject'
+    AND subject_hash = p_subject_hash
+    AND window_start = v_window_start;
+  IF NOT FOUND THEN
+    v_subject_requests := 0;
+    v_subject_bytes := 0;
+  END IF;
+
+  IF v_global_requests + p_request_cost > v_global_request_limit
+    OR v_subject_requests + p_request_cost > v_subject_request_limit
+    OR (v_global_byte_limit > 0 AND v_global_bytes + p_byte_cost > v_global_byte_limit)
+    OR (v_subject_byte_limit > 0 AND v_subject_bytes + p_byte_cost > v_subject_byte_limit)
+  THEN
+    RETURN jsonb_build_object('status', 'quota_exceeded');
+  END IF;
+
+  INSERT INTO public.capability_admission_windows AS windows (
+    operation, bucket_kind, subject_hash, window_start,
+    request_count, byte_count, updated_at
+  ) VALUES (
+    p_operation, 'global', v_global_hash, v_window_start,
+    p_request_cost, p_byte_cost, v_now
+  )
+  ON CONFLICT (operation, bucket_kind, subject_hash, window_start) DO UPDATE
+  SET request_count = windows.request_count + EXCLUDED.request_count,
+      byte_count = windows.byte_count + EXCLUDED.byte_count,
+      updated_at = EXCLUDED.updated_at;
+
+  INSERT INTO public.capability_admission_windows AS windows (
+    operation, bucket_kind, subject_hash, window_start,
+    request_count, byte_count, updated_at
+  ) VALUES (
+    p_operation, 'subject', p_subject_hash, v_window_start,
+    p_request_cost, p_byte_cost, v_now
+  )
+  ON CONFLICT (operation, bucket_kind, subject_hash, window_start) DO UPDATE
+  SET request_count = windows.request_count + EXCLUDED.request_count,
+      byte_count = windows.byte_count + EXCLUDED.byte_count,
+      updated_at = EXCLUDED.updated_at;
+
+  DELETE FROM public.capability_admission_windows
+  WHERE operation = p_operation
+    AND window_start < v_window_start - interval '48 hours';
+  RETURN jsonb_build_object('status', 'ok');
+END;
+$$;
+
+-- Bind a short-lived anonymous Auth identity to one active capability. The
+-- capability remains the authority; the platform UID is only a Realtime key.
+CREATE OR REPLACE FUNCTION public.capability_realtime_membership_bind(
+  p_token_hash text,
+  p_auth_user_id uuid,
+  p_expires_at timestamptz
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := statement_timestamp();
+  v_private_realtime_enabled boolean;
+  v_admission jsonb;
+  v_capability_id uuid;
+  v_note_id uuid;
+  v_scope public.note_capability_scope;
+  v_expires_at timestamptz;
+  v_existing_note_id uuid;
+  v_existing_capability_id uuid;
+  v_bound_user uuid;
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$'
+    OR p_auth_user_id IS NULL
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+  IF p_expires_at IS NULL OR p_expires_at <= v_now THEN
+    -- Auth expiry can race Edge verification; retain secure polling reads.
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  PERFORM 1
+  FROM auth.users AS auth_user
+  WHERE auth_user.id = p_auth_user_id
+    AND auth_user.is_anonymous IS TRUE
+  FOR SHARE;
+  IF NOT FOUND THEN
+    -- Missing or non-anonymous platform Auth never weakens capability access.
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  SELECT runtime.private_realtime_enabled
+  INTO v_private_realtime_enabled
+  FROM public.capability_runtime_settings AS runtime
+  WHERE runtime.singleton
+  FOR SHARE;
+  IF NOT FOUND OR NOT COALESCE(v_private_realtime_enabled, false) THEN
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  -- The UID-wide lock makes the separate UNIQUE(auth_user_id) authority rule
+  -- deterministic under concurrent first binds and refreshes.
+  PERFORM pg_advisory_xact_lock(
+    hashtext('snote-realtime-membership'),
+    hashtext(p_auth_user_id::text)
+  );
+
+  v_admission := public.capability_admission_consume(
+    'membership',
+    p_token_hash,
+    1,
+    0
+  );
+  IF v_admission ->> 'status' IN (
+    'writes_disabled',
+    'quota_exceeded'
+  ) THEN
+    -- The write kill switch must not turn a readable capability into a 503.
+    -- Transport pressure also degrades to the same secure polling path.
+    RETURN jsonb_build_object('status', 'polling');
+  ELSIF v_admission ->> 'status' <> 'ok' THEN
+    RETURN v_admission;
+  END IF;
+
+  -- Discover the immutable locator without a lock, then lock in the same
+  -- runtime -> note -> capability order used by management operations.
+  SELECT capability.note_id
+  INTO v_note_id
+  FROM public.note_capabilities AS capability
+  WHERE capability.token_hash = p_token_hash
+    AND capability.revoked_at IS NULL;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  PERFORM 1
+  FROM public.notes AS note
+  WHERE note.note_id = v_note_id
+    AND note.capability_managed
+    AND note.deleted_at IS NULL
+    AND note.sync_status <> 'deleted'
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  SELECT capability.capability_id, capability.scope
+  INTO v_capability_id, v_scope
+  FROM public.note_capabilities AS capability
+  WHERE capability.note_id = v_note_id
+    AND capability.token_hash = p_token_hash
+    AND capability.revoked_at IS NULL
+  FOR SHARE;
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  SELECT membership.note_id, membership.capability_id
+  INTO v_existing_note_id, v_existing_capability_id
+  FROM public.note_realtime_memberships AS membership
+  WHERE membership.auth_user_id = p_auth_user_id
+  FOR UPDATE;
+  IF FOUND AND (
+    v_existing_note_id IS DISTINCT FROM v_note_id
+    OR v_existing_capability_id IS DISTINCT FROM v_capability_id
+  ) THEN
+    RETURN jsonb_build_object('status', 'identity_conflict');
+  END IF;
+
+  -- Re-read the clock after waiting on the runtime/note/capability locks so a
+  -- request that expires while blocked cannot publish an already-expired row.
+  v_now := statement_timestamp();
+  IF p_expires_at <= v_now THEN
+    RETURN jsonb_build_object('status', 'polling');
+  END IF;
+
+  v_expires_at := LEAST(p_expires_at, v_now + interval '5 minutes');
+  INSERT INTO public.note_realtime_memberships AS existing (
+    auth_user_id,
+    note_id,
+    capability_id,
+    expires_at,
+    created_at,
+    refreshed_at
+  ) VALUES (
+    p_auth_user_id,
+    v_note_id,
+    v_capability_id,
+    v_expires_at,
+    v_now,
+    v_now
+  )
+  ON CONFLICT (auth_user_id, note_id) DO UPDATE
+  SET expires_at = EXCLUDED.expires_at,
+      refreshed_at = EXCLUDED.refreshed_at
+  WHERE existing.capability_id = EXCLUDED.capability_id
+  RETURNING auth_user_id INTO v_bound_user;
+
+  IF v_bound_user IS NULL THEN
+    RETURN jsonb_build_object('status', 'identity_conflict');
+  END IF;
+
+  RETURN jsonb_build_object(
+    'status', 'ok',
+    'noteId', v_note_id,
+    'capabilityId', v_capability_id,
+    'scope', v_scope,
+    'expiresAt', v_expires_at
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_realtime_memberships_prune()
+RETURNS integer
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_deleted integer;
+BEGIN
+  DELETE FROM public.note_realtime_memberships AS membership
+  WHERE membership.expires_at <= statement_timestamp();
+  GET DIAGNOSTICS v_deleted = ROW_COUNT;
+  RETURN v_deleted;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_realtime_cleanup_candidates(
+  p_auth_user_ids uuid[]
+)
+RETURNS uuid[]
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_now timestamptz := statement_timestamp();
+  v_candidates uuid[];
+BEGIN
+  IF p_auth_user_ids IS NULL OR cardinality(p_auth_user_ids) > 500 THEN
+    RAISE EXCEPTION 'auth user candidate list must contain at most 500 IDs'
+      USING ERRCODE = '22023';
+  END IF;
+
+  SELECT COALESCE(
+    array_agg(candidate.id ORDER BY candidate.id),
+    ARRAY[]::uuid[]
+  )
+  INTO v_candidates
+  FROM (
+    SELECT DISTINCT auth_user.id
+    FROM auth.users AS auth_user
+    WHERE auth_user.id = ANY(p_auth_user_ids)
+      AND auth_user.is_anonymous IS TRUE
+      AND auth_user.created_at <= v_now - interval '30 days'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.note_realtime_memberships AS membership
+        WHERE membership.auth_user_id = auth_user.id
+          AND membership.expires_at > v_now
+      )
+  ) AS candidate;
+
+  RETURN v_candidates;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_note_create(
+  p_slug text,
+  p_owner_token_hash text,
+  p_edit_token_hash text,
+  p_view_token_hash text
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_note_id uuid;
+  v_recovered boolean := false;
+  v_result jsonb;
+BEGIN
+  IF NOT public.capability_writes_acquire() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
+  IF p_slug IS NULL OR p_slug !~ '^[a-zA-Z0-9_-]{1,64}$'
+    OR p_owner_token_hash IS NULL OR p_owner_token_hash !~ '^[a-f0-9]{64}$'
+    OR p_edit_token_hash IS NULL OR p_edit_token_hash !~ '^[a-f0-9]{64}$'
+    OR p_view_token_hash IS NULL OR p_view_token_hash !~ '^[a-f0-9]{64}$'
+    OR p_owner_token_hash IN (p_edit_token_hash, p_view_token_hash)
+    OR p_edit_token_hash = p_view_token_hash
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+
+  BEGIN
+    INSERT INTO public.notes (
+      slug,
+      capability_managed,
+      sync_status,
+      content,
+      ydoc_state,
+      is_encrypted,
+      enc_salt,
+      enc_check,
+      encryption_version
+    ) VALUES (
+      p_slug,
+      true,
+      'active',
+      '',
+      '',
+      false,
+      NULL,
+      NULL,
+      0
+    )
+    RETURNING note_id INTO v_note_id;
+  EXCEPTION WHEN unique_violation THEN
+    SELECT n.note_id INTO v_note_id
+    FROM public.notes AS n
+    JOIN public.note_capabilities AS owner_capability
+      ON owner_capability.note_id = n.note_id
+      AND owner_capability.scope = 'owner'
+      AND owner_capability.token_hash = p_owner_token_hash
+      AND owner_capability.revoked_at IS NULL
+    WHERE n.slug = p_slug
+      AND n.capability_managed
+      AND n.deleted_at IS NULL
+      AND n.sync_status <> 'deleted';
+    IF NOT FOUND THEN
+      RETURN jsonb_build_object('status', 'slug_unavailable');
+    END IF;
+    v_recovered := true;
+  END;
+
+  IF NOT v_recovered THEN
+    INSERT INTO public.note_capabilities(note_id, scope, token_hash)
+    VALUES
+      (v_note_id, 'owner', p_owner_token_hash),
+      (v_note_id, 'edit', p_edit_token_hash),
+      (v_note_id, 'view', p_view_token_hash);
+  END IF;
+
+  -- Opening inside the same RPC means an internal failure rolls creation back;
+  -- the Edge layer never commits a note before it can return the raw owner key.
+  SELECT public.capability_session_open(p_owner_token_hash, 0, 200)
+  INTO v_result;
+  IF v_result ->> 'status' <> 'ok' THEN
+    RAISE EXCEPTION 'capability note creation unavailable';
+  END IF;
+  RETURN v_result || jsonb_build_object(
+    'noteId', v_note_id,
+    'recovered', v_recovered
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_session_open(
+  p_token_hash text,
+  p_after_seq bigint DEFAULT 0,
+  p_limit integer DEFAULT 200
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_capability_id uuid;
+  v_session jsonb;
+BEGIN
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$'
+    OR p_after_seq < 0
+    OR p_limit NOT BETWEEN 1 AND 500
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+
+  -- One SQL statement gives metadata, checkpoint, sequence, and updates the
+  -- same READ COMMITTED statement snapshot. It cannot mix plaintext metadata
+  -- with a newly committed ciphertext checkpoint (or mismatched update bounds).
+  WITH capability AS MATERIALIZED (
+    SELECT
+      c.capability_id,
+      c.note_id,
+      c.scope,
+      c.generation,
+      n.slug,
+      n.sync_status,
+      n.is_encrypted,
+      n.enc_salt,
+      n.enc_check,
+      n.enc_iterations,
+      n.encryption_version,
+      n.payload_limit_bytes
+    FROM public.note_capabilities AS c
+    JOIN public.notes AS n ON n.note_id = c.note_id
+    WHERE c.token_hash = p_token_hash
+      AND c.revoked_at IS NULL
+      AND n.capability_managed
+      AND n.deleted_at IS NULL
+      AND n.sync_status <> 'deleted'
+  )
+  SELECT
+    c.capability_id,
+    jsonb_build_object(
+      'capabilityId', c.capability_id,
+      'noteId', c.note_id,
+      'slug', c.slug,
+      'scope', c.scope,
+      'generation', c.generation,
+      'syncStatus', c.sync_status,
+      'currentSequence', (
+        SELECT COALESCE(MAX(u.seq), 0)
+        FROM public.note_updates AS u
+        WHERE u.note_id = c.note_id
+      ),
+      'payloadLimitBytes', c.payload_limit_bytes,
+      'checkpointSequence', COALESCE(cp.through_seq, 0),
+      'checkpointVersion', cp.version,
+      'checkpointPayload', cp.payload,
+      'checkpointEncryptionVersion', cp.encryption_version,
+      'missingUpdates', (
+        SELECT COALESCE(jsonb_agg(
+          jsonb_build_object(
+            'updateId', selected.update_id,
+            'payload', selected.payload,
+            'sequence', selected.seq,
+            'encryptionVersion', selected.encryption_version
+          ) ORDER BY selected.seq
+        ), '[]'::jsonb)
+        FROM (
+          SELECT
+            u.update_id,
+            replace(replace(encode(u.payload, 'base64'), E'\n', ''), E'\r', '') AS payload,
+            u.seq,
+            u.encryption_version
+          FROM public.note_updates AS u
+          WHERE u.note_id = c.note_id
+            AND u.seq > GREATEST(p_after_seq, COALESCE(cp.through_seq, 0))
+          ORDER BY u.seq
+          LIMIT p_limit
+        ) AS selected
+      ),
+      'encryption', jsonb_build_object(
+        'enabled', c.is_encrypted,
+        'version', c.encryption_version,
+        'salt', c.enc_salt,
+        'check', c.enc_check,
+        'iterations', c.enc_iterations
+      )
+    )
+  INTO v_capability_id, v_session
+  FROM capability AS c
+  LEFT JOIN LATERAL (
+    SELECT
+      checkpoint.version,
+      checkpoint.through_seq,
+      replace(replace(encode(checkpoint.payload, 'base64'), E'\n', ''), E'\r', '') AS payload,
+      checkpoint.encryption_version
+    FROM public.note_checkpoints AS checkpoint
+    WHERE checkpoint.note_id = c.note_id
+    ORDER BY checkpoint.version DESC
+    LIMIT 1
+  ) AS cp ON true;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  UPDATE public.note_capabilities
+  SET last_used_at = now()
+  WHERE capability_id = v_capability_id;
+
+  RETURN jsonb_build_object(
+    'status', 'ok',
+    'session', v_session
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_updates_append(
+  p_token_hash text,
+  p_updates jsonb,
+  p_expected_encryption_version bigint
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_note record;
+  v_item jsonb;
+  v_update_id text;
+  v_payload_text text;
+  v_standard text;
+  v_payload bytea;
+  v_total_bytes bigint := 0;
+  v_new_bytes bigint := 0;
+  v_existing_bytes bigint := 0;
+  v_existing_updates bigint := 0;
+  v_new_updates integer := 0;
+  v_seen_update_ids text[] := ARRAY[]::text[];
+  v_sequence bigint;
+  v_acknowledgements jsonb := '[]'::jsonb;
+BEGIN
+  IF NOT public.capability_writes_acquire() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$'
+    OR jsonb_typeof(p_updates) <> 'array'
+    OR jsonb_array_length(p_updates) > 100
+    OR p_expected_encryption_version < 0
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+
+  SELECT
+    n.note_id,
+    n.sync_status,
+    n.encryption_version,
+    n.payload_limit_bytes,
+    n.storage_limit_bytes,
+    n.update_limit_count
+  INTO v_note
+  FROM public.note_capabilities AS c
+  JOIN public.notes AS n ON n.note_id = c.note_id
+  WHERE c.token_hash = p_token_hash
+    AND c.revoked_at IS NULL
+    AND c.scope IN ('owner', 'edit')
+    AND n.capability_managed
+    AND n.deleted_at IS NULL
+  FOR UPDATE OF n;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+  IF v_note.sync_status <> 'active' THEN
+    RETURN jsonb_build_object('status', 'read_only');
+  END IF;
+  IF v_note.encryption_version <> p_expected_encryption_version THEN
+    RETURN jsonb_build_object('status', 'version_conflict');
+  END IF;
+
+  -- Validate the complete batch before the first append. Returning an error
+  -- after inserting an earlier item would otherwise commit a partial batch.
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_updates)
+  LOOP
+    v_update_id := v_item ->> 'updateId';
+    v_payload_text := v_item ->> 'payload';
+    IF v_update_id !~ '^[a-f0-9]{64}$'
+      OR v_payload_text IS NULL
+      OR v_payload_text !~ '^[A-Za-z0-9_-]+$'
+      OR length(v_payload_text) % 4 = 1
+      OR length(v_payload_text) > ((v_note.payload_limit_bytes + 2) / 3) * 4
+    THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+
+    BEGIN
+      v_standard := translate(v_payload_text, '-_', '+/');
+      v_payload := decode(
+        v_standard || repeat('=', (4 - length(v_standard) % 4) % 4),
+        'base64'
+      );
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END;
+
+    IF octet_length(v_payload) NOT BETWEEN 1 AND v_note.payload_limit_bytes
+      OR translate(
+        rtrim(replace(replace(encode(v_payload, 'base64'), E'\n', ''), E'\r', ''), '='),
+        '+/',
+        '-_'
+      ) <> v_payload_text
+      OR encode(extensions.digest(v_payload, 'sha256'), 'hex') <> v_update_id
+    THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+
+    v_total_bytes := v_total_bytes + octet_length(v_payload);
+    IF v_total_bytes > 4194304 THEN
+      RETURN jsonb_build_object('status', 'payload_too_large');
+    END IF;
+
+    IF NOT v_update_id = ANY(v_seen_update_ids)
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.note_updates
+        WHERE note_id = v_note.note_id AND update_id = v_update_id
+      )
+    THEN
+      v_seen_update_ids := array_append(v_seen_update_ids, v_update_id);
+      v_new_updates := v_new_updates + 1;
+      v_new_bytes := v_new_bytes + octet_length(v_payload);
+    END IF;
+  END LOOP;
+
+  SELECT
+    (SELECT count(*) FROM public.note_updates WHERE note_id = v_note.note_id),
+    (SELECT
+      COALESCE((SELECT sum(octet_length(payload)) FROM public.note_updates WHERE note_id = v_note.note_id), 0)
+      + COALESCE((SELECT sum(octet_length(payload)) FROM public.note_checkpoints WHERE note_id = v_note.note_id), 0)
+    )
+  INTO v_existing_updates, v_existing_bytes;
+
+  IF v_existing_updates + v_new_updates > v_note.update_limit_count
+    OR v_existing_bytes + v_new_bytes > v_note.storage_limit_bytes
+  THEN
+    UPDATE public.notes
+    SET sync_status = 'read_only_quarantine'
+    WHERE note_id = v_note.note_id;
+    RETURN jsonb_build_object('status', 'quota_exceeded');
+  END IF;
+
+  FOR v_item IN SELECT value FROM jsonb_array_elements(p_updates)
+  LOOP
+    v_update_id := v_item ->> 'updateId';
+    v_payload_text := v_item ->> 'payload';
+    v_standard := translate(v_payload_text, '-_', '+/');
+    v_payload := decode(
+      v_standard || repeat('=', (4 - length(v_standard) % 4) % 4),
+      'base64'
+    );
+    INSERT INTO public.note_updates(note_id, update_id, payload, encryption_version)
+    VALUES (v_note.note_id, v_update_id, v_payload, v_note.encryption_version)
+    ON CONFLICT (note_id, update_id) DO NOTHING
+    RETURNING seq INTO v_sequence;
+
+    IF v_sequence IS NULL THEN
+      SELECT seq INTO v_sequence
+      FROM public.note_updates
+      WHERE note_id = v_note.note_id AND update_id = v_update_id;
+    END IF;
+
+    v_acknowledgements := v_acknowledgements || jsonb_build_array(
+      jsonb_build_object('updateId', v_update_id, 'sequence', v_sequence)
+    );
+    v_sequence := NULL;
+  END LOOP;
+
+  RETURN jsonb_build_object(
+    'status', 'ok',
+    'acknowledgements', v_acknowledgements
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_note_manage(
+  p_token_hash text,
+  p_action text,
+  p_params jsonb DEFAULT '{}'::jsonb
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_note record;
+  v_slug text;
+  v_scope public.note_capability_scope;
+  v_new_hash text;
+  v_generation bigint;
+  v_target_encrypted boolean;
+  v_expected_version bigint;
+  v_checkpoint jsonb;
+  v_checkpoint_id text;
+  v_payload_text text;
+  v_standard text;
+  v_payload bytea;
+  v_through_seq bigint;
+  v_current_seq bigint;
+  v_checkpoint_version bigint;
+  v_salt text;
+  v_check text;
+  v_iterations integer;
+BEGIN
+  IF NOT public.capability_writes_acquire() THEN
+    RETURN jsonb_build_object('status', 'writes_disabled');
+  END IF;
+
+  IF p_token_hash IS NULL OR p_token_hash !~ '^[a-f0-9]{64}$'
+    OR p_action IS NULL
+    OR p_params IS NULL
+    OR jsonb_typeof(p_params) <> 'object'
+  THEN
+    RETURN jsonb_build_object('status', 'invalid');
+  END IF;
+
+  SELECT
+    n.note_id,
+    n.slug,
+    n.sync_status,
+    n.encryption_version,
+    n.is_encrypted,
+    n.enc_salt,
+    n.enc_check,
+    n.enc_iterations,
+    n.payload_limit_bytes,
+    n.storage_limit_bytes,
+    n.checkpoint_limit_count
+  INTO v_note
+  FROM public.note_capabilities AS c
+  JOIN public.notes AS n ON n.note_id = c.note_id
+  WHERE c.token_hash = p_token_hash
+    AND c.revoked_at IS NULL
+    AND c.scope = 'owner'
+    AND n.capability_managed
+    AND n.deleted_at IS NULL
+    AND n.sync_status <> 'deleted'
+  FOR UPDATE OF n;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('status', 'unauthorized');
+  END IF;
+
+  IF p_action = 'rename' THEN
+    v_slug := btrim(p_params ->> 'slug');
+    IF v_slug !~ '^[a-zA-Z0-9_-]{1,64}$' THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    BEGIN
+      UPDATE public.notes SET slug = v_slug WHERE note_id = v_note.note_id;
+    EXCEPTION WHEN unique_violation THEN
+      RETURN jsonb_build_object('status', 'slug_unavailable');
+    END;
+    RETURN jsonb_build_object('status', 'ok', 'slug', v_slug);
+  END IF;
+
+  IF p_action = 'delete' THEN
+    DELETE FROM public.notes WHERE note_id = v_note.note_id;
+    RETURN jsonb_build_object('status', 'ok');
+  END IF;
+
+  IF p_action = 'rotate' THEN
+    BEGIN
+      v_scope := (p_params ->> 'scope')::public.note_capability_scope;
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END;
+    v_new_hash := p_params ->> 'tokenHash';
+    IF v_scope NOT IN ('edit', 'view') OR v_new_hash !~ '^[a-f0-9]{64}$' THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    SELECT COALESCE(MAX(generation), 0) + 1 INTO v_generation
+    FROM public.note_capabilities
+    WHERE note_id = v_note.note_id AND scope = v_scope;
+    UPDATE public.note_capabilities
+    SET revoked_at = COALESCE(revoked_at, now())
+    WHERE note_id = v_note.note_id AND scope = v_scope AND revoked_at IS NULL;
+    DELETE FROM public.note_realtime_memberships AS membership
+    USING public.note_capabilities AS capability
+    WHERE membership.capability_id = capability.capability_id
+      AND membership.note_id = capability.note_id
+      AND capability.note_id = v_note.note_id
+      AND capability.scope = v_scope
+      AND capability.revoked_at IS NOT NULL;
+    INSERT INTO public.note_capabilities(note_id, scope, token_hash, generation)
+    VALUES (v_note.note_id, v_scope, v_new_hash, v_generation);
+    RETURN jsonb_build_object('status', 'ok', 'scope', v_scope, 'generation', v_generation);
+  END IF;
+
+  IF p_action = 'set-encryption' THEN
+    IF v_note.sync_status <> 'active' THEN
+      RETURN jsonb_build_object('status', 'read_only');
+    END IF;
+    v_target_encrypted := (p_params ->> 'isEncrypted')::boolean;
+    v_expected_version := (p_params ->> 'expectedEncryptionVersion')::bigint;
+    v_checkpoint := p_params -> 'checkpoint';
+    IF v_target_encrypted IS NULL
+      OR v_expected_version IS NULL
+      OR v_expected_version < 0
+      OR jsonb_typeof(v_checkpoint) <> 'object'
+    THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+
+    v_checkpoint_id := v_checkpoint ->> 'checkpointId';
+    v_payload_text := v_checkpoint ->> 'payload';
+    v_through_seq := (v_checkpoint ->> 'throughSequence')::bigint;
+    SELECT COALESCE(MAX(seq), 0) INTO v_current_seq
+    FROM public.note_updates WHERE note_id = v_note.note_id;
+    IF v_checkpoint_id IS NULL
+      OR v_payload_text IS NULL
+      OR v_through_seq IS NULL
+      OR v_checkpoint_id !~ '^[a-f0-9]{64}$'
+      OR v_payload_text !~ '^[A-Za-z0-9_-]+$'
+      OR v_through_seq <> v_current_seq
+    THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+
+    BEGIN
+      v_standard := translate(v_payload_text, '-_', '+/');
+      v_payload := decode(v_standard || repeat('=', (4 - length(v_standard) % 4) % 4), 'base64');
+    EXCEPTION WHEN OTHERS THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END;
+    IF octet_length(v_payload) NOT BETWEEN 1 AND v_note.payload_limit_bytes
+      OR translate(
+        rtrim(replace(replace(encode(v_payload, 'base64'), E'\n', ''), E'\r', ''), '='),
+        '+/',
+        '-_'
+      ) <> v_payload_text
+      OR encode(extensions.digest(v_payload, 'sha256'), 'hex') <> v_checkpoint_id
+    THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+
+    v_salt := NULLIF(p_params ->> 'salt', '');
+    v_check := NULLIF(p_params ->> 'check', '');
+    v_iterations := COALESCE((p_params ->> 'iterations')::integer, 100000);
+    IF v_target_encrypted AND (
+      v_salt IS NULL
+      OR v_check IS NULL
+      OR length(v_salt) NOT BETWEEN 16 AND 512
+      OR length(v_check) NOT BETWEEN 16 AND 2048
+      OR v_iterations NOT BETWEEN 100000 AND 2000000
+    ) THEN
+      RETURN jsonb_build_object('status', 'invalid');
+    END IF;
+    IF NOT v_target_encrypted THEN
+      v_salt := NULL;
+      v_check := NULL;
+    END IF;
+
+    IF v_expected_version IS DISTINCT FROM v_note.encryption_version THEN
+      SELECT version INTO v_checkpoint_version
+      FROM public.note_checkpoints
+      WHERE note_id = v_note.note_id
+        AND through_seq = v_through_seq
+        AND checkpoint_id = v_checkpoint_id
+        AND payload = v_payload
+        AND encryption_version = v_expected_version + 1
+      ORDER BY version DESC
+      LIMIT 1;
+      IF v_note.encryption_version = v_expected_version + 1
+        AND v_note.is_encrypted = v_target_encrypted
+        AND v_note.enc_salt IS NOT DISTINCT FROM v_salt
+        AND v_note.enc_check IS NOT DISTINCT FROM v_check
+        AND (
+          NOT v_target_encrypted
+          OR v_note.enc_iterations = v_iterations
+        )
+        AND v_checkpoint_version IS NOT NULL
+      THEN
+        RETURN jsonb_build_object(
+          'status', 'ok',
+          'encryptionVersion', v_note.encryption_version,
+          'checkpointVersion', v_checkpoint_version,
+          'recovered', true
+        );
+      END IF;
+      RETURN jsonb_build_object('status', 'version_conflict');
+    END IF;
+
+    IF (
+      SELECT count(*) >= v_note.checkpoint_limit_count
+      FROM public.note_checkpoints
+      WHERE note_id = v_note.note_id
+    ) OR (
+      SELECT
+        COALESCE((SELECT sum(octet_length(payload)) FROM public.note_updates
+          WHERE note_id = v_note.note_id), 0)
+        + COALESCE((SELECT sum(octet_length(payload)) FROM public.note_checkpoints
+          WHERE note_id = v_note.note_id), 0)
+        + octet_length(v_payload) > v_note.storage_limit_bytes
+    ) THEN
+      UPDATE public.notes
+      SET sync_status = 'read_only_quarantine'
+      WHERE note_id = v_note.note_id;
+      RETURN jsonb_build_object('status', 'quota_exceeded');
+    END IF;
+
+    SELECT COALESCE(MAX(version), 0) + 1 INTO v_checkpoint_version
+    FROM public.note_checkpoints WHERE note_id = v_note.note_id;
+    INSERT INTO public.note_checkpoints(
+      note_id, version, through_seq, checkpoint_id, payload, encryption_version
+    ) VALUES (
+      v_note.note_id,
+      v_checkpoint_version,
+      v_through_seq,
+      v_checkpoint_id,
+      v_payload,
+      v_note.encryption_version + 1
+    );
+    UPDATE public.notes
+    SET
+      is_encrypted = v_target_encrypted,
+      enc_salt = v_salt,
+      enc_check = v_check,
+      enc_iterations = v_iterations,
+      encryption_version = encryption_version + 1
+    WHERE note_id = v_note.note_id;
+    RETURN jsonb_build_object(
+      'status', 'ok',
+      'encryptionVersion', v_note.encryption_version + 1,
+      'checkpointVersion', v_checkpoint_version
+    );
+  END IF;
+
+  RETURN jsonb_build_object('status', 'invalid');
+EXCEPTION WHEN invalid_text_representation OR numeric_value_out_of_range THEN
+  RETURN jsonb_build_object('status', 'invalid');
+END;
+$$;
+
+-- Aggregate-only sizing: no slug, content, token, or IP is returned. Staging
+-- must run this before choosing a production payload limit. Oversized rows are
+-- quarantined by the companion function instead of being truncated.
+CREATE OR REPLACE FUNCTION public.capability_payload_audit(
+  p_soft_limit integer DEFAULT 1048576
+)
+RETURNS TABLE (
+  total_notes bigint,
+  notes_above_limit bigint,
+  max_legacy_snapshot_bytes bigint,
+  max_update_bytes bigint,
+  max_checkpoint_bytes bigint
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT
+    (SELECT count(*) FROM public.notes)::bigint,
+    (SELECT count(*) FROM public.notes
+      WHERE GREATEST(octet_length(ydoc_state), octet_length(content)) > p_soft_limit)::bigint,
+    (SELECT COALESCE(MAX(GREATEST(octet_length(ydoc_state), octet_length(content))), 0)
+      FROM public.notes)::bigint,
+    (SELECT COALESCE(MAX(octet_length(payload)), 0) FROM public.note_updates)::bigint,
+    (SELECT COALESCE(MAX(octet_length(payload)), 0) FROM public.note_checkpoints)::bigint;
+$$;
+
+CREATE OR REPLACE FUNCTION public.capability_quarantine_oversized()
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+DECLARE
+  v_count bigint;
+BEGIN
+  WITH quarantined AS (
+    UPDATE public.notes AS n
+    SET sync_status = 'read_only_quarantine'
+    WHERE n.capability_managed
+      AND n.sync_status = 'active'
+      AND (
+        EXISTS (
+          SELECT 1 FROM public.note_updates AS u
+          WHERE u.note_id = n.note_id AND octet_length(u.payload) > n.payload_limit_bytes
+        )
+        OR EXISTS (
+          SELECT 1 FROM public.note_checkpoints AS c
+          WHERE c.note_id = n.note_id AND octet_length(c.payload) > n.payload_limit_bytes
+        )
+        OR (SELECT count(*) FROM public.note_updates AS u WHERE u.note_id = n.note_id)
+          > n.update_limit_count
+        OR (SELECT count(*) FROM public.note_checkpoints AS c WHERE c.note_id = n.note_id)
+          > n.checkpoint_limit_count
+        OR (
+          COALESCE((SELECT sum(octet_length(u.payload)) FROM public.note_updates AS u
+            WHERE u.note_id = n.note_id), 0)
+          + COALESCE((SELECT sum(octet_length(c.payload)) FROM public.note_checkpoints AS c
+            WHERE c.note_id = n.note_id), 0)
+        ) > n.storage_limit_bytes
+      )
+    RETURNING 1
+  ) SELECT count(*) INTO v_count FROM quarantined;
+  RETURN v_count;
+END;
+$$;
+
+-- Realtime policies call this narrow SECURITY DEFINER predicate because the
+-- capability table itself remains deny-all to authenticated clients.
+DROP POLICY IF EXISTS "Snote capabilities can receive private messages" ON realtime.messages;
+DROP POLICY IF EXISTS "Snote editors can send private messages" ON realtime.messages;
+DROP FUNCTION IF EXISTS public.realtime_capability_allows(uuid, uuid, bigint, text, boolean);
+
+CREATE OR REPLACE FUNCTION public.realtime_capability_allows(
+  p_auth_user_id uuid,
+  p_topic text,
+  p_write boolean
+)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.note_realtime_memberships AS membership
+    JOIN public.note_capabilities AS capability
+      ON capability.capability_id = membership.capability_id
+     AND capability.note_id = membership.note_id
+    JOIN public.notes AS note ON note.note_id = membership.note_id
+    JOIN public.capability_runtime_settings AS runtime ON runtime.singleton
+    WHERE membership.auth_user_id = p_auth_user_id
+      AND membership.expires_at > now()
+      AND p_topic = 'note:' || membership.note_id::text
+      AND capability.revoked_at IS NULL
+      AND note.capability_managed
+      AND note.deleted_at IS NULL
+      AND note.sync_status <> 'deleted'
+      AND runtime.private_realtime_enabled
+      AND (
+        NOT p_write
+        OR (
+          capability.scope IN ('owner', 'edit')
+          AND note.sync_status = 'active'
+          AND runtime.writes_enabled
+        )
+      )
+  );
+$$;
+
+CREATE POLICY "Snote capabilities can receive private messages"
+ON realtime.messages
+FOR SELECT TO authenticated
+USING (
+  extension IN ('broadcast', 'presence')
+  AND public.realtime_capability_allows(
+    (SELECT auth.uid()),
+    (SELECT realtime.topic()),
+    false
+  )
+);
+
+CREATE POLICY "Snote editors can send private messages"
+ON realtime.messages
+FOR INSERT TO authenticated
+WITH CHECK (
+  extension IN ('broadcast', 'presence')
+  AND public.realtime_capability_allows(
+    (SELECT auth.uid()),
+    (SELECT realtime.topic()),
+    true
+  )
+);
+
+REVOKE ALL ON FUNCTION public.enforce_note_identity() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.enforce_legacy_share_target() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.legacy_share_rotate(text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.reject_append_only_mutation() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_writes_enabled()
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_writes_acquire()
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_runtime_state()
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_runtime_set(boolean, boolean)
+  FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_realtime_membership_bind(text, uuid, timestamptz) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_realtime_memberships_prune() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_realtime_cleanup_candidates(uuid[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_note_create(text, text, text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_session_open(text, bigint, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_updates_append(text, jsonb, bigint) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_note_manage(text, text, jsonb) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_payload_audit(integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.capability_quarantine_oversized() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.realtime_capability_allows(uuid, text, boolean) FROM PUBLIC, anon, authenticated;
+
+GRANT EXECUTE ON FUNCTION public.capability_note_create(text, text, text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_runtime_state() TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_runtime_set(boolean, boolean)
+  TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_admission_consume(text, text, bigint, bigint) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_realtime_membership_bind(text, uuid, timestamptz) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_realtime_memberships_prune() TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_realtime_cleanup_candidates(uuid[]) TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.capability_admission_windows TO service_role;
+GRANT EXECUTE ON FUNCTION public.legacy_share_rotate(text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_session_open(text, bigint, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_updates_append(text, jsonb, bigint) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_note_manage(text, text, jsonb) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_payload_audit(integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.capability_quarantine_oversized() TO service_role;
+GRANT EXECUTE ON FUNCTION public.realtime_capability_allows(uuid, text, boolean) TO authenticated;
+
+COMMIT;

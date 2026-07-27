@@ -7,7 +7,7 @@
 //     horizontal overflow. Row 1 (44 px) keeps brand + theme + the preview
 //     toggle pinned to the right so it is ALWAYS visible. Row 2 (36 px)
 //     holds the per-note icons and the four dropdown menus.
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import * as Y from "yjs";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -21,7 +21,7 @@ import { LockButton } from "../LockButton";
 import { PinButton } from "../PinButton";
 import { WordGoalDialog } from "../WordGoalDialog";
 import { ShareDialog } from "../ShareDialog";
-import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
+import type { Encryption, YjsProviderLike } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 import { TopbarBrand } from "./TopbarBrand";
 import { WordCountTrigger } from "./WordCountTrigger";
@@ -33,12 +33,13 @@ import { HelpMenu } from "./HelpMenu";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useI18n } from "@/i18n";
+import type { CapabilityAccess } from "@/lib/capability/url";
 
 
 interface TopbarProps {
   slug: string;
   doc: Y.Doc;
-  provider?: SupabaseYjsProvider | null;
+  provider?: YjsProviderLike | null;
   charCount: number;
   wordCount: number;
   users: PresenceUser[];
@@ -54,12 +55,19 @@ interface TopbarProps {
   onToggleFocusLine: () => void;
   getContent: () => string;
   isEncrypted: boolean;
+  encryption?: Encryption | null;
+  capabilityAccess?: CapabilityAccess | null;
   paginated: boolean;
   onTogglePagination: () => void;
   /** Compact mode for SplitView panels: hides app-wide menus (Mode, Help, theme)
    *  that would be redundant when two topbars are on screen. Keeps per-note
    *  icons + Note + Export. */
   compact?: boolean;
+  /** Override viewport detection with the measured width of an embed pane. */
+  narrowOverride?: boolean;
+  outlineOpen?: boolean;
+  onToggleOutline?: () => void;
+  outlineTriggerRef?: RefObject<HTMLButtonElement>;
 }
 
 export function Topbar({
@@ -81,14 +89,21 @@ export function Topbar({
   onToggleFocusLine,
   getContent,
   isEncrypted,
+  encryption = null,
+  capabilityAccess = null,
   paginated,
   onTogglePagination,
   compact = false,
+  narrowOverride,
+  outlineOpen,
+  onToggleOutline,
+  outlineTriggerRef,
 }: TopbarProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const narrow = useNarrowViewport();
+  const viewportNarrow = useNarrowViewport();
+  const narrow = narrowOverride ?? viewportNarrow;
   const isMobile = useIsMobile();
   const showSceneToggle = !compact && !isMobile;
   const { t } = useI18n();
@@ -150,6 +165,9 @@ export function Topbar({
               getContent={getContent}
               hideHome={compact}
               onOpenHistory={() => setHistoryOpen(true)}
+              outlineOpen={outlineOpen}
+              onToggleOutline={onToggleOutline}
+              outlineTriggerRef={outlineTriggerRef}
             />
 
             <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -164,6 +182,7 @@ export function Topbar({
                 onTogglePreview={onTogglePreview}
                 scrollSync={scrollSync}
                 onToggleScrollSync={onToggleScrollSync}
+                narrowOverride={narrow}
               />
             </div>
           </div>
@@ -178,8 +197,17 @@ export function Topbar({
             />
             <PresenceDots users={users} />
             <PinButton slug={slug} />
-            <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
-            <ShareDialog slug={slug} isEncrypted={isEncrypted} />
+            {(!capabilityAccess || capabilityAccess.scope === "owner") && (
+              <LockButton
+                slug={slug}
+                doc={doc}
+                isEncrypted={isEncrypted}
+                provider={provider}
+                capabilityAccess={capabilityAccess}
+                encryption={encryption}
+              />
+            )}
+            <ShareDialog slug={slug} isEncrypted={isEncrypted} capabilityAccess={capabilityAccess} />
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               <NoteMenu
                 onOpenGoal={() => setGoalOpen(true)}
@@ -216,6 +244,9 @@ export function Topbar({
             getContent={getContent}
             hideHome={compact}
             onOpenHistory={() => setHistoryOpen(true)}
+            outlineOpen={outlineOpen}
+            onToggleOutline={onToggleOutline}
+            outlineTriggerRef={outlineTriggerRef}
           />
 
 
@@ -231,15 +262,25 @@ export function Topbar({
 
             <PinButton slug={slug} />
 
-            <LockButton slug={slug} doc={doc} isEncrypted={isEncrypted} />
+            {(!capabilityAccess || capabilityAccess.scope === "owner") && (
+              <LockButton
+                slug={slug}
+                doc={doc}
+                isEncrypted={isEncrypted}
+                provider={provider}
+                capabilityAccess={capabilityAccess}
+                encryption={encryption}
+              />
+            )}
 
-            <ShareDialog slug={slug} isEncrypted={isEncrypted} />
+            <ShareDialog slug={slug} isEncrypted={isEncrypted} capabilityAccess={capabilityAccess} />
 
             <ViewControls
               showPreview={showPreview}
               onTogglePreview={onTogglePreview}
               scrollSync={scrollSync}
               onToggleScrollSync={onToggleScrollSync}
+              narrowOverride={narrow}
             />
 
             <Separator orientation="vertical" className="mx-1 h-5" />
@@ -286,6 +327,7 @@ export function Topbar({
       <HistoryDialog
         slug={slug}
         doc={doc}
+        snapshotProtection={encryption}
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         trigger={false}

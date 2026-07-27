@@ -15,49 +15,95 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getShareToken, setShareToken, clearShareToken } from "@/lib/share-tokens";
 import { useI18n } from "@/i18n/index";
+import { createCapabilityApi } from "@/lib/capability/client";
+import {
+  buildCapabilityUrl,
+  buildCurrentEditShareUrl,
+  CAPABILITY_TOKEN_RE,
+  readEncryptionSecret,
+  type CapabilityAccess,
+} from "@/lib/capability/url";
 
 interface ShareDialogProps {
   slug: string;
   isEncrypted: boolean;
+  capabilityAccess?: CapabilityAccess | null;
 }
 
-export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
+export function ShareDialog({ slug, isEncrypted, capabilityAccess = null }: ShareDialogProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [dataUrl, setDataUrl] = useState<string>("");
   const [url, setUrl] = useState<string>("");
 
   const [shareToken, setToken] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"create" | "revoke" | null>(null);
+  const [editToken, setEditToken] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"create" | "revoke" | "create-edit" | "revoke-edit" | null>(null);
   const [includeKey, setIncludeKey] = useState(false);
+
+  const encryptionSecret = readEncryptionSecret(window.location.hash);
+  const hasKey = !!encryptionSecret;
 
   useEffect(() => {
     if (!open) return;
-    const fullUrl = window.location.href;
+    const fullUrl = capabilityAccess
+      ? buildCurrentEditShareUrl(capabilityAccess, slug, encryptionSecret) ?? ""
+      : window.location.href;
     setUrl(fullUrl);
-    QRCode.toDataURL(fullUrl, {
+    setDataUrl("");
+    setEditToken(null);
+    setToken(capabilityAccess ? null : getShareToken(slug));
+  }, [open, slug, capabilityAccess, encryptionSecret]);
+
+  const editUrl = capabilityAccess?.scope === "owner" && editToken
+    ? buildCapabilityUrl(
+      "edit",
+      editToken,
+      slug,
+      isEncrypted && includeKey ? encryptionSecret : undefined,
+    )
+    : "";
+  const displayedUrl = editUrl || url;
+
+  useEffect(() => {
+    if (!open || !displayedUrl) {
+      setDataUrl("");
+      return;
+    }
+    let cancelled = false;
+    QRCode.toDataURL(displayedUrl, {
       width: 320,
       margin: 1,
       errorCorrectionLevel: "M",
       color: { dark: "#000000", light: "#ffffff" },
     })
-      .then(setDataUrl)
+      .then((nextDataUrl) => {
+        if (!cancelled) setDataUrl(nextDataUrl);
+      })
       .catch((e) => {
+        if (cancelled) return;
         console.warn("QR generation failed", e);
         toast({ title: t("share.qr_failed"), description: String(e) });
       });
-    setToken(getShareToken(slug));
-  }, [open, slug, t]);
+    return () => { cancelled = true; };
+  }, [open, displayedUrl, t]);
 
   const copyUrl = async () => {
-    await navigator.clipboard.writeText(url);
+    if (!displayedUrl) return;
+    await navigator.clipboard.writeText(displayedUrl);
     toast({ title: t("share.copied_url") });
   };
 
-  const hasKey = url.includes("#");
-
   const shareUrl = (() => {
     if (!shareToken) return "";
+    if (capabilityAccess) {
+      return buildCapabilityUrl(
+        "view",
+        shareToken,
+        undefined,
+        isEncrypted && includeKey ? encryptionSecret : undefined,
+      );
+    }
     const base = `${window.location.origin}/s/${shareToken}`;
     if (isEncrypted && includeKey && hasKey) {
       return base + window.location.hash;
@@ -68,6 +114,24 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
   const createLink = async () => {
     setBusy("create");
     try {
+      if (capabilityAccess) {
+        if (capabilityAccess.scope !== "owner") throw new Error("owner capability required");
+        const data = await createCapabilityApi().manage(capabilityAccess.token, {
+          action: "rotate",
+          scope: "view",
+        });
+        const rotated = data.rotated as { scope?: unknown; capability?: unknown } | undefined;
+        if (
+          rotated?.scope !== "view"
+          || typeof rotated.capability !== "string"
+          || !CAPABILITY_TOKEN_RE.test(rotated.capability)
+        ) {
+          throw new Error("invalid rotated capability");
+        }
+        setToken(rotated.capability);
+        toast({ title: t("share.created_link") });
+        return;
+      }
       const { data, error } = await supabase.functions.invoke<{ token: string }>("share-create", {
         body: { slug },
       });
@@ -83,10 +147,68 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
     }
   };
 
+  const createEditLink = async () => {
+    if (capabilityAccess?.scope !== "owner") return;
+    setBusy("create-edit");
+    try {
+      const data = await createCapabilityApi().manage(capabilityAccess.token, {
+        action: "rotate",
+        scope: "edit",
+      });
+      const rotated = data.rotated as { scope?: unknown; capability?: unknown } | undefined;
+      if (
+        rotated?.scope !== "edit"
+        || typeof rotated.capability !== "string"
+        || !CAPABILITY_TOKEN_RE.test(rotated.capability)
+      ) {
+        throw new Error("invalid rotated capability");
+      }
+      setEditToken(rotated.capability);
+      toast({ title: t("share.edit_created") });
+    } catch (e) {
+      console.error(e);
+      toast({ title: t("share.create_failed"), description: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const revokeEditLink = async () => {
+    if (capabilityAccess?.scope !== "owner" || !editToken) return;
+    setBusy("revoke-edit");
+    try {
+      await createCapabilityApi().manage(capabilityAccess.token, {
+        action: "rotate",
+        scope: "edit",
+      });
+      setEditToken(null);
+      setUrl("");
+      toast({ title: t("share.revoked") });
+    } catch (e) {
+      console.error(e);
+      toast({ title: t("share.revoke_failed"), description: String(e) });
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const revokeLink = async () => {
     if (!shareToken) return;
     setBusy("revoke");
     try {
+      if (capabilityAccess) {
+        if (capabilityAccess.scope !== "owner") throw new Error("owner capability required");
+        // Rotation revokes the displayed capability immediately. The newly
+        // minted replacement is deliberately discarded until the user asks
+        // to create a fresh link.
+        await createCapabilityApi().manage(capabilityAccess.token, {
+          action: "rotate",
+          scope: "view",
+        });
+        setToken(null);
+        toast({ title: t("share.revoked") });
+        return;
+      }
       const { error } = await supabase.functions.invoke("share-revoke", { body: { token: shareToken } });
       if (error) throw error;
       clearShareToken(slug);
@@ -136,20 +258,24 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
         </DialogHeader>
 
         <div className="w-full min-w-0 overflow-hidden">
-          {dataUrl ? (
+          {dataUrl && displayedUrl ? (
             <div className="mx-auto w-fit max-w-full rounded-md border border-border bg-white p-2">
               <img src={dataUrl} alt="QR code" className="h-48 w-48 max-w-full" />
             </div>
-          ) : (
+          ) : displayedUrl ? (
             <div className="mx-auto h-48 w-48 max-w-full animate-pulse rounded-md bg-muted" />
+          ) : (
+            <div className="mx-auto flex h-48 w-48 max-w-full items-center justify-center rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+              {t("share.collaborator_desc")}
+            </div>
           )}
 
-          <div className="mt-3 flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
+          {displayedUrl && <div className="mt-3 flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden">
             <code
               className="block w-0 min-w-0 flex-1 truncate rounded-md border border-border bg-muted/50 px-2 py-1.5 text-xs"
               dir="ltr"
             >
-              {url}
+              {displayedUrl}
             </code>
             <Button
               variant="outline"
@@ -160,9 +286,61 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
             >
               <Copy className="h-3.5 w-3.5" />
             </Button>
-          </div>
+          </div>}
         </div>
 
+        {capabilityAccess?.scope === "owner" && (
+          <div className="mt-2 min-w-0 border-t border-border pt-3">
+            <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
+              <Share2 className="h-3.5 w-3.5" />
+              {t("share.collaborator_heading")}
+            </div>
+            <p className="mb-2 text-xs text-muted-foreground">{t("share.collaborator_desc")}</p>
+            {!editToken ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                onClick={createEditLink}
+                disabled={busy === "create-edit"}
+              >
+                {busy === "create-edit" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {t("share.create_edit_btn")}
+              </Button>
+            ) : (
+              <div className="space-y-2">
+                {isEncrypted && hasKey && (
+                  <label className="flex items-start gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={includeKey}
+                      onChange={(event) => setIncludeKey(event.target.checked)}
+                      className="mt-0.5"
+                    />
+                    <span>{t("share.include_key")}</span>
+                  </label>
+                )}
+                <div className="grid grid-cols-2 gap-2">
+                  <Button variant="outline" size="sm" onClick={copyUrl}>
+                    <Copy className="h-3.5 w-3.5" />
+                    {t("share.copy_edit_link")}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={revokeEditLink}
+                    disabled={busy === "revoke-edit"}
+                  >
+                    {busy === "revoke-edit" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2Off className="h-3.5 w-3.5" />}
+                    {t("share.revoke_btn")}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {(!capabilityAccess || capabilityAccess.scope === "owner") && (
         <div className="mt-2 min-w-0 border-t border-border pt-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
             <Eye className="h-3.5 w-3.5" />
@@ -232,6 +410,7 @@ export function ShareDialog({ slug, isEncrypted }: ShareDialogProps) {
             </>
           )}
         </div>
+        )}
       </DialogContent>
     </Dialog>
   );

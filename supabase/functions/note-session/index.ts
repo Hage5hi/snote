@@ -1,0 +1,215 @@
+import {
+  createCapabilityToken,
+  decodeCapabilityPayload,
+  hashCapabilityAdmissionSubject,
+  hashCapabilityToken,
+  readCapabilityBearer,
+} from "../_shared/capability.ts";
+import {
+  capabilityCorsHeaders,
+  capabilityAdmissionFailure,
+  capabilityEnvironment,
+  capabilityFailure,
+  capabilityJson,
+  capabilityTokenHash,
+  materializeNoteSession,
+  resolveMaterialization,
+  rpcStatus,
+  verifyRealtimeAuth,
+} from "../_shared/capability-edge.ts";
+
+const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const UPDATE_ID_RE = /^[a-f0-9]{64}$/;
+const PAYLOAD_RE = /^[A-Za-z0-9_-]+$/;
+const MAX_ENCODED_PAYLOAD_CHARS = 5_592_406;
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: capabilityCorsHeaders });
+  if (req.method !== "POST") return capabilityJson({ error: "method not allowed" }, 405);
+
+  const environment = capabilityEnvironment();
+  if (!environment.ok) return capabilityFailure("unavailable");
+
+  try {
+    const body = await req.json().catch(() => ({}));
+    const bearer = readCapabilityBearer(req);
+
+    if (body?.action === "create") {
+      if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
+      const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
+      if (!SLUG_RE.test(slug)) return capabilityFailure("invalid");
+      const auth = await verifyRealtimeAuth(req, environment);
+      if (auth.mode === "unavailable") return capabilityFailure("unavailable");
+
+      const owner = bearer;
+      const edit = createCapabilityToken();
+      const view = createCapabilityToken();
+      const subjectHash = await hashCapabilityAdmissionSubject(req, environment.hmacSecret);
+      if (!subjectHash) return capabilityFailure("unavailable");
+      const [ownerHash, editHash, viewHash] = await Promise.all([
+        hashCapabilityToken(owner, environment.hmacSecret),
+        hashCapabilityToken(edit, environment.hmacSecret),
+        hashCapabilityToken(view, environment.hmacSecret),
+      ]);
+      const { data: admitted, error: admissionError } = await environment.client.rpc(
+        "capability_admission_consume",
+        {
+          p_operation: "create",
+          p_subject_hash: subjectHash,
+          p_request_cost: 1,
+          p_byte_cost: 0,
+        },
+      );
+      if (admissionError) return capabilityFailure("unavailable");
+      if (rpcStatus(admitted) !== "ok") {
+        return capabilityAdmissionFailure(rpcStatus(admitted));
+      }
+      const { data: created, error: createError } = await environment.client.rpc(
+        "capability_note_create",
+        {
+          p_slug: slug,
+          p_owner_token_hash: ownerHash,
+          p_edit_token_hash: editHash,
+          p_view_token_hash: viewHash,
+        },
+      );
+      if (createError || rpcStatus(created) !== "ok") {
+        return capabilityFailure(createError ? "unavailable" : rpcStatus(created));
+      }
+
+      const materialized = resolveMaterialization(await materializeNoteSession(
+        created?.session,
+        ownerHash,
+        auth,
+        environment,
+      ));
+      if (!materialized.ok) return materialized.response;
+      const capabilities = created?.recovered === true
+        ? { owner }
+        : { owner, edit, view };
+      return capabilityJson(
+        { session: materialized.session, capabilities },
+        created?.recovered === true ? 200 : 201,
+      );
+    }
+
+    if (body?.action === "import-legacy") {
+      if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
+      const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
+      const checkpointId = typeof body?.checkpointId === "string" ? body.checkpointId : "";
+      const payload = typeof body?.payload === "string" ? body.payload : "";
+      const isEncrypted = body?.isEncrypted;
+      const salt = body?.salt ?? null;
+      const check = body?.check ?? null;
+      const iterations = body?.iterations ?? null;
+      const encryptionMetadataValid = isEncrypted === true
+        ? typeof salt === "string" && salt.length >= 16 && salt.length <= 512
+          && typeof check === "string" && check.length >= 16 && check.length <= 2048
+          && Number.isSafeInteger(iterations) && iterations >= 100_000 && iterations <= 2_000_000
+        : isEncrypted === false && salt === null && check === null && iterations === null;
+      if (
+        !SLUG_RE.test(slug)
+        || !UPDATE_ID_RE.test(checkpointId)
+        || !PAYLOAD_RE.test(payload)
+        || payload.length > MAX_ENCODED_PAYLOAD_CHARS
+        || !encryptionMetadataValid
+      ) return capabilityFailure("invalid");
+      const auth = await verifyRealtimeAuth(req, environment);
+      if (auth.mode === "unavailable") return capabilityFailure("unavailable");
+      let decodedPayload: Uint8Array;
+      try {
+        decodedPayload = decodeCapabilityPayload(payload, 4_194_304);
+      } catch {
+        return capabilityFailure("invalid");
+      }
+
+      // The client persists this candidate before the first mutating request.
+      // A lost response can therefore retry the exact same owner hash.
+      const owner = bearer;
+      const edit = createCapabilityToken();
+      const view = createCapabilityToken();
+      const subjectHash = await hashCapabilityAdmissionSubject(req, environment.hmacSecret);
+      if (!subjectHash) return capabilityFailure("unavailable");
+      const { data: admitted, error: admissionError } = await environment.client.rpc(
+        "capability_admission_consume",
+        {
+          p_operation: "create",
+          p_subject_hash: subjectHash,
+          p_request_cost: 1,
+          p_byte_cost: decodedPayload.byteLength,
+        },
+      );
+      if (admissionError) return capabilityFailure("unavailable");
+      if (rpcStatus(admitted) !== "ok") {
+        return capabilityAdmissionFailure(rpcStatus(admitted));
+      }
+      const [ownerHash, editHash, viewHash] = await Promise.all([
+        hashCapabilityToken(owner, environment.hmacSecret),
+        hashCapabilityToken(edit, environment.hmacSecret),
+        hashCapabilityToken(view, environment.hmacSecret),
+      ]);
+      const { data: created, error: createError } = await environment.client.rpc(
+        "capability_note_import_legacy",
+        {
+          p_slug: slug,
+          p_owner_token_hash: ownerHash,
+          p_edit_token_hash: editHash,
+          p_view_token_hash: viewHash,
+          p_checkpoint_id: checkpointId,
+          p_payload_text: payload,
+          p_is_encrypted: isEncrypted,
+          p_salt: salt,
+          p_check: check,
+          p_iterations: iterations,
+        },
+      );
+      if (createError || rpcStatus(created) !== "ok") {
+        return capabilityFailure(createError ? "unavailable" : rpcStatus(created));
+      }
+      const materialized = resolveMaterialization(await materializeNoteSession(
+        created?.session,
+        ownerHash,
+        auth,
+        environment,
+      ));
+      if (!materialized.ok) return materialized.response;
+      const capabilities = created?.recovered === true
+        ? { owner }
+        : { owner, edit, view };
+      return capabilityJson(
+        { session: materialized.session, capabilities },
+        created?.recovered === true ? 200 : 201,
+      );
+    }
+
+    if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
+    const tokenHash = await capabilityTokenHash(bearer, environment.hmacSecret);
+    if (!tokenHash) return capabilityFailure("unavailable");
+    const auth = await verifyRealtimeAuth(req, environment);
+    if (auth.mode === "unavailable") return capabilityFailure("unavailable");
+    const afterSequence = Number(body?.afterSequence ?? 0);
+    if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
+      return capabilityFailure("invalid");
+    }
+
+    const { data, error } = await environment.client.rpc("capability_session_open", {
+      p_token_hash: tokenHash,
+      p_after_seq: afterSequence,
+      p_limit: 200,
+    });
+    if (error || rpcStatus(data) !== "ok") {
+      return capabilityFailure(error ? "unavailable" : rpcStatus(data));
+    }
+    const materialized = resolveMaterialization(await materializeNoteSession(
+      data?.session,
+      tokenHash,
+      auth,
+      environment,
+    ));
+    return materialized.ok
+      ? capabilityJson({ session: materialized.session }, 200)
+      : materialized.response;
+  } catch {
+    return capabilityFailure("unavailable");
+  }
+});

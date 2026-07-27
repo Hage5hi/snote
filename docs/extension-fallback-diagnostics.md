@@ -68,21 +68,23 @@ would be a leak — the E2E suite asserts the set exactly):
 | `schemaVersion`      | Currently `1`                                           |
 | `at`                 | ISO timestamp when the bundle was built                 |
 | `extensionVersion`   | From `manifest.json`                                    |
-| `handshake`          | `extensionProtocol`, `appProtocol`, `appBuildId`, `ready`, `versionMismatch` |
-| `load`               | `iframeSrc`, `iframeLoaded`, `retryCount`               |
+| `handshake`          | Protocol/status fields; `appBuildId` and mismatch text are classified/redacted |
+| `load`               | `iframeSrc` contains only origin/route class; plus load/retry status |
 | `cspFrameAncestors`  | Last `verifyFrameAncestorsCsp` result                   |
 | `messageTimeline`    | Ordered handshake/postMessage events                    |
 | `telemetry`          | Ring-buffered privacy-safe events (opt-out respected)   |
 | `telemetryEnabled`   | User opt-in state                                       |
 | `debugLines`         | Recent debug log lines                                  |
 
-Sanitization: no note slugs, note bodies, tokens, sessions, or emails
-appear anywhere. The E2E suite runs a regex denylist on the serialized
-bundle to guarantee this.
+Sanitization is applied before validation and before either clipboard or
+download serialization. No note slugs, URL paths, note bodies, tokens,
+sessions, raw build identifiers, attacker-controlled error text, or emails
+appear anywhere. Debug export has no raw mode. The E2E suite injects sentinel
+secrets and applies a denylist to every serialized export surface.
 
 ### Triage flow
 
-1. Read `handshake.versionMismatch` — if non-empty, it's a protocol drift.
+1. Read `handshake.versionMismatch` — `protocol-mismatch` means protocol drift.
    Cross-check `handshake.appProtocol` vs `handshake.extensionProtocol`.
 2. Read `cspFrameAncestors.reason` — if non-null, the app CSP is
    blocking embedding regardless of protocol.

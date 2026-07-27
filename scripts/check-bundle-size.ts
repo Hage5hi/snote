@@ -6,6 +6,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
+import { dict } from "../src/i18n/catalog";
 
 const DIST = "dist";
 const ASSETS = join(DIST, "assets");
@@ -33,6 +34,8 @@ const CHUNK_RULES: Rule[] = [
   // The total-initial-route gate below remains the real protection.
   { prefix: "index-", label: "entry", maxGz: 82_000 },
   { prefix: "react-vendor-", label: "react-vendor", maxGz: 68_000 },
+  { prefix: "router-vendor-", label: "router-vendor", maxGz: 15_000 },
+  { prefix: "floating-ui-vendor-", label: "floating-ui-vendor", maxGz: 10_000 },
   { prefix: "supabase-vendor-", label: "supabase-vendor", maxGz: 58_000 },
   { prefix: "radix-vendor-", label: "radix-vendor", maxGz: 35_000 },
   { prefix: "yjs-vendor-", label: "yjs-vendor", maxGz: 35_000 },
@@ -45,6 +48,7 @@ const CHUNK_RULES: Rule[] = [
 
 // Init route preload: sum gzip of chunks in <link rel="modulepreload"> + entry.
 const INIT_ROUTE_TOTAL_MAX_GZ = 250_000;
+const LAZY_LOCALES = ["vi", "zh", "ja", "ko", "fr", "es", "de", "pt"] as const;
 
 // Phase 3.1 invariant: these libs are lazy-only and must NOT be in modulepreload.
 const FORBIDDEN_IN_PRELOAD = [
@@ -59,6 +63,7 @@ const FORBIDDEN_IN_PRELOAD = [
   // Background scene chunks + OGL — only load when user picks a scene.
   "scene-",
   "ogl-vendor",
+  ...LAZY_LOCALES.map((lang) => `${lang}-`),
 ];
 
 function gzSize(filePath: string): number {
@@ -151,6 +156,25 @@ function main(): number {
     } else {
       console.log(`  ✓ ${banned}: not preloaded`);
     }
+  }
+
+  // Check 4: every non-English locale is emitted independently and none of
+  // its content leaks into the entry or a modulepreload dependency.
+  console.log("\nNon-English locale chunks stay lazy:");
+  const initialChunks = [entryFromHtml, ...preloadChunks].filter(
+    (name): name is string => !!name && existsSync(join(ASSETS, name)),
+  );
+  const initialSource = initialChunks
+    .map((name) => readFileSync(join(ASSETS, name), "utf8"))
+    .join("\n");
+  for (const lang of LAZY_LOCALES) {
+    const chunks = assetFiles.filter((file) => file.startsWith(`${lang}-`));
+    const sentinel = dict[lang]["home.tagline"];
+    const pass = chunks.length === 1 && !initialSource.includes(sentinel);
+    console.log(
+      `  ${pass ? "✓" : "✗"} ${lang}: ${chunks.length === 1 ? chunks[0] : `${chunks.length} chunks`} / initial sentinel ${initialSource.includes(sentinel) ? "FOUND" : "absent"}`,
+    );
+    if (!pass) failed++;
   }
 
   console.log();

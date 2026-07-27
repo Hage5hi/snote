@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 // Count how many times the dynamic `import('./CommandPaletteBody')` actually
 // resolves. The shell is supposed to NOT pull the body on mount — only after

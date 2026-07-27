@@ -2,11 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Must precede every subresource. A precached navigation shell can be
+         served for a legacy /s/:token URL before the SPA moves it to #. -->
+    <meta name="referrer" content="no-referrer" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Syrin Notes — Realtime markdown notes by URL</title>
     <meta name="description" content="Syrin Notes — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.">
     <meta name="author" content="Syrin Notes" />
-    <link rel="canonical" href="https://syrin.online/" />
+    <link rel="canonical" href="https://note.syrin.online/" />
 
     <!-- PWA / Installable web app -->
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -43,7 +46,7 @@
   <meta name="twitter:title" content="Syrin Notes — Realtime markdown notes by URL">
   <meta property="og:description" content="Syrin Notes — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.">
   <meta name="twitter:description" content="Syrin Notes — tạo và chia sẻ note markdown qua URL. Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.">
-  <meta property="og:url" content="https://syrin.online/">
+  <meta property="og:url" content="https://note.syrin.online/">
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
@@ -51,19 +54,19 @@
       {
         "@type": "Organization",
         "name": "Syrin Notes",
-        "url": "https://syrin.online/"
+        "url": "https://note.syrin.online/"
       },
       {
         "@type": "WebSite",
         "name": "Syrin Notes",
-        "url": "https://syrin.online/"
+        "url": "https://note.syrin.online/"
       },
       {
         "@type": "SoftwareApplication",
         "name": "Syrin Notes",
         "applicationCategory": "Productivity",
         "operatingSystem": "Web",
-        "url": "https://syrin.online/",
+        "url": "https://note.syrin.online/",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
       }
     ]

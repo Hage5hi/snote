@@ -3,8 +3,9 @@
 // Hand-rolled tiny validator — see export-schema.js for the same pattern.
 
 export const DIAGNOSTICS_KIND = "syrin-note-sidepanel-diagnostics";
-// v2: adds filename reason-type token + explicit forbidden-key denylist.
-export const DIAGNOSTICS_SCHEMA_VERSION = 2;
+// v3: replaces unverifiable cross-origin probes with explicit browser-owned
+// network state and an honest CSP inspection marker.
+export const DIAGNOSTICS_SCHEMA_VERSION = 3;
 
 // Must match MAX_DETAIL_JSON_BYTES in lib/telemetry.js.
 export const MAX_TELEMETRY_DETAIL_BYTES = 512;
@@ -101,10 +102,31 @@ const FIELDS = {
       if (typeof v.iframeSrc !== "string") return "load.iframeSrc";
       if (typeof v.iframeLoaded !== "boolean") return "load.iframeLoaded";
       if (typeof v.retryCount !== "number") return "load.retryCount";
+      if (!["offline", "online-unverified", "unknown"].includes(v.appReachable))
+        return "load.appReachable";
       return true;
     },
   },
-  cspFrameAncestors: { type: "object" },
+  cspFrameAncestors: {
+    type: "object",
+    check: (v) => {
+      if (typeof v.inspected !== "boolean") return "cspFrameAncestors.inspected";
+      if (v.inspected) {
+        if (typeof v.ok !== "boolean") return "cspFrameAncestors.ok";
+        if (v.csp !== null && typeof v.csp !== "string")
+          return "cspFrameAncestors.csp";
+        if (v.reason !== null && typeof v.reason !== "string")
+          return "cspFrameAncestors.reason";
+      } else if (
+        v.ok !== null ||
+        v.csp !== null ||
+        v.reason !== "not-inspected"
+      ) {
+        return "cspFrameAncestors uninspected fields";
+      }
+      return true;
+    },
+  },
   messageTimeline: { type: "array" },
   telemetry: {
     type: "array",

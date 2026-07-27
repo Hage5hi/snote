@@ -19,6 +19,7 @@ test("loader hides when app posts syrin:ready", async ({ context, extensionId })
   await panel.evaluate((origin) => {
     const ev = new MessageEvent("message", {
       data: { type: "syrin:ready", buildId: "test-build" },
+      source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
     });
     Object.defineProperty(ev, "origin", { value: origin });
     window.dispatchEvent(ev);
@@ -26,9 +27,7 @@ test("loader hides when app posts syrin:ready", async ({ context, extensionId })
 
   // Loader gets `hidden` class immediately, then is removed ~250ms later.
   await expect(panel.locator("#fallback")).toBeHidden();
-  await panel.waitForTimeout(400);
-  const loaderExists = await panel.locator("#loader").count();
-  expect(loaderExists).toBe(0);
+  await expect(panel.locator("#loader")).toHaveCount(0);
 });
 
 test("fallback shows diagnostics after watchdog + retry both time out", async ({

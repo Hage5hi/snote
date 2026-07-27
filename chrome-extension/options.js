@@ -1,4 +1,5 @@
 import { isValidSlug } from "./lib/validate-slug.js";
+import { clearTelemetry } from "./lib/telemetry.js";
 
 const DEFAULTS = { openMode: "home", defaultSlug: "", debug: false };
 const TELEMETRY_KEY = "syrin:telemetryEnabled";
@@ -11,6 +12,7 @@ export function initOptions() {
   const slugError = document.getElementById("slugError");
   const debugInput = document.getElementById("debug");
   const telemetryInput = document.getElementById("telemetryEnabled");
+  const clearDiagnosticsBtn = document.getElementById("clearDiagnostics");
   const saveBtn = document.getElementById("save");
   const status = document.getElementById("status");
 
@@ -50,10 +52,21 @@ export function initOptions() {
 
   // Telemetry opt-in lives in local storage — device-scoped, never synced.
   if (telemetryInput) {
-    chrome.storage.local.get({ [TELEMETRY_KEY]: true }, (s) => {
-      telemetryInput.checked = !!s[TELEMETRY_KEY];
+    chrome.storage.local.get({ [TELEMETRY_KEY]: false }, (s) => {
+      telemetryInput.checked = chrome.runtime.lastError
+        ? false
+        : !!s?.[TELEMETRY_KEY];
     });
   }
+
+  clearDiagnosticsBtn?.addEventListener("click", async () => {
+    clearDiagnosticsBtn.disabled = true;
+    const cleared = await clearTelemetry();
+    status.textContent = cleared
+      ? "✓ Diagnostics cleared"
+      : "✗ Clear failed";
+    clearDiagnosticsBtn.disabled = false;
+  });
 
   form.addEventListener("change", () => {
     status.textContent = "";
@@ -69,26 +82,47 @@ export function initOptions() {
     if (!validate()) return;
     const mode = currentMode();
     const slug = slugInput.value.trim();
-    chrome.storage.sync.set(
-      {
-        openMode: mode,
-        defaultSlug: mode === "slug" ? slug : "",
-        debug: !!debugInput.checked,
-      },
-      () => {
+    const syncedSettings = {
+      openMode: mode,
+      defaultSlug: mode === "slug" ? slug : "",
+      debug: !!debugInput.checked,
+    };
+
+    const saveSyncedSettings = () => {
+      chrome.storage.sync.set(syncedSettings, () => {
         if (chrome.runtime.lastError) {
           status.textContent = "✗ Save failed";
           return;
-        }
-        if (telemetryInput) {
-          chrome.storage.local.set({ [TELEMETRY_KEY]: !!telemetryInput.checked });
         }
         status.textContent = "✓ Saved";
         setTimeout(() => {
           if (status.textContent === "✓ Saved") status.textContent = "";
         }, 2500);
-      },
-    );
+      });
+    };
+
+    // The telemetry preference is device-local and must remain writable even
+    // when Chrome Sync is unavailable. Persist it before the independent sync
+    // write instead of nesting it in the sync-success callback.
+    if (telemetryInput) {
+      const telemetryEnabled = !!telemetryInput.checked;
+      chrome.storage.local.set(
+        { [TELEMETRY_KEY]: telemetryEnabled },
+        async () => {
+          if (chrome.runtime.lastError) {
+            status.textContent = "✗ Save failed";
+            return;
+          }
+          if (!telemetryEnabled && !await clearTelemetry()) {
+            status.textContent = "✗ Save failed";
+            return;
+          }
+          saveSyncedSettings();
+        },
+      );
+    } else {
+      saveSyncedSettings();
+    }
   });
 }
 

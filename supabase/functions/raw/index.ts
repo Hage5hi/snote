@@ -1,4 +1,29 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.104.1";
+
+type RawDatabase = {
+  __InternalSupabase: { PostgrestVersion: "14.5" };
+  public: {
+    Tables: {
+      notes: {
+        Row: {
+          capability_managed: boolean;
+          char_count: number;
+          content: string;
+          is_encrypted: boolean;
+          slug: string;
+          ydoc_state: string;
+        };
+        Insert: { slug: string };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+    };
+    Views: Record<string, never>;
+    Functions: Record<string, never>;
+    Enums: Record<string, never>;
+    CompositeTypes: Record<string, never>;
+  };
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,7 +52,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
+    const supabase = createClient<RawDatabase>(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
@@ -35,13 +60,13 @@ Deno.serve(async (req) => {
     const { data, error } = await supabase
       .from("notes")
       .select("content, ydoc_state, is_encrypted, char_count")
+      .eq("capability_managed", false)
       .eq("slug", slug)
       .maybeSingle();
 
     if (error) {
-      console.error("raw select error", error);
-      return new Response(`# error: ${error.message}\n`, {
-        status: 500,
+      return new Response("# temporarily unavailable\n", {
+        status: 503,
         headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
       });
     }
@@ -81,10 +106,9 @@ Deno.serve(async (req) => {
         "Cache-Control": "no-store",
       },
     });
-  } catch (e) {
-    console.error("raw exception", e);
-    return new Response(`# server error\n`, {
-      status: 500,
+  } catch {
+    return new Response("# temporarily unavailable\n", {
+      status: 503,
       headers: { ...corsHeaders, "Content-Type": "text/plain; charset=utf-8" },
     });
   }

@@ -6,7 +6,8 @@ describe("diagnosticsReasonType", () => {
     expect(
       diagnosticsReasonType({
         versionMismatchReason: "app protocol=999 not in [1,2] (ext=2)",
-        csp: { ok: false },
+        csp: { inspected: false, ok: null },
+        appReachable: "offline",
         ready: false,
       }),
     ).toBe("mismatch");
@@ -16,17 +17,30 @@ describe("diagnosticsReasonType", () => {
     expect(
       diagnosticsReasonType({
         versionMismatchReason: null,
-        csp: { ok: false },
+        csp: { inspected: true, ok: false },
+        appReachable: "online-unverified",
         ready: false,
       }),
     ).toBe("csp");
+  });
+
+  it("returns 'network' when the browser is offline", () => {
+    expect(
+      diagnosticsReasonType({
+        versionMismatchReason: null,
+        csp: { inspected: false, ok: null },
+        appReachable: "offline",
+        ready: false,
+      }),
+    ).toBe("network");
   });
 
   it("returns 'timeout' when not ready and csp/mismatch clean", () => {
     expect(
       diagnosticsReasonType({
         versionMismatchReason: null,
-        csp: { ok: true },
+        csp: { inspected: false, ok: null },
+        appReachable: "online-unverified",
         ready: false,
       }),
     ).toBe("timeout");
@@ -36,7 +50,8 @@ describe("diagnosticsReasonType", () => {
     expect(
       diagnosticsReasonType({
         versionMismatchReason: null,
-        csp: { ok: true },
+        csp: { inspected: false, ok: null },
+        appReachable: "online-unverified",
         ready: true,
       }),
     ).toBe("ok");
@@ -47,6 +62,7 @@ describe("diagnosticsReasonType", () => {
       diagnosticsReasonType({
         versionMismatchReason: null,
         csp: null,
+        appReachable: "online-unverified",
         ready: false,
       }),
     ).toBe("timeout");

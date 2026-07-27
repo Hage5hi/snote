@@ -3,6 +3,7 @@ import { Awareness, encodeAwarenessUpdate, applyAwarenessUpdate } from "y-protoc
 import { supabase } from "@/integrations/supabase/client";
 import { bytesToBase64, base64ToBytes } from "./base64";
 import { extractTags } from "@/lib/tags";
+import { getEncryptionPinState } from "@/lib/encryption-pin";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 /**
@@ -46,6 +47,28 @@ export type Encryption = {
   decrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
 };
 
+/** Small provider surface consumed by the editor UI in legacy and capability mode. */
+export interface YjsProviderLike {
+  doc: Y.Doc;
+  awareness: Awareness;
+  slug: string;
+  connected: boolean;
+  setEncryption: (encryption: Encryption | null) => void;
+  setExpectedEncrypted: (expected: boolean | null) => void;
+  onAwareness: (listener: Listener<Map<number, AwarenessState>>) => () => void;
+  onSyncEvent: (listener: Listener<SyncEvent>) => () => void;
+  getPendingBytes: () => number;
+  getLastBroadcastAt: () => number;
+  getLastSnapshotAt: () => number;
+  hasUnflushedLocalChanges: () => boolean;
+  connect: (
+    identity: { name: string; color: string },
+    options?: { prefetchedYdocState?: string | null; rowExists?: boolean },
+  ) => Promise<void>;
+  flushBeacon: () => void;
+  destroy: () => Promise<void>;
+}
+
 /**
  * Slugs marked as "abandoned" (e.g. renamed away). Any provider whose slug
  * is in this set will silently drop pending snapshot writes and skip the
@@ -57,6 +80,31 @@ const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
 const abandonedSlugCleanups = new Map<string, Set<() => void | Promise<void>>>();
 const ABANDONED_SLUG_STORAGE_PREFIX = "syrin:abandoned-slug:";
 const ABANDONED_SLUG_TTL_MS = 5 * 60_000;
+// Keep inbound messages below the smallest documented Supabase Broadcast
+// payload ceiling (256 KiB, including the JSON envelope). Full-state recovery
+// still has the durable Postgres snapshot path when a note is larger.
+const MAX_REALTIME_UPDATE_BYTES = 180 * 1024;
+const MAX_REALTIME_AWARENESS_BYTES = 32 * 1024;
+const REQUEST_STATE_THROTTLE_MS = 1_000;
+
+function decodeBoundedBroadcastBytes(payload: unknown, maxBytes: number): Uint8Array | null {
+  if (!payload || typeof payload !== "object") return null;
+  const encoded = (payload as { update?: unknown }).update;
+  if (typeof encoded !== "string" || encoded.length === 0) return null;
+  const maxEncodedChars = Math.ceil(maxBytes / 3) * 4;
+  if (encoded.length > maxEncodedChars) return null;
+  const bytes = base64ToBytes(encoded);
+  return bytes.byteLength > 0 && bytes.byteLength <= maxBytes ? bytes : null;
+}
+
+function isRealtimeClientId(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= 0xffff_ffff
+  );
+}
 
 function isSlugAbandoned(slug: string) {
   if (abandonedSlugs.has(slug)) return true;
@@ -83,10 +131,9 @@ function runAbandonedSlugCleanups(slug: string) {
   });
 }
 
-function markSlugAbandoned(slug: string, broadcast: boolean) {
+function markSlugAbandoned(slug: string, persistAcrossTabs: boolean) {
   abandonedSlugs.add(slug);
   activeProvidersBySlug.get(slug)?.forEach((provider) => {
-    if (broadcast) void provider.broadcastSlugAbandoned();
     provider.markAbandoned();
   });
   runAbandonedSlugCleanups(slug);
@@ -94,7 +141,7 @@ function markSlugAbandoned(slug: string, broadcast: boolean) {
   // a fresh empty row. Providers that were active at rename time stay marked
   // abandoned on the instance and can never resurrect the old content.
   setTimeout(() => abandonedSlugs.delete(slug), ABANDONED_SLUG_TTL_MS);
-  if (broadcast && typeof localStorage !== "undefined") {
+  if (persistAcrossTabs && typeof localStorage !== "undefined") {
     try {
       localStorage.setItem(`${ABANDONED_SLUG_STORAGE_PREFIX}${slug}`, String(Date.now()));
     } catch {
@@ -152,8 +199,8 @@ function unabandonProviderForSlug(slug: string) {
   }
 }
 
-// Retained internally so the cross-tab abandonment broadcast handler compiles;
-// no code path currently calls this since Rename/Duplicate were removed.
+// Retained for local same-origin cleanup; no code path currently calls these
+// helpers since Rename/Duplicate were removed.
 void abandonProviderForSlug;
 void unabandonProviderForSlug;
 
@@ -177,15 +224,16 @@ export class SupabaseYjsProvider {
   encryption: Encryption | null = null;
   /**
    * Expected encryption mode of the persisted note row, as most recently
-   * observed via the enc-meta fetch. When set, any write path (saveSnapshot,
-   * flushBeacon) that would upsert bytes in the WRONG mode is skipped to
-   * avoid corrupting the row after a lock/unlock. `null` = unknown; no guard.
+   * observed via the enc-meta fetch. Every content-bearing path is rejected
+   * unless this value, the active crypto key, and the durable local pin all
+   * agree. `null` is unknown and therefore fails closed.
    */
   private expectedEncrypted: boolean | null = null;
 
   private snapshotTimer: number | null = null;
   private lastSnapshotAt = 0;
   private lastBroadcastAt = 0;
+  private lastStateRequestResponseAt = Number.NEGATIVE_INFINITY;
   private awarenessListeners = new Set<Listener<Map<number, AwarenessState>>>();
   private syncListeners = new Set<Listener<SyncEvent>>();
   private clientId = Math.floor(Math.random() * 0xffffffff);
@@ -262,19 +310,6 @@ export class SupabaseYjsProvider {
     this.pendingUpdates = [];
   }
 
-  async broadcastSlugAbandoned() {
-    if (!this.channel || !this.connected) return;
-    try {
-      await this.channel.send({
-        type: "broadcast",
-        event: "slug-abandoned",
-        payload: { slug: this.slug },
-      });
-    } catch {
-      /* best-effort cross-tab/device notice */
-    }
-  }
-
   private isAbandoned() {
     return this.abandoned || isSlugAbandoned(this.slug);
   }
@@ -295,12 +330,20 @@ export class SupabaseYjsProvider {
     this.expectedEncrypted = v;
   }
 
-  /** True when the local encryption mode disagrees with the stored mode. */
+  /**
+   * True unless both independent mode signals authorize this provider.
+   *
+   * `expectedEncrypted` is the last mode read from Postgres. The durable pin
+   * is re-read on every content write so a lock/unlock in another tab
+   * immediately disables a provider created under the old mode. Storage
+   * denial and an unknown DB mode fail closed.
+   */
   private hasEncryptionModeMismatch() {
-    return (
-      this.expectedEncrypted !== null &&
-      this.expectedEncrypted !== !!this.encryption
-    );
+    const providerEncrypted = !!this.encryption;
+    const pinState = getEncryptionPinState(this.slug);
+    return this.expectedEncrypted === null
+      || this.expectedEncrypted !== providerEncrypted
+      || (providerEncrypted ? pinState !== "pinned" : pinState !== "clear");
   }
 
 
@@ -343,8 +386,8 @@ export class SupabaseYjsProvider {
     this.syncListeners.forEach((cb) => {
       try {
         cb(ev);
-      } catch (e) {
-        console.warn("sync listener threw", e);
+      } catch {
+        console.warn("sync listener threw");
       }
     });
   }
@@ -370,8 +413,8 @@ export class SupabaseYjsProvider {
           try {
             const update = base64ToBytes(prefetched);
             if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
-          } catch (e) {
-            console.warn("Bad prefetched snapshot", e);
+          } catch {
+            console.warn("Bad prefetched snapshot");
           }
         }
       } catch {
@@ -401,8 +444,8 @@ export class SupabaseYjsProvider {
           update = await this.encryption.decrypt(update);
         }
         if (update.byteLength > 0) Y.applyUpdate(this.doc, update, "remote-snapshot");
-      } catch (e) {
-        console.warn("Failed to apply snapshot", e);
+      } catch {
+        console.warn("Failed to apply snapshot");
       }
     } else if (rowExists === false && !this.isAbandoned()) {
       // Create empty row so multiple clients can find the slug immediately.
@@ -423,32 +466,35 @@ export class SupabaseYjsProvider {
 
     this.channel.on("broadcast", { event: "y-update" }, async ({ payload }) => {
       try {
-        let bytes = base64ToBytes(payload.update);
+        let bytes = decodeBoundedBroadcastBytes(payload, MAX_REALTIME_UPDATE_BYTES);
+        if (!bytes) return;
         if (this.encryption) bytes = await this.encryption.decrypt(bytes);
+        if (bytes.byteLength === 0 || bytes.byteLength > MAX_REALTIME_UPDATE_BYTES) return;
         Y.applyUpdate(this.doc, bytes, "remote");
-      } catch (e) {
-        console.warn("Bad remote update", e);
+      } catch {
+        console.warn("Bad remote update");
       }
     });
 
     this.channel.on("broadcast", { event: "awareness" }, ({ payload }) => {
       try {
-        const bytes = base64ToBytes(payload.update);
+        const bytes = decodeBoundedBroadcastBytes(payload, MAX_REALTIME_AWARENESS_BYTES);
+        if (!bytes) return;
         applyAwarenessUpdate(this.awareness, bytes, "remote");
-      } catch (e) {
-        console.warn("Bad awareness", e);
+      } catch {
+        console.warn("Bad awareness");
       }
-    });
-
-    this.channel.on("broadcast", { event: "slug-abandoned" }, ({ payload }) => {
-      if (payload?.slug === this.slug) markSlugAbandoned(this.slug, false);
     });
 
     // When a new client joins, request the full state from peers.
     this.channel.on("broadcast", { event: "request-state" }, ({ payload }) => {
-      if (payload.from === this.clientId) return;
+      const from = payload?.from;
+      if (!isRealtimeClientId(from) || from === this.clientId) return;
+      const now = Date.now();
+      if (now - this.lastStateRequestResponseAt < REQUEST_STATE_THROTTLE_MS) return;
+      this.lastStateRequestResponseAt = now;
       const update = Y.encodeStateAsUpdate(this.doc);
-      this.broadcastUpdate(update);
+      void this.broadcastUpdate(update);
     });
 
     await this.channel.subscribe(async (status) => {
@@ -551,8 +597,8 @@ export class SupabaseYjsProvider {
           hadLocal ? { type: "conflict", bytes } : { type: "recovered", bytes },
         );
       }
-    } catch (e) {
-      console.warn("Refetch snapshot failed", e);
+    } catch {
+      console.warn("Refetch snapshot failed");
     }
   }
 
@@ -612,17 +658,22 @@ export class SupabaseYjsProvider {
 
   private async broadcastUpdate(update: Uint8Array) {
     if (this.destroyed || this.isAbandoned()) return;
+    if (this.hasEncryptionModeMismatch()) return;
     if (!this.channel || !this.connected) return;
     let bytes = update;
     if (this.encryption) {
       try {
         bytes = await this.encryption.encrypt(update);
-      } catch (e) {
-        console.warn("Encrypt update failed", e);
+      } catch {
+        console.warn("Encrypt update failed");
         return;
       }
     }
+    if (bytes.byteLength === 0 || bytes.byteLength > MAX_REALTIME_UPDATE_BYTES) return;
     if (this.destroyed || this.isAbandoned()) return;
+    // Encryption can be asynchronous. Re-read the durable pin immediately
+    // before sending so a concurrent lock/unlock cannot leak stale-mode bytes.
+    if (this.hasEncryptionModeMismatch()) return;
     this.channel.send({
       type: "broadcast",
       event: "y-update",
@@ -638,6 +689,7 @@ export class SupabaseYjsProvider {
       this.awareness,
       clients ?? Array.from(this.awareness.getStates().keys())
     );
+    if (update.byteLength === 0 || update.byteLength > MAX_REALTIME_AWARENESS_BYTES) return;
     this.channel.send({
       type: "broadcast",
       event: "awareness",
@@ -657,7 +709,7 @@ export class SupabaseYjsProvider {
     if (this.isAbandoned()) return;
     if (this.hasEncryptionModeMismatch()) {
       console.warn("saveSnapshot skipped: encryption mode mismatch", {
-        slug: this.slug,
+        locatorLength: this.slug.length,
         expectedEncrypted: this.expectedEncrypted,
         haveKey: !!this.encryption,
       });
@@ -679,12 +731,15 @@ export class SupabaseYjsProvider {
           storedContent = "";
           storedCount = 0;
           storedTags = [];
-        } catch (e) {
-          console.warn("Encrypt snapshot failed", e);
+        } catch {
+          console.warn("Encrypt snapshot failed");
           return;
         }
       }
       if (this.destroyed || this.isAbandoned()) return;
+      // Re-check after asynchronous encryption and immediately before the
+      // upsert. A mode transition in another tab must stop this stale write.
+      if (this.hasEncryptionModeMismatch()) return;
       const { error } = await supabase.from("notes").upsert(
         {
           slug: this.slug,
@@ -699,7 +754,7 @@ export class SupabaseYjsProvider {
         { onConflict: "slug" }
       );
       if (error) {
-        console.warn("Snapshot save failed", error);
+        console.warn("Snapshot save failed");
         this.emitSync({ type: "error", message: error.message ?? String(error) });
       } else {
         this.lastSnapshotAt = Date.now();
@@ -708,7 +763,7 @@ export class SupabaseYjsProvider {
         this.emitSync({ type: "synced-durable" });
       }
     } catch (e) {
-      console.warn("Snapshot exception", e);
+      console.warn("Snapshot exception");
       this.emitSync({ type: "error", message: e instanceof Error ? e.message : String(e) });
     }
   }
@@ -755,10 +810,14 @@ export class SupabaseYjsProvider {
       // sendBeacon doesn't let us set custom headers; the Supabase REST API
       // requires apikey + Prefer headers, so we fall through to fetch with
       // keepalive when beacon isn't viable.
+      if (this.hasEncryptionModeMismatch()) return;
       const ok = navigator.sendBeacon
         ? navigator.sendBeacon(`${url}&apikey=${encodeURIComponent(apikey)}`, blob)
         : false;
       if (!ok) {
+        // Another browser context can change the durable pin while this
+        // context evaluates the beacon attempt. Re-check before fallback.
+        if (this.hasEncryptionModeMismatch()) return;
         void fetch(`${url}`, {
           method: "POST",
           headers: {
@@ -771,8 +830,8 @@ export class SupabaseYjsProvider {
           keepalive: true,
         });
       }
-    } catch (e) {
-      console.warn("flushBeacon failed", e);
+    } catch {
+      console.warn("flushBeacon failed");
     }
   }
 

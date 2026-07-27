@@ -12,9 +12,9 @@ test("forbidden key in bundle: overlay shows denylist error and copy is blocked"
   context,
   extensionId,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
-    origin: `chrome-extension://${extensionId}`,
-  });
+  // Chromium treats chrome-extension:// origins as opaque for the DevTools
+  // permission API, so grant clipboard access at the persistent-context level.
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
 
   const panel = await openPanel(context, extensionId);
 

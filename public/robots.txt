@@ -18,4 +18,4 @@ User-agent: *
 Allow: /
 Disallow: /note
 
-Sitemap: https://syrin.online/sitemap.xml
+Sitemap: https://note.syrin.online/sitemap.xml

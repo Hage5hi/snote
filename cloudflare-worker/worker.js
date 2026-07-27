@@ -1,20 +1,19 @@
 /**
- * Cloudflare Worker — Prerender meta tags cho crawler không-JS.
+ * Cloudflare Worker — containment cho URL riêng tư và prerender public shell.
  *
  * Đặt trước syrin.online. Worker phát hiện User-Agent crawler
- * (LinkedIn, Slack, Facebook, Twitter, Discord, WhatsApp, Telegram...)
- * và trả HTML đã render sẵn meta tags theo từng note URL. Request từ
- * trình duyệt thường được pass-through tới Lovable hosting nguyên bản.
+ * (LinkedIn, Slack, Facebook, Twitter, Discord, WhatsApp, Telegram...). URL
+ * note/share luôn nhận HTML generic, không cache và không index; chỉ public
+ * shell được prerender metadata. Request từ trình duyệt thường được
+ * pass-through tới Lovable hosting nguyên bản mà không redirect URL chứa quyền.
  *
  * Cấu hình cần (Environment Variables / Secrets trong Cloudflare):
  *   - ORIGIN_HOST        = "snote.lovable.app"   (Lovable origin)
- *   - SUPABASE_PROJECT   = "onfzjmfjldsbthchssfr"
- *   - SUPABASE_ANON_KEY  = <anon key>     (secret)
- *   - NOTE_META_SECRET   = <shared secret>  (secret) — phải khớp với
- *                         secret cùng tên trong Supabase Edge Function.
- *   - SITE_URL           = "https://syrin.online"
+ *   - SITE_URL           = "https://note.syrin.online"
  *
- * Route: gắn worker vào pattern  syrin.online/*  và  www.syrin.online/*
+ * Route: gắn worker vào các pattern note.syrin.online/*, syrin.online/*
+ * và www.syrin.online/*. Mọi hostname share công khai phải đi qua Worker
+ * trước khi request /s/* có thể tới origin.
  */
 
 // Mở rộng UA: thêm iMessage/Apple, TikTok, Zalo, LINE, Viber, KakaoTalk,
@@ -22,10 +21,11 @@
 // Teams, Outlook/Office, Google-Read-Aloud, Google-Site-Verification,
 // PetalBot, Yeti (Naver), SeznamBot, Qwantify, MojeekBot, AhrefsBot,
 // SemrushBot, archive.org_bot, ia_archiver, Snapcrawler, Tumblr, Flipboard.
-const CRAWLER_UA = /(facebookexternalhit|Facebot|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|Discordbot|WhatsApp|TelegramBot|Pinterest|pinterestbot|redditbot|Applebot|Googlebot|Google-Read-Aloud|Google-Site-Verification|Google-InspectionTool|bingbot|DuckDuckBot|YandexBot|Baiduspider|SkypeUriPreview|vkShare|W3C_Validator|Embedly|Iframely|nuzzel|outbrain|quora link preview|XING-contenttabreceiver|TikTokBot|Bytespider|Snapchat|SnapchatAds|Snapcrawler|Mastodon|Pleroma|Misskey|Threads|Bluesky|Notionbot|Trello|Asana|MicrosoftPreview|Teams|Outlook|Office|Zalo|LINE|Viber|KakaoTalk|iMessageLinkPreview|MetaInspector|Tumblr|Flipboard|PetalBot|Yeti|SeznamBot|Qwantify|MojeekBot|AhrefsBot|SemrushBot|archive\.org_bot|ia_archiver|YisouSpider|Sogou|360Spider|MJ12bot|DotBot|HeadlessChrome)/i;
+const CRAWLER_UA = /(facebookexternalhit|Facebot|meta-externalagent|meta-externalfetcher|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|Discordbot|WhatsApp|TelegramBot|Pinterest|pinterestbot|redditbot|Applebot|Googlebot|Google-Read-Aloud|Google-Site-Verification|Google-InspectionTool|bingbot|DuckDuckBot|YandexBot|Baiduspider|SkypeUriPreview|vkShare|W3C_Validator|Embedly|Iframely|nuzzel|outbrain|quora link preview|XING-contenttabreceiver|TikTokBot|Bytespider|Snapchat|SnapchatAds|Snapcrawler|Mastodon|Pleroma|Misskey|Threads|Bluesky|Notionbot|Trello|Asana|MicrosoftPreview|Teams|Outlook|Office|Zalo|LINE|Viber|KakaoTalk|iMessageLinkPreview|MetaInspector|Tumblr|Flipboard|PetalBot|Yeti|SeznamBot|Qwantify|MojeekBot|AhrefsBot|SemrushBot|archive\.org_bot|ia_archiver|YisouSpider|Sogou|360Spider|MJ12bot|DotBot|HeadlessChrome)/i;
 
-const SLUG_RE = /^[a-zA-Z0-9._-]{1,80}$/;
-const TOKEN_RE = /^[a-zA-Z0-9_-]{8,128}$/;
+const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const RAW_NOTE_RE = /^([a-zA-Z0-9_-]{1,64})\.md$/i;
+const SHARE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
 // Rate limit (in-memory per-isolate). Token bucket đơn giản.
 // Ghi chú: Mỗi colo/isolate giữ state riêng, không 100% chính xác toàn cầu,
@@ -49,7 +49,7 @@ const RL_BOT_MAX = {                // override theo nhóm bot
 
 // Map UA → nhóm bot (thứ tự quan trọng, match đầu tiên thắng).
 const BOT_GROUPS = [
-  ["facebook",  /facebookexternalhit|facebot|metainspector/i],
+  ["facebook",  /facebookexternalhit|facebot|meta-external(agent|fetcher)|metainspector/i],
   ["slack",     /slack/i],
   ["linkedin",  /linkedinbot/i],
   ["twitter",   /twitterbot/i],
@@ -128,14 +128,13 @@ export default {
     const url = new URL(request.url);
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const ua = request.headers.get("user-agent") ?? "";
-
-    // Force www → apex để tránh duplicate canonical
-    if (url.hostname === "www.syrin.online") {
-      url.hostname = "syrin.online";
-      return Response.redirect(url.toString(), 301);
-    }
+    const isCrawler = CRAWLER_UA.test(ua);
 
     if (url.pathname === "/robots.txt") {
+      if (url.hostname === "www.syrin.online") {
+        url.hostname = "syrin.online";
+        return Response.redirect(url.toString(), 301);
+      }
       const body = renderRobotsTxt(env);
       const etag = etagOf(body);
       if (matchesEtag(request, etag)) {
@@ -159,17 +158,52 @@ export default {
       });
     }
 
-    const isCrawler = CRAWLER_UA.test(ua);
+    // Classify capability-bearing share paths before asset passthrough or host
+    // redirects. A token may legitimately look like a filename or be followed
+    // by nested path data, and neither case may reach the origin.
+    const normalizedPath = normalizePath(url.pathname);
+    const route = parseRoute(url.pathname);
+    if (isCrawler && route?.kind === "share") {
+      logEvent(env, "info", "prerender", {
+        kind: "share", status: 200,
+      });
+      return renderGenericShareHtml();
+    }
+    // A legacy note slug is still an edit credential until the capability
+    // cutover. Never read a content-bearing cache or metadata endpoint for a
+    // crawler: a cached plaintext preview could survive a later lock/revoke.
+    if (isCrawler && route?.kind === "note") {
+      logEvent(env, "info", "prerender", {
+        kind: "note", status: 200,
+      });
+      return renderGenericNoteHtml();
+    }
 
     if (!isCrawler || isAssetPath(url.pathname)) {
-      return passThrough(request, env);
+      // Legacy note locators and share paths are credentials until cutover.
+      // Passing them through avoids copying the raw path into Location and
+      // another round of proxy/browser logs. Public routes may still redirect.
+      if (
+        url.hostname === "www.syrin.online"
+        && route?.kind !== "share"
+        && route?.kind !== "note"
+      ) {
+        url.hostname = "syrin.online";
+        return Response.redirect(url.toString(), 301);
+      }
+      return passThrough(
+        request,
+        env,
+        route?.kind === "share" || route?.kind === "note",
+        route?.kind === "share" || route?.kind === "note" ? route.kind : null,
+      );
     }
 
     // Rate limit chỉ áp dụng cho nhánh crawler (đã rẽ vào prerender).
     const rl = rateLimit(ip, ua);
     if (!rl.ok) {
       logEvent(env, "warn", "rate_limited", {
-        ip, ua, path: url.pathname, group: rl.group, scope: rl.reason,
+        group: rl.group, scope: rl.reason,
         retryAfter: rl.retryAfter,
       });
       return new Response("Too Many Requests", {
@@ -184,15 +218,20 @@ export default {
       });
     }
 
+    // Canonicalize only after every credential-bearing route has been
+    // contained. A redirect would echo that credential in Location.
+    if (url.hostname === "www.syrin.online") {
+      url.hostname = "syrin.online";
+      return Response.redirect(url.toString(), 301);
+    }
+
     // Chuẩn hoá pathname (strip trailing slash, lowercase host đã xong)
-    const normalizedPath = normalizePath(url.pathname);
     if (normalizedPath !== url.pathname) {
       const redir = new URL(url);
       redir.pathname = normalizedPath;
       return Response.redirect(redir.toString(), 301);
     }
 
-    const route = parseRoute(normalizedPath);
     if (!route) return passThrough(request, env);
 
     // Edge cache theo full URL
@@ -200,7 +239,7 @@ export default {
     const cacheKey = new Request(url.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) {
-      logEvent(env, "info", "cache_hit", { ip, ua, path: url.pathname });
+      logEvent(env, "info", "cache_hit", { kind: route.kind, group: rl.group });
       return cached;
     }
 
@@ -246,7 +285,7 @@ export default {
       });
 
       logEvent(env, "info", "prerender", {
-        ip, ua, path: url.pathname, kind: route.kind,
+        kind: route.kind, group: rl.group,
         status, found: !!meta.found, encrypted: !!isEncrypted,
         ms: Date.now() - t0,
       });
@@ -258,7 +297,9 @@ export default {
       return response;
     } catch (err) {
       logEvent(env, "error", "prerender_failed", {
-        ip, ua, path: url.pathname, error: String(err), ms: Date.now() - t0,
+        kind: route.kind,
+        errorName: err instanceof Error ? err.name : "unknown",
+        ms: Date.now() - t0,
       });
       return passThrough(request, env);
     }
@@ -278,40 +319,124 @@ function normalizePath(p) {
 }
 
 function parseRoute(pathname) {
-  if (pathname === "/" || pathname === "") return { kind: "home" };
-  const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length === 2 && parts[0] === "s" && TOKEN_RE.test(parts[1])) {
-    return { kind: "share", token: parts[1] };
+  pathname = normalizeContainmentPath(pathname);
+  if (traversesShareRoute(pathname)) {
+    // Containment is deliberately independent of the legacy token regex.
+    // Once resolution reaches `/s/<token>`, later traversal cannot erase the
+    // sensitivity of the raw path or let it reach redirects, caches, or logs.
+    return { kind: "share" };
   }
+  if (pathname === "/" || pathname === "") return { kind: "home" };
+  pathname = resolveContainmentDotSegments(pathname);
+  if (pathname === "/" || pathname === "") return { kind: "home" };
+  // `/privacy` is an explicit public SPA route, not a legacy note locator.
+  // Keep it crawlable and outside the no-store/noindex credential boundary.
+  if (pathname.toLowerCase() === "/privacy") return null;
+  const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length === 1) {
     let slug = parts[0];
     try { slug = decodeURIComponent(slug); } catch { /* ignore */ }
     if (SLUG_RE.test(slug)) return { kind: "note", slug };
+    const rawNote = slug.match(RAW_NOTE_RE);
+    if (rawNote) return { kind: "note", slug: rawNote[1] };
   }
   return null;
 }
 
-async function fetchNoteMeta(route, env) {
-  if (route.kind === "home") return { found: true, kind: "home" };
-  const qs = route.kind === "share"
-    ? `token=${encodeURIComponent(route.token)}`
-    : `slug=${encodeURIComponent(route.slug)}`;
-  const endpoint = `https://${env.SUPABASE_PROJECT}.functions.supabase.co/note-meta?${qs}`;
-  const res = await fetch(endpoint, {
-    headers: {
-      apikey: env.SUPABASE_ANON_KEY,
-      authorization: `Bearer ${env.SUPABASE_ANON_KEY}`,
-      "x-meta-secret": env.NOTE_META_SECRET ?? "",
-    },
-  });
-  const data = await res.json();
-  return { ...data, kind: route.kind };
+function normalizeContainmentPath(pathname) {
+  let value = pathname || "/";
+
+  // Decode a bounded number of mixed encodings, then collapse arbitrarily
+  // repeated standard encodings of path separators. This normalization is
+  // only for security classification; the raw path is never logged or echoed.
+  for (let pass = 0; pass < 8; pass += 1) {
+    let decoded;
+    try {
+      decoded = decodeURIComponent(value);
+    } catch {
+      break;
+    }
+    if (decoded === value) break;
+    value = decoded;
+  }
+  value = value.replace(/%(?:25)*(?:2f|5c)/gi, "/");
+  value = value.replace(/%(?:25)*2e/gi, ".");
+  value = value.replace(/\\/g, "/");
+  return normalizePath(value);
 }
 
-async function passThrough(request, env) {
+function traversesShareRoute(pathname) {
+  const segments = [];
+  for (const segment of pathname.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+    if (segments.length >= 2 && isSharePrefix(segments[0])) return true;
+  }
+  return false;
+}
+
+function resolveContainmentDotSegments(pathname) {
+  const segments = [];
+  for (const segment of pathname.split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return `/${segments.join("/")}`;
+}
+
+function isSharePrefix(value) {
+  // Match s/S plus any number of standard re-encodings of %73/%53, e.g.
+  // %73, %2573, %252573. This stays linear for hostile input.
+  return value.toLowerCase() === "s" || /^%(?:25)*(?:53|73)$/i.test(value);
+}
+
+async function fetchNoteMeta(route) {
+  if (route.kind === "home") return { found: true, kind: "home" };
+  throw new TypeError("private metadata lookup is disabled");
+}
+
+async function passThrough(
+  request,
+  env,
+  privateRoute = false,
+  privateRouteKind = null,
+) {
   const url = new URL(request.url);
   url.hostname = env.ORIGIN_HOST;
-  return fetch(new Request(url, request));
+  if (privateRouteKind === "share") {
+    // The SPA migrates the legacy token into the URL fragment before routing.
+    // Fragments never reach this worker, so the origin only needs the generic
+    // compatibility shell and must not receive the raw credential path/query.
+    url.pathname = "/s";
+    url.search = "";
+  } else if (privateRouteKind === "note") {
+    // A legacy slug is still a credential. The root document is the same SPA
+    // shell, while the outer browser URL remains unchanged for BrowserRouter.
+    url.pathname = "/";
+    url.search = "";
+  }
+  const response = await fetch(new Request(url, request));
+  if (!privateRoute) return response;
+  const headers = new Headers(response.headers);
+  headers.set("cache-control", "no-store");
+  headers.set("cdn-cache-control", "no-store");
+  headers.set("x-robots-tag", SHARE_ROBOTS);
+  headers.set("referrer-policy", "no-referrer");
+  headers.delete("etag");
+  headers.delete("last-modified");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function escapeHtml(s) {
@@ -332,7 +457,7 @@ function renderHtml(meta, url, env) {
   let robots = "index, follow";
   let ogType = "website";
 
-  if (meta.kind === "note" || meta.kind === "share") {
+  if (meta.kind === "note") {
     if (meta.found) {
       title = `Syrin Notes — /${meta.slug}`;
       ogType = "article";
@@ -384,8 +509,61 @@ function renderHtml(meta, url, env) {
 </html>`;
 }
 
+function renderGenericShareHtml() {
+  return renderGenericPrivateHtml(
+    "Shared note — Syrin Notes",
+    "Open a private, revocable shared note on Syrin Notes.",
+  );
+}
+
+function renderGenericNoteHtml() {
+  return renderGenericPrivateHtml(
+    "Private note — Syrin Notes",
+    "Open a private note on Syrin Notes.",
+  );
+}
+
+function renderGenericPrivateHtml(title, description) {
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="referrer" content="no-referrer" />
+<title>${title}</title>
+<meta name="description" content="${description}" />
+<meta name="robots" content="${SHARE_ROBOTS}" />
+<meta name="googlebot" content="${SHARE_ROBOTS}" />
+<meta property="og:title" content="${title}" />
+<meta property="og:description" content="${description}" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Syrin Notes" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:title" content="${title}" />
+<meta name="twitter:description" content="${description}" />
+</head>
+<body>
+<h1>${title}</h1>
+<p>${description}</p>
+<p><a href="/">Open Syrin Notes</a></p>
+</body>
+</html>`;
+
+  return new Response(html, {
+    status: 200,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+      "cdn-cache-control": "no-store",
+      "x-robots-tag": SHARE_ROBOTS,
+      "referrer-policy": "no-referrer",
+      vary: "User-Agent",
+    },
+  });
+}
+
 function renderRobotsTxt(env) {
-  const siteUrl = (env.SITE_URL || "https://syrin.online").replace(/\/+$/, "");
+  const siteUrl = (env.SITE_URL || "https://note.syrin.online").replace(/\/+$/, "");
   return `User-agent: facebookexternalhit
 Allow: /
 

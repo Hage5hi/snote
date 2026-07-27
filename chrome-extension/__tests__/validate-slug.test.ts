@@ -1,11 +1,10 @@
 import { describe, it, expect } from "vitest";
-// @ts-expect-error - plain JS module
 import { isValidSlug, SLUG_RE } from "../lib/validate-slug.js";
 
 describe("isValidSlug", () => {
   it("rejects empty string", () => expect(isValidSlug("")).toBe(false));
-  it("rejects undefined", () => expect(isValidSlug(undefined as any)).toBe(false));
-  it("rejects non-string", () => expect(isValidSlug(123 as any)).toBe(false));
+  it("rejects undefined", () => expect(isValidSlug(undefined)).toBe(false));
+  it("rejects non-string", () => expect(isValidSlug(123)).toBe(false));
   it("accepts 1 char", () => expect(isValidSlug("a")).toBe(true));
   it("accepts 64 chars", () => expect(isValidSlug("a".repeat(64))).toBe(true));
   it("rejects 65 chars", () => expect(isValidSlug("a".repeat(65))).toBe(false));

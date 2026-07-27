@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useParams } from "react-router";
 import { ThemeProvider } from "next-themes";
 import { lazy, Suspense } from "react";
 import Home from "./pages/Home";
@@ -16,7 +16,9 @@ import { EditorSkeleton } from "./components/note/EditorSkeleton";
 import { I18nProvider } from "./i18n/provider";
 
 // Lazy-load heavy routes so the editor / admin bundles only load when needed.
-const NotePage = lazy(() => import("./pages/NotePage"));
+const NotePage = lazy(() => import("./pages/NotePage").then((module) => ({
+  default: module.CutoverNotePage,
+})));
 const RawView = lazy(() => import("./pages/RawView"));
 const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
@@ -77,12 +79,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <TooltipProvider delayDuration={200} skipDelayDuration={0}>
-          <BrowserRouter
-            future={{
-              v7_startTransition: true,
-              v7_relativeSplatPath: true,
-            }}
-          >
+          <BrowserRouter>
             <CommandPalette />
             <DonateButton />
             <PwaUpdateDebugPanel />
@@ -96,6 +93,14 @@ const App = () => (
                   element={
                     <Suspense fallback={PlainFallback}>
                       <Privacy />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="/s"
+                  element={
+                    <Suspense fallback={PlainFallback}>
+                      <SharePage />
                     </Suspense>
                   }
                 />

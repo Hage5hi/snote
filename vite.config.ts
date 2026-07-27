@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
@@ -20,12 +20,11 @@ import { VitePWA } from "vite-plugin-pwa";
 // onNeedRefresh yet (or the user has SW disabled entirely).
 const BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 
-function emitVersionJson() {
+function emitVersionJson(): Plugin {
   return {
     name: "emit-version-json",
     apply: "build" as const,
     generateBundle() {
-      // @ts-expect-error rollup plugin context typing not imported here
       this.emitFile({
         type: "asset",
         fileName: "version.json",
@@ -136,6 +135,12 @@ export default defineConfig(({ mode }) => ({
           return "assets/[name]-[hash].js";
         },
         manualChunks(id) {
+          // The worker itself stays runtime-cached, but its shared renderer is
+          // also the no-worker fallback. Give that dynamic main-thread chunk a
+          // non-worker name so Workbox precaches it for first-use offline mode.
+          if (id.includes("/src/lib/markdown/preview-worker-renderer")) {
+            return "markdown-fallback";
+          }
           // Pin Vite's `__vitePreload` helper to its own tiny chunk.
           // Without this, Rollup hoists the helper into whichever lazy chunk
           // it happens to land in (historically `mermaid-vendor`), which
@@ -174,7 +179,16 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("/ogl/") || id.includes("node_modules/ogl/")) {
             return "ogl-vendor";
           }
-          if (id.includes("/react-dom/") || id.includes("/react-router") || id.match(/\/react\//)) {
+          // Keep eager runtime packages in exact package chunks. The former
+          // `/react-dom/` substring also matched `@floating-ui/react-dom`,
+          // accidentally placing UI-positioning code in React's budget.
+          if (id.includes("/react-router")) {
+            return "router-vendor";
+          }
+          if (id.includes("/@floating-ui/")) {
+            return "floating-ui-vendor";
+          }
+          if (/(?:^|\/)react-dom\//.test(id) || /(?:^|\/)react\//.test(id)) {
             return "react-vendor";
           }
           if (id.includes("@codemirror") || id.includes("y-codemirror")) {

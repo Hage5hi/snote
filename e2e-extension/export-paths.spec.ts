@@ -1,10 +1,11 @@
 import { test, expect } from "./fixtures/extension";
+import { readFileSync } from "node:fs";
 
 // Both export surfaces (download + copy-to-clipboard) must apply
 // redaction consistently. The copy path historically dumped the raw text
 // of the log list — this spec guards the parity contract.
 test.describe("debug export — copy path parity", () => {
-  test("copy-to-clipboard redacts when toggle is on", async ({
+  test("copy-to-clipboard is forcibly redacted", async ({
     context,
     extensionId,
     serviceWorker,
@@ -12,6 +13,7 @@ test.describe("debug export — copy path parity", () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await serviceWorker.evaluate(async () => {
       await new Promise<void>((r) =>
+        // @ts-expect-error chrome global in extension service worker
         chrome.storage.sync.set({ debug: true }, () => r()),
       );
     });
@@ -22,33 +24,28 @@ test.describe("debug export — copy path parity", () => {
 
     // Seed a debug line containing a sensitive token.
     await page.evaluate(async () => {
-      const { dlog } = await import("./lib/debug.js");
+      const debugModulePath = "./lib/debug.js";
+      const { dlog } = await import(debugModulePath);
       dlog("ack sent", "my-secret-note-slug");
     });
 
-    await page.check("#debug-redact");
+    expect(await page.isChecked("#debug-redact")).toBe(true);
+    expect(await page.isDisabled("#debug-redact")).toBe(true);
     await page.click("#debug-copy");
 
     const copied = await page.evaluate(() => navigator.clipboard.readText());
     expect(copied.length).toBeGreaterThan(0);
     expect(copied).not.toContain("my-secret-note-slug");
 
-    // Parse as JSON when copy now emits JSON; tolerate text fallback but
-    // either way the slug must be masked.
-    try {
-      const parsed = JSON.parse(copied);
-      const { validateExport } = await import(
-        /* @vite-ignore */ `chrome-extension://${(await page.evaluate(() => location.host))}/lib/export-schema.js`
-      ).catch(() => ({ validateExport: null }));
-      if (validateExport) expect(validateExport(parsed).ok).toBe(true);
-      expect(JSON.stringify(parsed)).not.toContain("my-secret-note-slug");
-    } catch {
-      // text-format fallback — masking still required.
-      expect(copied).toMatch(/m•+g|<redacted>|<api-key>|m\*\*\*g/);
-    }
+    const parsed = JSON.parse(copied);
+    const { validateExport } = await import(
+      /* @vite-ignore */ `chrome-extension://${(await page.evaluate(() => location.host))}/lib/export-schema.js`
+    ).catch(() => ({ validateExport: null }));
+    if (validateExport) expect(validateExport(parsed).ok).toBe(true);
+    expect(JSON.stringify(parsed)).not.toContain("my-secret-note-slug");
   });
 
-  test("copy-to-clipboard leaves text raw when toggle is off", async ({
+  test("copy and download emit equivalent forced-redaction payloads", async ({
     context,
     extensionId,
     serviceWorker,
@@ -56,6 +53,7 @@ test.describe("debug export — copy path parity", () => {
     await context.grantPermissions(["clipboard-read", "clipboard-write"]);
     await serviceWorker.evaluate(async () => {
       await new Promise<void>((r) =>
+        // @ts-expect-error chrome global in extension service worker
         chrome.storage.sync.set({ debug: true }, () => r()),
       );
     });
@@ -64,13 +62,29 @@ test.describe("debug export — copy path parity", () => {
     await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
     await page.waitForSelector("#debug-copy");
     await page.evaluate(async () => {
-      const { dlog } = await import("./lib/debug.js");
-      dlog("ack sent", "plain-slug-xyz");
+      const debugModulePath = "./lib/debug.js";
+      const { dlog } = await import(debugModulePath);
+      dlog("ack sent", "parity-secret-slug");
     });
 
-    expect(await page.isChecked("#debug-redact")).toBe(false);
+    expect(await page.isChecked("#debug-redact")).toBe(true);
+    expect(await page.isDisabled("#debug-redact")).toBe(true);
     await page.click("#debug-copy");
-    const copied = await page.evaluate(() => navigator.clipboard.readText());
-    expect(copied).toContain("plain-slug-xyz");
+    const copied = JSON.parse(await page.evaluate(() => navigator.clipboard.readText()));
+
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      page.click("#debug-export"),
+    ]);
+    const filePath = await download.path();
+    expect(filePath).toBeTruthy();
+    const downloaded = JSON.parse(readFileSync(filePath!, "utf8"));
+    const withoutTimestamp = ({ exportedAt: _exportedAt, ...rest }) => rest;
+
+    expect(withoutTimestamp(downloaded)).toEqual(withoutTimestamp(copied));
+    expect(JSON.stringify(copied)).not.toContain("parity-secret-slug");
+    expect(JSON.stringify(downloaded)).not.toContain("parity-secret-slug");
+    expect(copied.redacted).toBe(true);
+    expect(downloaded.redacted).toBe(true);
   });
 });

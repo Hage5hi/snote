@@ -5,6 +5,9 @@ import {
   type Worker,
 } from "@playwright/test";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const fixtureDir = path.dirname(fileURLToPath(import.meta.url));
 
 // Loads chrome-extension/ as an unpacked extension in a persistent context.
 // Exposes `context`, `extensionId`, and `serviceWorker` to specs.
@@ -14,27 +17,29 @@ export const test = base.extend<{
   serviceWorker: Worker;
 }>({
   // eslint-disable-next-line no-empty-pattern
-  context: async ({}, use) => {
-    const extPath = path.resolve(__dirname, "..", "..", "chrome-extension");
+  context: async ({}, provide) => {
+    const extPath = path.resolve(fixtureDir, "..", "..", "chrome-extension");
+    const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
     const ctx = await chromium.launchPersistentContext("", {
       headless: false,
+      ...(executablePath ? { executablePath } : {}),
       args: [
         `--disable-extensions-except=${extPath}`,
         `--load-extension=${extPath}`,
         "--no-first-run",
       ],
     });
-    await use(ctx);
+    await provide(ctx);
     await ctx.close();
   },
-  serviceWorker: async ({ context }, use) => {
+  serviceWorker: async ({ context }, provide) => {
     let [sw] = context.serviceWorkers();
     if (!sw) sw = await context.waitForEvent("serviceworker");
-    await use(sw);
+    await provide(sw);
   },
-  extensionId: async ({ serviceWorker }, use) => {
+  extensionId: async ({ serviceWorker }, provide) => {
     const id = new URL(serviceWorker.url()).host;
-    await use(id);
+    await provide(id);
   },
 });
 
@@ -42,7 +47,6 @@ export const expect = test.expect;
 
 // Helper: run a snippet inside the service worker.
 export async function inSW<T>(sw: Worker, fn: () => Promise<T> | T): Promise<T> {
-  // @ts-expect-error - evaluate signature
   return sw.evaluate(fn);
 }
 
@@ -76,10 +80,15 @@ export async function sendReady(
   const protocol = opts.protocol ?? 2;
   const buildId = opts.buildId ?? "test-build";
   const appVersion = opts.appVersion ?? "test";
+  await expect(panel.locator("#app")).toHaveAttribute(
+    "src",
+    /^https:\/\/note\.syrin\.online(?:\/|$)/,
+  );
   await panel.evaluate(
     ({ origin, protocol, buildId, appVersion }) => {
       const ev = new MessageEvent("message", {
         data: { type: "syrin:ready", protocol, buildId, appVersion },
+        source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
       });
       Object.defineProperty(ev, "origin", { value: origin });
       window.dispatchEvent(ev);

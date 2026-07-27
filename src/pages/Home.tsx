@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,25 +9,20 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { getPinned, getRecents, removeRecent, togglePin, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { isExtensionContext } from "@/lib/ext-context";
-import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
-
-// Cross-fade navigation when the browser supports the View Transitions API.
-function softNavigate(navigate: (path: string) => void, path: string) {
-  const w = document as unknown as {
-    startViewTransition?: (cb: () => void) => unknown;
-  };
-  if (w.startViewTransition) {
-    w.startViewTransition(() => navigate(path));
-  } else {
-    navigate(path);
-  }
-}
+import { createCapabilityApi } from "@/lib/capability/client";
+import { buildCapabilityUrl } from "@/lib/capability/url";
+import { createLegacyNoteApi } from "@/lib/legacy/cutover";
+import {
+  clearCreateRecovery,
+  loadOrCreateOwnerCandidate,
+} from "@/lib/capability/create-recovery";
+import { softNavigate } from "@/lib/soft-navigate";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
@@ -98,6 +93,7 @@ export default function Home() {
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
   const isMobile = useIsMobile();
   const { scene, committedScene, setScene } = useSceneTheme();
+  const legacyApi = useMemo(() => createLegacyNoteApi(), []);
 
   // Mobile: scenes are heavyweight WebGL/Canvas backgrounds that don't add
   // value on small screens. Clear any persisted scene from a desktop session
@@ -134,27 +130,20 @@ export default function Home() {
     setSlugStatus("checking");
     const ctrl = new AbortController();
     const t = window.setTimeout(async () => {
-      const { data, error } = await supabase
-        .from("notes")
-        .select("slug, char_count")
-        .eq("slug", trimmed)
-        .abortSignal(ctrl.signal)
-        .maybeSingle();
-      if (ctrl.signal.aborted) return;
-      if (error) {
+      try {
+        const exists = await legacyApi.exists(trimmed, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        setSlugStatus(exists ? "taken" : "available");
+      } catch {
+        if (ctrl.signal.aborted) return;
         setSlugStatus("idle");
-        return;
       }
-      // Treat empty notes as still available — common case is auto-created
-      // from a typo or prefetch path.
-      if (!data || (data.char_count ?? 0) === 0) setSlugStatus("available");
-      else setSlugStatus("taken");
     }, 350);
     return () => {
       ctrl.abort();
       window.clearTimeout(t);
     };
-  }, [slug]);
+  }, [legacyApi, slug]);
 
   // Warm up heavy editor modules ONLY when the device looks capable. On
   // mobile / save-data / low-memory devices, skip — keeps the Home heap
@@ -166,13 +155,35 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, [isMobile]);
 
-  const open = (s: string) => {
+  const createSecure = async (trimmed: string) => {
+    const ownerCandidate = loadOrCreateOwnerCandidate(trimmed);
+    const created = await createCapabilityApi().createNote(trimmed, ownerCandidate);
+    if (created.capabilities.owner !== ownerCandidate) {
+      throw new Error("secure note recovery conflict");
+    }
+    const secureUrl = new URL(buildCapabilityUrl("owner", created.capabilities.owner, trimmed));
+    await softNavigate(navigate, `${secureUrl.pathname}${secureUrl.hash}`);
+    clearCreateRecovery(trimmed, ownerCandidate);
+  };
+
+  const open = async (s: string) => {
     const trimmed = s.trim();
     if (!SLUG_RE.test(trimmed)) {
       setError(t("home.error.invalid_slug"));
       return;
     }
-    softNavigate(navigate, `/${trimmed}`);
+    setError(null);
+    if (slugStatus === "taken") {
+      softNavigate(navigate, `/${trimmed}`);
+      return;
+    }
+    if (slugStatus !== "available") return;
+    try {
+      await createSecure(trimmed);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create secure note");
+      setSlugStatus("idle");
+    }
   };
 
   // Prefetch a note's full opening payload on hover. We grab enc-meta AND the
@@ -182,25 +193,7 @@ export default function Home() {
     // Hover/touch on a recent = clear signal the user is about to open a note.
     // Warm the editor modules now (idempotent).
     if (canPrefetchEditor(isMobile)) prefetchEditor();
-    const key = `note-prefetch:${s}`;
-    if (sessionStorage.getItem(key)) return;
-    sessionStorage.setItem(key, "1");
-    void supabase
-      .from("notes")
-      .select("ydoc_state, is_encrypted, enc_salt, enc_check")
-      .eq("slug", s)
-      .maybeSingle()
-      .then(({ data }) => {
-        // Only stash the snapshot for plaintext notes — encrypted bytes need
-        // the key to be useful and would just take cache space.
-        if (data?.ydoc_state && !data?.is_encrypted) {
-          try {
-            sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
-          } catch {
-            // QuotaExceeded — silently drop, network fetch is still fast.
-          }
-        }
-      });
+    void s;
   };
 
   const hasScene = scene !== "none";
@@ -263,7 +256,7 @@ export default function Home() {
         </h1>
         <p className="mt-3 text-muted-foreground motion-safe:animate-[fade-in_500ms_ease-out_80ms_both] motion-reduce:animate-none">
           {t("home.intro_prefix")}
-          <code className="rounded bg-muted px-1.5 py-0.5 text-sm">/hello</code>
+          <code className="rounded bg-muted px-1.5 py-0.5 text-sm text-foreground">/hello</code>
           {t("home.intro_suffix")}
         </p>
 
@@ -291,8 +284,12 @@ export default function Home() {
                 : undefined
             }
           >
+            <label htmlFor="home-slug" className="sr-only">
+              {t("home.placeholder")}
+            </label>
             <span className="pl-3 text-sm text-muted-foreground select-none">/</span>
             <Input
+              id="home-slug"
               autoFocus
               value={slug}
               onChange={(e) => {
@@ -302,14 +299,27 @@ export default function Home() {
               placeholder={t("home.placeholder")}
               className="h-10 border-0 bg-transparent px-1 font-mono shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
               maxLength={64}
+              aria-invalid={!!error || slugStatus === "invalid"}
+              aria-describedby={`home-slug-status${error ? " home-slug-error" : ""}`}
             />
             <div
+              id="home-slug-status"
               key={slugStatus}
               className="shrink-0 whitespace-nowrap pr-2 text-muted-foreground motion-safe:animate-slug-status-pop"
+              role="status"
+              aria-live="polite"
             >
-              {slugStatus === "checking" && <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" />}
+              {slugStatus === "checking" && (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 motion-safe:animate-spin" aria-hidden="true" />
+                  <span className="sr-only">{t("home.status.checking")}</span>
+                </>
+              )}
               {slugStatus === "available" && (
-                <Check className="h-3.5 w-3.5 text-success" aria-label={t("home.status.available")} />
+                <>
+                  <Check className="h-3.5 w-3.5 text-success" aria-hidden="true" />
+                  <span className="sr-only">{t("home.status.available")}</span>
+                </>
               )}
               {slugStatus === "taken" && (
                 <span className="text-[10px] font-medium text-warning">{t("home.status.taken")}</span>
@@ -319,24 +329,38 @@ export default function Home() {
               )}
             </div>
           </div>
-          <Button type="submit" disabled={!slug.trim()}>
+          <Button
+            type="submit"
+            disabled={!slug.trim() || slugStatus === "checking" || slugStatus === "idle"}
+          >
             {slugStatus === "taken" ? t("home.btn.open_existing") : t("home.btn.open")}
             <ArrowRight className="h-4 w-4" />
           </Button>
         </form>
-        {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
+        {error && (
+          <p id="home-slug-error" className="mt-2 text-xs text-destructive" role="alert">
+            {error}
+          </p>
+        )}
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => softNavigate(navigate, `/${randomSlug()}`)}
+            onClick={() => {
+              const next = randomSlug();
+              setSlug(next);
+              setError(null);
+              void createSecure(next).catch((cause) => {
+                setError(cause instanceof Error ? cause.message : "Unable to create secure note");
+              });
+            }}
           >
             <Shuffle className="h-3.5 w-3.5" />
             {t("home.btn.random")}
           </Button>
           <span className="text-[11px] text-muted-foreground">
-            {t("home.cmdk_hint_prefix")}<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">⌘K</kbd>{t("home.cmdk_hint_suffix")}
+            {t("home.cmdk_hint_prefix")}<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">⌘K</kbd>{t("home.cmdk_hint_suffix")}
           </span>
         </div>
 
@@ -370,7 +394,7 @@ export default function Home() {
                     aria-label={t("home.pinned.unpin")}
                     title={t("home.pinned.unpin")}
                     onClick={() => setPinned(togglePin(s))}
-                    className="flex items-center px-1.5 text-muted-foreground opacity-0 motion-safe:transition-opacity motion-safe:hover:text-destructive motion-safe:group-hover:opacity-100"
+                    className="flex items-center px-1.5 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 motion-safe:transition-opacity hover:text-destructive"
                   >
                     <Trash2 className="h-3 w-3" />
                   </button>
@@ -465,7 +489,7 @@ export default function Home() {
                   <button
                     aria-label={t("home.recent.remove")}
                     onClick={() => setRecents(removeRecent(r.slug))}
-                    className="opacity-0 text-muted-foreground motion-safe:transition-opacity motion-safe:group-hover:opacity-100 motion-safe:hover:text-destructive"
+                    className="opacity-0 text-muted-foreground group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 motion-safe:transition-opacity hover:text-destructive"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

@@ -174,12 +174,14 @@ describe("SceneHost — cleanup & cancellation contract", () => {
     expect(firstSignal.aborted).toBe(false);
 
     // Simulate the user picking a different scene.
-    localStorage.setItem(SCENE_STORAGE_KEY, "scene-b");
-    window.dispatchEvent(new StorageEvent("storage", {
-      key: SCENE_STORAGE_KEY,
-      newValue: "scene-b",
-    }));
-    await act(async () => { rerender(<SceneHost />); });
+    await act(async () => {
+      localStorage.setItem(SCENE_STORAGE_KEY, "scene-b");
+      window.dispatchEvent(new StorageEvent("storage", {
+        key: SCENE_STORAGE_KEY,
+        newValue: "scene-b",
+      }));
+      rerender(<SceneHost />);
+    });
 
     await waitFor(() => {
       // First scene's signal is aborted.
@@ -192,5 +194,4 @@ describe("SceneHost — cleanup & cancellation contract", () => {
     });
   });
 });
-
 

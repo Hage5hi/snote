@@ -1,5 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import { Link, Navigate, useParams } from "react-router";
 import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -7,8 +16,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { AppShell } from "@/components/app/AppShell";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { saveLastSplitView } from "@/lib/split-view-persistence";
+import {
+  useSplitScrollSync,
+  type SplitScrollerRegistration,
+} from "@/hooks/use-split-scroll-sync";
+import { useI18n } from "@/i18n";
 
-const NotePage = lazy(() => import("./NotePage"));
+const NotePage = lazy(() => import("./NotePage").then((module) => ({
+  default: module.CutoverNotePage,
+})));
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const MIN_PANES = 2;
@@ -26,43 +42,13 @@ const MAX_PANES = 4;
  */
 export default function SplitView() {
   const { slug = "" } = useParams();
-  const rawSlugs = slug.split("+").filter(Boolean);
   const [syncScroll, setSyncScroll] = useState(true);
-  // Refs for each pane container; sync-scroll wires their .cm-scroller children.
-  const paneRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   // Deduplicate: identical slugs on multiple panes cause provider/presence
   // conflicts. Preserve first-occurrence order.
-  const slugs = useMemo(() => Array.from(new Set(rawSlugs)), [slug]);
-
-  useEffect(() => {
-    if (!syncScroll) return;
-    const scrollers = paneRefs.current
-      .slice(0, slugs.length)
-      .map((el) => el?.querySelector(".cm-scroller") as HTMLElement | null)
-      .filter((el): el is HTMLElement => !!el);
-    if (scrollers.length < 2) return;
-
-    let locked = false;
-    const handlers: Array<[HTMLElement, () => void]> = [];
-    for (const src of scrollers) {
-      const handler = () => {
-        if (locked) return;
-        const ratio = src.scrollTop / Math.max(1, src.scrollHeight - src.clientHeight);
-        locked = true;
-        for (const dst of scrollers) {
-          if (dst === src) continue;
-          dst.scrollTop = ratio * Math.max(1, dst.scrollHeight - dst.clientHeight);
-        }
-        requestAnimationFrame(() => (locked = false));
-      };
-      src.addEventListener("scroll", handler);
-      handlers.push([src, handler]);
-    }
-    return () => {
-      for (const [el, h] of handlers) el.removeEventListener("scroll", h);
-    };
-  }, [syncScroll, slugs]);
+  const rawSlugs = useMemo(() => slug.split("+").filter(Boolean), [slug]);
+  const slugs = useMemo(() => Array.from(new Set(rawSlugs)), [rawSlugs]);
+  const registerScroller = useSplitScrollSync(syncScroll, slugs.length);
 
   // Invalid: wrong count or any slug fails the regex → go home.
   if (
@@ -86,7 +72,7 @@ export default function SplitView() {
       slugs={slugs}
       syncScroll={syncScroll}
       setSyncScroll={setSyncScroll}
-      paneRefs={paneRefs}
+      registerScroller={registerScroller}
     />
   );
 }
@@ -95,20 +81,24 @@ function SplitViewBody({
   slugs,
   syncScroll,
   setSyncScroll,
-  paneRefs,
+  registerScroller,
 }: {
   slugs: string[];
   syncScroll: boolean;
   setSyncScroll: (v: (b: boolean) => boolean) => void;
-  paneRefs: React.MutableRefObject<Array<HTMLDivElement | null>>;
+  registerScroller: SplitScrollerRegistration;
 }) {
   const { scene } = useSceneTheme();
+  const { t } = useI18n();
   const hasScene = scene !== "none";
   const joined = slugs.join("+");
   const label = slugs.map((s) => `/${s}`).join(" + ");
-  const canonical = `https://snote.lovable.app/${joined}`;
+  const canonical = `https://note.syrin.online/${joined}`;
   const title = `Split view: ${label} — Syrin Notes`;
   const desc = `Compare ${slugs.length} markdown notes side by side (${label}) with synced scrolling on Syrin Notes.`;
+  const [workspaceRef, compact] = useElementNarrow<HTMLElement>(768);
+  const [activePane, setActivePane] = useState(0);
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Persist current split path so a future "Return to split view" affordance
   // (or a quick remount after Home nav) can restore it. sessionStorage only —
@@ -117,6 +107,21 @@ function SplitViewBody({
     saveLastSplitView(slugs);
   }, [joined]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    setActivePane((index) => Math.min(index, slugs.length - 1));
+  }, [slugs.length]);
+
+  const activateFromKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let next = index;
+    if (event.key === "ArrowRight") next = (index + 1) % slugs.length;
+    else if (event.key === "ArrowLeft") next = (index - 1 + slugs.length) % slugs.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = slugs.length - 1;
+    else return;
+    event.preventDefault();
+    setActivePane(next);
+    tabRefs.current[next]?.focus();
+  };
 
   // Layout: 2 → 2 cols; 3 → 2×2 grid, last spans both cols; 4 → 2×2 grid.
   const gridClass =
@@ -153,11 +158,10 @@ function SplitViewBody({
       >
         <Tooltip>
           <TooltipTrigger asChild>
-            {/* eslint-disable-next-line no-restricted-syntax -- universal nav icon */}
             <Link
               to="/"
               className="text-muted-foreground hover:text-foreground"
-              aria-label="Home"
+              aria-label={t("brand.home")}
               onContextMenu={(e) => {
                 e.preventDefault();
                 window.open("/", "_blank", "noopener,noreferrer");
@@ -166,7 +170,7 @@ function SplitViewBody({
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </TooltipTrigger>
-          <TooltipContent side="bottom">Back to home</TooltipContent>
+          <TooltipContent side="bottom">{t("share.back_home_aria")}</TooltipContent>
         </Tooltip>
         <span className="font-mono truncate">
           {slugs.map((s, i) => (
@@ -183,6 +187,8 @@ function SplitViewBody({
               variant={syncScroll ? "default" : "outline"}
               className="ml-auto h-7"
               onClick={() => setSyncScroll((v) => !v)}
+              aria-pressed={syncScroll}
+              aria-label={`Sync scroll ${syncScroll ? "ON" : "OFF"}`}
             >
               <Link2 className="h-3.5 w-3.5" />
               Sync scroll {syncScroll ? "ON" : "OFF"}
@@ -195,7 +201,44 @@ function SplitViewBody({
           </TooltipContent>
         </Tooltip>
       </header>
-      <main className={`grid flex-1 min-h-0 bg-background divide-border ${gridClass}`}>
+      {compact && (
+        <div
+          role="tablist"
+          aria-label={t("help.split_label")}
+          className="flex shrink-0 overflow-x-auto border-b border-border bg-background px-1"
+        >
+          {slugs.map((paneSlug, index) => (
+            <button
+              key={paneSlug}
+              ref={(element) => {
+                tabRefs.current[index] = element;
+              }}
+              id={`split-tab-${index}`}
+              type="button"
+              role="tab"
+              aria-selected={activePane === index}
+              aria-controls={`split-panel-${index}`}
+              tabIndex={activePane === index ? 0 : -1}
+              className={`min-h-11 flex-1 truncate border-b-2 px-3 font-mono text-xs ${
+                activePane === index
+                  ? "border-primary text-foreground"
+                  : "border-transparent text-muted-foreground"
+              }`}
+              onClick={() => setActivePane(index)}
+              onKeyDown={(event) => activateFromKey(event, index)}
+            >
+              /{paneSlug}
+            </button>
+          ))}
+        </div>
+      )}
+      <main
+        ref={workspaceRef}
+        data-split-workspace
+        className={`flex-1 min-h-0 bg-background divide-border ${
+          compact ? "flex" : `grid ${gridClass}`
+        }`}
+      >
         {slugs.map((s, i) => {
           // For 3-pane layout the third pane spans both columns to fill the
           // bottom row.
@@ -214,22 +257,90 @@ function SplitViewBody({
             .filter(Boolean)
             .join(" ");
           return (
-            <div
+            <SplitPane
               key={`${s}-${i}`}
-              ref={(el) => {
-                paneRefs.current[i] = el;
-              }}
-              data-split-view-pane={i}
-              data-split-view-slug={s}
-              className={`min-h-0 min-w-0 overflow-hidden ${spanClass} ${borderClass}`}
-            >
-              <Suspense fallback={<div className="h-full bg-background" />}>
-                <NotePage embedSlug={s} />
-              </Suspense>
-            </div>
+              index={i}
+              slug={s}
+              compact={compact}
+              active={activePane === i}
+              className={`${spanClass} ${borderClass}`}
+              registerScroller={registerScroller}
+            />
           );
         })}
       </main>
     </AppShell>
   );
+}
+
+function SplitPane({
+  index,
+  slug,
+  compact,
+  active,
+  className,
+  registerScroller,
+}: {
+  index: number;
+  slug: string;
+  compact: boolean;
+  active: boolean;
+  className: string;
+  registerScroller: SplitScrollerRegistration;
+}) {
+  const [paneRef, paneNarrow] = useElementNarrow<HTMLDivElement>(900);
+  const onPrimaryScroller = useCallback(
+    (element: HTMLElement | null) => registerScroller(index, element),
+    [index, registerScroller],
+  );
+
+  return (
+    <div
+      ref={paneRef}
+      id={`split-panel-${index}`}
+      data-split-view-pane={index}
+      data-split-view-slug={slug}
+      role={compact ? "tabpanel" : "region"}
+      aria-labelledby={compact ? `split-tab-${index}` : undefined}
+      aria-label={compact ? undefined : `/${slug}`}
+      hidden={compact && !active}
+      className={`min-h-0 min-w-0 flex-1 overflow-hidden ${className}`}
+    >
+      <Suspense
+        fallback={
+          <div
+            className="flex h-full items-center justify-center bg-background text-xs text-muted-foreground"
+            role="status"
+          >
+            Loading /{slug}…
+          </div>
+        }
+      >
+        <NotePage
+          embedSlug={slug}
+          embedNarrow={paneNarrow}
+          onPrimaryScroller={onPrimaryScroller}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+function useElementNarrow<T extends HTMLElement>(threshold: number) {
+  const [element, setElement] = useState<T | null>(null);
+  const [narrow, setNarrow] = useState(false);
+
+  useEffect(() => {
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (typeof width === "number") setNarrow(width < threshold);
+    });
+    observer.observe(element);
+    const initialWidth = element.getBoundingClientRect().width;
+    if (initialWidth > 0) setNarrow(initialWidth < threshold);
+    return () => observer.disconnect();
+  }, [element, threshold]);
+
+  return [setElement, narrow] as const;
 }

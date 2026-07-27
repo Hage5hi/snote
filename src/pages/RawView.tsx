@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router";
 import { Helmet } from "react-helmet-async";
-import { supabase } from "@/integrations/supabase/client";
 import { deriveKey, verifyCheck, iterationsFor } from "@/lib/crypto";
+import { createLegacyNoteApi } from "@/lib/legacy/cutover";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
@@ -35,21 +35,13 @@ export default function RawView() {
         setError("Invalid slug.");
         return;
       }
-      const { data, error: dbError } = await supabase
-        .from("notes")
-        .select("content, ydoc_state, is_encrypted, enc_salt, enc_check, enc_iterations")
-        .eq("slug", slug)
-        .maybeSingle();
+      const data = await createLegacyNoteApi().open(slug);
       if (cancelled) return;
-      if (dbError) {
-        setError(dbError.message);
-        return;
-      }
       if (!data) {
         setError(`Note /${slug} does not exist.`);
         return;
       }
-      if (!data.is_encrypted) {
+      if (!data.isEncrypted) {
         setText(data.content ?? "");
         return;
       }
@@ -79,13 +71,13 @@ export default function RawView() {
         setError("This note is encrypted. Append `#<key>` to the URL to view.");
         return;
       }
-      if (!data.enc_salt || !data.enc_check || !data.ydoc_state) {
+      if (!data.salt || !data.check || !data.ydocState) {
         setError("Missing encryption metadata.");
         return;
       }
       try {
-        const cryptoKey = await deriveKey(key, data.enc_salt, iterationsFor(data.enc_iterations));
-        const ok = await verifyCheck(cryptoKey, data.enc_check);
+        const cryptoKey = await deriveKey(key, data.salt, iterationsFor(data.iterations));
+        const ok = await verifyCheck(cryptoKey, data.check);
         if (!ok) {
           setError("Wrong key.");
           return;
@@ -97,7 +89,7 @@ export default function RawView() {
         const Y = await import("yjs");
         const { base64ToBytes } = await import("@/lib/yjs/base64");
         const { decryptBytes } = await import("@/lib/crypto");
-        const decrypted = await decryptBytes(cryptoKey, base64ToBytes(data.ydoc_state));
+        const decrypted = await decryptBytes(cryptoKey, base64ToBytes(data.ydocState));
         const tmp = new Y.Doc();
         Y.applyUpdate(tmp, decrypted);
         setText(tmp.getText("content").toString());
@@ -106,7 +98,9 @@ export default function RawView() {
         console.error(e);
         setError("Decryption failed.");
       }
-    })();
+    })().catch((cause) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+    });
     return () => {
       cancelled = true;
     };
@@ -116,12 +110,12 @@ export default function RawView() {
     <Helmet>
       <title>{`Raw markdown: /${slug}.md — Syrin Notes`}</title>
       <meta name="description" content={`View plain markdown (plaintext) of note /${slug} on Syrin Notes — no rendering, no UI.`} />
-      <link rel="canonical" href={`https://snote.lovable.app/${slug}.md`} />
+      <link rel="canonical" href={`https://note.syrin.online/${slug}.md`} />
       {/* eslint-disable-next-line no-restricted-syntax -- SEO control value */}
       <meta name="robots" content="noindex, follow" />
       <meta property="og:title" content={`Raw markdown: /${slug}.md — Syrin Notes`} />
       <meta property="og:description" content={`Plaintext markdown of note /${slug} on Syrin Notes.`} />
-      <meta property="og:url" content={`https://snote.lovable.app/${slug}.md`} />
+      <meta property="og:url" content={`https://note.syrin.online/${slug}.md`} />
       <meta name="twitter:title" content={`Raw markdown: /${slug}.md — Syrin Notes`} />
       <meta name="twitter:description" content={`Plaintext markdown of note /${slug}.`} />
     </Helmet>

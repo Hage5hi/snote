@@ -1,120 +1,89 @@
-# Cloudflare Worker — Prerender meta cho crawler
+# Cloudflare Worker — crawler containment
 
-Worker đặt **trước** `syrin.online` để render HTML với `og:*`, `twitter:*`,
-`canonical`, `robots` theo từng note URL cho crawler không chạy JavaScript
-(LinkedIn, Slack, Facebook, Discord, WhatsApp, Telegram, Twitter…).
+Worker này đang chạy ở chế độ containment tạm thời cho tới khi capability
+backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy crawler
+không được nhận nội dung, slug, token hay canonical URL của một note.
 
-User thật và Googlebot vẫn được pass-through tới Lovable hosting và nhận
-SPA gốc với `react-helmet-async`.
+## Routing production bắt buộc
 
-## Cách hoạt động
+Canonical origin là `https://note.syrin.online`. Worker phải phủ cả ba host:
 
-```
-       crawler? ──yes──▶ edge cache hit? ──yes──▶ trả ngay
-                              │ no
-                              ▼
-                  fetch /functions/v1/note-meta (kèm x-meta-secret)
-                              │
-                              ▼
-                       render HTML <head> + lưu cache
-request──┤
-       └─no──▶ proxy tới snote.lovable.app (origin Lovable)
-```
+- `note.syrin.online/*`
+- `syrin.online/*`
+- `www.syrin.online/*`
 
-- Phát hiện crawler bằng User-Agent (regex `CRAWLER_UA` trong `worker.js`).
-- Endpoint `note-meta` được bảo vệ bằng shared secret `NOTE_META_SECRET`
-  (Worker gửi qua header `x-meta-secret`).
-- Edge cache 5 phút + SWR 1 giờ cho note bình thường, 60 giây cho note
-  mã hoá / 404.
-- Note mã hoá (`isEncrypted: true`) tự động nhận
-  `noindex, nofollow, noarchive, nosnippet, noimageindex, nocache`
-  cộng với header `X-Robots-Tag` tương ứng.
-- Slug và share token được chuẩn hoá (decode URI, strip slash, regex
-  validate) trước khi gọi backend.
+Direct origin `snote.lovable.app` phải non-public/disabled hoặc có containment
+tương đương. Không được cho alias nào đi vòng qua Worker.
+
+## Hành vi
+
+- Browser bình thường: pass-through tới `ORIGIN_HOST`.
+- Crawler ở `/s/*`: generic HTML, `no-store`,
+  `noindex,nofollow,noarchive,nosnippet`; không metadata/cache/redirect.
+- Crawler ở `/<legacy-note-locator>`: generic HTML với cùng giới hạn; không
+  đọc cache cũ và không gọi `note-meta`. Điều này chặn plaintext preview còn
+  sống sau khi note được mã hóa.
+- Crawler ở trang chủ: metadata tĩnh của sản phẩm; có thể cache ngắn hạn.
+- Logs tùy chỉnh chỉ chứa loại route/bot/status/timing. Không log path, locator,
+  token, nội dung hoặc IP thô.
+- `invocation_logs = false` phải giữ nguyên vì Cloudflare có thể ghi raw URL
+  trước khi mã Worker thực thi.
 
 ## Triển khai
 
-1. **Trỏ domain qua Cloudflare**
-   - Thêm `syrin.online` vào Cloudflare account.
-   - Cập nhật nameserver tại registrar theo hướng dẫn Cloudflare.
-   - DNS: `CNAME syrin.online → snote.lovable.app`, bật proxy (orange).
-   - Tương tự cho `www.syrin.online` (worker tự 301 về apex).
+Dùng duy nhất `cloudflare-worker/wrangler.toml` đã commit:
 
-2. **Cài Wrangler**
-   ```bash
-   npm install -g wrangler
-   wrangler login
-   ```
+```toml
+routes = [
+  { pattern = "note.syrin.online/*", zone_name = "syrin.online" },
+  { pattern = "syrin.online/*", zone_name = "syrin.online" },
+  { pattern = "www.syrin.online/*", zone_name = "syrin.online" }
+]
 
-3. **Tạo `wrangler.toml`** trong thư mục `cloudflare-worker/`:
-   ```toml
-   name = "syrin-prerender"
-   main = "worker.js"
-   compatibility_date = "2024-11-01"
+[vars]
+ORIGIN_HOST = "snote.lovable.app"
+SITE_URL = "https://note.syrin.online"
 
-   routes = [
-     { pattern = "syrin.online/*", zone_name = "syrin.online" },
-     { pattern = "www.syrin.online/*", zone_name = "syrin.online" }
-   ]
+[observability.logs]
+invocation_logs = false
 
-   [vars]
-   ORIGIN_HOST = "snote.lovable.app"
-   SUPABASE_PROJECT = "onfzjmfjldsbthchssfr"
-   SITE_URL = "https://syrin.online"
-   ```
+[observability.traces]
+enabled = false
+```
 
-4. **Set secret** (cả hai đều bắt buộc):
-   ```bash
-   wrangler secret put SUPABASE_ANON_KEY
-   # paste anon key (có sẵn trong src/integrations/supabase/client.ts)
+Trước deploy phải kiểm kê Workers Logs, Tail Workers, Workers Logpush, traces và
+zone-level HTTP request datasets. Giữ `[observability.traces] enabled = false`;
+không tiếp tục nếu pipeline nào còn giữ raw note/share path.
 
-   wrangler secret put NOTE_META_SECRET
-   # paste đúng value đã lưu trong Lovable Cloud (Supabase Edge secret cùng tên)
-   ```
+## Thứ tự rollout
 
-5. **Deploy**
-   ```bash
-   wrangler deploy
-   ```
+1. Tạo và xác minh backup/PITR checkpoint.
+2. Deploy Worker mới trong staging.
+3. Chứng minh crawler note/share nhận generic `no-store` trên mọi hostname,
+   kể cả encoded separator, mixed case, trailing slash và asset-looking token.
+4. Purge toàn bộ cache HTML preview note/share cũ và mọi cache của
+   `note-meta`, không chỉ `note-meta?token=*`.
+5. Chờ qua verified maximum expiry nếu không thể wildcard purge.
+6. Chỉ sau đó mới tombstone `note-meta` và kiểm tra endpoint trả generic
+   `410 no-store`.
+7. Lặp lại test trên production trong checkpoint review riêng.
 
-## Kiểm tra
+## Kiểm tra tối thiểu
 
 ```bash
-# Note bình thường (lần 2 phải HIT cache, header age > 0)
-curl -A "facebookexternalhit/1.1" https://syrin.online/my-note-slug -i | head -40
-
-# Share link
-curl -A "Slackbot-LinkExpanding 1.0" https://syrin.online/s/<token> -i | head -40
-
-# Trình duyệt thường (pass-through, không có x-prerendered)
-curl -A "Mozilla/5.0" https://syrin.online/my-note-slug -I
-
-# Note mã hoá → phải có X-Robots-Tag: noindex
-curl -A "LinkedInBot/1.0" https://syrin.online/<encrypted-slug> -i | head -40
+curl -A "Slackbot-LinkExpanding 1.0" https://note.syrin.online/private-note -i
+curl -A "Slackbot-LinkExpanding 1.0" https://note.syrin.online/s/<token> -i
+curl -A "meta-externalagent/1.1" https://syrin.online/private-note -i
+curl -A "Mozilla/5.0" https://note.syrin.online/private-note -I
 ```
 
-Hoặc dùng debugger chính chủ:
-- LinkedIn: <https://www.linkedin.com/post-inspector/>
-- Facebook: <https://developers.facebook.com/tools/debug/>
-- Twitter/X: <https://cards-dev.twitter.com/validator>
-- Slack: paste link vào kênh test.
+Ba request crawler phải không chứa locator/token trong body hoặc headers, phải
+có `Cache-Control: no-store` và `X-Robots-Tag:
+noindex,nofollow,noarchive,nosnippet`. Request browser vẫn pass-through.
 
-## Endpoint Edge Function
+## Rollback
 
-```
-GET https://onfzjmfjldsbthchssfr.functions.supabase.co/note-meta?slug=<slug>
-GET https://onfzjmfjldsbthchssfr.functions.supabase.co/note-meta?token=<share-token>
-Header: x-meta-secret: <NOTE_META_SECRET>
-```
-
-Trả JSON `{ found, slug, isEncrypted, snippet, charCount, tags, updatedAt }`.
-Sai secret → 403. Note mã hoá → không trả `snippet`.
-
-## Bảo trì
-
-- Thêm crawler UA mới: cập nhật regex `CRAWLER_UA` trong `worker.js`.
-- Đổi domain: cập nhật `SITE_URL` và `routes` trong `wrangler.toml`.
-- Xoay secret: `wrangler secret put NOTE_META_SECRET` ở Cloudflare và
-  cập nhật cùng value trong Lovable Cloud → Settings → Secrets.
-- Bypass tạm thời: tắt route Worker trong Cloudflare dashboard, traffic
-  trở lại pass-through 100%.
+Rollback vẫn phải giữ generic containment cho cả note locator và `/s/*`.
+Không bật lại content-bearing prerender/cache hoặc legacy `note-meta`. Nếu
+Worker không thể phục vụ containment, vô hiệu hóa public aliases thay vì
+pass-through private paths.

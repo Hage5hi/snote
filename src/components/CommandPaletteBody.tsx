@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   CommandDialog,
   CommandEmpty,
@@ -11,27 +11,11 @@ import {
 } from "@/components/ui/command";
 import { FileText, Home as HomeIcon, Keyboard, Pin, PinOff, Plus, Shuffle } from "lucide-react";
 import { getRecents, getPinned, togglePin } from "@/lib/recent-notes";
-import { supabase } from "@/integrations/supabase/client";
 import { useI18n } from "@/i18n/index";
 
 function prefetchSlug(s: string) {
-  const key = `note-prefetch:${s}`;
-  if (sessionStorage.getItem(key)) return;
-  sessionStorage.setItem(key, "1");
-  void supabase
-    .from("notes")
-    .select("ydoc_state, is_encrypted")
-    .eq("slug", s)
-    .maybeSingle()
-    .then(({ data }) => {
-      if (data?.ydoc_state && !data?.is_encrypted) {
-        try {
-          sessionStorage.setItem(`note-snapshot:${s}`, data.ydoc_state);
-        } catch {
-          /* quota */
-        }
-      }
-    });
+  // Never fetch legacy plaintext on hover after direct-table cutover.
+  void s;
 }
 
 function softNavigate(navigate: (p: string) => void, path: string) {

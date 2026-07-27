@@ -11,7 +11,7 @@ const validBundle = () => ({
   kind: DIAGNOSTICS_KIND,
   schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
   at: "2026-07-09T12:00:00.000Z",
-  extensionVersion: "1.3.5",
+  extensionVersion: "1.3.6",
   handshake: {
     extensionProtocol: 2,
     appProtocol: 2,
@@ -23,8 +23,14 @@ const validBundle = () => ({
     iframeSrc: "https://note.syrin.online/",
     iframeLoaded: true,
     retryCount: 0,
+    appReachable: "online-unverified",
   },
-  cspFrameAncestors: { ok: true, csp: "frame-ancestors 'self' chrome-extension://*", reason: null },
+  cspFrameAncestors: {
+    inspected: false,
+    ok: null,
+    csp: null,
+    reason: "not-inspected",
+  },
   messageTimeline: [],
   telemetry: [],
   telemetryEnabled: true,
@@ -35,6 +41,38 @@ describe("validateDiagnostics", () => {
   it("accepts a well-formed bundle", () => {
     const r = validateDiagnostics(validBundle());
     expect(r).toEqual({ ok: true, errors: [] });
+  });
+
+  it("requires an honest network classification", () => {
+    for (const appReachable of ["offline", "online-unverified", "unknown"]) {
+      const b = validBundle();
+      b.load.appReachable = appReachable;
+      expect(validateDiagnostics(b)).toEqual({ ok: true, errors: [] });
+    }
+
+    const b = validBundle();
+    b.load.appReachable = "200 ok";
+    expect(validateDiagnostics(b).ok).toBe(false);
+  });
+
+  it("requires CSP inspection state to agree with the result fields", () => {
+    const inspected = validBundle();
+    inspected.cspFrameAncestors = {
+      inspected: true,
+      ok: false,
+      csp: null,
+      reason: "no-header",
+    };
+    expect(validateDiagnostics(inspected)).toEqual({ ok: true, errors: [] });
+
+    const dishonest = validBundle();
+    dishonest.cspFrameAncestors = {
+      inspected: false,
+      ok: false,
+      csp: "frame-ancestors 'self'",
+      reason: "extension-excluded",
+    };
+    expect(validateDiagnostics(dishonest).ok).toBe(false);
   });
 
   it("rejects non-object payloads", () => {
@@ -157,10 +195,20 @@ describe("truncateTelemetryDetails", () => {
     kind: DIAGNOSTICS_KIND,
     schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
     at: "2026-07-09T12:00:00.000Z",
-    extensionVersion: "1.3.5",
+    extensionVersion: "1.3.6",
     handshake: { extensionProtocol: 2, appProtocol: 2, appBuildId: "a", ready: true, versionMismatch: null },
-    load: { iframeSrc: "https://note.syrin.online/", iframeLoaded: true, retryCount: 0 },
-    cspFrameAncestors: { ok: true, csp: "frame-ancestors 'self' chrome-extension://*", reason: null },
+    load: {
+      iframeSrc: "https://note.syrin.online/",
+      iframeLoaded: true,
+      retryCount: 0,
+      appReachable: "online-unverified",
+    },
+    cspFrameAncestors: {
+      inspected: false,
+      ok: null,
+      csp: null,
+      reason: "not-inspected",
+    },
     messageTimeline: [],
     telemetry,
     telemetryEnabled: true,

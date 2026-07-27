@@ -87,7 +87,7 @@ make_screenshot() {
     -fill "#FFFFFF" -stroke "$INK_SOFT" -strokewidth 1 \
     -draw "roundrectangle 60,300 1220,740 12,12" \
     -font Liberation-Sans -pointsize 18 -fill "$INK_SOFT" \
-    -gravity south -annotate +0+30 "syrin-note.lovable.app  ·  Alt+S to open  ·  v$VERSION" \
+    -gravity south -annotate +0+30 "note.syrin.online  ·  Alt+S to open  ·  v$VERSION" \
     "$OUT/$file"
 }
 

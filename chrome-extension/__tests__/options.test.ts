@@ -19,20 +19,29 @@ interface ChromeMock {
       get: (defaults: Record<string, unknown>, cb: GetCb) => void;
       set: (data: Record<string, unknown>, cb: SetCb) => void;
     };
+    local: {
+      get: (defaults: Record<string, unknown>, cb: GetCb) => void;
+      set: (data: Record<string, unknown>, cb?: SetCb) => void;
+      remove: (key: string, cb?: SetCb) => void;
+    };
     onChanged: { addListener: (fn: unknown) => void };
   };
   runtime: { lastError: { message: string } | null };
 }
 
-// @ts-expect-error - plain JS module
 import { initOptions } from "../options.js";
 
 let stored: Record<string, unknown> = {};
+let localStored: Record<string, unknown> = {};
 let setShouldFail = false;
 let chromeMock: ChromeMock;
 
-async function loadOptions(initial: Record<string, unknown> = {}) {
+async function loadOptions(
+  initial: Record<string, unknown> = {},
+  initialLocal: Record<string, unknown> = {},
+) {
   stored = { ...initial };
+  localStored = { ...initialLocal };
   setShouldFail = false;
   chromeMock = {
     storage: {
@@ -53,6 +62,23 @@ async function loadOptions(initial: Record<string, unknown> = {}) {
             Object.assign(stored, data);
             cb();
           }
+        }),
+      },
+      local: {
+        get: vi.fn((defaults: Record<string, unknown>, cb: GetCb) => {
+          const out = { ...defaults };
+          for (const k of Object.keys(defaults)) {
+            if (k in localStored) out[k] = localStored[k];
+          }
+          cb(out);
+        }),
+        set: vi.fn((data: Record<string, unknown>, cb?: SetCb) => {
+          Object.assign(localStored, data);
+          cb?.();
+        }),
+        remove: vi.fn((key: string, cb?: SetCb) => {
+          delete localStored[key];
+          cb?.();
         }),
       },
       onChanged: { addListener: vi.fn() },
@@ -94,6 +120,7 @@ describe("options.js — defaults loading", () => {
     expect(radio("home").checked).toBe(true);
     expect((document.getElementById("defaultSlug") as HTMLInputElement).disabled).toBe(true);
     expect((document.getElementById("save") as HTMLButtonElement).disabled).toBe(false);
+    expect((document.getElementById("telemetryEnabled") as HTMLInputElement).checked).toBe(false);
   });
 
   it("restores saved mode + slug + debug", async () => {
@@ -144,6 +171,7 @@ describe("options.js — save", () => {
     radio("home").checked = true;
     radio("home").dispatchEvent(new Event("change", { bubbles: true }));
     submit();
+    await Promise.resolve();
     expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(
       { openMode: "home", defaultSlug: "", debug: false },
       expect.any(Function),
@@ -162,6 +190,7 @@ describe("options.js — save", () => {
     dbg.checked = true;
     dbg.dispatchEvent(new Event("change", { bubbles: true }));
     submit();
+    await Promise.resolve();
     expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(
       { openMode: "slug", defaultSlug: "daily", debug: true },
       expect.any(Function),
@@ -173,6 +202,7 @@ describe("options.js — save", () => {
     radio("last").checked = true;
     radio("last").dispatchEvent(new Event("change", { bubbles: true }));
     submit();
+    await Promise.resolve();
     expect(chromeMock.storage.sync.set).toHaveBeenCalledWith(
       { openMode: "last", defaultSlug: "", debug: false },
       expect.any(Function),
@@ -185,10 +215,63 @@ describe("options.js — save", () => {
     expect(chromeMock.storage.sync.set).not.toHaveBeenCalled();
   });
 
+  it("persists the local telemetry opt-out even when sync save fails", async () => {
+    await loadOptions({ openMode: "home" });
+    const telemetry = document.getElementById("telemetryEnabled") as HTMLInputElement;
+    telemetry.checked = false;
+    setShouldFail = true;
+
+    submit();
+
+    expect(chromeMock.storage.local.set).toHaveBeenCalledWith(
+      { "syrin:telemetryEnabled": false },
+      expect.any(Function),
+    );
+    expect(localStored["syrin:telemetryEnabled"]).toBe(false);
+  });
+
+  it("clears previously retained events when telemetry is disabled", async () => {
+    await loadOptions(
+      { openMode: "home" },
+      {
+        "syrin:telemetryEnabled": true,
+        "syrin:telemetry": [{ t: Date.now(), event: "fallback-shown" }],
+      },
+    );
+    const telemetry = document.getElementById("telemetryEnabled") as HTMLInputElement;
+    telemetry.checked = false;
+
+    submit();
+    await Promise.resolve();
+
+    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith(
+      "syrin:telemetry",
+      expect.any(Function),
+    );
+    expect(localStored["syrin:telemetry"]).toBeUndefined();
+  });
+
   it("shows error status when chrome.runtime.lastError set", async () => {
     await loadOptions({ openMode: "home" });
     setShouldFail = true;
     submit();
+    await Promise.resolve();
     expect($("#status").textContent).toBe("✗ Save failed");
+  });
+
+  it("clears device-local diagnostics from the always-reachable settings page", async () => {
+    await loadOptions({}, {
+      "syrin:telemetry": [{ t: Date.now(), event: "fallback-shown" }],
+    });
+
+    $("#clearDiagnostics").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith(
+      "syrin:telemetry",
+      expect.any(Function),
+    );
+    expect(localStored["syrin:telemetry"]).toBeUndefined();
+    expect($("#status").textContent).toBe("✓ Diagnostics cleared");
   });
 });

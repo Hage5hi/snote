@@ -54,8 +54,11 @@
           </label>
           <label class="radio">
             <input type="checkbox" id="telemetryEnabled" name="telemetryEnabled" />
-            <span>Local telemetry <small>(privacy-safe events stored on this device only, never sent anywhere)</small></span>
+            <span>Local telemetry <small>(Events older than 7 days are discarded the next time diagnostics are read or written; if the extension is dormant, expired entries can remain until then; never uploaded automatically)</small></span>
           </label>
+          <button type="button" id="clearDiagnostics" class="secondary-action">
+            Clear local diagnostics
+          </button>
         </fieldset>
 
         <div class="actions">

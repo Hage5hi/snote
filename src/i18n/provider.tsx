@@ -1,117 +1,95 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { safeLocalStorageSet } from "@/lib/safe-storage";
 import {
   Ctx,
   STORAGE_KEY,
-  countryToLang,
   detectLang,
-  dict,
   isLang,
   type I18nCtx,
   type Lang,
 } from "./index";
+import { getLoadedDictionary, loadDictionary } from "./loaders";
+import en from "./locales/en";
+import type { Dictionary } from "./types";
 
-const IP_DETECTED_KEY = "lang.ip_detected";
+type LoadedCatalog = {
+  lang: Lang;
+  dictionary: Dictionary;
+};
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>(() => detectLang());
+  const [catalog, setCatalog] = useState<LoadedCatalog>({ lang: "en", dictionary: en });
 
-  const setLang = useCallback((l: Lang) => {
-    setLangState(l);
-    try {
-      localStorage.setItem(STORAGE_KEY, l);
-      // Once the user picks manually, never auto-override.
-      localStorage.setItem(IP_DETECTED_KEY, "1");
-    } catch {
-      // ignore
-    }
-    // Notify same-tab listeners (e.g. PWA update toast) — `storage` events
-    // only fire across tabs, not within the tab that wrote the value.
+  const setLang = useCallback((nextLang: Lang) => {
+    setLangState(nextLang);
+    safeLocalStorageSet(STORAGE_KEY, nextLang);
+    // Storage events only fire across tabs. Notify same-tab consumers such as
+    // the PWA update toast immediately, then once more when the locale loads.
     if (typeof window !== "undefined") {
-      window.dispatchEvent(new CustomEvent("i18n:lang-changed", { detail: l }));
+      window.dispatchEvent(
+        new CustomEvent("i18n:lang-changed", { detail: nextLang }),
+      );
     }
   }, []);
 
-  // First visit: try IP-based geolocation to refine the initial language.
-  // Only runs when no saved choice and no prior IP attempt — silent on failure.
+  // Render the English fallback while a requested locale chunk arrives. The
+  // cleanup guard prevents a slower, older import from winning a rapid switch.
   useEffect(() => {
     let cancelled = false;
-    try {
-      if (localStorage.getItem(STORAGE_KEY)) return;
-      if (localStorage.getItem(IP_DETECTED_KEY)) return;
-    } catch {
-      return;
+    const cached = getLoadedDictionary(lang);
+    if (cached) {
+      setCatalog({ lang, dictionary: cached });
+      return () => {
+        cancelled = true;
+      };
     }
-    const ctrl = new AbortController();
-    const timer = window.setTimeout(() => ctrl.abort(), 2500);
-    fetch("https://ipapi.co/json/", { signal: ctrl.signal })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { country_code?: string } | null) => {
-        if (cancelled || !data) return;
-        // Race-safety: if the user picked a language during the fetch window,
-        // their explicit choice wins over the IP guess.
-        try {
-          if (localStorage.getItem(STORAGE_KEY)) return;
-        } catch {
-          // ignore
-        }
-        const guessed = countryToLang(data.country_code);
-        if (guessed) {
-          setLangState(guessed);
-          try {
-            localStorage.setItem(STORAGE_KEY, guessed);
-          } catch {
-            // ignore
-          }
-        }
-      })
-      .catch(() => {
-        // Network/CORS/timeout — keep navigator-detected language.
-      })
-      .finally(() => {
-        window.clearTimeout(timer);
-        try {
-          localStorage.setItem(IP_DETECTED_KEY, "1");
-        } catch {
-          // ignore
-        }
-      });
+
+    void loadDictionary(lang).then(
+      (dictionary) => {
+        if (cancelled) return;
+        setCatalog({ lang, dictionary });
+        window.dispatchEvent(new CustomEvent("i18n:lang-changed", { detail: lang }));
+      },
+      () => {
+        // A failed locale chunk leaves the app usable with English fallback.
+      },
+    );
     return () => {
       cancelled = true;
-      ctrl.abort();
-      window.clearTimeout(timer);
     };
-  }, []);
+  }, [lang]);
 
-  // Keep tabs in sync if user changes language in another tab.
   useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY && isLang(e.newValue)) setLangState(e.newValue);
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEY && isLang(event.newValue)) {
+        setLangState(event.newValue);
+      }
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  // Keep <html lang="..."> in sync for accessibility/SEO.
   useEffect(() => {
     if (typeof document !== "undefined") {
       document.documentElement.lang = lang;
     }
   }, [lang]);
 
+  const dictionary = catalog.lang === lang ? catalog.dictionary : en;
   const value = useMemo<I18nCtx>(
     () => ({
       lang,
       setLang,
       t: (key, vars) => {
-        const raw =
-          (dict[lang] as Record<string, string>)[key] ??
-          (dict.en as Record<string, string>)[key] ??
-          key;
+        const raw = dictionary[key] ?? en[key] ?? key;
         if (!vars) return raw;
-        return raw.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
+        return raw.replace(/\{(\w+)\}/g, (_, name: string) =>
+          String(vars[name] ?? ""),
+        );
       },
     }),
-    [lang, setLang],
+    [dictionary, lang, setLang],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

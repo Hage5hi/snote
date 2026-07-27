@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-// @ts-expect-error - plain JS module
 import { buildSrc, badgeForMode, DEFAULT_APP_ORIGIN } from "../lib/build-src.js";
 
 describe("buildSrc", () => {
@@ -31,6 +30,23 @@ describe("buildSrc", () => {
     );
   });
 
+  it("restores only an edit capability from device-local storage", () => {
+    const token = "e".repeat(43);
+    expect(buildSrc({
+      openMode: "last",
+      lastSlug: "yesterday",
+      editCapabilities: { yesterday: token },
+    })).toBe(`${DEFAULT_APP_ORIGIN}/yesterday?from=ext#edit=${token}`);
+  });
+
+  it("rejects malformed locally stored capabilities", () => {
+    expect(buildSrc({
+      openMode: "slug",
+      defaultSlug: "daily",
+      editCapabilities: { daily: "owner-or-invalid" },
+    })).toBe(`${DEFAULT_APP_ORIGIN}/daily?from=ext`);
+  });
+
   it("last mode with empty lastSlug → root fallback", () => {
     expect(buildSrc({ openMode: "last", lastSlug: "" })).toBe(
       `${DEFAULT_APP_ORIGIN}/?from=ext`,
@@ -38,7 +54,7 @@ describe("buildSrc", () => {
   });
 
   it("unknown mode → root fallback", () => {
-    expect(buildSrc({ openMode: "garbage" as any, defaultSlug: "x" })).toBe(
+    expect(buildSrc({ openMode: "garbage", defaultSlug: "x" })).toBe(
       `${DEFAULT_APP_ORIGIN}/?from=ext`,
     );
   });

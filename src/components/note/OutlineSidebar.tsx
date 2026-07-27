@@ -1,17 +1,20 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import * as Y from "yjs";
 import { X } from "lucide-react";
 
-export const OUTLINE_TOGGLE_EVENT = "outline:toggle";
 import { parseOutline, type Heading } from "@/lib/outline";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/i18n/index";
 
 
 interface OutlineSidebarProps {
+  id?: string;
   doc: Y.Doc;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   /** Called with a 0-indexed line number when user clicks a heading. */
   onJump: (line: number) => void;
+  triggerRef: RefObject<HTMLButtonElement>;
 }
 
 /**
@@ -20,10 +23,18 @@ interface OutlineSidebarProps {
  *  - Lives outside the editor so it never reflows the writing area.
  *  - Re-parses on every Y.Text change (debounced via observe coalescing).
  */
-export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
+export function OutlineSidebar({
+  id = "note-outline",
+  doc,
+  open,
+  onOpenChange,
+  onJump,
+  triggerRef,
+}: OutlineSidebarProps) {
   const { t } = useI18n();
-  const [open, setOpen] = useState(false);
   const [headings, setHeadings] = useState<Heading[]>([]);
+  const closeRef = useRef<HTMLButtonElement>(null);
+  const wasOpenRef = useRef(open);
 
   // Re-parse outline whenever the doc changes, but defer to idle callbacks so
   // long notes don't pay parse cost on every keystroke.
@@ -53,45 +64,55 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
     };
   }, [doc]);
 
-  // Cmd/Ctrl+\ toggle + external trigger via OUTLINE_TOGGLE_EVENT.
+  // Keep the keyboard shortcut local to the one standalone outline instance.
+  // Embedded SplitView notes do not render OutlineSidebar, so a shortcut can
+  // never toggle several drawers at once.
   useEffect(() => {
-    const toggle = () => setOpen((v) => !v);
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "\\") {
         e.preventDefault();
-        toggle();
+        onOpenChange(!open);
+      } else if (e.key === "Escape" && open) {
+        e.preventDefault();
+        onOpenChange(false);
       }
     };
     window.addEventListener("keydown", onKey);
-    window.addEventListener(OUTLINE_TOGGLE_EVENT, toggle);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener(OUTLINE_TOGGLE_EVENT, toggle);
-    };
-  }, []);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onOpenChange, open]);
+
+  useEffect(() => {
+    if (open) {
+      closeRef.current?.focus();
+    } else if (wasOpenRef.current) {
+      triggerRef.current?.focus();
+    }
+    wasOpenRef.current = open;
+  }, [open, triggerRef]);
 
   const handleJump = (line: number) => {
     onJump(line);
     // Keep open on desktop, close on small screens to free up space.
-    if (window.innerWidth < 768) setOpen(false);
+    if (window.matchMedia("(max-width: 767px)").matches) onOpenChange(false);
   };
+
+  if (!open) return null;
 
   return (
     <>
       {/* Backdrop on mobile */}
-      {open && (
-        <div
-          className="fixed inset-0 z-30 bg-background/40 backdrop-blur-sm md:hidden"
-          onClick={() => setOpen(false)}
-          aria-hidden
-        />
-      )}
+      <div
+        className="fixed inset-0 z-30 bg-background/40 backdrop-blur-sm md:hidden"
+        onClick={() => onOpenChange(false)}
+        aria-hidden
+      />
 
       {/* Sidebar */}
       <aside
-        className={`zen-hide fixed left-0 top-11 bottom-0 z-40 w-72 max-w-[85vw] border-r border-border bg-background shadow-lg transition-transform duration-200 ${
-          open ? "translate-x-0" : "-translate-x-full"
-        }`}
+        id={id}
+        role="dialog"
+        aria-modal="true"
+        className="zen-hide fixed left-0 top-11 bottom-0 z-40 w-72 max-w-[85vw] border-r border-border bg-background shadow-lg transition-transform duration-200 motion-reduce:transition-none"
         // eslint-disable-next-line no-restricted-syntax -- static landmark label
         aria-label="Outline"
       >
@@ -100,10 +121,11 @@ export function OutlineSidebar({ doc, onJump }: OutlineSidebarProps) {
             Outline
           </span>
           <Button
+            ref={closeRef}
             variant="ghost"
             size="icon"
             className="h-7 w-7"
-            onClick={() => setOpen(false)}
+            onClick={() => onOpenChange(false)}
             aria-label={t("outline.close")}
           >
             <X className="h-4 w-4" />

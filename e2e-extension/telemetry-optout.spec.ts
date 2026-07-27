@@ -47,6 +47,7 @@ async function postBadProtocol(page: import("@playwright/test").Page) {
   await page.evaluate((origin) => {
     const ev = new MessageEvent("message", {
       data: { type: "syrin:ready", protocol: 999, buildId: "x", appVersion: "test" },
+      source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
     });
     Object.defineProperty(ev, "origin", { value: origin });
     window.dispatchEvent(ev);
@@ -79,10 +80,7 @@ test("re-enable: telemetry resumes recording", async ({ context, extensionId, se
   const panel = await context.newPage();
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await postBadProtocol(panel);
-  // Give the storage write a beat to flush.
-  await panel.waitForTimeout(200);
-  const events = await readEvents(serviceWorker);
-  expect(events.length).toBeGreaterThan(0);
+  await expect.poll(async () => (await readEvents(serviceWorker)).length).toBeGreaterThan(0);
   await panel.close();
 });
 

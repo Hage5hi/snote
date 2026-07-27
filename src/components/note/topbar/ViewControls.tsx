@@ -17,6 +17,7 @@ interface ViewControlsProps {
   onTogglePreview: () => void;
   scrollSync: boolean;
   onToggleScrollSync: () => void;
+  narrowOverride?: boolean;
 }
 
 export function ViewControls({
@@ -24,9 +25,11 @@ export function ViewControls({
   onTogglePreview,
   scrollSync,
   onToggleScrollSync,
+  narrowOverride,
 }: ViewControlsProps) {
   const { t } = useI18n();
-  const narrow = useNarrowViewport();
+  const viewportNarrow = useNarrowViewport();
+  const narrow = narrowOverride ?? viewportNarrow;
 
   // Icon: unified Eye/EyeOff across desktop and mobile for consistency.
   // Tooltip wording still adapts to context (narrow = swap panes, wide =

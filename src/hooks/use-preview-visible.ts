@@ -79,7 +79,6 @@ function tryMigrateLegacyToWide(): boolean | null {
     }
     legacyMigrationRanCount++;
     if (import.meta.env?.DEV) {
-      // eslint-disable-next-line no-console
       console.debug("[preview-visible] migrated legacy key → wide (legacy key preserved)", { value: legacy });
     }
     return legacy;

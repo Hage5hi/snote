@@ -2,19 +2,20 @@
 
 A Manifest V3 Chrome extension that opens [note.syrin.online](https://note.syrin.online) in Chrome's side panel.
 
-## What's new in v1.3.2
+## What's new in v1.3.6
 
 - **Ready handshake** — the panel now waits for a real `syrin:ready` postMessage from the app before hiding the loader, instead of trusting `iframe.onload`. Blank/error pages no longer look "loaded".
-- **Auto-retry + diagnostics fallback** — if neither `load` nor `syrin:ready` arrive within 12 s, the panel retries once with a cache-buster. Only after that does it show the fallback, which now exposes the iframe URL, an `/version.json` HEAD probe result, ready state, retry count, and a **Copy diagnostics** button.
+- **Honest fallback diagnostics** — if `syrin:ready` does not arrive within 12 s, the panel retries once with a cache-buster. The fallback reports whether the iframe loaded plus the browser's offline state or `online-unverified`; it does not issue cross-origin probes or mislabel CORS failures as CSP failures.
+- **Sanitized diagnostics schema v3** — copied/downloaded bundles record CSP as `not-inspected`, preserve no note locator or capability, and distinguish network, handshake, and timeout failures.
 - **CSP contract enforced by host** — `vercel.json` now sends `Content-Security-Policy: frame-ancestors 'self' chrome-extension://*`, and `scripts/verify-frame-ancestors.sh` runs after every deploy so the header can't silently disappear again.
 - **Manifest hardening** — dropped the `tabs` permission (unused; `windowId` is available without it), added explicit `content_security_policy.extension_pages`, restricted `frame-src` to `note.syrin.online`.
 - **Belt-and-suspenders click handler** — `chrome.action.onClicked` fallback opens the panel when `setPanelBehavior` is refused by policy.
-- **Storage fallback** — `chrome.storage.sync` errors now degrade to `chrome.storage.local` instead of silently loading defaults.
+- **Storage failure behavior** — `chrome.storage.sync` errors use safe defaults; note locators are not mirrored into device-local storage. Edit capabilities are kept only in `chrome.storage.local`; owner capabilities are never stored by the extension.
 
 ## v1.3.0
 
 - **Unified watercolor "N" logo** — toolbar icons (16/32/48/128) and all Web Store promo assets are generated from the same source file (`icons/source.png`). Run `bash scripts/build-store-assets.sh` to rebuild.
-- **Debug mode** — toggle in Settings. Adds a debug bar at the bottom of the side panel showing `lastSlug`, postMessage acks, origin rejections, and storage writes. Web app honours `localStorage.syrin:debug = "1"` for retry logging.
+- **Debug mode** — toggle in Settings. Adds a debug bar at the bottom of the side panel showing only locator length, postMessage acknowledgements, rejected origins/sources, and storage status. Export is always sanitized; raw locator export is unavailable. Web app honours `localStorage.syrin:debug = "1"` for bounded retry logging.
 - **Playwright E2E** for the extension — `e2e-extension/` covers Alt+S → side panel URL by mode, Settings persistence + reload, and lastSlug sync from postMessage. Run with `bunx playwright test --config=e2e-extension/playwright.config.ts` (local headed Chromium).
 - **JSDOM tests for `options.js`** — 11 cases covering defaults, validation, mode switching, and save success/failure.
 - **STORE_LISTING.md** — copy-paste–ready Chrome Web Store fields (title, description, permission justifications, screenshots, video script, privacy answers).
@@ -45,8 +46,8 @@ A Manifest V3 Chrome extension that opens [note.syrin.online](https://note.syrin
 From the repo root:
 
 ```bash
-rm -f public/syrin-note-sidepanel.zip
-cd chrome-extension && nix run nixpkgs#zip -- -r ../public/syrin-note-sidepanel.zip .
+bun run scripts/build-extension-zip.ts
+bun run scripts/verify-extension-zip.ts
 ```
 
 ## Web Store submission checklist
@@ -54,23 +55,26 @@ cd chrome-extension && nix run nixpkgs#zip -- -r ../public/syrin-note-sidepanel.
 - **Single purpose**: "Open Syrin Note in Chrome's side panel."
 - **Permission justification**:
   - `sidePanel` — required to render the app in the side panel.
-  - `storage` — saves your settings (default slug, last-opened note) and syncs them across your signed-in Chrome profiles.
+  - `storage` — syncs settings and the last-opened locator across signed-in Chrome profiles, and keeps edit capabilities plus the diagnostics opt-in/events device-local. Owner capabilities are never stored by the extension. If sync is unavailable, the panel uses safe defaults.
 - **Privacy policy URL**: <https://note.syrin.online/privacy>
 - **Category**: Productivity.
 
 ## Troubleshooting: "Couldn't load Syrin Note"
 
-The fallback screen means neither the iframe `load` event nor the `syrin:ready`
-handshake arrived within 12 s, twice. To diagnose:
+The fallback screen means the `syrin:ready` handshake did not arrive within
+12 s on either attempt. To diagnose:
 
-1. Open the fallback's **Diagnostics** section. `App reachable (HEAD)` should be
-   `200 ok`. If not, `note.syrin.online` is unreachable from your network.
-2. Click **Copy diagnostics** and share the JSON — it includes the iframe URL,
-   retry count, ready state, and the last 50 debug lines.
-3. If HEAD is `200 ok` but the panel still fails, check that the host sends
+1. Open the fallback's **Diagnostics** section. `Network state` reports
+   `offline` when the browser knows it is disconnected; `online-unverified`
+   means only that the browser is not offline, not that the app origin was probed.
+2. Click **Copy diagnostics** and share the JSON — it includes only the app
+   origin/route classification, retry count, ready state, and redacted debug
+   lines; note locators and URL paths are removed.
+3. If the panel still fails, check that the host sends
    `Content-Security-Policy: frame-ancestors 'self' chrome-extension://*`:
    `curl -sI https://note.syrin.online/ | grep -i frame-ancestors`.
-   `scripts/verify-frame-ancestors.sh` runs this after every deploy.
+   `scripts/verify-frame-ancestors.sh` runs this after every deploy. The
+   extension intentionally does not inspect this cross-origin header itself.
 
 ### Store assets (generated, in `/mnt/documents/chrome-store/`)
 

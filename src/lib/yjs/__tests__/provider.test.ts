@@ -1,13 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import * as Y from "yjs";
+import { Awareness, encodeAwarenessUpdate } from "y-protocols/awareness";
 import {
   getSnapshotDebounceMs,
   SupabaseYjsProvider,
   type Encryption,
 } from "../provider";
+import { bytesToBase64 } from "../base64";
+import { clearNoteEncryptionPin, markNoteEncrypted } from "@/lib/encryption-pin";
 
 // Capture upsert calls so saveSnapshot tests can assert payloads.
 const upsertCalls: Array<Record<string, unknown>> = [];
+type BroadcastHandler = (message: { payload: unknown }) => void | Promise<void>;
+type OutboundBroadcast = { event?: string; payload?: unknown; type?: string };
+const broadcastHandlers = new Map<string, BroadcastHandler>();
+const channelSendMock = vi.fn<(message: OutboundBroadcast) => Promise<void>>(async () => {});
 
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
@@ -20,9 +27,19 @@ vi.mock("@/integrations/supabase/client", () => ({
     }),
     channel: () => {
       const channel = {
-        on: () => channel,
-        subscribe: () => Promise.resolve("SUBSCRIBED"),
-        send: () => Promise.resolve(),
+        on: (
+          _type: string,
+          filter: { event?: string },
+          handler: BroadcastHandler,
+        ) => {
+          if (filter.event) broadcastHandlers.set(filter.event, handler);
+          return channel;
+        },
+        subscribe: async (handler: (status: string) => void | Promise<void>) => {
+          await handler("SUBSCRIBED");
+          return "SUBSCRIBED";
+        },
+        send: channelSendMock,
         unsubscribe: () => Promise.resolve(),
       };
       return channel;
@@ -33,6 +50,9 @@ vi.mock("@/integrations/supabase/client", () => ({
 
 // Polyfill rAF for jsdom — flush on next microtask tick.
 beforeEach(() => {
+  broadcastHandlers.clear();
+  channelSendMock.mockClear();
+  localStorage.clear();
   globalThis.requestAnimationFrame = ((cb: FrameRequestCallback) => {
     return setTimeout(() => cb(performance.now()), 0) as unknown as number;
   }) as typeof requestAnimationFrame;
@@ -40,6 +60,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 function makeProvider(slug = "test-slug") {
@@ -50,6 +71,99 @@ function makeProvider(slug = "test-slug") {
   doc.on("update", (p as unknown as { handleDocUpdate: (u: Uint8Array, o: unknown) => void }).handleDocUpdate);
   return { provider: p, doc };
 }
+
+async function makeConnectedProvider(slug: string) {
+  const doc = new Y.Doc();
+  const provider = new SupabaseYjsProvider(slug, doc);
+  provider.setExpectedEncrypted(false);
+  await provider.connect(
+    { name: "Tester", color: "#123456" },
+    { prefetchedYdocState: null, rowExists: true },
+  );
+  channelSendMock.mockClear();
+  return { provider, doc };
+}
+
+async function dispatchBroadcast(event: string, payload: unknown) {
+  await broadcastHandlers.get(event)?.({ payload });
+}
+
+function sentEvents(event: string) {
+  return channelSendMock.mock.calls.filter(
+    ([message]) => (message as { event?: string }).event === event,
+  );
+}
+
+describe("SupabaseYjsProvider — public broadcast containment", () => {
+  beforeEach(() => {
+    upsertCalls.length = 0;
+  });
+
+  it("ignores a forged slug-abandoned control event and keeps persistence active", async () => {
+    const { provider, doc } = await makeConnectedProvider("forged-control");
+
+    await dispatchBroadcast("slug-abandoned", { slug: "forged-control" });
+    doc.getText("content").insert(0, "must persist");
+    await provider.saveSnapshot();
+
+    expect(upsertCalls.at(-1)?.content).toBe("must persist");
+    await provider.destroy();
+  });
+
+  it("drops an oversized y-update before decoding or applying it", async () => {
+    const { provider, doc } = await makeConnectedProvider("oversized-update");
+    const remoteDoc = new Y.Doc();
+    remoteDoc.getText("content").insert(0, "x".repeat(300_000));
+    const oversized = bytesToBase64(Y.encodeStateAsUpdate(remoteDoc));
+
+    await dispatchBroadcast("y-update", { update: oversized });
+
+    expect(doc.getText("content").toString()).toBe("");
+    await provider.destroy();
+  });
+
+  it("drops oversized awareness state instead of adding the remote client", async () => {
+    const { provider } = await makeConnectedProvider("oversized-awareness");
+    const remoteDoc = new Y.Doc();
+    const remoteAwareness = new Awareness(remoteDoc);
+    remoteAwareness.setLocalState({ user: { name: "x".repeat(70_000), color: "#000" } });
+    const oversized = encodeAwarenessUpdate(remoteAwareness, [remoteDoc.clientID]);
+
+    await dispatchBroadcast("awareness", { update: bytesToBase64(oversized) });
+
+    expect(provider.awareness.getStates().has(remoteDoc.clientID)).toBe(false);
+    await provider.destroy();
+  });
+
+  it("rejects request-state payloads without a finite uint32 client id", async () => {
+    const { provider } = await makeConnectedProvider("invalid-state-request");
+
+    await dispatchBroadcast("request-state", { from: "attacker" });
+    await dispatchBroadcast("request-state", { from: -1 });
+    await dispatchBroadcast("request-state", { from: Number.NaN });
+
+    expect(sentEvents("y-update")).toHaveLength(0);
+    await provider.destroy();
+  });
+
+  it("throttles request-state responses to one full-state broadcast per second", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(10_000);
+    const { provider } = await makeConnectedProvider("state-request-throttle");
+
+    await dispatchBroadcast("request-state", { from: 101 });
+    await dispatchBroadcast("request-state", { from: 102 });
+    await dispatchBroadcast("request-state", { from: 103 });
+    expect(sentEvents("y-update")).toHaveLength(1);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await dispatchBroadcast("request-state", { from: 104 });
+    expect(sentEvents("y-update")).toHaveLength(2);
+
+    await provider.destroy();
+    vi.useRealTimers();
+  });
+});
 
 describe("SupabaseYjsProvider — unmount cancellation", () => {
   beforeEach(() => {
@@ -165,6 +279,7 @@ describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
 
   it("persists is_encrypted=false when provider has no encryption", async () => {
     const { provider, doc } = makeProvider();
+    provider.setExpectedEncrypted(false);
     doc.getText("content").insert(0, "hello");
     await provider.saveSnapshot();
     expect(upsertCalls).toHaveLength(1);
@@ -178,7 +293,9 @@ describe("SupabaseYjsProvider — saveSnapshot encryption consistency", () => {
       encrypt: async (b) => b,
       decrypt: async (b) => b,
     };
+    expect(markNoteEncrypted("test-slug")).toBe(true);
     provider.setEncryption(enc);
+    provider.setExpectedEncrypted(true);
     doc.getText("content").insert(0, "secret");
     await provider.saveSnapshot();
     expect(upsertCalls).toHaveLength(1);
@@ -256,5 +373,87 @@ describe("SupabaseYjsProvider — rapid lock/unlock toggle regression", () => {
     expect(upsertCalls).toHaveLength(1);
     expect(upsertCalls[0].content).toBe("c");
     expect(upsertCalls[0].is_encrypted).toBe(false);
+  });
+
+  it("stops every outbound content path when a plaintext provider observes a durable encrypted pin", async () => {
+    const slug = "stale-plaintext-pin";
+    const { provider, doc } = await makeConnectedProvider(slug);
+    const beacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", { value: beacon, configurable: true });
+
+    expect(markNoteEncrypted(slug)).toBe(true);
+    doc.getText("content").insert(0, "must stay local");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    provider.cancelPendingSnapshot();
+    await provider.saveSnapshot();
+    provider.flushBeacon();
+
+    expect(sentEvents("y-update")).toHaveLength(0);
+    expect(upsertCalls).toHaveLength(0);
+    expect(beacon).not.toHaveBeenCalled();
+    await provider.destroy();
+  });
+
+  it("stops every outbound content path when an encrypted provider observes its durable pin cleared", async () => {
+    const slug = "stale-encrypted-pin";
+    expect(markNoteEncrypted(slug)).toBe(true);
+    const { provider, doc } = await makeConnectedProvider(slug);
+    provider.setEncryption({ encrypt: async (bytes) => bytes, decrypt: async (bytes) => bytes });
+    provider.setExpectedEncrypted(true);
+    const beacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", { value: beacon, configurable: true });
+
+    expect(clearNoteEncryptionPin(slug)).toBe(true);
+    doc.getText("content").insert(0, "must stay encrypted locally");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    provider.cancelPendingSnapshot();
+    await provider.saveSnapshot();
+    provider.flushBeacon();
+
+    expect(sentEvents("y-update")).toHaveLength(0);
+    expect(upsertCalls).toHaveLength(0);
+    expect(beacon).not.toHaveBeenCalled();
+    await provider.destroy();
+  });
+
+  it("rechecks the durable pin immediately before queueing a plaintext beacon", () => {
+    const slug = "beacon-pin-race";
+    const { provider, doc } = makeProvider(slug);
+    provider.setExpectedEncrypted(false);
+    doc.getText("content").insert(0, "must not beacon");
+    provider.cancelPendingSnapshot();
+    const beacon = vi.fn().mockReturnValue(true);
+    Object.defineProperty(navigator, "sendBeacon", { value: beacon, configurable: true });
+    const NativeBlob = Blob;
+    vi.stubGlobal("Blob", class extends NativeBlob {
+      constructor(parts?: BlobPart[], options?: BlobPropertyBag) {
+        markNoteEncrypted(slug);
+        super(parts, options);
+      }
+    });
+
+    provider.flushBeacon();
+
+    expect(beacon).not.toHaveBeenCalled();
+  });
+
+  it("rechecks the durable pin before falling back from a rejected beacon to fetch", () => {
+    const slug = "beacon-fetch-pin-race";
+    const { provider, doc } = makeProvider(slug);
+    provider.setExpectedEncrypted(false);
+    doc.getText("content").insert(0, "must not fetch");
+    provider.cancelPendingSnapshot();
+    const beacon = vi.fn().mockImplementation(() => {
+      markNoteEncrypted(slug);
+      return false;
+    });
+    Object.defineProperty(navigator, "sendBeacon", { value: beacon, configurable: true });
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    provider.flushBeacon();
+
+    expect(beacon).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

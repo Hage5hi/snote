@@ -45,6 +45,8 @@ interface EditorProps {
   /** Vim mode toggle. Lazy-loads `@replit/codemirror-vim` on first enable
    *  via a Compartment so the editor itself doesn't need to be re-created. */
   vim?: boolean;
+  /** Provider-level write fence used during encryption mode transitions. */
+  editable?: boolean;
 }
 
 export interface EditorHandle {
@@ -53,12 +55,14 @@ export interface EditorHandle {
 }
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
-  { doc, awareness, className, onScrollEl, vim = false },
+  { doc, awareness, className, onScrollEl, vim = false, editable = true },
   ref,
 ) {
   // Stable Compartment lives across re-renders so reconfigure() targets the
   // same slot. Re-creating it would force the editor to drop vim state.
   const vimCompartment = useMemo(() => new Compartment(), []);
+  const editableCompartment = useMemo(() => new Compartment(), []);
+  const initialEditableRef = useRef(editable);
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [lang, setLang] = useState("en");
@@ -135,6 +139,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         // Empty slot — Vim extension is appended later via Compartment so
         // the heavy `@replit/codemirror-vim` chunk only loads on demand.
         vimCompartment.of([]),
+        editableCompartment.of(EditorView.editable.of(initialEditableRef.current)),
         EditorView.theme({
           "&": {
             height: "100%",
@@ -181,7 +186,13 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       view.destroy();
       viewRef.current = null;
     };
-  }, [doc, awareness, onScrollEl, vimCompartment]);
+  }, [doc, awareness, onScrollEl, vimCompartment, editableCompartment]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: editableCompartment.reconfigure(EditorView.editable.of(editable)),
+    });
+  }, [editable, editableCompartment]);
 
   // Toggle vim mode without recreating the editor. Lazy-imports the chunk
   // on first enable; subsequent toggles reuse the module.

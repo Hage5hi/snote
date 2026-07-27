@@ -12,6 +12,7 @@ export default defineConfig({
       "src/**/*.{test,spec}.{ts,tsx}",
       "scripts/**/*.{test,spec}.{ts,tsx}",
       "chrome-extension/__tests__/**/*.{test,spec}.{js,ts}",
+      "cloudflare-worker/**/*.{test,spec}.{ts,tsx}",
     ],
   },
   resolve: {

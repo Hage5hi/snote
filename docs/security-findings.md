@@ -1,147 +1,143 @@
-# Security findings — Lovable scan triage
+# Security findings — repository and rollout status
 
-This document tracks how each finding from the Lovable security scan
-(`https://syrin.online/9bqc0ycw`) maps to the actual code in this repo
-and why. It exists so future scans don't keep raising the same
-intentional design choices.
+This document describes the state of the stacked implementation. It does not
+claim that staging or production has been migrated. Local tests prove the code
+contracts only; backup, deploy, cache purge, 48-hour soak, atomic cutover, and
+post-cutover probes remain mandatory operational gates.
 
-> Update this file whenever a new finding lands or the underlying code
-> moves. The Lovable scanner is generic and doesn't know Syrin's threat
-> model — "anonymous CRUD on `notes` keyed by slug" is the product, not
-> a bug.
+Slugs are locators, never authorization credentials. New notes use
+owner/edit/view capabilities. Legacy notes are exact-match, read-only, and may
+only be copied into a new capability-managed note.
 
-## 1. note-meta endpoint auth — **fixed**
+## 1. Legacy metadata and crawler previews — implemented, deploy unverified
 
-**Finding:** *"note-meta endpoint auth is optional and silently disabled"*
+`note-meta` is a generic `410 no-store` tombstone. It does not parse a token,
+initialize a database client, or return content or a locator. The Cloudflare
+Worker returns generic, non-indexable, `no-store` HTML for crawler requests to
+legacy note and share paths before consulting metadata or Cache API.
 
-**Status:** real issue, **fixed**.
+Production still requires the ordered rollout in
+`docs/security/immediate-containment-rollout.md`: deploy the generic Worker,
+purge old note/share HTML and metadata caches across every alias, verify cache
+misses, then deploy the tombstone. Rollback must retain generic containment.
 
-The previous implementation guarded the `x-meta-secret` check behind
-`if (expected)`. If `NOTE_META_SECRET` was unset in the function's
-environment, the endpoint accepted requests without any auth at all.
-Combined with the function reading note `content` (including non-empty
-plaintext for unencrypted notes), this meant a misconfigured deploy
-silently exposed a server-side scrape endpoint.
+## 2. Admin authentication and cleanup — implemented, deploy unverified
 
-Fix: `supabase/functions/note-meta/index.ts` now fails closed — if
-`NOTE_META_SECRET` is unset and `NOTE_META_ALLOW_INSECURE` is not
-explicitly `"1"`, the endpoint returns HTTP 503. The Cloudflare Worker
-already sends the header (`cloudflare-worker/worker.js`), so production
-behaviour is unchanged. Local dev can opt out by setting
-`NOTE_META_ALLOW_INSECURE=1` in `supabase/functions/.env.local` —
-**never** set this in production.
+Only `admin-session` accepts an admin passphrase. It reserves a serialized SQL
+admission lease and consumes failed attempts atomically. The client receives a
+short opaque session bound to a keyed digest of the gateway-verified client
+address. Ambiguous forwarding headers, database errors, and retention-RPC
+errors fail closed with `503`.
 
-The comparison also moved to `constantTimeEqual` so the secret cannot be
-recovered via timing.
+Login retains a bounded legacy compatibility contract: any non-empty value up
+to 1,024 JavaScript code units may be checked against an existing hash.
+Newly rotated passphrases alone enforce the 12–72 UTF-8-byte bcrypt policy.
 
-## 2. Admin endpoints brute-force protection — **fixed**
+`admin-list`, `admin-delete`, and `admin-rotate` accept only that session.
+Rotation atomically updates the credential epoch and revokes outstanding
+sessions. The old destructive `cleanup` endpoint is a generic `410 no-store`
+tombstone. `admin_security_prune()` is service-role-only; production must also
+schedule and monitor its daily retention run.
 
-**Finding:** *"Admin endpoints have no brute-force protection"*
+The migration must precede the Edge functions. No production limiter or
+session guarantee is claimed until concurrent-failure and database-failure
+probes pass against the deployed environment.
 
-**Status:** real issue, **fixed**.
+## 3. Share capabilities and compatibility URLs — implemented, deploy unverified
 
-The four passphrase-gated functions
-(`admin-list`, `admin-delete`, `admin-rotate`, `cleanup`) previously
-called `verifyPass` (bcrypt or env-fallback) with no per-IP throttle.
-An attacker who learned an endpoint URL could grind the hash without
-limit; bcrypt cost-10 only buys ~100ms per attempt on modern CPUs.
+New view capabilities travel in `/s#view=<token>`, then only in an exact
+`Authorization: Bearer` header. `share-view` does not return the note slug,
+marks responses `no-store`, and returns generic errors without logging raw
+request data. Rotating a view capability revokes the previous generation.
+`share-rename` is a `410 no-store` tombstone.
 
-Fix:
-- New migration `20260522000000_admin_rate_limit.sql` creates
-  `public.admin_auth_attempts (ip pk, failure_count, first_failure_at,
-  locked_until)` with RLS enabled + restrictive deny-all so only the
-  service role can read/write it.
-- New helper `supabase/functions/_shared/admin-rate-limit.ts` exports
-  `getClientIp`, `checkAdminLockout`, `recordAdminAuthAttempt`, and
-  `lockoutResponse` (HTTP 429 + `Retry-After`).
-- Each function calls `checkAdminLockout(ip)` before `verifyPass` and
-  `recordAdminAuthAttempt(ip, ok)` after, with policy:
-  - 15-minute sliding window for failure counting.
-  - 10 failures inside the window → 30-minute lockout.
-  - A single correct passphrase clears the row (success unlocks the IP).
+Legacy `/s/:token` is a 30-day compatibility shell. Before React starts it
+moves the token into the fragment, removes it from the visible path, and uses
+`no-store`/`no-referrer`; after the configured deadline it fails closed. The
+Worker never forwards the raw path token. Platform logs, traces, and cache
+keys still require deployment-time review and redaction.
 
-IP extraction prefers `x-forwarded-for` (leftmost), falling back to
-`cf-connecting-ip` and `x-real-ip`.
+## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 
-### Operational note
+`20260724000000_atomic_capability_cutover.sql` dynamically drops every policy
+on `public.notes` and revokes all direct privileges from `PUBLIC`, `anon`, and
+`authenticated` in one transaction. Capability, update, checkpoint, and share
+tables remain default-deny. The SPA uses narrow Edge APIs; legacy content is
+available only through the exact-match read-only `legacy-note-open` function.
 
-`admin_auth_attempts` accumulates one row per offending IP until the
-lock expires. Operators can prune historical rows with:
-```sql
-DELETE FROM public.admin_auth_attempts
- WHERE COALESCE(locked_until, first_failure_at) < now() - INTERVAL '7 days';
-```
-(There's an index on `locked_until` to keep that fast.)
+Do not apply this migration until the dual-mode client and capability APIs have
+completed the required 48-hour production soak. A local migration test is not
+evidence that the deployed database is closed. After cutover, probe both
+`anon` and `authenticated` for failed select/insert/update/delete attempts.
+Rollback is API read-only and must never recreate public policies.
 
-## 3. *"Share tokens are fully unprotected with no RLS policies"* — **false positive**
+## 5. Realtime and durable persistence — implemented, deploy unverified
 
-**Status:** intentional. Do not "fix" by adding permissive policies.
+Capability notes use private `note:<noteId>` channels. Five-minute Realtime
+JWTs carry note ID, scope, generation, and rollback claims; RLS on
+`realtime.messages` permits receive for active capabilities and send only for
+owner/edit scopes. The forged legacy `slug-abandoned` control event is removed,
+and accepted event types and payload sizes are bounded.
 
-`public.note_shares` is the lookup `token → slug` for read-only share
-links (`/s/:token`). The migration that creates it intentionally enables
-RLS and **adds no policies**, which means default-deny for both `anon`
-and `authenticated`. Access happens exclusively through the
-`share-create` / `share-view` / `share-revoke` / `share-rename` edge
-functions, which use `SUPABASE_SERVICE_ROLE_KEY` and bypass RLS.
+The client persists each Yjs update to an IndexedDB outbox before broadcast or
+HTTP sync. `note-sync` acknowledges an update ID idempotently; only acknowledged
+items are removed. Peers may persist the same validated update hash. Checkpoint
+compaction uses `throughSequence` plus version/encryption CAS. Locked-note
+updates, checkpoints, recovery snapshots, and outbox entries remain ciphertext;
+locking purges plaintext persistence before the secure mode is accepted.
 
-See `supabase/migrations/20260427041711_*.sql` lines 28–31:
-```
-ALTER TABLE public.note_shares ENABLE ROW LEVEL SECURITY;
--- No policies. Deny-by-default. Access only via share-* Edge functions
--- using SUPABASE_SERVICE_ROLE_KEY which bypasses RLS.
-```
+Production must still prove reconnects, reversed delivery, sub-800 ms
+navigation, concurrent saves, JWT refresh, encrypted recovery, outbox backlog,
+and checkpoint conflicts during the soak. Oversized existing data must be
+quarantined read-only, never truncated.
 
-The whole *point* of the table is that the viewer never learns the
-slug; if we added a permissive RLS policy to satisfy a scanner, we'd
-break that property.
+## 6. Privacy boundary — implemented in code, operations need review
 
-## 4. *"RLS Policy Always True"* on `public.notes` — **false positive (by design)**
+The application no longer calls `ipapi.co`; locale selection uses browser
+signals. Privacy copy, the extension manifest, and runtime behavior prohibit
+logging note content, slug, capability/share token, URL fragment, or raw IP.
+Only aggregate API errors, authorization denials, outbox backlog, and
+compaction failures are permitted. Deployment logging and retention settings
+must be checked separately.
 
-**Status:** intentional product behaviour.
+## 7. Toolchain security exceptions — verified locally
 
-Syrin Notes is "instant notes by URL". Visit `syrin.online/<slug>` and
-anyone with the URL can read or edit. The slug *is* the access token.
-Three policies on `notes` use `USING (true)` to allow `anon` + `authenticated`
-SELECT/INSERT/UPDATE, see
-`supabase/migrations/20260419225907_*.sql` lines 50–62.
+The otherwise deferred Vite major upgrade is included because
+[GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff)
+affects every Vite release through `6.4.2`; `6.4.3` is the first patched line
+compatible with the current plugins, and there is no patched Vite 5 release.
+[GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp)
+affects Vitest versions below `3.2.6`, so Vitest and
+`@vitest/coverage-v8` are pinned together at `3.2.6`.
 
-This is documented in the README:
-> **Instant notes by URL** — visit `syrin.online/my-note` to create or open a note
+These exceptions do not authorize other framework majors. Frozen install,
+dependency audit, lint, Knip, app/Node/tooling/Edge typechecks, unit coverage,
+production build, actionlint, extension E2E, and browser smoke remain release
+gates.
 
-If notes ever become user-owned, this needs to change. Until then,
-hardening this is a product change, not a security fix.
+### Open dependency-audit blocker — no exception granted
 
-## 5. *"Any anonymous user can delete any note"* — **false positive (by design)**
+`bun audit --audit-level=high` currently reports one high finding:
+[`brace-expansion <=5.0.7` (GHSA-mh99-v99m-4gvg)](https://github.com/advisories/GHSA-mh99-v99m-4gvg).
+It is present only in the development/build dependency graph through ESLint,
+TypeScript-ESLint, `@vitest/coverage-v8`, and
+`vite-plugin-pwa → workbox-build`. `bun audit --production --audit-level=high`
+is clean.
 
-Same threat model as §4. The migration that introduced
-"Anyone can delete notes" (`20260420041258_*.sql`) is intentional;
-delete-on-empty cleanup runs from the `cleanup` edge function (now
-rate-limited) and the admin panel's `admin-delete` (now rate-limited).
+The only patched release is `5.0.8`, but Bun supports only global overrides.
+Forcing that version into legacy `minimatch` ranges is neither range-compatible
+nor API-compatible. Current compatible ESLint/Vitest upgrades can reduce some
+paths, but Workbox `7.4.1` still retains one vulnerable path and the current
+`vite-plugin-pwa` line has no compatible upstream replacement.
 
-If a non-empty note disappears it's "someone with the slug deleted it",
-which is the same trust level as "someone with the slug overwrote it".
+This is not accepted, suppressed, or a CI exception. The `quality` audit gate
+must remain red; merge and release remain blocked until a compatible upstream
+toolchain update, a separately reviewed PWA replacement, or a separately
+reviewed fork removes the finding.
 
-## 6. *"Any anonymous user can overwrite any note"* — **false positive (by design)**
+## Scan triage rule
 
-Same threat model as §4 and §5. Overwriting via the Yjs CRDT (clients
-broadcast `Y.update` binary on a Supabase Realtime channel `note:<slug>`)
-is the entire collaboration model. Encrypted notes additionally require
-the URL hash key to decrypt, so an overwriter without the key can only
-trash the document — they cannot read it.
-
-## 7. *"RLS Enabled No Policy"* (info) — **false positive (by design)**
-
-This is the same as §3 plus `public.admin_config` and (now)
-`public.admin_auth_attempts`. All three are service-role-only tables;
-they all have RLS enabled with explicit restrictive deny-all policies
-and no permissive policies, which is the correct shape for that role
-boundary.
-
----
-
-## How to re-run the scan
-
-When Lovable re-runs the scan, items 3–7 should still appear because
-they reflect product design. Use this document to triage them quickly
-and reject pull requests that try to "fix" them by adding permissive
-RLS policies on `note_shares`, `admin_config`, or `admin_auth_attempts`.
+Treat any finding about deployed direct-table access, public Realtime,
+content-bearing crawler output, raw token paths, or fail-open admin rate limits
+as open until staging and production evidence proves otherwise. The repository
+contains the intended fixes, but merge status is not deployment status.

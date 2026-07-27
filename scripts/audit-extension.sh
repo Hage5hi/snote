@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Extension security audit:
-#  - fails on high/critical npm advisories in prod deps (bun audit --prod)
+#  - fails on high/critical advisories across the pinned lockfile
 #  - lints the extension source with ESLint
 #  - enforces a permission whitelist on chrome-extension/manifest.json so
 #    a stray "tabs", "history", "cookies", "<all_urls>" etc. can't sneak in.
@@ -9,16 +9,11 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-echo "▶ bun audit (prod, high+)"
-if bun pm audit --help >/dev/null 2>&1; then
-  # bun pm audit exits non-zero on any finding; --prod scopes to runtime deps.
-  bun pm audit --prod --severity high || {
-    echo "✗ high-severity advisory in production dependencies" >&2
-    exit 1
-  }
-else
-  echo "  (bun pm audit unavailable, skipping)"
-fi
+echo "▶ bun audit (full lockfile, high+)"
+bun audit --audit-level=high || {
+  echo "✗ high-severity advisory in the dependency lockfile" >&2
+  exit 1
+}
 
 echo "▶ ESLint on chrome-extension/"
 bunx eslint chrome-extension --ext .js,.ts --max-warnings=0

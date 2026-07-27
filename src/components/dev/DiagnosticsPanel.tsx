@@ -16,24 +16,20 @@ import {
   Component,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ErrorInfo,
   type PropsWithChildren,
   type ReactNode,
 } from "react";
-
-type EventKind = "warn" | "error" | "exception" | "unhandledrejection" | "react";
-
-interface DiagEvent {
-  id: number;
-  at: number;
-  kind: EventKind;
-  message: string;
-  detail?: string;
-  /** React componentStack from ErrorBoundary — top-most frame first. */
-  componentStack?: string;
-}
+import {
+  MAX_EXPORT_DETAIL_BYTES,
+  DIAG_EXPORT_SCHEMA_VERSION,
+  diagExportFilename,
+  filterDiagEvents,
+  truncateDiagEventsForExport,
+  type DiagEvent,
+  type EventKind,
+} from "./diagnostics-utils";
 
 const MAX_EVENTS = 50;
 let seq = 0;
@@ -111,51 +107,6 @@ function useDiagnosticsEnabled(): boolean {
   return import.meta.env.DEV || flag === "1" || flag === "true";
 }
 
-const MAX_EXPORT_DETAIL_BYTES = 512;
-export const DIAG_EXPORT_SCHEMA_VERSION = 1;
-
-/** Filename: `diagnostics-<iso>.json` with `:`/`.` replaced so it's FS-safe. */
-export function diagExportFilename(now: Date = new Date()): string {
-  const safe = now.toISOString().replace(/[:.]/g, "-");
-  return `diagnostics-${safe}.json`;
-}
-
-/** Truncate details for export so downloaded JSON never bloats. Mirrors
- *  chrome-extension MAX_TELEMETRY_DETAIL_BYTES. Panel keeps raw data. */
-export function truncateDiagEventsForExport(events: DiagEvent[]): DiagEvent[] {
-  return events.map((e) => {
-    const out: DiagEvent = { ...e };
-    for (const key of ["detail", "componentStack"] as const) {
-      const v = out[key];
-      if (typeof v === "string" && v.length > MAX_EXPORT_DETAIL_BYTES) {
-        out[key] = `${v.slice(0, MAX_EXPORT_DETAIL_BYTES)}…[truncated ${v.length - MAX_EXPORT_DETAIL_BYTES}b]`;
-      }
-    }
-    return out;
-  });
-}
-
-/** Pure filter matching the panel display: kind toggle + case-insensitive
- *  substring search across message / detail / componentStack. Exported so
- *  unit tests can assert the panel and its search behave identically. */
-export function filterDiagEvents(
-  events: DiagEvent[],
-  opts: { kind?: "all" | EventKind; query?: string },
-): DiagEvent[] {
-  const kind = opts.kind ?? "all";
-  const q = (opts.query ?? "").trim().toLowerCase();
-  return events
-    .filter((e) => kind === "all" || e.kind === kind)
-    .filter((e) => {
-      if (!q) return true;
-      return (
-        e.message.toLowerCase().includes(q) ||
-        (e.detail?.toLowerCase().includes(q) ?? false) ||
-        (e.componentStack?.toLowerCase().includes(q) ?? false)
-      );
-    });
-}
-
 type KindFilter = "all" | EventKind;
 
 export function DiagnosticsPanel() {
@@ -165,7 +116,6 @@ export function DiagnosticsPanel() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [filter, setFilter] = useState<KindFilter>("all");
   const [query, setQuery] = useState("");
-  const originalConsole = useRef<{ warn?: typeof console.warn; error?: typeof console.error }>({});
 
   useEffect(() => {
     if (!enabled) return;
@@ -177,14 +127,14 @@ export function DiagnosticsPanel() {
 
     // 2) Patch console.warn/error. Original is invoked FIRST so tests /
     // Sentry / existing consumers see the message unchanged.
-    originalConsole.current.warn = console.warn;
-    originalConsole.current.error = console.error;
+    const originalWarn = console.warn;
+    const originalError = console.error;
     console.warn = (...args: unknown[]) => {
-      originalConsole.current.warn?.apply(console, args);
+      originalWarn.apply(console, args);
       emit("warn", stringifyFirst(args), stringifyRest(args));
     };
     console.error = (...args: unknown[]) => {
-      originalConsole.current.error?.apply(console, args);
+      originalError.apply(console, args);
       emit("error", stringifyFirst(args), stringifyRest(args));
     };
 
@@ -211,8 +161,8 @@ export function DiagnosticsPanel() {
 
     return () => {
       listeners.delete(listener);
-      if (originalConsole.current.warn) console.warn = originalConsole.current.warn;
-      if (originalConsole.current.error) console.error = originalConsole.current.error;
+      console.warn = originalWarn;
+      console.error = originalError;
       window.removeEventListener("error", onError);
       window.removeEventListener("unhandledrejection", onRejection);
     };
@@ -346,12 +296,12 @@ export function DiagnosticsPanel() {
                 </button>
               );
             })}
-            <input
+            {/* eslint-disable-next-line no-restricted-syntax -- internal dev-only UI */}
+            <input placeholder="search message/detail/stack"
               data-diag-search
               type="search"
               value={query}
               onChange={(ev) => setQuery(ev.target.value)}
-              placeholder="search message/detail/stack"
               style={{ background: "#111", border: "1px solid #666", color: "#fff", padding: "1px 4px", font: "inherit", flex: "1 1 140px", minWidth: 100 }}
             />
           </div>

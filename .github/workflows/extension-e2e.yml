@@ -1,9 +1,4 @@
-name: Extension E2E (Playwright)
-
-# Runs the chrome-extension Playwright suite against the unpacked extension.
-# Triggers only on changes that can affect the extension, so it doesn't slow
-# down unrelated PRs. Uses xvfb because the persistent-context launch needs a
-# headed Chromium (MV3 service workers + chrome.sidePanel APIs).
+name: Extension E2E
 
 on:
   push:
@@ -11,107 +6,67 @@ on:
     paths:
       - "chrome-extension/**"
       - "e2e-extension/**"
+      - "scripts/audit-extension.sh"
+      - "scripts/build-extension-zip.ts"
+      - "scripts/extension-archive.ts"
+      - "scripts/verify-extension-zip.ts"
+      - "scripts/verify-extension-zip.sh"
+      - "package.json"
+      - "bun.lock"
       - ".github/workflows/extension-e2e.yml"
   pull_request:
     paths:
       - "chrome-extension/**"
       - "e2e-extension/**"
+      - "scripts/audit-extension.sh"
+      - "scripts/build-extension-zip.ts"
+      - "scripts/extension-archive.ts"
+      - "scripts/verify-extension-zip.ts"
+      - "scripts/verify-extension-zip.sh"
+      - "package.json"
+      - "bun.lock"
       - ".github/workflows/extension-e2e.yml"
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  # NOTE: To require this check before merging into `main`, mark the
-  # "chrome-extension E2E" job as a required status check in
-  # Settings → Branches → Branch protection rules → main.
-  # The required-check job below is the stable name to pin.
   extension-e2e:
-    name: chrome-extension E2E
+    name: extension-e2e
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - name: Verify shipped extension zip matches manifest
-        # Drift guard: byte size + sha256 + zipped manifest.json version
-        # must match public/syrin-note-sidepanel.zip.manifest.json AND
-        # chrome-extension/manifest.json. Blocks merges that ship a stale zip.
-        run: bash scripts/verify-extension-zip.sh
-      - name: Extension security audit
-        # Fails on high/critical npm advisories, ESLint errors in the
-        # extension source, or manifest permissions outside the whitelist.
-        run: bash scripts/audit-extension.sh
-      - name: Install Playwright browsers (Chromium only)
-        run: bunx playwright install --with-deps chromium
-      - name: Run extension E2E under xvfb
-        run: |
-          xvfb-run -a --server-args="-screen 0 1280x800x24" \
-            bunx playwright test --config=e2e-extension/playwright.config.ts
-      - name: Upload Playwright HTML report (on failure)
+      - run: bash scripts/verify-extension-zip.sh
+      - run: bash scripts/audit-extension.sh
+      - run: bunx playwright install --with-deps chromium
+      - name: Run unpacked extension suite
+        run: >-
+          xvfb-run -a --server-args="-screen 0 1280x800x24"
+          bunx playwright test
+          --config=e2e-extension/playwright.config.ts
+          --retries=0
+      - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          # Include run + attempt so re-runs of the same job don't collide,
-          # and a failing retry's report is preserved alongside the original.
-          name: extension-e2e-html-report-run${{ github.run_number }}-attempt${{ github.run_attempt }}
-          path: playwright-report/
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Upload Playwright traces, screenshots & videos (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          # Playwright writes per-test subfolders under test-results/ named
-          # after the failing test title (e.g. "redacted-export-…-masks-…").
-          # We keep that structure and just stamp run/attempt on the artifact
-          # name so a specific failing retry attempt is easy to find.
-          name: extension-e2e-test-results-run${{ github.run_number }}-attempt${{ github.run_attempt }}
-          path: test-results/
-          retention-days: 14
-          if-no-files-found: ignore
-      - name: Upload extension build artifacts (on failure)
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          # Ships the exact extension source + zipped bundle that failed CI so
-          # we can side-load the same build locally and reproduce runtime bugs
-          # without rebuilding from the commit SHA.
-          name: extension-build-run${{ github.run_number }}-attempt${{ github.run_attempt }}
+          name: extension-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
+            playwright-report/
+            test-results/
             chrome-extension/
             public/syrin-note-sidepanel.zip
             public/syrin-note-sidepanel.zip.manifest.json
-          retention-days: 14
           if-no-files-found: ignore
-
-  store-assets:
-    # Regenerates the Chrome Web Store screenshots, tile, marquee, promo and
-    # video thumbnail from the live manifest version + STORE_LISTING.md, so
-    # listing assets never drift behind the shipped extension. Runs only
-    # when the extension or its listing changes.
-    name: Sync store assets with build
-    runs-on: ubuntu-latest
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      contains(github.event.head_commit.message, '[store]') ||
-      github.event_name == 'pull_request' || github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v27
-        with:
-          nix_path: nixpkgs=channel:nixos-unstable
-      - name: Build store assets
-        env:
-          STORE_ASSETS_OUT: ${{ github.workspace }}/store-assets-out
-        run: |
-          mkdir -p "$STORE_ASSETS_OUT"
-          bash scripts/build-store-assets.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: chrome-store-assets
-          path: ${{ github.workspace }}/store-assets-out
-          retention-days: 30
-          if-no-files-found: error
-
+          retention-days: 14

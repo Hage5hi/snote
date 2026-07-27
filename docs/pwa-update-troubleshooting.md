@@ -47,7 +47,7 @@ Nguyên nhân thường gặp:
 
 | Symptom | Test |
 |---|---|
-| Toast không biến mất sau khi build mới ship | `e2e/pwa-update-toast.spec.ts` |
+| Toast không biến mất sau khi build mới ship | `src/lib/__tests__/pwa-update.test.ts`, `e2e/pwa-update-throttle.spec.ts` |
 | Multi-click Update thêm `?v=` vào URL note | `e2e/pwa-update-multi-click.spec.ts`, `e2e/pwa-update-no-url-v-param.spec.ts` |
-| Remount panel làm tăng invalid-events / duplicate listener | `src/lib/__tests__/pwa-update-listener-dedup.test.ts`, `e2e/pwa-invalid-stats-many-remount-rounds.spec.ts` |
+| Remount panel làm tăng invalid-events / duplicate listener | `src/lib/__tests__/pwa-update-listener-dedup.test.ts` |
 | Cleanup xóa nhầm cache của integration khác | `src/lib/__tests__/pwa-update-nuke-scope.test.ts` |

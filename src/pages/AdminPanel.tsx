@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, Loader2, Trash2, Search, RefreshCw, Sparkles, X, KeyRound } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router";
+import { ArrowLeft, Trash2, Search, RefreshCw, X, KeyRound } from "lucide-react";
 import { RotatePassDialog } from "@/components/admin/RotatePassDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,28 +30,302 @@ type AdminNote = {
 };
 
 type TopTag = { name: string; count: number };
-
-// Neutral key — avoid hinting at "admin" in DevTools storage panel.
-const SESSION_KEY = "__a";
-
 type GateStatus = "checking" | "denied" | "allowed";
+type RequestOwnership = "owned" | "stale" | "superseded";
+
+// This stores a random, short-lived server session only. It never contains the
+// admin passphrase supplied through the scrubbed URL fragment.
+const SESSION_TOKEN_KEY = "__a_session";
+const SESSION_EXPIRY_KEY = "__a_session_expiry";
+const MAX_CACHED_SESSION_TTL_MS = 31 * 60 * 1000;
+
+function parseSessionExpiry(value: unknown): number | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  const expiresAtMs = Date.parse(value);
+  return Number.isFinite(expiresAtMs) ? expiresAtMs : null;
+}
+
+function remainingSessionLifetime(expiresAt: string): number | null {
+  const expiresAtMs = parseSessionExpiry(expiresAt);
+  if (expiresAtMs === null) return null;
+  const remainingMs = expiresAtMs - Date.now();
+  return remainingMs > 0 && remainingMs <= MAX_CACHED_SESSION_TTL_MS
+    ? remainingMs
+    : null;
+}
+
+function readStoredAdminSession(): { token: string; expiresAt: string } | null {
+  try {
+    const token = sessionStorage.getItem(SESSION_TOKEN_KEY) ?? "";
+    const expiresAt = sessionStorage.getItem(SESSION_EXPIRY_KEY) ?? "";
+    return token && remainingSessionLifetime(expiresAt) !== null
+      ? { token, expiresAt }
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredSessionToken(): string | null {
+  try {
+    return sessionStorage.getItem(SESSION_TOKEN_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storedSessionIsCurrent(token: string): boolean {
+  const stored = readStoredAdminSession();
+  return stored?.token === token;
+}
+
+function isUnauthorizedAdminResponse(error: unknown, data: unknown): boolean {
+  const candidate = error && typeof error === "object"
+    ? error as { status?: unknown; context?: { status?: unknown } }
+    : null;
+  const directStatus = Number(candidate?.status);
+  const contextStatus = Number(candidate?.context?.status);
+  const status = Number.isFinite(contextStatus) ? contextStatus : directStatus;
+  const apiError = data && typeof data === "object" && "error" in data
+    ? String((data as { error?: unknown }).error ?? "").trim().toLowerCase()
+    : "";
+  const message = String((error as { message?: unknown } | null)?.message ?? "")
+    .toLowerCase();
+  return status === 401 || status === 403 ||
+    /^(unauthorized|session (expired|invalid))$/.test(apiError) ||
+    message.includes("unauthorized") || message.includes("session expired");
+}
+
+function sessionHeaders(sessionToken: string): Record<string, string> {
+  return { "x-admin-session": sessionToken };
+}
 
 export default function AdminPanel() {
   const [gate, setGate] = useState<GateStatus>("checking");
-  const [pass, setPass] = useState("");
+  const [sessionToken, setSessionToken] = useState("");
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<AdminNote[]>([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState("");
-  const [tagFilter, setTagFilter] = useState<string>("");
+  const [tagFilter, setTagFilter] = useState("");
   const [topTags, setTopTags] = useState<TopTag[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmOpen, setConfirmOpen] = useState<null | "selected" | "all">(null);
   const [rotateOpen, setRotateOpen] = useState(false);
+  const [sessionGeneration, setSessionGeneration] = useState(0);
+  const expiryTimerRef = useRef<number | null>(null);
+  const sessionGenerationRef = useRef(0);
+  const activeSessionTokenRef = useRef("");
+  const latestListRequestRef = useRef(0);
 
-  const initialTagRef = useRef<string>("");
+  const purgeAdminState = useCallback(
+    (removeStoredSession: boolean) => {
+      sessionGenerationRef.current += 1;
+      latestListRequestRef.current += 1;
+      setSessionGeneration(sessionGenerationRef.current);
+      activeSessionTokenRef.current = "";
+      if (expiryTimerRef.current !== null) {
+        window.clearTimeout(expiryTimerRef.current);
+        expiryTimerRef.current = null;
+      }
+      if (removeStoredSession) {
+        try {
+          sessionStorage.removeItem(SESSION_TOKEN_KEY);
+          sessionStorage.removeItem(SESSION_EXPIRY_KEY);
+        } catch {
+          // Storage may be disabled. Rendered state is still purged below.
+        }
+      }
+      setGate("denied");
+      setSessionToken("");
+      setLoading(false);
+      setItems([]);
+      setTotal(0);
+      setTopTags([]);
+      setSelected(new Set());
+      setSearch("");
+      setTagFilter("");
+      setConfirmOpen(null);
+      setRotateOpen(false);
+    },
+    [],
+  );
 
-  // Inject <meta name="robots" content="noindex,nofollow"> while this route is mounted.
+  const clearAdminSession = useCallback(() => {
+    purgeAdminState(true);
+  }, [purgeAdminState]);
+
+  const retireStaleAdminView = useCallback(() => {
+    // A different component instance already stored a newer session. Hide this
+    // instance's previews without deleting the newer token from sessionStorage.
+    purgeAdminState(false);
+  }, [purgeAdminState]);
+
+  const requestOwnership = useCallback(
+    (token: string, generation: number): RequestOwnership => {
+      if (
+        sessionGenerationRef.current !== generation ||
+        activeSessionTokenRef.current !== token
+      ) {
+        return "stale";
+      }
+      const storedToken = readStoredSessionToken();
+      return storedToken !== null && storedToken !== token
+        ? "superseded"
+        : "owned";
+    },
+    [],
+  );
+
+  const clearRejectedSession = useCallback(
+    (token: string, generation: number): boolean => {
+      const ownership = requestOwnership(token, generation);
+      if (ownership === "stale") return false;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return false;
+      }
+      clearAdminSession();
+      return true;
+    },
+    [clearAdminSession, requestOwnership, retireStaleAdminView],
+  );
+
+  const beginAdminRequest = useCallback(
+    (token: string, expectedGeneration?: number): number | null => {
+      const generation = expectedGeneration ?? sessionGenerationRef.current;
+      const ownership = requestOwnership(token, generation);
+      if (ownership === "stale") return null;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return null;
+      }
+      if (!storedSessionIsCurrent(token)) {
+        clearAdminSession();
+        return null;
+      }
+      return generation;
+    },
+    [clearAdminSession, requestOwnership, retireStaleAdminView],
+  );
+
+  const scheduleSessionExpiry = useCallback(
+    (token: string, expiresAt: string): boolean => {
+      const remainingMs = remainingSessionLifetime(expiresAt);
+      if (remainingMs === null) {
+        clearAdminSession();
+        return false;
+      }
+
+      try {
+        sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+        sessionStorage.setItem(SESSION_EXPIRY_KEY, expiresAt);
+      } catch {
+        clearAdminSession();
+        return false;
+      }
+
+      if (expiryTimerRef.current !== null) {
+        window.clearTimeout(expiryTimerRef.current);
+      }
+      sessionGenerationRef.current += 1;
+      const generation = sessionGenerationRef.current;
+      setSessionGeneration(generation);
+      activeSessionTokenRef.current = token;
+      expiryTimerRef.current = window.setTimeout(() => {
+        const ownership = requestOwnership(token, generation);
+        if (ownership === "stale") return;
+        if (ownership === "superseded") {
+          retireStaleAdminView();
+          return;
+        }
+        clearAdminSession();
+      }, remainingMs);
+      return true;
+    },
+    [clearAdminSession, requestOwnership, retireStaleAdminView],
+  );
+
+  const fetchList = useCallback(
+    async (token: string, query = "", tag = "") => {
+      const requestGeneration = beginAdminRequest(token);
+      if (requestGeneration === null) return false;
+      const listRequestId = ++latestListRequestRef.current;
+      setLoading(true);
+      try {
+        const { data, error } = await supabase.functions.invoke("admin-list", {
+          body: { search: query, tag, limit: 200, offset: 0 },
+          headers: sessionHeaders(token),
+        });
+        if (listRequestId !== latestListRequestRef.current) return false;
+        const ownership = requestOwnership(token, requestGeneration);
+        if (ownership === "stale") return false;
+        if (ownership === "superseded") {
+          retireStaleAdminView();
+          return false;
+        }
+        if (isUnauthorizedAdminResponse(error, data)) {
+          if (clearRejectedSession(token, requestGeneration)) {
+            toast({
+              title: "Failed to load list",
+              description: "Session expired.",
+              variant: "destructive",
+            });
+          }
+          return false;
+        }
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+        if (!storedSessionIsCurrent(token)) {
+          clearAdminSession();
+          return false;
+        }
+        setItems(data.items ?? []);
+        setTotal(data.total ?? 0);
+        setTopTags(data.topTags ?? []);
+        setSelected(new Set());
+        return true;
+      } catch (error) {
+        if (listRequestId !== latestListRequestRef.current) return false;
+        const ownership = requestOwnership(token, requestGeneration);
+        if (ownership === "stale") return false;
+        if (ownership === "superseded") {
+          retireStaleAdminView();
+          return false;
+        }
+        const message = String((error as Error | undefined)?.message ?? error);
+        const unauthorized = isUnauthorizedAdminResponse(error, null);
+        if (unauthorized && !clearRejectedSession(token, requestGeneration)) {
+          return false;
+        }
+        if (!unauthorized && !storedSessionIsCurrent(token)) {
+          clearAdminSession();
+          return false;
+        }
+        toast({
+          title: "Failed to load list",
+          description: unauthorized ? "Session expired." : message,
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        if (
+          listRequestId === latestListRequestRef.current &&
+          requestOwnership(token, requestGeneration) === "owned"
+        ) {
+          setLoading(false);
+        }
+      }
+    },
+    [
+      beginAdminRequest,
+      clearAdminSession,
+      clearRejectedSession,
+      requestOwnership,
+      retireStaleAdminView,
+    ],
+  );
+
   useEffect(() => {
     const meta = document.createElement("meta");
     meta.name = "robots";
@@ -62,120 +336,115 @@ export default function AdminPanel() {
     };
   }, []);
 
-  // Gate: only render the panel when `/note#<correct-pass>` was used,
-  // OR when a sessionStorage key from a prior successful verify exists.
-  // Otherwise render NotFound (indistinguishable from a real 404).
   useEffect(() => {
     let cancelled = false;
-
     const rawHash = window.location.hash.startsWith("#")
       ? window.location.hash.slice(1)
       : "";
-
-    // Allow `#tag=foo&...` to coexist if cached session is present.
-    let hashKey = "";
-    let hashTag = "";
-    if (rawHash) {
-      // If the hash *looks* like URL params (contains `=`), parse as params.
-      // Otherwise treat the entire hash as the passphrase.
-      if (rawHash.includes("=")) {
-        const params = new URLSearchParams(rawHash);
-        hashKey = params.get("k") ?? "";
-        hashTag = params.get("tag")?.toLowerCase() ?? "";
-      } else {
-        hashKey = rawHash;
-      }
+    let fragmentPassphrase = "";
+    let fragmentTag = "";
+    if (rawHash.includes("=")) {
+      const params = new URLSearchParams(rawHash);
+      fragmentPassphrase = params.get("k") ?? "";
+      fragmentTag = params.get("tag")?.toLowerCase() ?? "";
+    } else {
+      fragmentPassphrase = rawHash;
     }
 
-    const cached = sessionStorage.getItem(SESSION_KEY) ?? "";
-    const candidate = hashKey || cached;
-    initialTagRef.current = hashTag;
-
-    // SECURITY: scrub the hash from the URL *synchronously* before any async
-    // network call so the passphrase never lingers in window.location during
-    // the await. This protects against extensions, screen recording, and
-    // referrer leakage that could capture the hash mid-verification.
     if (window.location.hash) {
       window.history.replaceState(null, "", window.location.pathname);
     }
 
-    (async () => {
-      // Always make a verify request — even with empty key — so timing
-      // looks the same to an outside observer.
+    void (async () => {
       try {
+        const storedSession = readStoredAdminSession();
+        let opaqueToken = storedSession?.token ?? "";
+        let expiresAt = storedSession?.expiresAt ?? "";
+        if (fragmentPassphrase) {
+          const { data, error } = await supabase.functions.invoke("admin-session", {
+            body: { passphrase: fragmentPassphrase },
+          });
+          fragmentPassphrase = "";
+          if (error || !data?.sessionToken || !data?.expiresAt) {
+            throw error ?? new Error("unauthorized");
+          }
+          opaqueToken = String(data.sessionToken);
+          expiresAt = String(data.expiresAt);
+        }
+        if (!opaqueToken || remainingSessionLifetime(expiresAt) === null) {
+          throw new Error("unauthorized");
+        }
+
         const { data, error } = await supabase.functions.invoke("admin-list", {
-          body: { passphrase: candidate, limit: 1, offset: 0 },
+          body: { limit: 1, offset: 0, tag: fragmentTag },
+          headers: sessionHeaders(opaqueToken),
         });
         if (cancelled) return;
-        if (error || data?.error) {
-          // Wrong/empty key. Drop any stale session and pretend 404.
-          sessionStorage.removeItem(SESSION_KEY);
-          setGate("denied");
-          return;
+        if (isUnauthorizedAdminResponse(error, data)) {
+          throw error ?? new Error("unauthorized");
         }
-        // Verified. Persist (hash already scrubbed synchronously above).
-        sessionStorage.setItem(SESSION_KEY, candidate);
-        setPass(candidate);
-        if (hashTag) setTagFilter(hashTag);
+        if (error || data?.error) throw error ?? new Error(String(data?.error));
+        if (!scheduleSessionExpiry(opaqueToken, expiresAt)) return;
+
+        setSessionToken(opaqueToken);
+        if (fragmentTag) setTagFilter(fragmentTag);
         setItems(data.items ?? []);
         setTotal(data.total ?? 0);
         setTopTags(data.topTags ?? []);
         setGate("allowed");
-        // Kick off a full fetch (limit 200) in background so the list is complete.
-        void fetchList(candidate, "", hashTag);
+        void fetchList(opaqueToken, "", fragmentTag);
       } catch {
+        fragmentPassphrase = "";
         if (cancelled) return;
-        sessionStorage.removeItem(SESSION_KEY);
-        setGate("denied");
+        clearAdminSession();
       }
     })();
 
     return () => {
       cancelled = true;
+      fragmentPassphrase = "";
+      if (expiryTimerRef.current !== null) {
+        window.clearTimeout(expiryTimerRef.current);
+        expiryTimerRef.current = null;
+      }
     };
-  }, []);
+  }, [clearAdminSession, fetchList, scheduleSessionExpiry]);
 
-  const fetchList = async (passToUse: string, q = "", tag = "") => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("admin-list", {
-        body: { passphrase: passToUse, search: q, tag, limit: 200, offset: 0 },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      setItems(data.items ?? []);
-      setTotal(data.total ?? 0);
-      setTopTags(data.topTags ?? []);
-      setSelected(new Set());
-      return true;
-    } catch (e) {
-      const msg = String((e as Error | undefined)?.message ?? e);
-      toast({
-        title: "Failed to load list",
-        description: msg.includes("unauthorized") ? "Wrong admin key." : msg,
-        variant: "destructive",
-      });
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    if (gate !== "allowed" || !sessionToken) return;
+    const revalidate = () => {
+      beginAdminRequest(sessionToken);
+    };
+    revalidate();
+    window.addEventListener("focus", revalidate);
+    window.addEventListener("pageshow", revalidate);
+    document.addEventListener("visibilitychange", revalidate);
+    return () => {
+      window.removeEventListener("focus", revalidate);
+      window.removeEventListener("pageshow", revalidate);
+      document.removeEventListener("visibilitychange", revalidate);
+    };
+  }, [beginAdminRequest, gate, sessionToken]);
 
-  const onSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
-    await fetchList(pass, search, tagFilter);
+  const onSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await fetchList(sessionToken, search, tagFilter);
   };
 
   const applyTag = async (tag: string) => {
     const next = tagFilter === tag ? "" : tag;
     setTagFilter(next);
-    await fetchList(pass, search, next);
+    await fetchList(sessionToken, search, next);
   };
 
   const toggleAll = () => {
-    if (selected.size === items.length) setSelected(new Set());
-    else setSelected(new Set(items.map((i) => i.slug)));
+    setSelected(
+      selected.size === items.length
+        ? new Set()
+        : new Set(items.map((item) => item.slug)),
+    );
   };
+
   const toggle = (slug: string) => {
     const next = new Set(selected);
     if (next.has(slug)) next.delete(slug);
@@ -184,59 +453,104 @@ export default function AdminPanel() {
   };
 
   const doDelete = async (mode: "selected" | "all") => {
+    const requestGeneration = beginAdminRequest(sessionToken);
+    if (requestGeneration === null) return;
     setLoading(true);
     try {
-      const body: { passphrase: string; all?: boolean; slugs?: string[] } = { passphrase: pass };
-      if (mode === "all") body.all = true;
-      else body.slugs = Array.from(selected);
+      const body = mode === "all" ? { all: true } : { slugs: Array.from(selected) };
       const { data, error } = await supabase.functions.invoke("admin-delete", {
         body,
+        headers: sessionHeaders(sessionToken),
       });
+      const ownership = requestOwnership(sessionToken, requestGeneration);
+      if (ownership === "stale") return;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return;
+      }
+      if (isUnauthorizedAdminResponse(error, data)) {
+        if (clearRejectedSession(sessionToken, requestGeneration)) {
+          toast({
+            title: "Delete failed",
+            description: "Session expired.",
+            variant: "destructive",
+          });
+        }
+        return;
+      }
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
+      if (!storedSessionIsCurrent(sessionToken)) {
+        clearAdminSession();
+        return;
+      }
       toast({ title: `Deleted ${data.deleted} note(s)` });
-      await fetchList(pass, search, tagFilter);
-    } catch (e) {
+      await fetchList(sessionToken, search, tagFilter);
+    } catch (error) {
+      const ownership = requestOwnership(sessionToken, requestGeneration);
+      if (ownership === "stale") return;
+      if (ownership === "superseded") {
+        retireStaleAdminView();
+        return;
+      }
+      const unauthorized = isUnauthorizedAdminResponse(error, null);
+      if (
+        unauthorized &&
+        !clearRejectedSession(sessionToken, requestGeneration)
+      ) {
+        return;
+      }
+      if (!unauthorized && !storedSessionIsCurrent(sessionToken)) {
+        clearAdminSession();
+        return;
+      }
       toast({
         title: "Delete failed",
-        description: String((e as Error | undefined)?.message ?? e),
+        description: unauthorized
+          ? "Session expired."
+          : String((error as Error | undefined)?.message ?? error),
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
-      setConfirmOpen(null);
+      if (requestOwnership(sessionToken, requestGeneration) === "owned") {
+        setLoading(false);
+        setConfirmOpen(null);
+      }
     }
   };
 
-  const runCleanup = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase.functions.invoke("cleanup", {
-        body: { passphrase: pass, olderThanHours: 1 },
-      });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
-      toast({ title: `Cleaned ${data.deleted} empty note(s)` });
-      await fetchList(pass, search, tagFilter);
-    } catch (e) {
-      toast({ title: "Cleanup error", description: String((e as Error | undefined)?.message ?? e), variant: "destructive" });
-    } finally {
-      setLoading(false);
-    }
+  const openDeleteConfirmation = (mode: "selected" | "all") => {
+    if (beginAdminRequest(sessionToken) !== null) setConfirmOpen(mode);
   };
+
+  const openRotateDialog = () => {
+    if (beginAdminRequest(sessionToken) !== null) setRotateOpen(true);
+  };
+
+  const validateRotateSession = useCallback(
+    (token: string, generation: number) =>
+      beginAdminRequest(token, generation) !== null,
+    [beginAdminRequest],
+  );
+
+  const handleRotateUnauthorized = useCallback(
+    (token: string, generation: number) =>
+      clearRejectedSession(token, generation),
+    [clearRejectedSession],
+  );
 
   const logout = () => {
-    sessionStorage.removeItem(SESSION_KEY);
-    setGate("denied");
-    setPass("");
-    setItems([]);
+    const tokenToRevoke = sessionToken;
+    clearAdminSession();
+    if (tokenToRevoke) {
+      void supabase.functions.invoke("admin-session", {
+        method: "DELETE",
+        headers: sessionHeaders(tokenToRevoke),
+      });
+    }
   };
 
-  // While verifying OR if denied: render the NotFound page exactly.
-  // This makes /note indistinguishable from any random invalid path.
-  if (gate !== "allowed") {
-    return <NotFound />;
-  }
+  if (gate !== "allowed") return <NotFound />;
 
   return (
     <div className="min-h-svh bg-background">
@@ -246,31 +560,25 @@ export default function AdminPanel() {
         </Link>
         <h1 className="font-semibold">Admin · {total} note</h1>
         <div className="ml-auto flex items-center gap-2">
-          <Button size="sm" variant="ghost" onClick={runCleanup} disabled={loading}>
-            <Sparkles className="h-3.5 w-3.5" />
-            Clean empty notes
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setRotateOpen(true)} disabled={loading}>
+          <Button size="sm" variant="ghost" onClick={openRotateDialog} disabled={loading}>
             <KeyRound className="h-3.5 w-3.5" />
             Rotate key
           </Button>
-          <Button size="sm" variant="ghost" onClick={() => fetchList(pass, search, tagFilter)} disabled={loading}>
+          <Button size="sm" variant="ghost" onClick={() => fetchList(sessionToken, search, tagFilter)} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" variant="ghost" onClick={logout}>
-            Logout
-          </Button>
+          <Button size="sm" variant="ghost" onClick={logout}>Logout</Button>
         </div>
       </header>
 
       <RotatePassDialog
         open={rotateOpen}
         onOpenChange={setRotateOpen}
-        currentPass={pass}
-        onSuccess={(newPass) => {
-          sessionStorage.setItem(SESSION_KEY, newPass);
-          setPass(newPass);
-        }}
+        sessionToken={sessionToken}
+        sessionGeneration={sessionGeneration}
+        validateSession={validateRotateSession}
+        onUnauthorized={handleRotateUnauthorized}
+        onSuccess={handleRotateUnauthorized}
       />
 
       <div className="mx-auto max-w-5xl p-4">
@@ -279,15 +587,13 @@ export default function AdminPanel() {
             <Search className="h-4 w-4 text-muted-foreground" />
             <Input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               // eslint-disable-next-line no-restricted-syntax -- internal admin-only UI
               placeholder="Search by slug or content…"
               className="border-0 focus-visible:ring-0"
             />
           </div>
-          <Button type="submit" variant="outline" disabled={loading}>
-            Search
-          </Button>
+          <Button type="submit" variant="outline" disabled={loading}>Search</Button>
         </form>
 
         {(topTags.length > 0 || tagFilter) && (
@@ -298,22 +604,18 @@ export default function AdminPanel() {
                 onClick={() => applyTag(tagFilter)}
                 className="inline-flex items-center gap-1 rounded-full bg-foreground px-2 py-0.5 text-[11px] font-medium text-background"
               >
-                #{tagFilter}
-                <X className="h-3 w-3" />
+                #{tagFilter}<X className="h-3 w-3" />
               </button>
             )}
-            {topTags
-              .filter((t) => t.name !== tagFilter)
-              .map((t) => (
-                <button
-                  key={t.name}
-                  onClick={() => applyTag(t.name)}
-                  className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground"
-                >
-                  #{t.name}
-                  <span className="ml-1 opacity-60">{t.count}</span>
-                </button>
-              ))}
+            {topTags.filter((tag) => tag.name !== tagFilter).map((tag) => (
+              <button
+                key={tag.name}
+                onClick={() => applyTag(tag.name)}
+                className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground hover:border-foreground hover:text-foreground"
+              >
+                #{tag.name}<span className="ml-1 opacity-60">{tag.count}</span>
+              </button>
+            ))}
           </div>
         )}
 
@@ -330,16 +632,15 @@ export default function AdminPanel() {
               size="sm"
               variant="destructive"
               disabled={selected.size === 0 || loading}
-              onClick={() => setConfirmOpen("selected")}
+              onClick={() => openDeleteConfirmation("selected")}
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete selected
+              <Trash2 className="h-3.5 w-3.5" /> Delete selected
             </Button>
             <Button
               size="sm"
               variant="outline"
               disabled={loading || items.length === 0}
-              onClick={() => setConfirmOpen("all")}
+              onClick={() => openDeleteConfirmation("all")}
             >
               Delete ALL
             </Button>
@@ -347,41 +648,35 @@ export default function AdminPanel() {
         </div>
 
         <ul className="divide-y divide-border rounded-md border border-border">
-          {items.map((n) => (
-            <li key={n.slug} className="flex items-start gap-3 px-3 py-2 hover:bg-accent/40">
+          {items.map((note) => (
+            <li key={note.slug} className="flex items-start gap-3 px-3 py-2 hover:bg-accent/40">
               <Checkbox
-                checked={selected.has(n.slug)}
-                onCheckedChange={() => toggle(n.slug)}
+                checked={selected.has(note.slug)}
+                onCheckedChange={() => toggle(note.slug)}
                 className="mt-1"
               />
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <Link
-                    to={`/${n.slug}`}
-                    target="_blank"
-                    className="font-mono text-sm hover:underline"
-                  >
-                    /{n.slug}
+                  <Link to={`/${note.slug}`} target="_blank" className="font-mono text-sm hover:underline">
+                    /{note.slug}
                   </Link>
-                  {n.is_encrypted && (
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">🔒</span>
-                  )}
+                  {note.is_encrypted && <span className="rounded bg-muted px-1.5 py-0.5 text-[10px]">🔒</span>}
                   <span className="ml-auto text-[11px] text-muted-foreground">
-                    {n.char_count} chars · {new Date(n.updated_at).toLocaleString()}
+                    {note.char_count} chars · {new Date(note.updated_at).toLocaleString()}
                   </span>
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {n.preview || "(empty)"}
+                  {note.preview || "(empty)"}
                 </p>
-                {n.tags && n.tags.length > 0 && (
+                {note.tags.length > 0 && (
                   <div className="mt-1.5 flex flex-wrap gap-1">
-                    {n.tags.slice(0, 8).map((t) => (
+                    {note.tags.slice(0, 8).map((tag) => (
                       <button
-                        key={t}
-                        onClick={() => applyTag(t)}
+                        key={tag}
+                        onClick={() => applyTag(tag)}
                         className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground"
                       >
-                        #{t}
+                        #{tag}
                       </button>
                     ))}
                   </div>
@@ -390,14 +685,12 @@ export default function AdminPanel() {
             </li>
           ))}
           {items.length === 0 && !loading && (
-            <li className="px-3 py-6 text-center text-sm text-muted-foreground">
-              No notes.
-            </li>
+            <li className="px-3 py-6 text-center text-sm text-muted-foreground">No notes.</li>
           )}
         </ul>
       </div>
 
-      <AlertDialog open={confirmOpen !== null} onOpenChange={(o) => !o && setConfirmOpen(null)}>
+      <AlertDialog open={confirmOpen !== null} onOpenChange={(open) => !open && setConfirmOpen(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
@@ -411,7 +704,7 @@ export default function AdminPanel() {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => confirmOpen && doDelete(confirmOpen)}
+              onClick={() => confirmOpen && void doDelete(confirmOpen)}
             >
               Delete
             </AlertDialogAction>

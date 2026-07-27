@@ -11,14 +11,21 @@
 /**
  * @param {{
  *   versionMismatchReason: string | null,
- *   csp: { ok: boolean } | null,
+ *   csp: { inspected: boolean, ok: boolean | null } | null,
+ *   appReachable: string | null,
  *   ready: boolean,
  * }} input
- * @returns {"mismatch" | "csp" | "timeout" | "ok"}
+ * @returns {"mismatch" | "csp" | "network" | "timeout" | "ok"}
  */
-export function diagnosticsReasonType({ versionMismatchReason, csp, ready }) {
+export function diagnosticsReasonType({
+  versionMismatchReason,
+  csp,
+  appReachable,
+  ready,
+}) {
   if (versionMismatchReason) return "mismatch";
-  if (csp && !csp.ok) return "csp";
+  if (csp?.inspected === true && csp.ok === false) return "csp";
+  if (!ready && appReachable === "offline") return "network";
   if (!ready) return "timeout";
   return "ok";
 }

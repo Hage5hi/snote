@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
+import { safeLocalStorageGet, safeLocalStorageSet } from "@/lib/safe-storage";
 
 const KEY = "notes:zen-mode";
 
 export function useZenMode() {
   const [zen, setZen] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(KEY) === "1";
+    return safeLocalStorageGet(KEY) === "1";
   });
 
   useEffect(() => {
     const root = document.documentElement;
     if (zen) root.classList.add("zen-mode");
     else root.classList.remove("zen-mode");
-    window.localStorage.setItem(KEY, zen ? "1" : "0");
+    safeLocalStorageSet(KEY, zen ? "1" : "0");
   }, [zen]);
 
   // F11 keyboard shortcut.

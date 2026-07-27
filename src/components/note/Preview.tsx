@@ -6,7 +6,7 @@ import { renderMermaid } from "@/lib/markdown/renderers/mermaid";
 import { renderKatex } from "@/lib/markdown/renderers/katex";
 import { highlightCode } from "@/lib/markdown/renderers/highlight";
 import { getCachedHtml, setCachedHtml } from "@/lib/markdown/render-cache";
-import { renderInWorker } from "@/lib/markdown/preview-worker-client";
+import { renderInWorker, renderOnMainThread } from "@/lib/markdown/preview-worker-client";
 import { useI18n } from "@/i18n";
 
 function escapeHtml(s: string) {
@@ -61,6 +61,10 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
     };
 
     const doRender = async () => {
+      // Every render intent gets a generation, including cache hits. This is
+      // what prevents an older worker miss from replacing newer cached HTML.
+      const myRenderId = ++latestRenderIdRef.current;
+      const isCurrent = () => !cancelled && myRenderId === latestRenderIdRef.current;
       const text = ytext.toString();
       if (Math.abs(text.length - lastTextLenRef.current) > 500 || lastTextLenRef.current === 0) {
         setLang(detectLang(text));
@@ -72,14 +76,24 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
       // regardless of cache hit, so theme toggles still apply.
       const cached = getCachedHtml(expanded);
       if (cached !== undefined) {
-        setHtml(cached);
+        if (isCurrent()) setHtml(cached);
         return;
       }
-      // Stale-guard: capture render id before await, drop response if a
-      // newer doRender has started in the meantime.
-      const myRenderId = ++latestRenderIdRef.current;
-      const rendered = await renderInWorker(expanded);
-      if (cancelled || myRenderId !== latestRenderIdRef.current) return;
+      let rendered: string;
+      try {
+        rendered = await renderInWorker(expanded);
+      } catch {
+        // Worker creation/runtime/postMessage failures discard the singleton.
+        // If this intent is still relevant, render once on the main thread;
+        // the next intent will retry a fresh worker through renderInWorker.
+        if (!isCurrent()) return;
+        try {
+          rendered = await renderOnMainThread(expanded);
+        } catch {
+          return;
+        }
+      }
+      if (!isCurrent()) return;
       setCachedHtml(expanded, rendered);
       setHtml(rendered);
     };

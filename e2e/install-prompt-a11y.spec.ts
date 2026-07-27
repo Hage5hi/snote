@@ -12,7 +12,7 @@
 //     violations vs. the baseline taken before opening.
 import { test, expect, type Page } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { dict } from "../src/i18n/index";
+import { dict } from "../src/i18n/catalog";
 
 type Violation = { id: string; impact?: string | null };
 
@@ -89,8 +89,8 @@ test("keyboard opens install-as-app dialog and moves focus inside", async ({ pag
   for (let i = 0; i < count; i++) {
     const label = await stepBtns.nth(i).getAttribute("aria-label");
     expect(
-      [dict.en["install.step_completed"], dict.en["install.step_mark"]].includes(
-        label ?? "",
+      [dict.en["install.step_completed"], dict.en["install.step_mark"]].some(
+        (expectedLabel) => expectedLabel === label,
       ),
       `step ${i} aria-label "${label}"`,
     ).toBe(true);

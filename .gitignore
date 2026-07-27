@@ -41,9 +41,17 @@ bun.lockb
 # Playwright
 /playwright-report/
 /test-results/
+**/test-results/
 /playwright/.cache/
+/e2e/*-snapshots/
 
-# Downloaded CI pretty-index diagnostic artifacts (see:
-# `make pretty-index-artifacts-download` / `-clean`)
-/_pretty-index-atomic/
-/_pretty-index-stress/
+# Generated audit and CI evidence
+/artifacts/
+/reports/
+/coverage/
+*.pyc
+__pycache__/
+
+# Agent skills belong in the Lovable workspace. Keep only import-ready
+# product skills under /lovable-skills/.
+/.agents/

@@ -1,227 +1,28 @@
 #!/usr/bin/env bash
-# Lovable pre-commit hook — runs the i18n allowlist gate locally so drift
-# (missing or stale eslint-disable entries) is caught BEFORE the CI run.
-#
-# Fast-path: only runs when the staged changeset can actually affect the
-# allowlist outcome. We trigger on:
-#   • i18n / locale dictionaries — locales/**, i18n/**, src/i18n/**
-#     (any .json / .ts / .tsx / .js / .jsx)
-#   • the allowlist config / schema —
-#     .lintrc-i18n-allowlist.json, .lintrc-i18n-allowlist.schema.json
-#   • source files scanned by the drift checker — src/**/*.{ts,tsx,js,jsx}
-#
-# Override:
-#   I18N_HOOK_FORCE=1 git commit ...    # always run, even if no i18n files changed
-#   git commit --no-verify              # skip the hook entirely (emergency)
-#
-# Install once per clone:
-#   bun run hooks:install
 set -euo pipefail
 
-# --help / -h — document supported env vars and exit codes without
-# running the hook body. Safe to run at any time.
-# Parse leading flags (currently: --help, --verbose). --verbose is
-# consumed here and re-exposed via VERBOSE=1 to the rest of the hook.
-VERBOSE="${PRETTY_INDEX_HOOK_VERBOSE:-0}"
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -h|--help)
-      cat <<'HELP'
-Lovable pre-commit hook — i18n allowlist + pretty-index schema-drift gate.
+if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
+  cat <<'HELP'
+Snote pre-commit hook
 
-Flags:
-  --help, -h                          show this help and exit 0
-  --verbose                           print resolved diagnostic dir + full
-                                      candidate file list before exit
-
-Environment overrides:
-  I18N_HOOK_FORCE=1                   run i18n check even if no i18n files staged
-  PRETTY_INDEX_HOOK_SKIP=1            skip the pretty-index gate
-  PRETTY_INDEX_HOOK_FORCE=1           run the pretty-index gate for any commit
-  PRETTY_INDEX_HOOK_MATRIX=<value>    atomic | stress   (default: atomic)
-  PRETTY_INDEX_HOOK_DRY_RUN=1         print resolved paths + exit 0, no writes
-  PRETTY_INDEX_HOOK_VERBOSE=1         same as --verbose
-
-Bypass entirely:
-  git commit --no-verify
-
-Documented exit codes:
-  0  ok / dry-run / no relevant files staged
-  1  check failed (i18n allowlist drift OR pretty-index schema drift)
-  2  usage error (invalid PRETTY_INDEX_HOOK_MATRIX value)
-  3  pretty-index schema validation failed
-  4  pretty-index input file missing
-
-CI artifact prefixes (uploaded on failure, per matrix):
-  atomic  ->  schema-drift-diff-replay-pretty-index-failure-<os>
-  stress  ->  schema-drift-diff-stress-replay-pretty-index-failure-<os>
+Runs the i18n allowlist check only when staged source or allowlist files can
+affect the result. Set I18N_HOOK_FORCE=1 to run it for every commit.
+Use git commit --no-verify only for local work-in-progress, never for release.
 HELP
-      exit 0 ;;
-    --verbose) VERBOSE=1; shift ;;
-    --) shift; break ;;
-    *) break ;;
-  esac
-done
-
-# Files staged for this commit (added/copied/modified/renamed).
-STAGED=$(git diff --cached --name-only --diff-filter=ACMR || true)
-
-
-# Fail-fast: validate PRETTY_INDEX_HOOK_MATRIX before ANY early-return
-# so a typo (e.g. `PRETTY_INDEX_HOOK_MATRIX=bogus git commit ...`) aborts
-# the commit even when the staged set wouldn't otherwise trigger the
-# pretty-index gate. Documented exit code: 2 (usage error).
-HOOK_MATRIX="${PRETTY_INDEX_HOOK_MATRIX:-atomic}"
-case "$HOOK_MATRIX" in
-  atomic|stress) ;;
-  *)
-    echo "❌ pre-commit: PRETTY_INDEX_HOOK_MATRIX must be atomic|stress (got: $HOOK_MATRIX)" >&2
-    exit 2 ;;
-esac
-
-# PRETTY_INDEX_HOOK_DRY_RUN=1 — print the exact reproduce command and the
-# expected diagnostic paths for the selected matrix, then exit 0 WITHOUT
-# invoking any downstream check (i18n allowlist, reproduce script, etc.)
-# and WITHOUT creating or modifying any diagnostic artifacts. Bogus
-# PRETTY_INDEX_HOOK_MATRIX still aborts fail-fast above (exit 2).
-if [ "${PRETTY_INDEX_HOOK_DRY_RUN:-0}" = "1" ]; then
-  DR_INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-  DR_PRE="${DR_INDEX%.json}.pre-check.json"
-  DR_REPORT="${DR_INDEX%.json}.report.json"
-  DR_DIR="$(dirname -- "$DR_INDEX")"
-  echo "▶ pre-commit [dry-run]: pretty-index gate (MATRIX=$HOOK_MATRIX)"
-  echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
-  echo "  diagnostic directory              = $DR_DIR"
-  echo "  would run: scripts/reproduce-ci-pretty-index-check.sh --clean --matrix $HOOK_MATRIX $DR_INDEX"
-  echo "  expected diagnostic paths:"
-  echo "    input     : $DR_INDEX"
-  echo "    pre-check : $DR_PRE"
-  echo "    report    : $DR_REPORT"
-  if [ "$HOOK_MATRIX" = "stress" ]; then
-    echo "  CI artifact prefix: schema-drift-diff-stress-replay-pretty-index-failure-<os>"
-  else
-    echo "  CI artifact prefix: schema-drift-diff-replay-pretty-index-failure-<os>"
-  fi
-  echo "  documented exit codes: 0=ok, 1=drift, 2=usage, 3=schema, 4=missing"
-  if [ "$VERBOSE" = "1" ]; then
-    echo "  [verbose] resolved diagnostic directory: $DR_DIR"
-    echo "  [verbose] candidate pretty-index files (validated or removed by --clean):"
-    for f in "$DR_INDEX" "$DR_PRE" "$DR_REPORT"; do
-      if [ -e "$f" ]; then echo "    [exists] $f"; else echo "    [absent] $f"; fi
-    done
-  fi
-  echo "▶ pre-commit [dry-run]: exiting 0 (no files created or modified)"
   exit 0
 fi
 
+STAGED="$(git diff --cached --name-only --diff-filter=ACMR || true)"
 
-needs_check() {
-  if [ "${I18N_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
-  if [ -z "$STAGED" ]; then return 1; fi
-  # i18n/locale dictionaries (any extension we care about) OR allowlist
-  # config/schema OR drift-scanned source files under src/**.
-  echo "$STAGED" | grep -E \
+if [ "${I18N_HOOK_FORCE:-0}" != "1" ]; then
+  if [ -z "$STAGED" ] || ! printf '%s\n' "$STAGED" | grep -Eq \
     -e '^(locales|i18n|src/i18n)/.+\.(json|tsx?|jsx?)$' \
     -e '^\.lintrc-i18n-allowlist(\.schema)?\.json$' \
-    -e '^src/.+\.(t|j)sx?$' \
-    > /dev/null
-}
-
-if ! needs_check; then
-  echo "▶ pre-commit: no i18n-relevant files staged — skipping allowlist check."
-  echo "  (set I18N_HOOK_FORCE=1 to run anyway)"
-  exit 0
-fi
-
-echo "▶ pre-commit: i18n allowlist check (staged i18n-relevant files detected)"
-if ! bun run i18n:allowlist:summary --changed; then
-  echo ""
-  echo "❌ pre-commit: i18n allowlist check FAILED."
-  echo "   See reports/i18n-allowlist-report.md for details, or run:"
-  echo "     bun run i18n:allowlist:summary"
-  echo "   To bypass (not recommended): git commit --no-verify"
-  exit 1
-fi
-
-# ── Schema TypeScript types drift guard ────────────────────────────────
-# If any schemas/focus-trap-inspect-*.schema.json or the generator or the
-# generated .d.ts is staged, regenerate the types and fail if the working
-# tree would differ from what's committed. Bypass with --no-verify.
-if echo "$STAGED" | grep -Eq \
-    -e '^schemas/focus-trap-inspect-.+\.schema\.json$' \
-    -e '^scripts/generate-focus-trap-schema-types\.ts$' \
-    -e '^scripts/_helpers/focus-trap-inspect-schema\.types\.gen\.ts$'; then
-  echo "▶ pre-commit: schema types drift check"
-  if ! bun run schema:types:check; then
-    echo ""
-    echo "❌ pre-commit: generated schema types are out of date."
-    echo "   Run: bun run schema:types  (then stage the .gen.ts file)"
-    exit 1
+    -e '^src/.+\.(t|j)sx?$'; then
+    echo "pre-commit: no i18n-relevant staged files"
+    exit 0
   fi
 fi
 
-# ── pretty-index.json schema-drift gate ───────────────────────────────
-# Runs the CI check locally when a staged file could affect the
-# pretty-index.json schema contract (generator, validator, migrator,
-# self-check, local runner, or the committed pretty-index.json itself).
-#
-# Overrides:
-#   PRETTY_INDEX_HOOK_SKIP=1   force-skip even if relevant files are staged
-#   PRETTY_INDEX_HOOK_FORCE=1  force-run even for docs-only / unrelated commits
-#   git commit --no-verify     bypass every pre-commit hook (emergency)
-#
-# Non-impacting changes (docs/**, README.md, src/**, unrelated configs)
-# are automatically skipped — the grep pattern below is the allowlist of
-# paths that DO trigger the check.
-# NOTE: PRETTY_INDEX_HOOK_MATRIX is validated up-front near the top of
-# this hook (fail-fast). HOOK_MATRIX is already set here.
-
-
-
-pretty_index_needs_check() {
-  if [ "${PRETTY_INDEX_HOOK_SKIP:-0}" = "1" ]; then return 1; fi
-  if [ "${PRETTY_INDEX_HOOK_FORCE:-0}" = "1" ]; then return 0; fi
-  if [ -z "$STAGED" ]; then return 1; fi
-  echo "$STAGED" | grep -Eq \
-    -e '^scripts/(validate|migrate|check|reproduce-ci)-pretty-index[^/]*\.(py|sh)$' \
-    -e '^scripts/pretty-replay-summary\.py$' \
-    -e '^scripts/check-pretty-index-local\.sh$' \
-    -e '(^|/)pretty-index\.json$'
-}
-
-
-if pretty_index_needs_check; then
-  echo "▶ pre-commit: pretty-index schema-drift check"
-  INDEX="artifacts/schema-drift-diff-replay-verify/pretty/pretty-index.json"
-  # HOOK_MATRIX was validated up-front (fail-fast) — safe to use as-is.
-  # PRETTY_INDEX_HOOK_DRY_RUN is handled at the top of this hook.
-  echo "  resolved PRETTY_INDEX_HOOK_MATRIX = $HOOK_MATRIX"
-  echo "  diagnostic directory              = $(dirname -- "$INDEX")"
-  if [ "$VERBOSE" = "1" ]; then
-    V_DIR="$(dirname -- "$INDEX")"
-    V_PRE="${INDEX%.json}.pre-check.json"
-    V_REPORT="${INDEX%.json}.report.json"
-    echo "  [verbose] resolved diagnostic directory: $V_DIR"
-    echo "  [verbose] candidate pretty-index files (validated or removed by --clean):"
-    for f in "$INDEX" "$V_PRE" "$V_REPORT"; do
-      if [ -e "$f" ]; then echo "    [exists] $f"; else echo "    [absent] $f"; fi
-    done
-  fi
-
-
-  if [ -f "$INDEX" ]; then
-
-    if ! scripts/reproduce-ci-pretty-index-check.sh --clean --matrix "$HOOK_MATRIX" "$INDEX"; then
-      echo ""
-      echo "❌ pre-commit: pretty-index CI check FAILED."
-      echo "   See the diagnostics block above (or the sibling"
-      echo "   .pre-check.json / .report.json files) for details."
-      echo "   To bypass (not recommended): git commit --no-verify"
-      exit 1
-    fi
-  else
-    echo "  (skipped — no $INDEX present)"
-  fi
-fi
-
-
+echo "pre-commit: checking i18n allowlist"
+bun run i18n:allowlist --changed

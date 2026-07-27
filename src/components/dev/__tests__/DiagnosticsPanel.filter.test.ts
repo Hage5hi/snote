@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterDiagEvents } from "@/components/dev/DiagnosticsPanel";
+import { filterDiagEvents } from "@/components/dev/diagnostics-utils";
 
 const events = [
   { id: 1, at: 0, kind: "warn" as const, message: "slow render", detail: "took 200ms" },

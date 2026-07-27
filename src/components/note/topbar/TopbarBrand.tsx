@@ -9,14 +9,14 @@
 //   - Click the Copy icon → copies the FULL note body. This used to be a
 //     duplicate "Copy URL" action; users have keyboard shortcut + the slug
 //     button for that now, so the icon graduates to the more useful action.
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
+import type { RefObject } from "react";
 import * as Y from "yjs";
 import { ArrowLeft, Cloud, Copy, List } from "lucide-react";
 import { SyncIndicator } from "../SyncIndicator";
 import { TagChips } from "../TagChips";
-import { OUTLINE_TOGGLE_EVENT } from "../OutlineSidebar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import type { SupabaseYjsProvider } from "@/lib/yjs/provider";
+import type { YjsProviderLike } from "@/lib/yjs/provider";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n";
 
@@ -25,7 +25,7 @@ interface TopbarBrandProps {
   doc: Y.Doc;
   isEncrypted: boolean;
   /** Phase 2.2 — when present, the SyncIndicator pill renders here. */
-  provider?: SupabaseYjsProvider | null;
+  provider?: YjsProviderLike | null;
   /** Returns the current decrypted note body. Used by the Copy icon button. */
   getContent: () => string;
   /** When true, hide the Home arrow. Used by SplitView-embedded panels where
@@ -33,18 +33,32 @@ interface TopbarBrandProps {
   hideHome?: boolean;
   /** Click handler for the cloud icon → opens the local history dialog. */
   onOpenHistory?: () => void;
+  outlineOpen?: boolean;
+  onToggleOutline?: () => void;
+  outlineTriggerRef?: RefObject<HTMLButtonElement>;
 }
 
-export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hideHome = false, onOpenHistory }: TopbarBrandProps) {
+export function TopbarBrand({
+  slug,
+  doc,
+  isEncrypted,
+  provider,
+  getContent,
+  hideHome = false,
+  onOpenHistory,
+  outlineOpen,
+  onToggleOutline,
+  outlineTriggerRef,
+}: TopbarBrandProps) {
 
   const { t } = useI18n();
 
   const copyUrl = async () => {
-    // Always canonicalize to https://syrin.online/<slug>, regardless of the
+    // Always canonicalize to https://note.syrin.online/<slug>, regardless of the
     // current host (note.syrin.online, *.lovable.app, localhost, etc.).
     // Preserve current query string and hash so shared links keep context.
     const { search, hash } = window.location;
-    const url = `https://syrin.online/${slug}${search}${hash}`;
+    const url = `https://note.syrin.online/${slug}${search}${hash}`;
     await navigator.clipboard.writeText(url);
   };
 
@@ -129,18 +143,24 @@ export function TopbarBrand({ slug, doc, isEncrypted, provider, getContent, hide
         <TooltipContent side="bottom">{t("brand.copy_content")}</TooltipContent>
       </Tooltip>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => window.dispatchEvent(new Event(OUTLINE_TOGGLE_EVENT))}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
-            aria-label={t("brand.outline")}
-          >
-            <List className="h-3.5 w-3.5" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{t("brand.outline")} (⌘\)</TooltipContent>
-      </Tooltip>
+      {onToggleOutline && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              ref={outlineTriggerRef}
+              type="button"
+              onClick={onToggleOutline}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
+              aria-label={t("brand.outline")}
+              aria-controls="note-outline"
+              aria-expanded={outlineOpen ?? false}
+            >
+              <List className="h-3.5 w-3.5" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t("brand.outline")} (⌘\)</TooltipContent>
+        </Tooltip>
+      )}
 
       {provider && (
         <div className="ml-2 flex items-center gap-1">

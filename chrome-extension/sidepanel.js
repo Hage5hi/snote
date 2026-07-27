@@ -1,7 +1,20 @@
 import { buildSrc, badgeForMode } from "./lib/build-src.js";
 import { isValidSlug } from "./lib/validate-slug.js";
-import { dlog, isDebug, onDebugLog, setDebug, snapshotDebugLog } from "./lib/debug.js";
-import { redactPayload } from "./lib/redact.js";
+import {
+  clearDebugLog,
+  dlog,
+  isDebug,
+  onDebugLog,
+  setDebug,
+  snapshotDebugLog,
+} from "./lib/debug.js";
+import {
+  redactPayload,
+  redactDiagnosticsBundle,
+  redactTelemetryEventForDiagnostics,
+  summarizeSlugForDiagnostics,
+  summarizeUrlForDiagnostics,
+} from "./lib/redact.js";
 import {
   EXPORT_KIND,
   EXPORT_VERSION,
@@ -35,6 +48,9 @@ const LOAD_TIMEOUT_MS =
     ? window.__SYRIN_TEST_TIMEOUT_MS
     : DEFAULT_LOAD_TIMEOUT_MS;
 const MESSAGE_TIMELINE_MAX = 30;
+const APP_VERSION_MAX_LENGTH = 64;
+const EDIT_CAPABILITY_RE = /^[A-Za-z0-9_-]{43}$/;
+const MAX_LOCAL_EDIT_CAPABILITIES = 50;
 
 const iframe = document.getElementById("app");
 const loader = document.getElementById("loader");
@@ -49,6 +65,7 @@ const diagReady = document.getElementById("diag-ready");
 const diagRetries = document.getElementById("diag-retries");
 const diagCopy = document.getElementById("diag-copy");
 const diagDownload = document.getElementById("diag-download");
+const diagDetails = document.querySelector("details.diag");
 const debugBar = document.getElementById("debug-bar");
 const debugLast = document.getElementById("debug-last");
 const debugLog = document.getElementById("debug-log");
@@ -79,6 +96,15 @@ function pushTimeline(kind, detail) {
   while (messageTimeline.length > MESSAGE_TIMELINE_MAX) messageTimeline.shift();
 }
 
+function safeAppVersion(value) {
+  if (typeof value !== "string" || value.length > APP_VERSION_MAX_LENGTH) {
+    return "unknown";
+  }
+  return /^[0-9]+(?:\.[0-9]+){0,3}(?:[-+][A-Za-z0-9.-]+)?$/.test(value)
+    ? value
+    : "unknown";
+}
+
 function extensionVersion() {
   return (
     (chrome.runtime?.getManifest && chrome.runtime.getManifest().version) || "unknown"
@@ -100,7 +126,36 @@ function updateDebugBarVisibility() {
 }
 
 function updateDebugLast(slug) {
-  if (debugLast) debugLast.textContent = `lastSlug: ${slug || "—"}`;
+  if (debugLast) debugLast.textContent = `lastSlug: ${summarizeSlugForDiagnostics(slug)}`;
+}
+
+function persistEditCapability(slug, editCapability) {
+  if (!isValidSlug(slug) || !EDIT_CAPABILITY_RE.test(editCapability || "")) return;
+  try {
+    chrome.storage.local.get({ editCapabilities: {} }, (stored) => {
+      if (chrome.runtime.lastError) {
+        dlog("local edit capability read failed");
+        return;
+      }
+      const current = stored.editCapabilities && typeof stored.editCapabilities === "object"
+        ? stored.editCapabilities
+        : {};
+      const next = { ...current };
+      // Refresh insertion order so the bounded map evicts the least recently
+      // received locator rather than a capability that was just updated.
+      delete next[slug];
+      next[slug] = editCapability;
+      const keys = Object.keys(next);
+      for (const oldSlug of keys.slice(0, Math.max(0, keys.length - MAX_LOCAL_EDIT_CAPABILITIES))) {
+        delete next[oldSlug];
+      }
+      chrome.storage.local.set({ editCapabilities: next }, () => {
+        if (chrome.runtime.lastError) dlog("local edit capability write failed");
+      });
+    });
+  } catch {
+    dlog("local edit capability storage unavailable");
+  }
 }
 
 onDebugLog(renderDebugLine);
@@ -116,29 +171,24 @@ function buildExportPayload() {
     iframeSrc: iframe?.src || null,
     lines: snapshotDebugLog(),
   };
-  const redact = !!debugRedact?.checked;
-  const payload = redact ? redactPayload(raw) : { ...raw, redacted: false };
-  return { payload, redact, exportedAt };
+  const payload = redactPayload(raw);
+  return { payload, redact: true, exportedAt };
 }
 
 debugCopy?.addEventListener("click", () => {
   const { payload, redact } = buildExportPayload();
-  const text = redact
-    ? JSON.stringify(payload, null, 2)
-    : Array.from(debugLog.children).map((li) => li.textContent).join("\n");
+  const text = JSON.stringify(payload, null, 2);
   navigator.clipboard?.writeText(text).catch(() => {});
 });
 debugClear?.addEventListener("click", () => {
+  clearDebugLog();
   if (debugLog) debugLog.innerHTML = "";
 });
 
-const REDACT_KEY = "debugRedact";
-chrome.storage?.local?.get?.({ [REDACT_KEY]: false }, (s) => {
-  if (debugRedact) debugRedact.checked = !!s[REDACT_KEY];
-});
-debugRedact?.addEventListener("change", () => {
-  chrome.storage?.local?.set?.({ [REDACT_KEY]: !!debugRedact.checked });
-});
+if (debugRedact) {
+  debugRedact.checked = true;
+  debugRedact.disabled = true;
+}
 
 debugExport?.addEventListener("click", () => {
   try {
@@ -166,9 +216,14 @@ debugExport?.addEventListener("click", () => {
 
 // Listener attached BEFORE iframe.src to avoid races.
 window.addEventListener("message", (event) => {
+  if (event.source !== iframe?.contentWindow) {
+    pushTimeline("source-rejected", null);
+    dlog("message source rejected");
+    return;
+  }
   if (event.origin !== APP_ORIGIN) {
     pushTimeline("origin-rejected", { origin: event.origin });
-    dlog("origin rejected", event.origin);
+    dlog("origin rejected");
     return;
   }
   const data = event.data;
@@ -176,8 +231,9 @@ window.addEventListener("message", (event) => {
 
   if (data.type === "syrin:ready") {
     const appProtocol = Number.isFinite(data.protocol) ? data.protocol : 1;
-    const buildId = typeof data.buildId === "string" ? data.buildId : null;
-    const appVersion = typeof data.appVersion === "string" ? data.appVersion : null;
+    // Build identifiers are attacker-controlled and are never needed verbatim.
+    const buildId = typeof data.buildId === "string" ? "<redacted>" : null;
+    const appVersion = safeAppVersion(data.appVersion);
     pushTimeline("ready", { protocol: appProtocol, buildId, appVersion });
 
     if (appProtocol < MIN_APP_PROTOCOL || appProtocol > MAX_APP_PROTOCOL) {
@@ -193,6 +249,8 @@ window.addEventListener("message", (event) => {
         });
         return;
       }
+      readyAppProtocol = appProtocol;
+      readyBuildId = buildId;
       versionMismatchReason = `app protocol=${appProtocol} not in [${MIN_APP_PROTOCOL},${MAX_APP_PROTOCOL}] (ext=${HANDSHAKE_PROTOCOL})`;
       dlog("handshake version mismatch", versionMismatchReason);
       recordTelemetry("handshake-version-mismatch", {
@@ -214,7 +272,7 @@ window.addEventListener("message", (event) => {
       ready = true;
       readyBuildId = buildId;
       readyAppProtocol = appProtocol;
-      dlog("ready received", `buildId=${buildId ?? "?"} proto=${appProtocol}`);
+      dlog("ready received", `buildId=${buildId ? "present" : "absent"} proto=${appProtocol}`);
       recordTelemetry("handshake-ok", {
         appBuildId: buildId,
         retryCount,
@@ -230,10 +288,13 @@ window.addEventListener("message", (event) => {
     pushTimeline("slug", { len: data.slug.length });
     try {
       event.source?.postMessage({ type: "syrin:ack", slug: data.slug }, event.origin);
-      dlog("ack sent", data.slug);
+      dlog("ack sent", summarizeSlugForDiagnostics(data.slug));
     } catch (err) {
       console.warn("[syrin-note] ack failed", err);
     }
+    // The web app sends this field only for edit scope. Owner capabilities
+    // are deliberately never accepted or persisted by the extension.
+    persistEditCapability(data.slug, data.editCapability);
     if (data.slug === lastSavedSlug) return;
     lastSavedSlug = data.slug;
     updateDebugLast(data.slug);
@@ -243,7 +304,7 @@ window.addEventListener("message", (event) => {
           console.error("[syrin-note] storage.set lastSlug failed", chrome.runtime.lastError);
           dlog("storage write FAILED", chrome.runtime.lastError.message);
         } else {
-          dlog("storage write ok", data.slug);
+          dlog("storage write ok", summarizeSlugForDiagnostics(data.slug));
         }
       });
     } catch (err) {
@@ -254,22 +315,38 @@ window.addEventListener("message", (event) => {
 
 function loadDefaultsWithFallback(cb) {
   const defaults = { openMode: "home", defaultSlug: "", lastSlug: "", debug: false };
+  const finish = (settings) => {
+    try {
+      chrome.storage.local.get({ editCapabilities: {} }, (local) => {
+        if (chrome.runtime.lastError) {
+          cb({ ...settings, editCapabilities: {} });
+          return;
+        }
+        const editCapabilities = local.editCapabilities && typeof local.editCapabilities === "object"
+          ? local.editCapabilities
+          : {};
+        cb({ ...settings, editCapabilities });
+      });
+    } catch {
+      cb({ ...settings, editCapabilities: {} });
+    }
+  };
   try {
     chrome.storage.sync.get(defaults, (settings) => {
       if (chrome.runtime.lastError) {
-        dlog("storage.sync unavailable, using local", chrome.runtime.lastError.message);
+        dlog("storage.sync unavailable, using defaults", chrome.runtime.lastError.message);
         recordTelemetry("storage-sync-fallback", {
           retryCount,
           detail: { reason: chrome.runtime.lastError.message },
         });
-        chrome.storage.local.get(defaults, (local) => cb(local || defaults));
+        finish(defaults);
         return;
       }
-      cb(settings);
+      finish(settings);
     });
   } catch (err) {
     dlog("storage.sync threw, using defaults", String(err?.message || err));
-    cb(defaults);
+    finish(defaults);
   }
 }
 
@@ -311,61 +388,32 @@ function loadIframe(settings, isRetry = false) {
   currentSrc = isRetry
     ? `${base}${base.includes("?") ? "&" : "?"}retry=${retryCount}&_=${Date.now()}`
     : base;
-  dlog(isRetry ? "reloading" : "loading", currentSrc);
+  dlog(isRetry ? "reloading" : "loading", summarizeUrlForDiagnostics(currentSrc));
   pushTimeline(isRetry ? "iframe-retry" : "iframe-load", { retryCount });
   iframe.src = currentSrc;
   armWatchdog();
 }
 
-async function probeAppOrigin() {
-  try {
-    const res = await fetch(`${APP_ORIGIN}/version.json?ts=${Date.now()}`, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "omit",
-      mode: "cors",
-    });
-    return `${res.status} ${res.ok ? "ok" : res.statusText || "not ok"}`;
-  } catch (err) {
-    return `error: ${err?.message || err}`;
-  }
+function currentNetworkState() {
+  return typeof navigator !== "undefined" && navigator.onLine === false
+    ? "offline"
+    : "online-unverified";
 }
 
-let cachedCspProbe = null;
-let cachedCspProbeAt = 0;
-const CSP_CACHE_TTL_MS = 5000;
-
-async function verifyFrameAncestorsCsp({ force = false } = {}) {
-  if (!force && cachedCspProbe && Date.now() - cachedCspProbeAt < CSP_CACHE_TTL_MS) {
-    return cachedCspProbe;
-  }
-  let result;
-  try {
-    const res = await fetch(`${APP_ORIGIN}/`, {
-      method: "GET",
-      cache: "no-store",
-      credentials: "omit",
-      mode: "cors",
-    });
-    const csp = res.headers.get("content-security-policy") || "";
-    if (!csp) result = { ok: false, csp: null, reason: "no CSP header" };
-    else if (!/frame-ancestors/i.test(csp)) result = { ok: false, csp, reason: "missing frame-ancestors" };
-    else if (!/chrome-extension:\/\//i.test(csp))
-      result = { ok: false, csp, reason: "frame-ancestors excludes chrome-extension://" };
-    else result = { ok: true, csp, reason: null };
-  } catch (err) {
-    result = { ok: false, csp: null, reason: `fetch failed: ${err?.message || err}` };
-  }
-  cachedCspProbe = result;
-  cachedCspProbeAt = Date.now();
-  return result;
+function uninspectedCsp() {
+  return {
+    inspected: false,
+    ok: null,
+    csp: null,
+    reason: "not-inspected",
+  };
 }
 
 async function showFallback() {
   loader.hidden = true;
   iframe.hidden = true;
   fallback.hidden = false;
-  if (diagUrl) diagUrl.textContent = currentSrc || "(none)";
+  if (diagUrl) diagUrl.textContent = summarizeUrlForDiagnostics(currentSrc);
   if (diagRetries) diagRetries.textContent = String(retryCount);
   if (diagReady) {
     diagReady.textContent = versionMismatchReason
@@ -374,31 +422,31 @@ async function showFallback() {
       ? "received"
       : "not received";
   }
-  if (diagHead) diagHead.textContent = "checking…";
-  const head = await probeAppOrigin();
-  if (diagHead) diagHead.textContent = head;
-  const csp = await verifyFrameAncestorsCsp();
+  const network = currentNetworkState();
+  if (diagHead) diagHead.textContent = network;
+  const csp = uninspectedCsp();
   const reason = resolveFallbackReason({
     versionMismatchReason,
     csp,
     ready,
+    iframeLoaded,
     retryCount,
-    appReachable: head,
+    appReachable: network,
   });
   if (fallbackReason) {
     fallbackReason.hidden = !reason;
     fallbackReason.textContent = reason || "";
   }
   if (fallbackCopyDiag) fallbackCopyDiag.hidden = false;
-  dlog("fallback shown", `head=${head} reason=${reason ?? "none"}`);
+  dlog("fallback shown", `network=${network} reason=${reason ?? "none"}`);
   void renderTelemetryList();
 }
 
 async function buildDiagnosticsBundle() {
-  const csp = await verifyFrameAncestorsCsp();
+  const csp = uninspectedCsp();
   const telemetryEnabled = await readTelemetryEnabledAsync();
   const telemetry = telemetryEnabled ? await readTelemetry() : [];
-  return {
+  const bundle = {
     kind: DIAGNOSTICS_KIND,
     schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
     at: new Date().toISOString(),
@@ -414,20 +462,28 @@ async function buildDiagnosticsBundle() {
       iframeSrc: currentSrc,
       iframeLoaded,
       retryCount,
-      appReachable: diagHead?.textContent || "unknown",
+      appReachable: currentNetworkState(),
     },
     cspFrameAncestors: csp,
     messageTimeline: messageTimeline.slice(),
     telemetry,
     telemetryEnabled,
     debugLines: snapshotDebugLog(),
-    // Test-only injection hook: lets Playwright specs exercise the
-    // validator's forbidden-key denylist end-to-end without needing
-    // real PII in the bundle. Non-string / unrecognized values are ignored.
-    ...(typeof window !== "undefined" && typeof window.__SYRIN_TEST_INJECT_FORBIDDEN_KEY__ === "string"
-      ? { [window.__SYRIN_TEST_INJECT_FORBIDDEN_KEY__]: "injected-by-test" }
-      : {}),
   };
+  const sanitized = redactDiagnosticsBundle(bundle);
+  // Test-only injection remains after sanitization so the validator's
+  // forbidden-key denylist can still be exercised end-to-end. Invalid
+  // bundles are blocked before clipboard/download serialization.
+  if (
+    typeof window !== "undefined" &&
+    typeof window.__SYRIN_TEST_INJECT_FORBIDDEN_KEY__ === "string"
+  ) {
+    return {
+      ...sanitized,
+      [window.__SYRIN_TEST_INJECT_FORBIDDEN_KEY__]: "injected-by-test",
+    };
+  }
+  return sanitized;
 }
 
 function showDiagnosticsValidationError(errors) {
@@ -437,6 +493,7 @@ function showDiagnosticsValidationError(errors) {
     diagValidation.textContent = "";
     return;
   }
+  if (diagDetails) diagDetails.open = true;
   diagValidation.hidden = false;
   diagValidation.textContent = `Diagnostics bundle failed schema validation: ${errors.join("; ")}`;
   dlog("diagnostics schema invalid", errors.join("; "));
@@ -467,6 +524,7 @@ diagDownload?.addEventListener("click", async () => {
   const reasonType = diagnosticsReasonType({
     versionMismatchReason: bundle.handshake.versionMismatch,
     csp: bundle.cspFrameAncestors,
+    appReachable: bundle.load.appReachable,
     ready: bundle.handshake.ready,
   });
   const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
@@ -497,7 +555,10 @@ async function renderTelemetryList() {
     return;
   }
   // Show newest first, cap at 30 for readability.
-  const recent = events.slice(-30).reverse();
+  const recent = events
+    .slice(-30)
+    .reverse()
+    .map((event) => redactTelemetryEventForDiagnostics(event, extensionVersion()));
   for (const e of recent) {
     const li = document.createElement("li");
     const ts = new Date(e.t).toISOString().slice(11, 19);
@@ -511,7 +572,7 @@ async function renderTelemetryList() {
 
 diagTelemetryRefresh?.addEventListener("click", () => { void renderTelemetryList(); });
 diagTelemetryClear?.addEventListener("click", async () => {
-  clearTelemetry();
+  await clearTelemetry();
   await renderTelemetryList();
 });
 

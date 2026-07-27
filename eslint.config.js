@@ -60,7 +60,18 @@ const HARDCODED_STRING_RULES = [
 ];
 
 export default tseslint.config(
-  { ignores: ["dist", "e2e", "playwright-report", "test-results", "scripts"] },
+  {
+    ignores: [
+      "artifacts",
+      "coverage",
+      "dist",
+      "e2e",
+      "playwright-report",
+      "reports",
+      "scripts",
+      "test-results",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

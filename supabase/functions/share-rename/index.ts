@@ -1,66 +1,20 @@
-// Migrate active share tokens from one slug to another.
-//
-// Called by renameNote(). The notes table is renamed by copy+delete, and the
-// FK on note_shares(slug) is ON DELETE CASCADE, so the delete would otherwise
-// wipe every share link for that note. This function runs BEFORE the delete
-// and re-points the share rows to the new slug so active links keep working.
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
+// Retired: the legacy slug-to-slug migration relied on a public locator as
+// authority and used the service role. Capability-backed rename supersedes it.
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Cache-Control": "no-store",
 };
 
-const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+Deno.serve((req) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
 
-function json(body: unknown, status: number) {
-  return new Response(JSON.stringify(body), {
-    status,
+  return new Response(JSON.stringify({ error: "endpoint retired" }), {
+    status: 410,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
-
-  try {
-    const body = await req.json().catch(() => ({}));
-    const oldSlug = String(body?.oldSlug ?? "").trim();
-    const newSlug = String(body?.newSlug ?? "").trim();
-    if (!SLUG_RE.test(oldSlug) || !SLUG_RE.test(newSlug)) {
-      return json({ error: "invalid slug" }, 400);
-    }
-    if (oldSlug === newSlug) return json({ migrated: 0 }, 200);
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    );
-
-    // If newSlug already has share tokens (possible when renaming into a
-    // slug whose previous content was cleared but whose share link was
-    // never revoked), they'd collide with the UNIQUE(slug) constraint
-    // on the UPDATE below. Drop them first; the rename semantically
-    // means "the old note is now at newSlug", so prior tokens at newSlug
-    // should not persist.
-    const { error: purgeErr } = await supabase
-      .from("note_shares")
-      .delete()
-      .eq("slug", newSlug);
-    if (purgeErr) throw purgeErr;
-
-    const { data, error } = await supabase
-      .from("note_shares")
-      .update({ slug: newSlug })
-      .eq("slug", oldSlug)
-      .select("token");
-    if (error) throw error;
-
-    return json({ migrated: data?.length ?? 0 }, 200);
-  } catch (e) {
-    console.error("share-rename error", e);
-    return json({ error: String(e) }, 500);
-  }
 });

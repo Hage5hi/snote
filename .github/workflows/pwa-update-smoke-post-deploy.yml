@@ -1,240 +1,62 @@
-name: PWA update smoke (post-deploy)
-
-# Runs the multi-click Update smoke against the published site after every
-# deploy. Verifies clicking Update repeatedly still applies the new build
-# and never appends `?v=` to note URLs (the regression that forced users
-# to clear cookies).
+name: PWA update smoke
 
 on:
   deployment_status:
   workflow_dispatch:
     inputs:
       target_url:
-        description: "Base URL to smoke-test (defaults to production)"
+        description: Base URL to smoke-test
         required: false
-        default: "https://snote.lovable.app"
-      environment:
-        description: "GitHub Environment name (staging | production)"
-        required: false
-        default: "production"
+        default: https://note.syrin.online
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.deployment.id || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   smoke:
-    name: multi-click Update smoke
-    # deployment_status fires for every state; only run on success.
+    name: pwa-update-smoke
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Bind to a GitHub Environment so per-env secrets/URL and required
-    # reviewers apply. Derived from the deployment environment when the
-    # trigger is a deployment_status, else from workflow_dispatch input,
-    # else production.
-    environment:
-      name: >-
-        ${{ github.event.deployment_status.environment
-            || github.event.inputs.environment
-            || 'production' }}
-      url: ${{ env.SMOKE_BASE_URL }}
     env:
-      PLAYWRIGHT_PROJECT: chromium
-      PLAYWRIGHT_RETRIES: "2"
-      # Prefer the deployment target URL when available, fall back to the
-      # workflow_dispatch input, then to production.
       SMOKE_BASE_URL: >-
-        ${{ github.event.deployment_status.target_url
-            || github.event.inputs.target_url
-            || 'https://snote.lovable.app' }}
-      SMOKE_ENVIRONMENT: >-
-        ${{ github.event.deployment_status.environment
-            || github.event.inputs.environment
-            || 'production' }}
+        ${{
+          github.event.deployment_status.target_url ||
+          github.event.inputs.target_url ||
+          'https://note.syrin.online'
+        }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
       - run: bun install --frozen-lockfile
-      - name: Verify frame-ancestors CSP header on target
-        # Contract check: the app MUST send `frame-ancestors 'self'
-        # chrome-extension://*`, otherwise the Chrome extension side panel
-        # can't embed it (users see "Couldn't load Syrin Note").
-        run: bash scripts/verify-frame-ancestors.sh "$SMOKE_BASE_URL"
-      - name: Install Playwright chromium
-        run: bunx playwright install --with-deps chromium
-      - name: Run post-deploy multi-click smoke
+      - run: bash scripts/verify-frame-ancestors.sh "$SMOKE_BASE_URL"
+      - run: bunx playwright install --with-deps chromium
+      - name: Run post-deploy smoke
         env:
           PLAYWRIGHT_BASE_URL: ${{ env.SMOKE_BASE_URL }}
-        run: |
-          echo "Smoke environment: $SMOKE_ENVIRONMENT"
-          echo "Smoke target: $PLAYWRIGHT_BASE_URL"
-          bunx playwright test \
-            e2e/pwa-update-multi-click.spec.ts \
-            e2e/pwa-update-no-url-v-param.spec.ts \
-            --project=chromium \
-            --retries=${PLAYWRIGHT_RETRIES}
-      - name: Upload HTML report (always)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pwa-update-smoke-report-run${{ github.run_number }}-attempt${{ github.run_attempt }}
-          path: playwright-report/
-          retention-days: 7
-          if-no-files-found: ignore
-      - name: Upload traces & screenshots (on failure)
+        run: >-
+          bunx playwright test
+          e2e/pwa-update-multi-click.spec.ts
+          e2e/pwa-update-no-url-v-param.spec.ts
+          --project=chromium
+          --retries=0
+      - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: pwa-update-smoke-artifacts-run${{ github.run_number }}-attempt${{ github.run_attempt }}
-          path: test-results/
+          name: pwa-update-smoke-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
           retention-days: 14
-          if-no-files-found: ignore
-      - name: Generate regression summary from url-history.json
-        if: failure()
-        id: summary
-        run: |
-          set -eu
-          OUT=/tmp/pwa-smoke-summary.md
-          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
-          ARTIFACT_NAME="pwa-update-smoke-artifacts-run${GITHUB_RUN_NUMBER}-attempt${GITHUB_RUN_ATTEMPT}"
-          {
-            echo "## PWA update smoke — regression summary"
-            echo ""
-            echo "- Environment: \`${SMOKE_ENVIRONMENT}\`"
-            echo "- Target: ${SMOKE_BASE_URL}"
-            echo "- Run: ${RUN_URL}"
-            echo "- Artifact bundle: \`${ARTIFACT_NAME}\`"
-            echo ""
-          } > "$OUT"
-
-          # Cache-buster strip events — one row per (spec, iteration, key) so
-          # triage can see immediately WHICH cache-buster key leaked or was
-          # stripped, WHICH run it was, and the exact screenshot path to open.
-          echo "### Cache-buster query param strip events" >> "$OUT"
-          echo "" >> "$OUT"
-          echo "| Spec | Key | Original value | Stripped? | Screenshot |" >> "$OUT"
-          echo "|------|-----|----------------|-----------|------------|" >> "$OUT"
-          STRIP_FOUND=0
-          # Known cache-busters mirrored from src/lib/url-sanitize.ts.
-          BUSTERS='v ver t cb _'
-          while IFS= read -r -d '' f; do
-            SPEC="$(basename "$(dirname "$f")")"
-            SHOT_REL="$(find "$(dirname "$f")" -maxdepth 2 -name 'regression-screenshot*.png' -print -quit 2>/dev/null || true)"
-            SHOT_DISPLAY="${SHOT_REL:-<none>}"
-            for key in $BUSTERS; do
-              # Emit one row per history entry whose URL contains `?key=` or `&key=`.
-              while IFS= read -r row; do
-                [ -z "$row" ] && continue
-                STRIP_FOUND=1
-                echo "| \`${SPEC}\` | \`${key}\` | ${row} | see next reload | \`${SHOT_DISPLAY}\` |" >> "$OUT"
-              done < <(jq -r --arg k "$key" '
-                (.history // [])[]?
-                | .url
-                | select(test("[?&]" + $k + "="))
-                | capture("[?&]" + $k + "=(?<v>[^&#]*)").v
-              ' "$f")
-            done
-          done < <(find test-results -type f -name 'url-history*.json' -print0 2>/dev/null)
-          if [ "$STRIP_FOUND" = "0" ]; then
-            echo "| _no cache-buster keys observed in url-history_ | | | | |" >> "$OUT"
-          fi
-          echo "" >> "$OUT"
-
-          FOUND=0
-          while IFS= read -r -d '' f; do
-            FOUND=1
-            echo "### \`$(basename "$f")\`" >> "$OUT"
-            echo "" >> "$OUT"
-            FINAL=$(jq -r '.finalUrl // "?"' "$f")
-            UNEXP=$(jq -r '(.unexpectedQuery // .reloadedUnexpected // []) | join(", ")' "$f")
-            echo "- Final URL: \`${FINAL}\`" >> "$OUT"
-            echo "- Unexpected query params: \`${UNEXP:-<none>}\`" >> "$OUT"
-            echo "" >> "$OUT"
-            echo "#### Navigation timeline" >> "$OUT"
-            echo "" >> "$OUT"
-            echo "| t (ms) | type | URL |" >> "$OUT"
-            echo "|-------:|------|-----|" >> "$OUT"
-            jq -r '.history[]? | "| \(.at) | \(.type) | `\(.url)` |"' "$f" >> "$OUT"
-            echo "" >> "$OUT"
-            echo "#### Service worker registrations" >> "$OUT"
-            echo "" >> "$OUT"
-            echo "**Before Update clicks:**" >> "$OUT"
-            echo '```json' >> "$OUT"
-            jq '.swBefore // "n/a"' "$f" >> "$OUT"
-            echo '```' >> "$OUT"
-            echo "**After Update clicks:**" >> "$OUT"
-            echo '```json' >> "$OUT"
-            jq '.swAfter // "n/a"' "$f" >> "$OUT"
-            echo '```' >> "$OUT"
-            echo "" >> "$OUT"
-          done < <(find test-results -type f -name 'url-history*.json' -print0 2>/dev/null)
-
-          if [ "$FOUND" = "0" ]; then
-            echo "_No \`url-history*.json\` attachments found — check the HTML report artifact._" >> "$OUT"
-          fi
-
-          cat "$OUT" >> "$GITHUB_STEP_SUMMARY"
-          {
-            echo "summary_md<<__EOF__"
-            cat "$OUT"
-            echo "__EOF__"
-          } >> "$GITHUB_OUTPUT"
-      - name: Open GitHub issue on smoke failure
-        if: failure()
-        uses: actions/github-script@v7
-        env:
-          SMOKE_BASE_URL: ${{ env.SMOKE_BASE_URL }}
-          SMOKE_ENVIRONMENT: ${{ env.SMOKE_ENVIRONMENT }}
-          SUMMARY_MD: ${{ steps.summary.outputs.summary_md }}
-        with:
-          script: |
-            const runUrl = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`;
-            const title = `[pwa-smoke] Update flow regression on ${process.env.SMOKE_ENVIRONMENT} (${process.env.GITHUB_SHA.slice(0, 7)})`;
-            const body = [
-              `PWA update multi-click smoke failed after deploy.`,
-              ``,
-              `- Environment: \`${process.env.SMOKE_ENVIRONMENT}\``,
-              `- Target URL: ${process.env.SMOKE_BASE_URL}`,
-              `- Commit: \`${process.env.GITHUB_SHA}\``,
-              `- Workflow run: ${runUrl}`,
-              ``,
-              `Artifacts on the run above:`,
-              `- \`pwa-update-smoke-report-run${process.env.GITHUB_RUN_NUMBER}-attempt${process.env.GITHUB_RUN_ATTEMPT}\` — HTML report`,
-              `- \`pwa-update-smoke-artifacts-run${process.env.GITHUB_RUN_NUMBER}-attempt${process.env.GITHUB_RUN_ATTEMPT}\` — traces, videos, \`url-history*.json\`, \`regression-screenshot.png\``,
-              ``,
-              process.env.SUMMARY_MD || "_No summary available._",
-              ``,
-              `Likely cause: Update flow re-introduced a \`?v=\` (or other cache-buster) query param, or a rogue service worker is rewriting navigations.`,
-            ].join("\n");
-            const q = `repo:${process.env.GITHUB_REPOSITORY} is:issue is:open in:title "[pwa-smoke] Update flow regression on ${process.env.SMOKE_ENVIRONMENT}"`;
-            const search = await github.rest.search.issuesAndPullRequests({ q });
-            const existing = search.data.items[0];
-            if (existing) {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existing.number,
-                body: `New failure on run ${runUrl}\n\n${body}`,
-              });
-              core.info(`Commented on existing issue #${existing.number}`);
-            } else {
-              const created = await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title,
-                body,
-                labels: ["pwa", "smoke-failure", `env:${process.env.SMOKE_ENVIRONMENT}`],
-              });
-              core.info(`Opened issue #${created.data.number}`);
-            }
-      - name: Notify Slack on smoke failure
-        # Only runs when SLACK_WEBHOOK_URL secret is configured; skipped silently otherwise.
-        if: failure() && env.SLACK_WEBHOOK_URL != ''
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}"
-          TEXT=":rotating_light: *PWA update smoke failed* on \`${SMOKE_ENVIRONMENT}\` (${GITHUB_SHA:0:7})\n<${RUN_URL}|Open run — screenshot + url-history in artifacts>\nTarget: ${SMOKE_BASE_URL}"
-          jq -n --arg text "$TEXT" '{text: $text}' | \
-            curl -sS -X POST -H 'Content-Type: application/json' --data @- "$SLACK_WEBHOOK_URL"

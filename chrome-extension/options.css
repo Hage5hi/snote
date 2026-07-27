@@ -95,6 +95,17 @@ legend {
 }
 #save:hover { background: #e5e5e7; }
 #save:disabled { opacity: 0.4; cursor: not-allowed; }
+.secondary-action {
+  margin: 6px 4px 4px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.18);
+  background: transparent;
+  color: #d4d4d8;
+  cursor: pointer;
+  font-size: 12px;
+}
+.secondary-action:hover { border-color: #f5f5f7; color: #f5f5f7; }
+.secondary-action:disabled { opacity: 0.4; cursor: not-allowed; }
 .status { font-size: 12px; color: #4ade80; }
 
 .footnote {

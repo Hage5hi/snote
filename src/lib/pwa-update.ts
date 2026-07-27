@@ -8,7 +8,13 @@
 import { createElement, type MouseEvent, type ReactNode } from "react";
 import { registerSW } from "virtual:pwa-register";
 import { toast as sonnerToast } from "sonner";
-import { detectLang, dict, STORAGE_KEY, type Lang } from "@/i18n";
+import {
+  detectLang,
+  STORAGE_KEY,
+  translateLoaded,
+  type Lang,
+  type TKey,
+} from "@/i18n";
 import type { PwaReloadStrategy, PwaUpdateReadinessState } from "@/lib/pwa-update-readiness";
 
 declare const __BUILD_ID__: string;
@@ -49,11 +55,8 @@ declare global {
   }
 }
 
-type FlatDict = Record<string, string>;
-
-function tr(lang: Lang, key: string): string {
-  const d = dict as unknown as Record<Lang, FlatDict>;
-  return d[lang]?.[key] ?? d.en[key] ?? key;
+function tr(lang: Lang, key: TKey): string {
+  return translateLoaded(lang, key);
 }
 
 function isLovablePreviewHost(): boolean {
@@ -92,6 +95,9 @@ function writeDebugState(next: Partial<PwaUpdateDebugState>): void {
 }
 
 export async function nukeServiceWorkersAndCaches(): Promise<void> {
+  // Destructive cleanup is only valid in Lovable's disposable preview host.
+  // On the real app, the active worker and caches are the offline rollback.
+  if (!isLovablePreviewHost()) return;
   try {
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -169,14 +175,10 @@ function reloadCleanUrl(targetBuildId: string | null): void {
   }
 }
 
-async function recoverAndReloadCleanUrl(targetBuildId: string | null): Promise<void> {
+function recoverAndReloadCleanUrl(targetBuildId: string | null): void {
   scrubLegacyVersionParamFromVisibleUrl();
   if (signalE2EReload(targetBuildId)) return;
-  try {
-    await nukeServiceWorkersAndCaches();
-  } finally {
-    reloadCleanUrl(targetBuildId);
-  }
+  reloadCleanUrl(targetBuildId);
 }
 
 function updateButton(label: string, disabled: boolean, onReload: () => void): ReactNode {
@@ -236,9 +238,6 @@ function startVersionPoller(
   onCurrent: (remoteBuildId: string) => void,
 ): () => void {
   let stopped = false;
-  let initialTimer: number | undefined;
-  let timer: number | undefined;
-
   const check = async () => {
     if (stopped) return;
     try {
@@ -262,15 +261,15 @@ function startVersionPoller(
   };
   const onFocus = () => void check();
 
-  initialTimer = window.setTimeout(check, initialDelay) as unknown as number;
-  timer = window.setInterval(check, interval) as unknown as number;
+  const initialTimer = window.setTimeout(check, initialDelay) as unknown as number;
+  const timer = window.setInterval(check, interval) as unknown as number;
   document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("focus", onFocus);
 
   return () => {
     stopped = true;
-    if (initialTimer !== undefined) window.clearTimeout(initialTimer);
-    if (timer !== undefined) window.clearInterval(timer);
+    window.clearTimeout(initialTimer);
+    window.clearInterval(timer);
     document.removeEventListener("visibilitychange", onVisibilityChange);
     window.removeEventListener("focus", onFocus);
   };
@@ -359,7 +358,7 @@ export function registerAppUpdater(): void {
       logLifecycle("reload-start");
       const fallback = window.setTimeout(() => {
         console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
-        void recoverAndReloadCleanUrl(pendingBuildId);
+        recoverAndReloadCleanUrl(pendingBuildId);
       }, RELOAD_FALLBACK_MS);
       let done = false;
       const onCtrl = () => {
@@ -373,7 +372,7 @@ export function registerAppUpdater(): void {
       scrubLegacyVersionParamFromVisibleUrl();
       void updateSWFn(false).catch(() => {
         window.clearTimeout(fallback);
-        void recoverAndReloadCleanUrl(pendingBuildId);
+        recoverAndReloadCleanUrl(pendingBuildId);
       });
       return;
     }
@@ -382,7 +381,7 @@ export function registerAppUpdater(): void {
     syncDebugState();
     console.log("[pwa-update] reload strategy=hard", { currentBuildId: getCurrentBuildId(), pendingBuildId });
     logLifecycle("reload-start");
-    void recoverAndReloadCleanUrl(pendingBuildId);
+    recoverAndReloadCleanUrl(pendingBuildId);
   };
 
   const logLifecycle = (event: string) => {
