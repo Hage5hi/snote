@@ -44,7 +44,7 @@ evidence is collected in the
 
 ## Stack
 
-- React 18, TypeScript, Vite and Tailwind CSS
+- React 19, React Router 8, TypeScript, Vite and Tailwind CSS
 - CodeMirror 6 and Yjs
 - Supabase Postgres, Realtime and Edge Functions
 - Cloudflare Worker for generic crawler-safe responses
@@ -52,7 +52,8 @@ evidence is collected in the
 
 ## Local development
 
-Requirements: Bun `1.3.14` and, for Edge typechecking, Deno `2.9.3`.
+Requirements: Bun `1.3.14` with Node-compat `22.22.0` or later and, for Edge
+typechecking, Deno `2.9.3`.
 
 ```sh
 git clone https://github.com/sovergarden-dev/snote.git

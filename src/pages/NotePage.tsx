@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
-import { Navigate, useLocation, useNavigate, useParams } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, useParams } from "react-router";
 import * as Y from "yjs";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { Editor, type EditorHandle } from "@/components/note/Editor";

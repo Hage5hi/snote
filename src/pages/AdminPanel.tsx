@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { ArrowLeft, Trash2, Search, RefreshCw, X, KeyRound } from "lucide-react";
 import { RotatePassDialog } from "@/components/admin/RotatePassDialog";
 import { Button } from "@/components/ui/button";

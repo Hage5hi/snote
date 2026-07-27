@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, cleanup } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { DiagnosticsPanel } from "@/components/dev/DiagnosticsPanel";
 import { UrlSanitizeDebugPanel } from "@/components/dev/UrlSanitizeDebugPanel";
 

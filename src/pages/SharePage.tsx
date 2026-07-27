@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useLocation, useParams } from "react-router";
 import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Eye } from "lucide-react";
 import * as Y from "yjs";

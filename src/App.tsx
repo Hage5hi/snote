@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useParams } from "react-router";
 import { ThemeProvider } from "next-themes";
 import { lazy, Suspense } from "react";
 import Home from "./pages/Home";
@@ -79,12 +79,7 @@ const App = () => (
         <Toaster />
         <Sonner />
         <TooltipProvider delayDuration={200} skipDelayDuration={0}>
-          <BrowserRouter
-            future={{
-              v7_startTransition: true,
-              v7_relativeSplatPath: true,
-            }}
-          >
+          <BrowserRouter>
             <CommandPalette />
             <DonateButton />
             <PwaUpdateDebugPanel />

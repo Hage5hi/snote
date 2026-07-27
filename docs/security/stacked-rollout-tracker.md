@@ -21,6 +21,10 @@ item is not evidence of staging or production deployment.
 - [ ] Every PR description links its threat model, migration order, rollback,
       and focused failing-then-passing test.
 - [ ] Frozen Bun install and high-severity dependency audit pass.
+- [ ] Resolve the unsuppressed
+      [`brace-expansion` high-audit blocker](../security-findings.md#open-dependency-audit-blocker--no-exception-granted)
+      through a compatible upstream update, separately reviewed PWA replacement,
+      or separately reviewed fork.
 - [ ] Lint, Knip, i18n coverage/allowlist, app/Node/tooling/Edge typechecks,
       unit coverage, build/bundle gate, and actionlint pass.
 - [ ] PR Chromium smoke and extension packaging/E2E pass with zero retries.

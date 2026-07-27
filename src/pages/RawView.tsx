@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router";
 import { Helmet } from "react-helmet-async";
 import { deriveKey, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { createLegacyNoteApi } from "@/lib/legacy/cutover";

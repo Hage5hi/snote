@@ -8,7 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Link, Navigate, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router";
 import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";

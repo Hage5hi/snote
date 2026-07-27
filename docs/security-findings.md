@@ -115,6 +115,26 @@ dependency audit, lint, Knip, app/Node/tooling/Edge typechecks, unit coverage,
 production build, actionlint, extension E2E, and browser smoke remain release
 gates.
 
+### Open dependency-audit blocker — no exception granted
+
+`bun audit --audit-level=high` currently reports one high finding:
+[`brace-expansion <=5.0.7` (GHSA-mh99-v99m-4gvg)](https://github.com/advisories/GHSA-mh99-v99m-4gvg).
+It is present only in the development/build dependency graph through ESLint,
+TypeScript-ESLint, `@vitest/coverage-v8`, and
+`vite-plugin-pwa → workbox-build`. `bun audit --production --audit-level=high`
+is clean.
+
+The only patched release is `5.0.8`, but Bun supports only global overrides.
+Forcing that version into legacy `minimatch` ranges is neither range-compatible
+nor API-compatible. Current compatible ESLint/Vitest upgrades can reduce some
+paths, but Workbox `7.4.1` still retains one vulnerable path and the current
+`vite-plugin-pwa` line has no compatible upstream replacement.
+
+This is not accepted, suppressed, or a CI exception. The `quality` audit gate
+must remain red; merge and release remain blocked until a compatible upstream
+toolchain update, a separately reviewed PWA replacement, or a separately
+reviewed fork removes the finding.
+
 ## Scan triage rule
 
 Treat any finding about deployed direct-table access, public Realtime,

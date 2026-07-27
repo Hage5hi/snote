@@ -1,6 +1,6 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { Suspense, type ReactNode } from "react";
-import { BrowserRouter, MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
+import { BrowserRouter, MemoryRouter, Route, Routes, useNavigate } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import NotePage from "../NotePage";
@@ -176,7 +176,7 @@ vi.mock("y-indexeddb", () => ({
 
 function renderEmbedded() {
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <NotePage embedSlug="secret" />
     </MemoryRouter>,
   );
@@ -186,7 +186,6 @@ function renderStandalone() {
   return render(
     <MemoryRouter
       initialEntries={["/secret"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <Routes>
         <Route path="/:slug" element={<NotePage />} />
@@ -229,7 +228,6 @@ function renderShareRoute() {
   return render(
     <MemoryRouter
       initialEntries={[`/s/${SHARE_TOKEN_A}`]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
     >
       <ShareRouteHarness />
     </MemoryRouter>,
@@ -429,7 +427,7 @@ describe("NotePage encryption gate", () => {
     };
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <Suspense fallback={<div data-testid="abandoned-fallback" />}>
           <NotePage embedSlug="abandoned" />
           <SuspendForever />
@@ -472,7 +470,7 @@ describe("NotePage encryption gate", () => {
     ));
 
     const { rerender } = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <NotePage embedSlug="plain" />
       </MemoryRouter>,
     );
@@ -485,7 +483,7 @@ describe("NotePage encryption gate", () => {
     harness.providerConnect.mockClear();
 
     rerender(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <NotePage embedSlug="encrypted" />
       </MemoryRouter>,
     );
@@ -517,7 +515,7 @@ describe("NotePage encryption gate", () => {
     window.history.replaceState(null, "", `${window.location.pathname}#key-a`);
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <NotePage embedSlug="a" />
       </MemoryRouter>,
     );
@@ -525,7 +523,7 @@ describe("NotePage encryption gate", () => {
 
     window.history.replaceState(null, "", window.location.pathname);
     view.rerender(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <NotePage embedSlug="b" />
       </MemoryRouter>,
     );
@@ -634,7 +632,7 @@ describe("NotePage encryption gate", () => {
     }
 
     const view = render(
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <BrowserRouter>
         <BrowserNoteHarness />
       </BrowserRouter>,
     );
@@ -722,7 +720,7 @@ describe("NotePage encryption gate", () => {
     window.history.replaceState(window.history.state, "", "/split#key-b");
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <NotePage embedSlug="a" />
         <NotePage embedSlug="b" />
       </MemoryRouter>,
@@ -766,7 +764,7 @@ describe("NotePage encryption gate", () => {
     window.history.replaceState(null, "", "/a");
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ActualUnlockForm slug="a" salt="salt-a" check="check-a" iterations={1} onUnlock={onUnlockA} />
       </MemoryRouter>,
     );
@@ -776,7 +774,7 @@ describe("NotePage encryption gate", () => {
 
     window.history.replaceState(null, "", "/b");
     view.rerender(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ActualUnlockForm slug="b" salt="salt-b" check="check-b" iterations={1} onUnlock={onUnlockB} />
       </MemoryRouter>,
     );
@@ -808,7 +806,7 @@ describe("NotePage encryption gate", () => {
     window.history.replaceState(null, "", `/s/${SHARE_TOKEN_A}`);
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ActualUnlockForm slug="shared" salt="same-salt" check="same-check" iterations={1} onUnlock={onUnlockA} />
       </MemoryRouter>,
     );
@@ -822,7 +820,7 @@ describe("NotePage encryption gate", () => {
 
     window.history.replaceState(null, "", `/s/${SHARE_TOKEN_B}`);
     view.rerender(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ActualUnlockForm slug="shared" salt="same-salt" check="same-check" iterations={1} onUnlock={onUnlockB} />
       </MemoryRouter>,
     );
@@ -853,7 +851,7 @@ describe("NotePage encryption gate", () => {
     window.history.replaceState(null, "", "/same-note#starting-key");
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ActualUnlockForm
           slug="same-note"
           salt="same-salt"
@@ -893,7 +891,7 @@ describe("NotePage encryption gate", () => {
     window.history.replaceState(null, "", "/same-note?mode=share");
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ActualUnlockForm
           slug="same-note"
           salt="same-salt"
@@ -930,7 +928,7 @@ describe("NotePage encryption gate", () => {
     window.history.replaceState(routerState, "", "/same-note?mode=share");
 
     const view = render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <ActualUnlockForm
           slug="same-note"
           salt="same-salt"
@@ -981,7 +979,6 @@ describe("NotePage encryption gate", () => {
     const view = render(
       <MemoryRouter
         initialEntries={["/same-note?mode=a"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <QueryNavigationHarness />
       </MemoryRouter>,
@@ -1127,7 +1124,6 @@ describe("NotePage encryption gate", () => {
     view.rerender(
       <MemoryRouter
         initialEntries={[`/s/${SHARE_TOKEN_A}`]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
       >
         <ShareRouteHarness />
       </MemoryRouter>,

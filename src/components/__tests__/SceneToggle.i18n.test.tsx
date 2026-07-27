@@ -4,7 +4,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 import { SceneToggle } from "@/components/SceneToggle";
 import { I18nProvider } from "@/i18n/provider";
 import { STORAGE_KEY as LANG_KEY } from "@/i18n";

@@ -37,8 +37,7 @@ export function Flag({ lang, className, size = 20, priority = "auto" }: FlagProp
       height={h}
       loading="lazy"
       decoding="async"
-      // @ts-expect-error — fetchPriority is a valid HTML attribute, types lag
-      fetchpriority={priority}
+      fetchPriority={priority}
       draggable={false}
       className={
         "inline-block shrink-0 rounded-[2px] object-cover ring-1 ring-foreground/20 " +

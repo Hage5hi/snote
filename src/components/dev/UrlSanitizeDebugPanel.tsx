@@ -3,7 +3,7 @@
 // Not mounted in production. Purely observational — does NOT rewrite the URL.
 
 import { useEffect, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 import { sanitizeUrl } from "@/lib/url-sanitize";
 
 // Query params allowed to survive on note routes. Keep in sync with the

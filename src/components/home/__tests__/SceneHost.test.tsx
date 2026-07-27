@@ -136,9 +136,9 @@ describe("SceneHost — chunk-loading contract", () => {
     expect(etherealLoad).not.toHaveBeenCalled();
   });
 
-  it("starts hidden (opacity-0) before the scene reports it is ready", () => {
+  it("starts hidden (opacity-0) before the scene reports it is ready", async () => {
     localStorage.setItem(SCENE_STORAGE_KEY, "cyber-linh-khi");
-    const { container } = render(<SceneHost />);
+    const { container } = await act(async () => render(<SceneHost />));
     const host = container.querySelector("[data-scene-ready]");
     expect(host).not.toBeNull();
     expect(host?.getAttribute("data-scene-ready")).toBe("false");
@@ -195,4 +195,3 @@ describe("SceneHost — chunk-loading contract", () => {
     expect(masks[1].className).toMatch(/h-32/);
   });
 });
-

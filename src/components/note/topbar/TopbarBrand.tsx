@@ -9,7 +9,7 @@
 //   - Click the Copy icon → copies the FULL note body. This used to be a
 //     duplicate "Copy URL" action; users have keyboard shortcut + the slug
 //     button for that now, so the icon graduates to the more useful action.
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import type { RefObject } from "react";
 import * as Y from "yjs";
 import { ArrowLeft, Cloud, Copy, List } from "lucide-react";

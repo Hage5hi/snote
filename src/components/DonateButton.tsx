@@ -1,5 +1,5 @@
 import { Heart } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { useLocation } from "react-router";
 
 /**
  * Routes where the floating donate button is intentionally suppressed:

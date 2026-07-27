@@ -66,8 +66,8 @@ describe("CI toolchain contract", () => {
   });
 
   it("pins the patched PostCSS security floor", () => {
-    expect(packageJson.devDependencies.postcss).toBe("8.5.12");
-    expect(packageJson.overrides?.postcss).toBe("8.5.12");
+    expect(packageJson.devDependencies.postcss).toBe("8.5.23");
+    expect(packageJson.overrides?.postcss).toBe("8.5.23");
   });
 
   it("runs explicit app, node, tools, and edge TypeScript gates", () => {

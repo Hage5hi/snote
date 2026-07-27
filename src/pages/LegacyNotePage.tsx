@@ -1,7 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, CopyPlus, Eye, Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router";
 import * as Y from "yjs";
 import { AppShell } from "@/components/app/AppShell";
 import { Preview } from "@/components/note/Preview";
