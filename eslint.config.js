@@ -84,9 +84,16 @@ export default tseslint.config(
       "react-refresh": reactRefresh,
     },
     rules: {
-      ...reactHooks.configs.recommended.rules,
+      // Keep the pre-upgrade lint policy while the plugins/toolchain move to
+      // ESLint 10. New recommended rules are adopted separately from security
+      // dependency updates so this change cannot silently rewrite app policy.
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       "@typescript-eslint/no-unused-vars": "off",
+      "no-useless-assignment": "off",
+      "no-unassigned-vars": "off",
+      "preserve-caught-error": "off",
       "no-restricted-syntax": ["error", ...HARDCODED_STRING_RULES],
     },
   },

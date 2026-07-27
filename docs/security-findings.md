@@ -107,33 +107,38 @@ The otherwise deferred Vite major upgrade is included because
 affects every Vite release through `6.4.2`; `6.4.3` is the first patched line
 compatible with the current plugins, and there is no patched Vite 5 release.
 [GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp)
-affects Vitest versions below `3.2.6`, so Vitest and
-`@vitest/coverage-v8` are pinned together at `3.2.6`.
+affects Vitest versions below `3.2.6`. Vitest and `@vitest/coverage-v8` remain
+exactly aligned and pinned together at `3.2.6`.
 
 These exceptions do not authorize other framework majors. Frozen install,
 dependency audit, lint, Knip, app/Node/tooling/Edge typechecks, unit coverage,
 production build, actionlint, extension E2E, and browser smoke remain release
 gates.
 
-### Open dependency-audit blocker — no exception granted
+### Resolved dependency-audit blocker
 
-`bun audit --audit-level=high` currently reports one high finding:
+The 2026-07-27 toolchain refresh removes the high finding previously reported
+by `bun audit --audit-level=high`:
 [`brace-expansion <=5.0.7` (GHSA-mh99-v99m-4gvg)](https://github.com/advisories/GHSA-mh99-v99m-4gvg).
-It is present only in the development/build dependency graph through ESLint,
-TypeScript-ESLint, `@vitest/coverage-v8`, and
-`vite-plugin-pwa → workbox-build`. `bun audit --production --audit-level=high`
-is clean.
+The finding was limited to the development/build dependency graph through
+ESLint, TypeScript-ESLint, `@vitest/coverage-v8`, and
+`vite-plugin-pwa → workbox-build`.
 
-The only patched release is `5.0.8`, but Bun supports only global overrides.
-Forcing that version into legacy `minimatch` ranges is neither range-compatible
-nor API-compatible. Current compatible ESLint/Vitest upgrades can reduce some
-paths, but Workbox `7.4.1` still retains one vulnerable path and the current
-`vite-plugin-pwa` line has no compatible upstream replacement.
+The only patched `brace-expansion` release is `5.0.8`, so it is not forced into
+legacy `minimatch` ranges. Instead, ESLint 10 removes its legacy consumer.
+Vitest's build-only `test-exclude@8.0.0` override retains the 7.x runtime source
+while moving its dependency graph to patched lines. All remaining compatible
+5.x paths resolve to `brace-expansion@5.0.8`.
 
-This is not accepted, suppressed, or a CI exception. The `quality` audit gate
-must remain red; merge and release remain blocked until a compatible upstream
-toolchain update, a separately reviewed PWA replacement, or a separately
-reviewed fork removes the finding.
+Workbox `7.4.1` still reaches EJS solely through its build-time Rollup plugin.
+EJS declares Jake `^10.8.5`, whose `filelist@1` chain cannot receive the patch;
+`filelist@2.0.2` retains the API Jake 10 uses while moving its only dependency
+to the patched `minimatch` line. Because this graph contains one `filelist`
+instance and the repository's Node floor satisfies its engine requirement, a
+narrowly pinned `filelist@2.0.2` override removes that final build-only path
+without globally replacing `glob`, `minimatch`, or `brace-expansion`. The full
+audit remains mandatory in both CI workflows; no advisory suppression or audit
+exception is granted.
 
 ## Scan triage rule
 

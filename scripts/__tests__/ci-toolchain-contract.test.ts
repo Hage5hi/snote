@@ -18,6 +18,7 @@ const ci = workflows.get(".github/workflows/ci.yml")!;
 const extensionWorkflow = workflows.get(".github/workflows/extension-e2e.yml")!;
 const extensionAudit = readFileSync("scripts/audit-extension.sh", "utf8")
   .replaceAll("\r\n", "\n");
+const bunLock = readFileSync("bun.lock", "utf8");
 const securityFindings = readFileSync("docs/security-findings.md", "utf8");
 const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
   packageManager?: string;
@@ -56,6 +57,20 @@ describe("CI toolchain contract", () => {
     expect(packageJson.devDependencies.vitest).toBe("3.2.6");
     expect(packageJson.devDependencies["@vitest/coverage-v8"]).toBe("3.2.6");
     expect(packageJson.scripts["test:coverage"]).toBe("vitest run --coverage");
+    expect(packageJson.overrides?.["test-exclude"]).toBe("8.0.0");
+    expect(bunLock).toContain('"test-exclude": ["test-exclude@8.0.0"');
+  });
+
+  it("keeps the Workbox-only EJS build chain on the patched FileList line", () => {
+    expect(packageJson.overrides?.filelist).toBe("2.0.2");
+    expect(bunLock).toContain('"filelist": ["filelist@2.0.2"');
+
+    const resolvedBraceExpansionVersions = [
+      ...bunLock.matchAll(
+        /"[^"]*brace-expansion": \["brace-expansion@([^"]+)"/g,
+      ),
+    ].map((match) => match[1]);
+    expect(new Set(resolvedBraceExpansionVersions)).toEqual(new Set(["5.0.8"]));
   });
 
   it("records why Vite 5 cannot receive the required security fix", () => {
