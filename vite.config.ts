@@ -179,7 +179,16 @@ export default defineConfig(({ mode }) => ({
           if (id.includes("/ogl/") || id.includes("node_modules/ogl/")) {
             return "ogl-vendor";
           }
-          if (id.includes("/react-dom/") || id.includes("/react-router") || id.match(/\/react\//)) {
+          // Keep eager runtime packages in exact package chunks. The former
+          // `/react-dom/` substring also matched `@floating-ui/react-dom`,
+          // accidentally placing UI-positioning code in React's budget.
+          if (id.includes("/react-router")) {
+            return "router-vendor";
+          }
+          if (id.includes("/@floating-ui/")) {
+            return "floating-ui-vendor";
+          }
+          if (/(?:^|\/)react-dom\//.test(id) || /(?:^|\/)react\//.test(id)) {
             return "react-vendor";
           }
           if (id.includes("@codemirror") || id.includes("y-codemirror")) {

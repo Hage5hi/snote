@@ -34,6 +34,8 @@ const CHUNK_RULES: Rule[] = [
   // The total-initial-route gate below remains the real protection.
   { prefix: "index-", label: "entry", maxGz: 82_000 },
   { prefix: "react-vendor-", label: "react-vendor", maxGz: 68_000 },
+  { prefix: "router-vendor-", label: "router-vendor", maxGz: 15_000 },
+  { prefix: "floating-ui-vendor-", label: "floating-ui-vendor", maxGz: 10_000 },
   { prefix: "supabase-vendor-", label: "supabase-vendor", maxGz: 58_000 },
   { prefix: "radix-vendor-", label: "radix-vendor", maxGz: 35_000 },
   { prefix: "yjs-vendor-", label: "yjs-vendor", maxGz: 35_000 },
