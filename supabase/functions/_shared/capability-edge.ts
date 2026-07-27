@@ -19,6 +19,7 @@ export const capabilityCorsHeaders = {
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-snote-auth, x-legacy-share",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Expose-Headers": "Retry-After",
 };
 
 type CapabilityRpcResponse = {
@@ -362,27 +363,51 @@ export function rpcStatus(value: unknown): string {
 }
 
 export function capabilityFailure(status: string): Response {
-  if (status === "unauthorized") return capabilityJson({ error: "unauthorized" }, 401);
+  const body = (error: string) => ({ error, code: status });
+  if (status === "unauthorized") return capabilityJson(body("unauthorized"), 401);
   if (status === "identity_conflict") {
-    return capabilityJson({ error: "realtime identity conflict" }, 409);
+    return capabilityJson(body("realtime identity conflict"), 409);
   }
   if (status === "writes_disabled") {
-    return capabilityJson({ error: "temporarily unavailable" }, 503);
+    return capabilityJson(body("temporarily unavailable"), 503);
   }
-  if (status === "read_only") return capabilityJson({ error: "read only" }, 409);
-  if (status === "version_conflict") return capabilityJson({ error: "version conflict" }, 409);
-  if (status === "slug_unavailable") return capabilityJson({ error: "slug unavailable" }, 409);
+  if (status === "read_only") return capabilityJson(body("read only"), 409);
+  if (
+    status === "version_conflict"
+    || status === "append_encryption_conflict"
+    || status === "checkpoint_encryption_conflict"
+    || status === "checkpoint_version_conflict"
+  ) return capabilityJson(body("version conflict"), 409);
+  if (status === "slug_unavailable") return capabilityJson(body("slug unavailable"), 409);
   if (status === "quota_exceeded") {
+    // Storage/update quota transitions the note to read-only quarantine. It is
+    // not an admission window, so raw clients must not treat it as retryable.
     return capabilityJson(
-      { error: "capacity temporarily exceeded" },
+      body("note is read only"),
+      409,
+    );
+  }
+  if (status === "rate_limited") {
+    return capabilityJson(
+      body("capacity temporarily exceeded"),
       429,
       { "Retry-After": "3600" },
     );
   }
   if (status === "invalid" || status === "payload_too_large") {
-    return capabilityJson({ error: "invalid request" }, 400);
+    return capabilityJson(body("invalid request"), 400);
   }
-  return capabilityJson({ error: "temporarily unavailable" }, 503);
+  return capabilityJson(body("temporarily unavailable"), 503);
+}
+
+/**
+ * The admission RPC predates note-size quarantine and also returns
+ * quota_exceeded for a short-lived request window. Normalize only that edge
+ * boundary so clients can retry a rate limit, while a quota_exceeded returned
+ * by append/checkpoint remains a terminal read-only fence.
+ */
+export function capabilityAdmissionFailure(status: string): Response {
+  return capabilityFailure(status === "quota_exceeded" ? "rate_limited" : status);
 }
 
 export function resolveMaterialization(

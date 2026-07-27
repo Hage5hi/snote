@@ -7,6 +7,7 @@ import {
 } from "../_shared/capability.ts";
 import {
   capabilityCorsHeaders,
+  capabilityAdmissionFailure,
   capabilityEnvironment,
   capabilityFailure,
   capabilityJson,
@@ -61,7 +62,7 @@ Deno.serve(async (req) => {
       );
       if (admissionError) return capabilityFailure("unavailable");
       if (rpcStatus(admitted) !== "ok") {
-        return capabilityFailure(rpcStatus(admitted));
+        return capabilityAdmissionFailure(rpcStatus(admitted));
       }
       const { data: created, error: createError } = await environment.client.rpc(
         "capability_note_create",
@@ -140,7 +141,7 @@ Deno.serve(async (req) => {
       );
       if (admissionError) return capabilityFailure("unavailable");
       if (rpcStatus(admitted) !== "ok") {
-        return capabilityFailure(rpcStatus(admitted));
+        return capabilityAdmissionFailure(rpcStatus(admitted));
       }
       const [ownerHash, editHash, viewHash] = await Promise.all([
         hashCapabilityToken(owner, environment.hmacSecret),

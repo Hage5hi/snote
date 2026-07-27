@@ -16,6 +16,7 @@ const capabilityMigrationPaths = [
   "supabase/migrations/20260722000000_capability_backend.sql",
   "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql",
   "supabase/migrations/20260724000000_atomic_capability_cutover.sql",
+  "supabase/migrations/20260727000000_capability_sync_conflict_codes.sql",
 ];
 const allCapabilityMigrations = capabilityMigrationPaths.map(source).join("\n");
 const allCapabilitySources = [
@@ -416,6 +417,52 @@ describe("capability database boundary", () => {
     expect(sql).toContain("quota_exceeded");
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.capability_checkpoint_append\([^;]+ TO service_role/);
   });
+
+  it("defines exact security-definer sync RPC contracts with operation-safe conflicts", () => {
+    const sql = source("supabase/migrations/20260727000000_capability_sync_conflict_codes.sql");
+    const append = sqlFunction(sql, "capability_updates_append");
+    const checkpoint = sqlFunction(sql, "capability_checkpoint_append");
+    expect(append.startsWith([
+      "CREATE OR REPLACE FUNCTION public.capability_updates_append(",
+      "  p_token_hash text,",
+      "  p_updates jsonb,",
+      "  p_expected_encryption_version bigint",
+      ")",
+      "RETURNS jsonb",
+      "LANGUAGE plpgsql",
+      "SECURITY DEFINER",
+      "SET search_path = pg_catalog, pg_temp",
+      "AS $$",
+    ].join("\n"))).toBe(true);
+    expect(checkpoint.startsWith([
+      "CREATE OR REPLACE FUNCTION public.capability_checkpoint_append(",
+      "  p_token_hash text,",
+      "  p_checkpoint jsonb,",
+      "  p_expected_checkpoint_version bigint,",
+      "  p_expected_encryption_version bigint",
+      ")",
+      "RETURNS jsonb",
+      "LANGUAGE plpgsql",
+      "SECURITY DEFINER",
+      "SET search_path = pg_catalog, pg_temp",
+      "AS $$",
+    ].join("\n"))).toBe(true);
+    for (const functionBody of [append, checkpoint]) {
+      expect(functionBody.match(/SECURITY DEFINER/g)).toHaveLength(1);
+      expect(functionBody.match(/SET search_path = pg_catalog, pg_temp/g)).toHaveLength(1);
+    }
+    expect(sql).toContain("append_encryption_conflict");
+    expect(sql).toContain("checkpoint_encryption_conflict");
+    expect(sql).toContain("checkpoint_version_conflict");
+    expect(sql.match(/SET search_path = pg_catalog, pg_temp/g)).toHaveLength(2);
+    expect(sql).not.toContain("RETURN jsonb_build_object('status', 'version_conflict')");
+    expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.capability_updates_append\([^;]+FROM PUBLIC, anon, authenticated/);
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.capability_updates_append\([^;]+TO service_role/);
+    expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.capability_checkpoint_append\([^;]+FROM PUBLIC, anon, authenticated/);
+    expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.capability_checkpoint_append\([^;]+TO service_role/);
+    expect(sql.trimStart()).toMatch(/^--[\s\S]*?BEGIN;/);
+    expect(sql.trimEnd()).toMatch(/COMMIT;$/);
+  });
 });
 
 describe("Edge capability endpoints", () => {
@@ -478,6 +525,17 @@ describe("Edge capability endpoints", () => {
     expect(admission).toBeLessThan(append);
     expect(endpoint).toContain("rpcStatus(admitted)");
     expect(endpoint).not.toContain("admitted !== true");
+    expect(endpoint).toContain("capabilityAdmissionFailure(rpcStatus(admitted))");
+  });
+
+  it("keeps temporary admission limits distinct from a quarantined note quota", () => {
+    const edge = source("supabase/functions/_shared/capability-edge.ts");
+    expect(edge).toContain('status === "quota_exceeded" ? "rate_limited" : status');
+    expect(edge).toContain('if (status === "rate_limited")');
+    for (const name of ["note-session", "note-sync"]) {
+      expect(source(`supabase/functions/${name}/index.ts`))
+        .toContain("capabilityAdmissionFailure(rpcStatus(admitted))");
+    }
   });
 
   it("lets capability share readers page every missing update", () => {
@@ -492,6 +550,10 @@ describe("Edge capability endpoints", () => {
     expect(endpoint).toContain('rpc("capability_checkpoint_append"');
     expect(endpoint).toContain("p_expected_checkpoint_version");
     expect(endpoint.match(/totalBytes \+= decoded\.byteLength/g)).toHaveLength(2);
+    const rejectMixedRequest = endpoint.indexOf("normalizedCheckpoint && normalized.length !== 0");
+    const admission = endpoint.indexOf('"capability_admission_consume"');
+    expect(rejectMixedRequest).toBeGreaterThan(0);
+    expect(rejectMixedRequest).toBeLessThan(admission);
   });
 
   it("keeps service-role legacy readers away from capability-managed rows", () => {

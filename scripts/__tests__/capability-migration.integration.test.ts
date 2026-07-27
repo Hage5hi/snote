@@ -31,36 +31,23 @@ type RuntimeState = {
 const hash = (value: number[]) =>
   createHash("sha256").update(Buffer.from(value)).digest("hex");
 const tokenHash = (character: string) => character.repeat(64);
+const capabilityMigrationPaths = [
+  "supabase/migrations/20260722000000_capability_backend.sql",
+  "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql",
+  "supabase/migrations/20260724000000_atomic_capability_cutover.sql",
+  "supabase/migrations/20260727000000_capability_sync_conflict_codes.sql",
+] as const;
 
-async function rpc<T = RpcResult>(
+async function applyCapabilityMigrations(
   db: PGlite,
-  name: string,
-  values: unknown[],
-  casts: string[] = [],
-): Promise<T> {
-  const placeholders = values
-    .map((_, index) => `$${index + 1}${casts[index] ?? ""}`)
-    .join(",");
-  const response = await db.query<{ result: T }>(
-    `select public.${name}(${placeholders}) as result`,
-    values,
-  );
-  return response.rows[0].result;
-}
-
-async function setRealtimeIdentity(
-  db: PGlite,
-  authUserId: string,
-  noteId: string,
+  paths: readonly string[],
 ) {
-  await db.query(
-    "select set_config('request.jwt.claim.sub', $1, false), "
-      + "set_config('realtime.topic', $2, false)",
-    [authUserId, `note:${noteId}`],
-  );
+  for (const path of paths) {
+    await db.exec(readFileSync(resolve(process.cwd(), path), "utf8"));
+  }
 }
 
-it("executes capability isolation, sync, management, and Realtime RLS in Postgres", async () => {
+async function createCapabilityFixture() {
   const db = new PGlite({ extensions: { pgcrypto } });
   try {
     await db.exec(`
@@ -123,14 +110,68 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
         ('88888888-8888-4888-8888-888888888888', true, now());
       INSERT INTO public.notes(slug, content) VALUES ('legacy-row', 'legacy');
     `);
-    await db.exec(readFileSync(
-      resolve(process.cwd(), "supabase/migrations/20260722000000_capability_backend.sql"),
-      "utf8",
-    ));
-    await db.exec(readFileSync(
-      resolve(process.cwd(), "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql"),
-      "utf8",
-    ));
+    return db;
+  } catch (error) {
+    await db.close();
+    throw error;
+  }
+}
+
+async function rpc<T = RpcResult>(
+  db: PGlite,
+  name: string,
+  values: unknown[],
+  casts: string[] = [],
+): Promise<T> {
+  const placeholders = values
+    .map((_, index) => `$${index + 1}${casts[index] ?? ""}`)
+    .join(",");
+  const response = await db.query<{ result: T }>(
+    `select public.${name}(${placeholders}) as result`,
+    values,
+  );
+  return response.rows[0].result;
+}
+
+async function setRealtimeIdentity(
+  db: PGlite,
+  authUserId: string,
+  noteId: string,
+) {
+  await db.query(
+    "select set_config('request.jwt.claim.sub', $1, false), "
+      + "set_config('realtime.topic', $2, false)",
+    [authUserId, `note:${noteId}`],
+  );
+}
+
+it("applies capability migrations in chronological order through the sync conflict contract", async () => {
+  const db = await createCapabilityFixture();
+  try {
+    await applyCapabilityMigrations(db, capabilityMigrationPaths);
+    expect((await db.query<{
+      append_exists: boolean;
+      checkpoint_exists: boolean;
+    }>(`
+      SELECT
+        to_regprocedure('public.capability_updates_append(text,jsonb,bigint)') IS NOT NULL
+          AS append_exists,
+        to_regprocedure('public.capability_checkpoint_append(text,jsonb,bigint,bigint)') IS NOT NULL
+          AS checkpoint_exists
+    `)).rows[0]).toEqual({ append_exists: true, checkpoint_exists: true });
+  } finally {
+    await db.close();
+  }
+}, 30_000);
+
+it("executes capability isolation, sync, management, and Realtime RLS in Postgres", async () => {
+  const db = await createCapabilityFixture();
+  try {
+    await applyCapabilityMigrations(db, [
+      capabilityMigrationPaths[0],
+      capabilityMigrationPaths[1],
+      capabilityMigrationPaths[3],
+    ]);
 
     expect((await db.query<{ count: number; rls_enabled: boolean }>(`
       SELECT
@@ -180,6 +221,14 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
         .rejects.toMatchObject({ code: "42501" });
       await expect(db.query("SELECT public.capability_runtime_set(true, false)"))
         .rejects.toMatchObject({ code: "42501" });
+      await expect(db.query(
+        "SELECT public.capability_updates_append($1, $2::jsonb, $3::bigint)",
+        [tokenHash("a"), "[]", 0],
+      )).rejects.toMatchObject({ code: "42501" });
+      await expect(db.query(
+        "SELECT public.capability_checkpoint_append($1, $2::jsonb, $3::bigint, $4::bigint)",
+        [tokenHash("a"), "{}", 0, 0],
+      )).rejects.toMatchObject({ code: "42501" });
       await expect(db.query("SELECT * FROM public.note_realtime_memberships"))
         .rejects.toMatchObject({ code: "42501" });
       await expect(db.query("SELECT public.capability_realtime_memberships_prune()"))
@@ -611,12 +660,20 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       [tokenHash("a"), sequence, 20],
     );
     expect(encryptedSession.session?.checkpointPayload).not.toMatch(/[\r\n]/);
+    const updateCountBeforeAppendEncryptionConflict = (await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_updates WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].count;
     expect((await rpc(
       db,
       "capability_updates_append",
-      [tokenHash("b"), [], 0],
+      [tokenHash("b"), [{ updateId: hash([18]), payload: "Eg" }], 0],
       ["", "::jsonb", ""],
-    )).status).toBe("version_conflict");
+    )).status).toBe("append_encryption_conflict");
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_updates WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].count).toBe(updateCountBeforeAppendEncryptionConflict);
     expect(await rpc(
       db,
       "capability_note_manage",
@@ -673,6 +730,24 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
     expect(postTransitionUpdate.status).toBe("ok");
     const compactionSequence = postTransitionUpdate.acknowledgements![0].sequence;
     const compactedBytes = Buffer.from([13, 14]);
+    const checkpointCountBeforeEncryptionConflict = (await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_checkpoints WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].count;
+    expect(await rpc(
+      db,
+      "capability_checkpoint_append",
+      [tokenHash("b"), {
+        checkpointId: hash([14]),
+        payload: "Dg",
+        throughSequence: compactionSequence,
+      }, 4, 3],
+      ["", "::jsonb", "", ""],
+    )).toMatchObject({ status: "checkpoint_encryption_conflict" });
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_checkpoints WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].count).toBe(checkpointCountBeforeEncryptionConflict);
     expect(await rpc(
       db,
       "capability_checkpoint_append",
@@ -683,6 +758,10 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
       }, 4, 4],
       ["", "::jsonb", "", ""],
     )).toMatchObject({ status: "ok", checkpointVersion: 5 });
+    const checkpointCountBeforeVersionConflict = (await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_checkpoints WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].count;
     expect(await rpc(
       db,
       "capability_checkpoint_append",
@@ -692,7 +771,11 @@ it("executes capability isolation, sync, management, and Realtime RLS in Postgre
         throughSequence: compactionSequence,
       }, 4, 4],
       ["", "::jsonb", "", ""],
-    )).toMatchObject({ status: "version_conflict" });
+    )).toMatchObject({ status: "checkpoint_version_conflict" });
+    expect((await db.query<{ count: number }>(
+      "SELECT count(*)::integer AS count FROM public.note_checkpoints WHERE note_id = $1",
+      [createdA.noteId],
+    )).rows[0].count).toBe(checkpointCountBeforeVersionConflict);
     const quotaUpdate = await rpc(
       db,
       "capability_updates_append",

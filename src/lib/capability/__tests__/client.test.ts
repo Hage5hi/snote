@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CapabilityAuthSource } from "../auth";
 import {
+  CapabilityApiError,
   createCapabilityApi,
   type NoteSessionBase,
   type PollingNoteSession,
@@ -180,6 +181,43 @@ describe("capability API client", () => {
     } finally {
       consoleError.mockRestore();
     }
+  });
+
+  it.each([
+    [401, null, "unauthorized", "unauthorized"],
+    [409, null, "version conflict", "version_conflict"],
+    [409, null, "version conflict", "append_encryption_conflict"],
+    [409, null, "version conflict", "checkpoint_encryption_conflict"],
+    [409, null, "version conflict", "checkpoint_version_conflict"],
+    [429, "3600", "capacity temporarily exceeded", "rate_limited"],
+    [409, null, "note is read only", "quota_exceeded"],
+    [503, null, "temporarily unavailable", "writes_disabled"],
+  ])("preserves HTTP status and Retry-After for a %i capability failure", async (
+    status,
+    retryAfter,
+    message,
+    code,
+  ) => {
+    const fetcher = vi.fn<typeof fetch>(async () => Response.json(
+      { error: message, code },
+      {
+        status,
+        headers: retryAfter ? { "Retry-After": retryAfter } : undefined,
+      },
+    ));
+    const api = createCapabilityApi({
+      baseUrl: "https://project.supabase.co",
+      fetcher,
+      authSource: authSource(null),
+    });
+
+    await expect(api.openSession(TOKEN)).rejects.toMatchObject({
+      name: "CapabilityApiError",
+      message,
+      status,
+      retryAfterMs: retryAfter ? Number(retryAfter) * 1_000 : null,
+      code,
+    } satisfies Partial<CapabilityApiError>);
   });
 
   it.each([

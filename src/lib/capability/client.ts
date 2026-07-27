@@ -57,6 +57,27 @@ export type PendingUpdate = Omit<NoteUpdate, "sequence">;
 
 export type CapabilityApi = ReturnType<typeof createCapabilityApi>;
 
+/** A capability API failure with the transport metadata needed for safe retries. */
+export class CapabilityApiError extends Error {
+  readonly status: number;
+  readonly retryAfterMs: number | null;
+  /** Stable, server-declared failure class. Never infer authorization from text. */
+  readonly code: string | null;
+
+  constructor(
+    message: string,
+    status: number,
+    retryAfterMs: number | null,
+    code: string | null = null,
+  ) {
+    super(message);
+    this.name = "CapabilityApiError";
+    this.status = status;
+    this.retryAfterMs = retryAfterMs;
+    this.code = code;
+  }
+}
+
 type ApiOptions = {
   baseUrl?: string;
   fetcher?: typeof fetch;
@@ -166,13 +187,31 @@ function assertSession(value: unknown): NoteSession {
   return session as NoteSession;
 }
 
+function retryAfterMs(response: Response): number | null {
+  const raw = response.headers.get("Retry-After")?.trim();
+  if (!raw) return null;
+  if (/^\d+$/.test(raw)) {
+    const milliseconds = Number(raw) * 1_000;
+    return Number.isSafeInteger(milliseconds) ? milliseconds : null;
+  }
+  const timestamp = Date.parse(raw);
+  if (!Number.isFinite(timestamp)) return null;
+  return Math.max(0, timestamp - Date.now());
+}
+
 async function readJson(response: Response) {
   const data = await response.json().catch(() => null);
   if (!response.ok) {
     const message = data && typeof data === "object" && "error" in data
       ? String((data as { error: unknown }).error)
       : `request failed (${response.status})`;
-    throw new Error(message);
+    const candidateCode = data && typeof data === "object" && "code" in data
+      ? (data as { code: unknown }).code
+      : null;
+    const code = typeof candidateCode === "string" && /^[a-z][a-z_]{0,63}$/.test(candidateCode)
+      ? candidateCode
+      : null;
+    throw new CapabilityApiError(message, response.status, retryAfterMs(response), code);
   }
   return data as Record<string, unknown>;
 }

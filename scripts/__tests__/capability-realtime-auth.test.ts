@@ -143,10 +143,25 @@ describe("managed Realtime Edge wiring", () => {
     expect(edge).toContain('"Vary": "Authorization, X-Snote-Auth, X-Legacy-Share"');
     const quotaFailure = edge.slice(
       edge.indexOf('if (status === "quota_exceeded")'),
+      edge.indexOf('if (status === "rate_limited")'),
+    );
+    const rateLimitedFailure = edge.slice(
+      edge.indexOf('if (status === "rate_limited")'),
       edge.indexOf('if (status === "invalid"'),
     );
     expect(quotaFailure).toContain("capabilityJson(");
-    expect(quotaFailure).toContain('"Retry-After": "3600"');
+    expect(quotaFailure).toMatch(/body\("note is read only"\),\s*409/);
+    expect(quotaFailure).not.toContain("Retry-After");
+    expect(rateLimitedFailure).toContain('"Retry-After": "3600"');
+    expect(rateLimitedFailure).toContain('body("capacity temporarily exceeded")');
+    expect(edge).toContain("code: status");
+    expect(edge).toContain('"Access-Control-Expose-Headers": "Retry-After"');
+    for (const code of [
+      "append_encryption_conflict",
+      "checkpoint_encryption_conflict",
+      "checkpoint_version_conflict",
+    ]) expect(edge).toContain(`status === "${code}"`);
+    expect(edge).toContain('if (status === "rate_limited")');
     expect(quotaFailure).not.toContain("new Response");
     for (const name of ["note-session", "note-sync", "note-manage", "share-view"]) {
       expect(source(`supabase/functions/${name}/index.ts`)).not.toMatch(/console\.(?:log|info|warn|error)/);

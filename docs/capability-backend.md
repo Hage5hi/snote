@@ -123,8 +123,26 @@ validates the complete batch before the first write, inserts it atomically, and
 returns `{ acknowledgements, session }`.
 Calling it again with the same `{ updateId, payload }` is idempotent and returns
 the same sequence. A view capability is rejected. A stale encryption version or
-`read_only_quarantine` note cannot accept writes. Admission failure returns
-`429` and database/admission unavailability fails closed with `503`.
+`read_only_quarantine` note cannot accept writes. Temporary admission failure
+returns `429 { code: "rate_limited" }` with `Retry-After`; database/admission
+unavailability fails closed with `503`.
+
+An append batch and a checkpoint must be separate requests. This prevents a
+checkpoint CAS response from hiding acknowledgements for an append that already
+committed. Sync-specific `409` codes are deliberate:
+
+- `append_encryption_conflict`: preserve the outbox and fence the client; the
+  encryption epoch changed before any append.
+- `checkpoint_encryption_conflict`: fence the client; the checkpoint was made
+  for a stale encryption epoch.
+- `checkpoint_version_conflict`: a different writer won only the checkpoint
+  CAS; reload the `NoteSession` cursor and retry compaction later.
+
+`quota_exceeded` from append/checkpoint means the note was quarantined and is
+terminal for that capability. It maps to `409 { code: "quota_exceeded" }` with
+no `Retry-After`, so raw HTTP clients must stop retrying and preserve their
+outbox. The Edge boundary renames the older admission-RPC `quota_exceeded`
+response to `rate_limited`, which remains the temporary `429` variant.
 
 An owner/editor may also send an optional checkpoint
 `{ checkpointId, payload, throughSequence, expectedCheckpointVersion }`.
@@ -177,17 +195,36 @@ before enabling note creation. The database stores only the resulting
 ## Migration and rollout order
 
 1. Take the required staging backup/PITR checkpoint.
-2. Add `CAPABILITY_HMAC_SECRET` and a Supabase-compatible
-   `SUPABASE_JWT_SECRET` to Edge secrets. Each must contain at least 32 bytes.
+2. Verify Edge has its platform-provided `SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY`, then add a random `CAPABILITY_HMAC_SECRET` of
+   at least 32 bytes. Do **not** add `SUPABASE_JWT_SECRET`: managed Realtime
+   Auth uses the platform identity rather than custom JWT signing.
 3. Apply `20260722000000_capability_backend.sql` on staging.
-4. Run the aggregate payload audit, choose the production limit, and quarantine
+4. Apply `20260723000000_capability_checkpoint_compaction.sql` on the same
+   staging database. `20260727000000_capability_sync_conflict_codes.sql`
+   replaces functions introduced by this migration, so it cannot precede it.
+5. Run the aggregate payload audit, choose the production limit, and quarantine
    exceptions.
-5. Deploy `note-session`, `note-sync`, `note-manage`, and `share-view` with JWT
-   gateway verification disabled; each function performs its own Bearer check.
-6. Prove the gateway-owned address header cannot be spoofed, then exercise
+6. Deploy and verify the compatible `_shared/capability-edge.ts` mapping and all
+   four capability functions (`note-session`, `note-sync`, `note-manage`, and
+   `share-view`) before changing the sync RPC contract. This deploy must expose
+   `rate_limited`, terminal `quota_exceeded`, and the three explicit sync
+   conflict codes before the migration below is applied.
+7. Apply `20260727000000_capability_sync_conflict_codes.sql`; it recreates only
+   the two service-only sync RPCs, preserves their signatures and locking, and
+   does not rewrite historical migrations or data.
+8. Deploy the client that fences encryption/quarantine conflicts and retries
+   only `checkpoint_version_conflict`; verify the durable outbox on an induced
+   `409` before enabling it broadly.
+9. Prove the gateway-owned address header cannot be spoofed, then exercise
    admission concurrency, `429`, and fail-closed `503` paths.
-7. Verify private-channel RLS for owner/edit/view and revoked generations.
-8. Soak with synthetic capability notes before any client or table cutover.
+10. Verify private-channel RLS for owner/edit/view and revoked generations.
+11. Soak with synthetic capability notes before any client or table cutover.
+    `20260724000000_atomic_capability_cutover.sql` is deliberately excluded
+    from this additive rollout; apply it only through the separate 48-hour
+    [cutover runbook](security/atomic-capability-cutover.md). If a staging clone
+    already includes that cutover, preserve forward filename order:
+    `220 → 230 → 240 → 270`.
 
 ## Rollback
 

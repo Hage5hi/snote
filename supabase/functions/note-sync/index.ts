@@ -6,6 +6,7 @@ import {
 } from "../_shared/capability.ts";
 import {
   capabilityCorsHeaders,
+  capabilityAdmissionFailure,
   capabilityEnvironment,
   capabilityFailure,
   capabilityJson,
@@ -95,6 +96,11 @@ Deno.serve(async (req) => {
       };
     }
 
+    // Appends and checkpoint CAS must be distinct requests. If an append
+    // commits before a later checkpoint conflict, the client would not receive
+    // its acknowledgements and could no longer classify that 409 as harmless.
+    if (normalizedCheckpoint && normalized.length !== 0) return capabilityFailure("invalid");
+
     const { data: admitted, error: admissionError } = await environment.client.rpc(
       "capability_admission_consume",
       {
@@ -106,7 +112,7 @@ Deno.serve(async (req) => {
     );
     if (admissionError) return capabilityFailure("unavailable");
     if (rpcStatus(admitted) !== "ok") {
-      return capabilityFailure(rpcStatus(admitted));
+      return capabilityAdmissionFailure(rpcStatus(admitted));
     }
 
     const { data: appended, error: appendError } = await environment.client.rpc(
