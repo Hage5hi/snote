@@ -17,9 +17,13 @@ tương đương. Không được cho alias nào đi vòng qua Worker.
 
 ## Hành vi
 
-- Browser bình thường: pass-through tới `ORIGIN_HOST`.
-- Crawler ở `/s/*`: generic HTML, `no-store`,
-  `noindex,nofollow,noarchive,nosnippet`; không metadata/cache/redirect.
+- Browser ở route private: nhận cùng SPA shell từ `/` (hoặc `/s` cho share
+  compatibility) nhưng URL/path/query private không được chuyển tới origin.
+- Browser ở `/`, `/privacy` và static asset: pass-through tới `ORIGIN_HOST`;
+  query của hai public document bị bỏ khỏi origin request nhưng vẫn còn trong
+  URL trình duyệt để SPA xử lý.
+- Crawler ở `/s/*`: generic HTML, `private, no-store`,
+  `noindex, nofollow, noarchive, nosnippet`; không metadata/cache/redirect.
 - Crawler ở `/<legacy-note-locator>`: generic HTML với cùng giới hạn; không
   đọc cache cũ và không gọi `note-meta`. Điều này chặn plaintext preview còn
   sống sau khi note được mã hóa.
@@ -28,6 +32,10 @@ tương đương. Không được cho alias nào đi vòng qua Worker.
   token, nội dung hoặc IP thô.
 - `invocation_logs = false` phải giữ nguyên vì Cloudflare có thể ghi raw URL
   trước khi mã Worker thực thi.
+
+`wrangler.staging.toml` là fail-closed scaffold: `ORIGIN_HOST` và `SITE_URL`
+chỉ là placeholder. Không deploy staging cho tới khi hostname, origin cô lập và
+release-manifest entry tương ứng đã được review.
 
 ## Triển khai
 
@@ -44,6 +52,9 @@ routes = [
 ORIGIN_HOST = "snote.lovable.app"
 SITE_URL = "https://note.syrin.online"
 
+[observability]
+enabled = false
+
 [observability.logs]
 invocation_logs = false
 
@@ -52,8 +63,12 @@ enabled = false
 ```
 
 Trước deploy phải kiểm kê Workers Logs, Tail Workers, Workers Logpush, traces và
-zone-level HTTP request datasets. Giữ `[observability.traces] enabled = false`;
-không tiếp tục nếu pipeline nào còn giữ raw note/share path.
+zone-level HTTP request datasets. Giữ toàn bộ Worker observability tắt trong
+giai đoạn capability legacy; không tiếp tục nếu pipeline nào còn giữ raw
+note/share path.
+
+Worker trả `410 no-store` cho `/~flock.js` và `204 no-store` cho toàn bộ prefix
+`/~api/analytics` trước khi request có thể tới Lovable origin.
 
 ## Thứ tự rollout
 
@@ -78,8 +93,9 @@ curl -A "Mozilla/5.0" https://note.syrin.online/private-note -I
 ```
 
 Ba request crawler phải không chứa locator/token trong body hoặc headers, phải
-có `Cache-Control: no-store` và `X-Robots-Tag:
-noindex,nofollow,noarchive,nosnippet`. Request browser vẫn pass-through.
+có `Cache-Control: private, no-store` và `X-Robots-Tag:
+noindex, nofollow, noarchive, nosnippet`. Request browser private nhận SPA shell
+đã containment, không chuyển raw private path tới origin.
 
 ## Rollback
 

@@ -74,26 +74,7 @@
 
   <body style="margin:0">
     <!-- Apply saved theme BEFORE React mounts to prevent white flash on light theme. -->
-    <script>
-      (function () {
-        try {
-          var t = localStorage.getItem("theme");
-          var sysDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          var dark = t === "dark" || ((t === "system" || !t) && sysDark);
-          var root = document.documentElement;
-          if (dark) {
-            root.classList.add("dark");
-            root.style.background = "#0f0f12";
-            document.body.style.background = "#0f0f12";
-          } else {
-            root.classList.remove("dark");
-            root.style.background = "#ffffff";
-            document.body.style.background = "#ffffff";
-            root.style.colorScheme = "light";
-          }
-        } catch (e) {}
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
     <div id="root">
       <!-- Initial loader: visible before React hydrates so the screen isn't blank.
            Colors track the theme set by the script above (.dark on <html>) so the

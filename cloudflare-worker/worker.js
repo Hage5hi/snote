@@ -25,7 +25,52 @@ const CRAWLER_UA = /(facebookexternalhit|Facebot|meta-externalagent|meta-externa
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const RAW_NOTE_RE = /^([a-zA-Z0-9_-]{1,64})\.md$/i;
-const SHARE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
+const SHARE_ROBOTS = "noindex, nofollow, noarchive, nosnippet";
+const SECURITY_CSP =
+  "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; " +
+  "frame-ancestors 'self' chrome-extension://*; script-src 'self' https://challenges.cloudflare.com; " +
+  "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://flagcdn.com " +
+  "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev; font-src 'self' data:; " +
+  "connect-src 'self' https://onfzjmfjldsbthchssfr.supabase.co " +
+  "wss://onfzjmfjldsbthchssfr.supabase.co https://challenges.cloudflare.com; " +
+  "frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; " +
+  "manifest-src 'self'; upgrade-insecure-requests;";
+const PERMISSIONS_POLICY =
+  "camera=(), geolocation=(), microphone=(), payment=()";
+const PRIVATE_ROUTE_KINDS = new Set(["share", "note", "private"]);
+const ROOT_RUNTIME_ASSET_PATHS = new Set([
+  "/favicon.ico",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-maskable.png",
+  "/index.html",
+  "/llms.txt",
+  "/logo.webp",
+  "/manifest.webmanifest",
+  "/offline.html",
+  "/offline-retry.js",
+  "/placeholder.svg",
+  "/registerSW.js",
+  "/robots.txt",
+  "/sitemap.xml",
+  "/sw.js",
+  "/sw-kill.js",
+  "/syrin-note-sidepanel.zip",
+  "/syrin-note-sidepanel.zip.manifest.json",
+  "/theme-init.js",
+  "/version.json",
+]);
+const PRIVATE_RESPONSE_HEADERS = [
+  "content-security-policy-report-only",
+  "etag",
+  "last-modified",
+  "nel",
+  "report-to",
+  "reporting-endpoints",
+  "server-timing",
+  "x-lovable-analytics",
+  "x-lovable-trace",
+];
 
 // Rate limit (in-memory per-isolate). Token bucket đơn giản.
 // Ghi chú: Mỗi colo/isolate giữ state riêng, không 100% chính xác toàn cầu,
@@ -129,11 +174,26 @@ export default {
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const ua = request.headers.get("user-agent") ?? "";
     const isCrawler = CRAWLER_UA.test(ua);
+    const normalizedPath = normalizeContainmentPath(url.pathname);
+    const policyPath = resolveContainmentDotSegments(normalizedPath);
+    const lowerPath = policyPath.toLowerCase();
+
+    // Lovable/Flock telemetry must be denied before asset classification or
+    // origin passthrough. The collection prefix is blocked as a family so a
+    // versioned sub-path cannot bypass containment.
+    if (lowerPath === "/~flock.js") {
+      return analyticsDeniedResponse(410);
+    }
+    if (
+      lowerPath === "/~api/analytics"
+      || lowerPath.startsWith("/~api/analytics/")
+    ) {
+      return analyticsDeniedResponse(204);
+    }
 
     if (url.pathname === "/robots.txt") {
-      if (url.hostname === "www.syrin.online") {
-        url.hostname = "syrin.online";
-        return Response.redirect(url.toString(), 301);
+      if (!isCanonicalHost(url, env)) {
+        return canonicalRedirect(url, env);
       }
       const body = renderRobotsTxt(env);
       const etag = etagOf(body);
@@ -142,7 +202,7 @@ export default {
           status: 304,
           headers: {
             etag,
-            "cache-control": "public, max-age=300, s-maxage=300, must-revalidate",
+            "cache-control": "no-cache, must-revalidate",
             vary: "User-Agent",
           },
         });
@@ -151,7 +211,7 @@ export default {
         status: 200,
         headers: {
           "content-type": "text/plain; charset=utf-8",
-          "cache-control": "public, max-age=300, s-maxage=300, must-revalidate",
+          "cache-control": "no-cache, must-revalidate",
           etag,
           vary: "User-Agent",
         },
@@ -161,9 +221,8 @@ export default {
     // Classify capability-bearing share paths before asset passthrough or host
     // redirects. A token may legitimately look like a filename or be followed
     // by nested path data, and neither case may reach the origin.
-    const normalizedPath = normalizePath(url.pathname);
     const route = parseRoute(url.pathname);
-    if (isCrawler && route?.kind === "share") {
+    if (isCrawler && route.kind === "share") {
       logEvent(env, "info", "prerender", {
         kind: "share", status: 200,
       });
@@ -172,31 +231,35 @@ export default {
     // A legacy note slug is still an edit credential until the capability
     // cutover. Never read a content-bearing cache or metadata endpoint for a
     // crawler: a cached plaintext preview could survive a later lock/revoke.
-    if (isCrawler && route?.kind === "note") {
+    if (isCrawler && route.kind === "note") {
       logEvent(env, "info", "prerender", {
         kind: "note", status: 200,
       });
       return renderGenericNoteHtml();
     }
+    if (isCrawler && route.kind === "private") {
+      logEvent(env, "info", "prerender", {
+        kind: "private", status: 200,
+      });
+      return renderGenericPrivateHtml(
+        "Private route - Syrin Notes",
+        "Open a private Syrin Notes route in your browser.",
+      );
+    }
 
-    if (!isCrawler || isAssetPath(url.pathname)) {
+    if (
+      route.kind === "immutable-asset"
+      || route.kind === "runtime-asset"
+      || route.kind === "public"
+      || !isCrawler
+    ) {
       // Legacy note locators and share paths are credentials until cutover.
       // Passing them through avoids copying the raw path into Location and
       // another round of proxy/browser logs. Public routes may still redirect.
-      if (
-        url.hostname === "www.syrin.online"
-        && route?.kind !== "share"
-        && route?.kind !== "note"
-      ) {
-        url.hostname = "syrin.online";
-        return Response.redirect(url.toString(), 301);
+      if (!PRIVATE_ROUTE_KINDS.has(route.kind) && !isCanonicalHost(url, env)) {
+        return canonicalRedirect(url, env);
       }
-      return passThrough(
-        request,
-        env,
-        route?.kind === "share" || route?.kind === "note",
-        route?.kind === "share" || route?.kind === "note" ? route.kind : null,
-      );
+      return passThrough(request, env, route.kind);
     }
 
     // Rate limit chỉ áp dụng cho nhánh crawler (đã rẽ vào prerender).
@@ -220,9 +283,8 @@ export default {
 
     // Canonicalize only after every credential-bearing route has been
     // contained. A redirect would echo that credential in Location.
-    if (url.hostname === "www.syrin.online") {
-      url.hostname = "syrin.online";
-      return Response.redirect(url.toString(), 301);
+    if (!isCanonicalHost(url, env)) {
+      return canonicalRedirect(url, env);
     }
 
     // Chuẩn hoá pathname (strip trailing slash, lowercase host đã xong)
@@ -232,15 +294,19 @@ export default {
       return Response.redirect(redir.toString(), 301);
     }
 
-    if (!route) return passThrough(request, env);
-
     // Edge cache theo full URL
     const cache = caches.default;
     const cacheKey = new Request(url.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) {
       logEvent(env, "info", "cache_hit", { kind: route.kind, group: rl.group });
-      return cached;
+      const cachedHeaders = new Headers(cached.headers);
+      applyHtmlSecurityHeaders(cachedHeaders);
+      return new Response(cached.body, {
+        status: cached.status,
+        statusText: cached.statusText,
+        headers: cachedHeaders,
+      });
     }
 
     const t0 = Date.now();
@@ -259,29 +325,33 @@ export default {
 
       // Conditional GET: trả 304 nếu client/scraper đã có bản cũ còn hợp lệ
       if (status === 200 && matchesEtag(request, etag)) {
+        const headers = new Headers({
+          etag,
+          "cache-control": cacheControl,
+          "x-prerendered": "1",
+          "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
+          vary: "User-Agent",
+        });
+        applyHtmlSecurityHeaders(headers);
         return new Response(null, {
           status: 304,
-          headers: {
-            etag,
-            "cache-control": cacheControl,
-            "x-prerendered": "1",
-            "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
-            vary: "User-Agent",
-          },
+          headers,
         });
       }
 
+      const responseHeaders = new Headers({
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": cacheControl,
+        etag,
+        "x-prerendered": "1",
+        "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
+        "x-ratelimit-remaining": String(rl.remaining),
+        vary: "User-Agent",
+      });
+      applyHtmlSecurityHeaders(responseHeaders);
       const response = new Response(html, {
         status,
-        headers: {
-          "content-type": "text/html; charset=utf-8",
-          "cache-control": cacheControl,
-          etag,
-          "x-prerendered": "1",
-          "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
-          "x-ratelimit-remaining": String(rl.remaining),
-          vary: "User-Agent",
-        },
+        headers: responseHeaders,
       });
 
       logEvent(env, "info", "prerender", {
@@ -301,13 +371,21 @@ export default {
         errorName: err instanceof Error ? err.name : "unknown",
         ms: Date.now() - t0,
       });
-      return passThrough(request, env);
+      return passThrough(request, env, route.kind);
     }
   },
 };
 
-function isAssetPath(p) {
-  return /\.(css|js|mjs|json|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|map|txt|xml|pdf)$/i.test(p);
+function isImmutableAssetPath(pathname) {
+  return /^\/assets\/(?:.+\/)?[^/]+-[a-zA-Z0-9_-]{8,}\.(css|js|mjs|json|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|map)$/i.test(
+    pathname,
+  );
+}
+
+function isRuntimeAssetPath(pathname) {
+  if (ROOT_RUNTIME_ASSET_PATHS.has(pathname)) return true;
+  if (/^\/workbox-[a-zA-Z0-9_-]{8,}\.js$/i.test(pathname)) return true;
+  return /^\/assets\/.+\.(css|js|mjs|json|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|map)$/i.test(pathname);
 }
 
 function normalizePath(p) {
@@ -331,7 +409,8 @@ function parseRoute(pathname) {
   if (pathname === "/" || pathname === "") return { kind: "home" };
   // `/privacy` is an explicit public SPA route, not a legacy note locator.
   // Keep it crawlable and outside the no-store/noindex credential boundary.
-  if (pathname.toLowerCase() === "/privacy") return null;
+  if (pathname.toLowerCase() === "/privacy") return { kind: "public" };
+  if (isImmutableAssetPath(pathname)) return { kind: "immutable-asset" };
   const parts = pathname.replace(/^\/+|\/+$/g, "").split("/");
   if (parts.length === 1) {
     let slug = parts[0];
@@ -340,7 +419,11 @@ function parseRoute(pathname) {
     const rawNote = slug.match(RAW_NOTE_RE);
     if (rawNote) return { kind: "note", slug: rawNote[1] };
   }
-  return null;
+  if (isRuntimeAssetPath(pathname)) return { kind: "runtime-asset" };
+  // The app is an SPA: any non-public, non-asset path can resolve to HTML.
+  // Defaulting to private prevents a newly added route from silently becoming
+  // cacheable or indexable before its security classification is reviewed.
+  return { kind: "private" };
 }
 
 function normalizeContainmentPath(pathname) {
@@ -406,37 +489,117 @@ async function fetchNoteMeta(route) {
 async function passThrough(
   request,
   env,
-  privateRoute = false,
-  privateRouteKind = null,
+  routeKind = "public",
 ) {
   const url = new URL(request.url);
+  const privateRoute = PRIVATE_ROUTE_KINDS.has(routeKind);
   url.hostname = env.ORIGIN_HOST;
-  if (privateRouteKind === "share") {
+  if (routeKind === "share") {
     // The SPA migrates the legacy token into the URL fragment before routing.
     // Fragments never reach this worker, so the origin only needs the generic
     // compatibility shell and must not receive the raw credential path/query.
     url.pathname = "/s";
     url.search = "";
-  } else if (privateRouteKind === "note") {
-    // A legacy slug is still a credential. The root document is the same SPA
-    // shell, while the outer browser URL remains unchanged for BrowserRouter.
+  } else if (privateRoute) {
+    // A legacy slug or private SPA path may carry authority. The root document
+    // is the same SPA shell, while the outer browser URL remains unchanged for
+    // BrowserRouter and no raw private path reaches origin logs.
     url.pathname = "/";
+    url.search = "";
+  } else if (routeKind === "home" || routeKind === "public") {
+    // Public document queries are needed by the SPA in the browser, not by the
+    // origin that serves the same shell. Resolve encoded traversal as well so
+    // a private raw prefix cannot enter provider request logs.
+    url.pathname = resolveContainmentDotSegments(
+      normalizeContainmentPath(url.pathname),
+    );
+    url.search = "";
+  } else if (
+    routeKind === "immutable-asset"
+    || routeKind === "runtime-asset"
+  ) {
+    // Only the normalized allowlisted asset path is sent upstream. Query
+    // strings are never needed for content-addressed or runtime artifacts and
+    // may contain capabilities that must not enter provider request logs.
+    url.pathname = resolveContainmentDotSegments(
+      normalizeContainmentPath(url.pathname),
+    );
     url.search = "";
   }
   const response = await fetch(new Request(url, request));
-  if (!privateRoute) return response;
   const headers = new Headers(response.headers);
-  headers.set("cache-control", "no-store");
-  headers.set("cdn-cache-control", "no-store");
-  headers.set("x-robots-tag", SHARE_ROBOTS);
-  headers.set("referrer-policy", "no-referrer");
-  headers.delete("etag");
-  headers.delete("last-modified");
+  const isHtml =
+    privateRoute
+    || (headers.get("content-type") || "").toLowerCase().includes("text/html");
+
+  if (routeKind === "immutable-asset") {
+    headers.set("cache-control", "public, max-age=31536000, immutable");
+  } else if (routeKind === "runtime-asset") {
+    headers.set("cache-control", "no-cache, no-store, must-revalidate");
+    headers.set("cdn-cache-control", "no-store");
+  }
+  if (isHtml) applyHtmlSecurityHeaders(headers);
+  if (privateRoute) applyPrivateResponseHeaders(headers);
+
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
     headers,
   });
+}
+
+function applyHtmlSecurityHeaders(headers) {
+  headers.set("content-security-policy", SECURITY_CSP);
+  headers.set("permissions-policy", PERMISSIONS_POLICY);
+  // The extension/embed contract is expressed by CSP frame-ancestors.
+  headers.delete("x-frame-options");
+}
+
+function applyPrivateResponseHeaders(headers) {
+  headers.set("cache-control", "private, no-store");
+  headers.set("cdn-cache-control", "no-store");
+  headers.set("cloudflare-cdn-cache-control", "no-store");
+  headers.set("pragma", "no-cache");
+  headers.set("expires", "0");
+  headers.set("x-robots-tag", SHARE_ROBOTS);
+  headers.set("referrer-policy", "no-referrer");
+  for (const name of PRIVATE_RESPONSE_HEADERS) headers.delete(name);
+}
+
+function analyticsDeniedResponse(status) {
+  return new Response(status === 204 ? null : "Gone", {
+    status,
+    headers: {
+      "cache-control": "no-store",
+      "cdn-cache-control": "no-store",
+      "cloudflare-cdn-cache-control": "no-store",
+      pragma: "no-cache",
+      expires: "0",
+      "x-robots-tag": SHARE_ROBOTS,
+      "referrer-policy": "no-referrer",
+    },
+  });
+}
+
+function isCanonicalHost(url, env) {
+  const siteUrl = new URL(env.SITE_URL || "https://note.syrin.online");
+  return url.hostname.toLowerCase() === siteUrl.hostname.toLowerCase();
+}
+
+function canonicalRedirect(url, env) {
+  const siteUrl = new URL(env.SITE_URL || "https://note.syrin.online");
+  const target = new URL(url);
+  target.protocol = siteUrl.protocol;
+  target.hostname = siteUrl.hostname;
+  target.port = siteUrl.port;
+  // Only explicitly public routes reach this function. Emit the same resolved
+  // path used for classification so encoded traversal cannot reflect a private
+  // raw prefix into Location, browser history, or downstream proxy logs.
+  target.pathname = resolveContainmentDotSegments(
+    normalizeContainmentPath(url.pathname),
+  );
+  target.search = "";
+  return Response.redirect(target.toString(), 301);
 }
 
 function escapeHtml(s) {
@@ -549,45 +712,26 @@ function renderGenericPrivateHtml(title, description) {
 </body>
 </html>`;
 
+  const headers = new Headers({
+    "content-type": "text/html; charset=utf-8",
+    vary: "User-Agent",
+  });
+  applyHtmlSecurityHeaders(headers);
+  applyPrivateResponseHeaders(headers);
+
   return new Response(html, {
     status: 200,
-    headers: {
-      "content-type": "text/html; charset=utf-8",
-      "cache-control": "no-store",
-      "cdn-cache-control": "no-store",
-      "x-robots-tag": SHARE_ROBOTS,
-      "referrer-policy": "no-referrer",
-      vary: "User-Agent",
-    },
+    headers,
   });
 }
 
 function renderRobotsTxt(env) {
   const siteUrl = (env.SITE_URL || "https://note.syrin.online").replace(/\/+$/, "");
-  return `User-agent: facebookexternalhit
-Allow: /
-
-User-agent: Facebot
-Allow: /
-
-User-agent: meta-externalagent
-Allow: /
-
-User-agent: Googlebot
-Allow: /
-Disallow: /note
-
-User-agent: Bingbot
-Allow: /
-Disallow: /note
-
-User-agent: Twitterbot
-Allow: /
-Disallow: /note
-
-User-agent: *
-Allow: /
-Disallow: /note
+  return `User-agent: *
+Allow: /$
+Allow: /privacy$
+Allow: /assets/
+Disallow: /
 
 Sitemap: ${siteUrl}/sitemap.xml
 `;

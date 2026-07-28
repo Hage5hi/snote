@@ -1,24 +1,18 @@
 # Cloudflare Pages / Netlify-style headers config.
 #
-# SOURCE OF TRUTH FOR PROD: vercel.json. This file is only honoured by
-# Cloudflare Pages / Netlify — the production host is Vercel + Cloudflare,
-# which ignores _headers. Keep both in sync (esp. the CSP frame-ancestors
-# entry that lets the Chrome extension embed the app in its side panel).
+# SOURCE OF TRUTH FOR PROD: cloudflare-worker/worker.js. This file and
+# vercel.json are defense-in-depth fallbacks for hosts that honor them.
 #
-# Lighthouse Speed report: "Use efficient cache lifetimes" (~754 KiB savings).
-# Vite's hashed asset filenames (e.g. index-BHPmQ4m1.js) are content-addressed
-# and never overwritten, so they're safe to mark immutable for a year.
-# index.html itself must NOT be cached, otherwise users would never see new
-# deploys until forcing a refresh. The service worker, its loader, the web
-# manifest, and the version.json heartbeat must also stay no-cache so update
-# detection works on every reload.
+# This fallback format cannot safely express the Worker's fingerprint regex,
+# so it deliberately does not apply an immutable blanket to /assets/*. The
+# Worker alone grants immutable caching to verified content-addressed names.
+# index.html, the service worker, its loader, the web manifest, and the
+# version.json heartbeat stay no-cache so update detection works on reload.
 
 
 /*
-  Content-Security-Policy: frame-ancestors 'self' chrome-extension://*
-
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
+  Content-Security-Policy: default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'self' chrome-extension://*; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://flagcdn.com https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev; font-src 'self' data:; connect-src 'self' https://onfzjmfjldsbthchssfr.supabase.co wss://onfzjmfjldsbthchssfr.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; manifest-src 'self'; upgrade-insecure-requests;
+  Permissions-Policy: camera=(), geolocation=(), microphone=(), payment=()
 
 /
   Cache-Control: no-cache, must-revalidate
@@ -27,12 +21,42 @@
   Cache-Control: no-cache, must-revalidate
 
 /s
-  Cache-Control: no-store
+  Cache-Control: private, no-store
+  CDN-Cache-Control: no-store
+  Pragma: no-cache
+  Expires: 0
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
 
 /s/*
-  Cache-Control: no-store
+  Cache-Control: private, no-store
+  CDN-Cache-Control: no-store
+  Pragma: no-cache
+  Expires: 0
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+
+/unlock*
+  Cache-Control: private, no-store
+  CDN-Cache-Control: no-store
+  Pragma: no-cache
+  Expires: 0
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+
+/embed/*
+  Cache-Control: private, no-store
+  CDN-Cache-Control: no-store
+  Pragma: no-cache
+  Expires: 0
+  Referrer-Policy: no-referrer
+  X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+
+/compat/*
+  Cache-Control: private, no-store
+  CDN-Cache-Control: no-store
+  Pragma: no-cache
+  Expires: 0
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
 

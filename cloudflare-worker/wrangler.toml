@@ -15,8 +15,7 @@ SUPABASE_PROJECT = "onfzjmfjldsbthchssfr"
 SITE_URL = "https://note.syrin.online"
 
 [observability]
-enabled = true
-head_sampling_rate = 1
+enabled = false
 
 [observability.logs]
 # Invocation messages contain the request URL. Share capabilities live in the

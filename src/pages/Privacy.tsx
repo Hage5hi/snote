@@ -4,7 +4,7 @@ export default function Privacy() {
     <main className="mx-auto max-w-2xl px-6 py-12 text-foreground">
       <h1 className="text-2xl font-semibold tracking-tight">Privacy Policy</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Last updated: July 19, 2026
+        Last updated: July 28, 2026
       </p>
 
       <section className="mt-8 space-y-3">
@@ -31,9 +31,25 @@ export default function Privacy() {
           sent so the service can store and synchronize the note.
         </p>
         <ul className="list-disc space-y-1 pl-6">
-          <li>No advertising SDKs, tracking pixels, or third-party analytics.</li>
+          <li>
+            Lovable Cloud provides the managed database, authentication, Edge
+            Functions, backups, hosting, and platform analytics used by the
+            service.
+          </li>
+          <li>
+            Cloudflare provides the public security, cache, and response-header
+            boundary for the service's public domains.
+          </li>
+          <li>
+            The service may use short-lived anonymous authentication sessions
+            when that managed-auth mode is enabled. A capability, not an
+            account identity, remains the authority for a note.
+          </li>
           <li>The extension does not read page content or browser history.</li>
-          <li>The app uses browser language preferences and does not use IP geolocation.</li>
+          <li>
+            The app uses browser language preferences and does not use IP geolocation.
+            It does not call an IP geolocation service.
+          </li>
         </ul>
       </section>
 
@@ -77,12 +93,20 @@ export default function Privacy() {
       <section className="mt-8 space-y-3">
         <h2 className="text-lg font-medium">Network processing and logs</h2>
         <p>
-          Hosting, CDN, and backend providers process standard connection metadata
-          such as an IP address, user agent, request time, and response status to
-          deliver and protect the service. Operational logs are limited to what
-          is needed for reliability, abuse prevention, and security; the app is
-          designed not to place note content, raw note locators, share tokens, or
-          raw IP addresses in application logs.
+          Lovable Cloud and Cloudflare process standard connection metadata such
+          as an IP address, user agent, request time, response status, and the
+          requested path to host, deliver, measure, and protect the service.
+          Provider platform analytics may aggregate path, country, and device
+          categories. The application does not intentionally add raw note
+          content, ciphertext payloads, note capabilities, share tokens, or raw
+          IP addresses to product analytics or application logs.
+        </p>
+        <p>
+          On domains protected by the Cloudflare boundary, the application
+          analytics script and collection endpoint are blocked. Cloudflare
+          caching is limited to explicit public pages and immutable assets;
+          private note, share, unlock, embed, error, and compatibility pages are
+          marked private, uncacheable, and non-indexable.
         </p>
         <p>
           Admin abuse protection stores keyed admin abuse-prevention hashes derived
@@ -93,10 +117,11 @@ export default function Privacy() {
           are removed by that cleanup as well.
         </p>
         <p>
-          Provider-level logs, backups, and service data follow the applicable
-          provider retention settings and legal obligations. Notes remain in the
-          backend until deleted or removed under the service's maintenance and
-          recovery processes. A revoked share link should no longer grant access.
+          Provider-level logs, analytics, backups, and service data follow the
+          applicable Lovable Cloud and Cloudflare retention settings and legal
+          obligations. Notes remain in the backend until deleted or removed
+          under the service's maintenance and recovery processes. A revoked
+          share link should no longer grant access.
         </p>
       </section>
 

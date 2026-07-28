@@ -37,4 +37,15 @@ describe("application log privacy", () => {
     expect(notFound).not.toMatch(/console\.(?:log|warn|error)/);
     expect(notFound).not.toContain("useLocation");
   });
+
+  it("never passes raw edge URLs, paths, queries, or client addresses to logs", () => {
+    const worker = source("cloudflare-worker/worker.js");
+
+    expect(worker).not.toMatch(
+      /logEvent\([^)]*(?:request\.url|url\.pathname|url\.search|cf-connecting-ip)/,
+    );
+    expect(worker).not.toMatch(
+      /console\.(?:log|warn|error)\([^)]*(?:request\.url|url\.pathname|url\.search|cf-connecting-ip)/,
+    );
+  });
 });

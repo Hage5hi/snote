@@ -1,0 +1,22 @@
+name = "syrin-prerender-staging"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+# Fail-closed scaffold only. Staging intentionally has no production
+# custom-domain route and the placeholder vars below are not deployable. Add a
+# dedicated staging route only after its DNS name and isolated origin are
+# recorded in the release manifest.
+
+[vars]
+ORIGIN_HOST = "staging-origin.invalid"
+SITE_URL = "https://syrin-prerender-staging.workers.dev"
+
+[observability]
+enabled = false
+
+[observability.logs]
+invocation_logs = false
+
+[observability.traces]
+enabled = false
