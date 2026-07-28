@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       build_id:
-        description: Sanitized provider build identifier
+        description: Sanitized provider build identifier (diagnostic only; not source attestation)
         required: true
         type: string
       target_url:

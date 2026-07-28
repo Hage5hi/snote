@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from "vite";
+import { execFileSync } from "node:child_process";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
@@ -19,6 +20,49 @@ import { VitePWA } from "vite-plugin-pwa";
 // and surface the Update toast — even when the SW machinery hasn't fired
 // onNeedRefresh yet (or the user has SW disabled entirely).
 const BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const COMMIT_SHA = /^[0-9a-f]{40}$/;
+const REQUIRE_RELEASE_SHA = process.env.SNOTE_REQUIRE_RELEASE_SHA;
+const RELEASE_SHA = process.env.SNOTE_RELEASE_SHA?.trim();
+
+// A normal CI/local build is deliberately unverified. Only the dedicated
+// release build may stamp a source identity, and any partial or malformed
+// release configuration must stop the build rather than produce a falsely
+// attested artifact.
+if (REQUIRE_RELEASE_SHA !== undefined && REQUIRE_RELEASE_SHA !== "1") {
+  throw new Error('SNOTE_REQUIRE_RELEASE_SHA must be omitted or exactly "1".');
+}
+if (RELEASE_SHA !== undefined && REQUIRE_RELEASE_SHA !== "1") {
+  throw new Error("SNOTE_RELEASE_SHA is only accepted when SNOTE_REQUIRE_RELEASE_SHA=1.");
+}
+if (REQUIRE_RELEASE_SHA === "1" && !RELEASE_SHA) {
+  throw new Error(
+    "SNOTE_REQUIRE_RELEASE_SHA=1 requires SNOTE_RELEASE_SHA to be an exact 40-character lowercase commit SHA.",
+  );
+}
+if (RELEASE_SHA && !COMMIT_SHA.test(RELEASE_SHA)) {
+  throw new Error("SNOTE_RELEASE_SHA must be an exact 40-character lowercase commit SHA.");
+}
+let DEPLOYED_SHA: string | null = null;
+if (REQUIRE_RELEASE_SHA === "1") {
+  let checkedOutSha: string;
+  try {
+    checkedOutSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    throw new Error(
+      "SNOTE_REQUIRE_RELEASE_SHA=1 requires a checked-out Git commit for source attestation.",
+    );
+  }
+  if (!COMMIT_SHA.test(checkedOutSha)) {
+    throw new Error("git rev-parse HEAD did not return an exact lowercase commit SHA.");
+  }
+  if (checkedOutSha !== RELEASE_SHA) {
+    throw new Error("SNOTE_RELEASE_SHA does not match checked-out HEAD.");
+  }
+  DEPLOYED_SHA = checkedOutSha;
+}
 
 function emitVersionJson(): Plugin {
   return {
@@ -28,7 +72,11 @@ function emitVersionJson(): Plugin {
       this.emitFile({
         type: "asset",
         fileName: "version.json",
-        source: JSON.stringify({ buildId: BUILD_ID, builtAt: new Date().toISOString() }),
+        source: JSON.stringify({
+          buildId: BUILD_ID,
+          builtAt: new Date().toISOString(),
+          deployedSha: DEPLOYED_SHA,
+        }),
       });
     },
   };

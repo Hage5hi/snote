@@ -4,9 +4,17 @@ import {
   installPwaUpdateMock,
   waitForPwaUpdaterReady,
 } from "./helpers/pwa-update-mock";
-import { installProductionReadonlyGuard } from "./helpers/production-readonly";
+import {
+  createProductionReadonlyPolicy,
+  installProductionReadonlyGuard,
+} from "./helpers/production-readonly";
 
-test.use({ serviceWorkers: "block" });
+test.use({
+  serviceWorkers: "block",
+  trace: "off",
+  screenshot: "off",
+  video: "off",
+});
 
 test.describe("production PWA smoke (read-only)", () => {
   test.skip(
@@ -25,10 +33,14 @@ test.describe("production PWA smoke (read-only)", () => {
       /^[0-9a-f]{40}$/,
     );
 
-    const guard = await installProductionReadonlyGuard(page);
+    const baseUrl = process.env.PLAYWRIGHT_BASE_URL;
+    if (!baseUrl) {
+      throw new Error("PLAYWRIGHT_BASE_URL is required for the production smoke");
+    }
+    const policy = createProductionReadonlyPolicy(baseUrl);
+    const guard = await installProductionReadonlyGuard(page, policy);
     expect(context.serviceWorkers()).toEqual([]);
 
-    const baseUrl = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080";
     const versionResponse = await page.request.get(
       new URL("/version.json", baseUrl).toString(),
       {
@@ -45,8 +57,12 @@ test.describe("production PWA smoke (read-only)", () => {
     expect(versionResponse.headers()["cache-control"] ?? "").toMatch(
       /no-store|no-cache/i,
     );
-    const version = (await versionResponse.json()) as { buildId?: unknown };
+    const version = (await versionResponse.json()) as {
+      buildId?: unknown;
+      deployedSha?: unknown;
+    };
     expect(version.buildId).toBe(expectedBuildId);
+    expect(version.deployedSha).toBe(expectedDeployedSha);
 
     await installPwaUpdateMock(page, {
       fromBuildId: `${expectedBuildId}-previous`,

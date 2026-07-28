@@ -4,6 +4,23 @@ import { defineConfig, devices } from "@playwright/test";
 // Keep this scoped to /e2e so it never picks up Vitest unit tests under /src.
 
 const chromiumExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
+const isPostDeploySmoke = process.env.POST_DEPLOY_SMOKE === "1";
+const canonicalProductionUrl = "https://note.syrin.online";
+const configuredBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
+
+if (
+  isPostDeploySmoke &&
+  configuredBaseUrl !== canonicalProductionUrl &&
+  configuredBaseUrl !== `${canonicalProductionUrl}/`
+) {
+  throw new Error(
+    "POST_DEPLOY_SMOKE requires PLAYWRIGHT_BASE_URL to be the canonical production origin",
+  );
+}
+
+const baseURL = isPostDeploySmoke
+  ? configuredBaseUrl!
+  : configuredBaseUrl ?? "http://localhost:8080";
 
 export default defineConfig({
   testDir: "./e2e",
@@ -16,7 +33,7 @@ export default defineConfig({
     ? [["github"], ["list"], ["html", { outputFolder: "playwright-report", open: "never" }]]
     : "list",
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:8080",
+    baseURL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -40,7 +57,7 @@ export default defineConfig({
     }
     return process.env.CI ? all : [all[0]];
   })(),
-  webServer: {
+  webServer: isPostDeploySmoke ? undefined : {
     command: "bun run dev",
     url: "http://localhost:8080",
     reuseExistingServer: !process.env.CI,

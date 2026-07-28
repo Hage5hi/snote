@@ -46,16 +46,23 @@ transitions. The post-deploy workflow runs:
 
 The production spec is gated by `POST_DEPLOY_SMOKE=1`. It performs a real
 `GET /version.json` with `Cache-Control: no-store`, verifies the returned
-`buildId`, and then exercises only `/privacy?v=legacy-noise&foo=bar`. Its
+diagnostic `buildId` and source-stamped `deployedSha`, and then exercises only
+`/privacy?v=legacy-noise&foo=bar`. Its
 `helpers/production-readonly.ts` guard permits only GET/HEAD/OPTIONS, blocks
 Supabase and API paths, closes every WebSocket, and records only
 `{method, origin, pathname}`. `serviceWorkers: "block"` is part of the spec.
-The workflow also verifies that the checkout SHA equals `EXPECTED_DEPLOYED_SHA`.
+The workflow also verifies that the approved manifest candidate, checked-out
+commit, and live `deployedSha` all equal `EXPECTED_DEPLOYED_SHA`.
 
-`version.json` currently exposes a provider build ID and build timestamp, not a
-source commit SHA. The smoke therefore proves the checked-out SHA and the live
-build ID independently; it does not invent a source-SHA field or trust an
-unverified provider environment variable.
+An ordinary local/CI build deliberately emits `"deployedSha": null`. An
+authorized release build must be created with an exact lowercase commit SHA in
+`SNOTE_RELEASE_SHA` through `bun run build:release`; the build fails closed for
+missing, malformed, partial, or checked-out-Git-mismatched release identity. A
+provider `build_id` remains diagnostic only and cannot substitute for the
+source stamp.
+The stamp is not a signing system: it is valid only when the deployment
+environment that injects it is access-controlled and the post-deploy smoke has
+verified the live artifact.
 
 The ordinary local/CI suite still runs:
 

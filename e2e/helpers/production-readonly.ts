@@ -2,11 +2,36 @@ import { expect, type Page } from "@playwright/test";
 
 export type ProductionReadonlyAttempt = {
   method: string;
-  origin: string;
+  origin: "canonical" | "local-test" | "third-party";
   pathname: string;
 };
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const CANONICAL_PRODUCTION_ORIGIN = "https://note.syrin.online";
+const LOCAL_REHEARSAL_ORIGIN = "http://localhost:8080";
+const CANONICAL_PRODUCTION_POLICY = {
+  allowedOrigin: CANONICAL_PRODUCTION_ORIGIN,
+};
+const ALLOWED_EXACT_PATHNAMES = new Set([
+  "/privacy",
+  "/version.json",
+  "/manifest.webmanifest",
+  "/favicon.ico",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-maskable.png",
+  "/logo.webp",
+  "/theme-init.js",
+  "/sw.js",
+  "/registersw.js",
+]);
+const ALLOWED_STATIC_PATH_PREFIXES = ["/assets/"];
+const LOCAL_ALLOWED_PATH_PREFIXES = [
+  "/@vite/",
+  "/src/",
+  "/node_modules/.vite/",
+];
+const LOCAL_ALLOWED_EXACT_PATHNAMES = new Set(["/@react-refresh"]);
 const BLOCKED_PATH_PREFIXES = [
   "/api/",
   "/rest/v1/",
@@ -16,12 +41,90 @@ const BLOCKED_PATH_PREFIXES = [
 const BLOCKED_EXACT_PATHS = new Set(["/~flock.js"]);
 const MAX_PATH_DECODE_PASSES = 3;
 
-function sanitizedAttempt(url: string, method: string): ProductionReadonlyAttempt {
+export type ProductionReadonlyPolicy = Readonly<{
+  allowedOrigin: string;
+}>;
+
+export function createProductionReadonlyPolicy(
+  baseUrl: string,
+  options: { allowLocalhost?: boolean } = {},
+): ProductionReadonlyPolicy {
+  let origin: string;
+  try {
+    origin = new URL(baseUrl).origin;
+  } catch {
+    throw new Error("Production read-only guard requires an absolute base URL");
+  }
+
+  if (origin === CANONICAL_PRODUCTION_ORIGIN) {
+    return { allowedOrigin: origin };
+  }
+  if (options.allowLocalhost && origin === LOCAL_REHEARSAL_ORIGIN) {
+    return { allowedOrigin: origin };
+  }
+
+  throw new Error(
+    "Production read-only guard requires the canonical origin; localhost requires explicit opt-in",
+  );
+}
+
+function classifyEvidenceOrigin(
+  origin: string,
+): ProductionReadonlyAttempt["origin"] {
+  if (origin === CANONICAL_PRODUCTION_ORIGIN) return "canonical";
+  if (origin === LOCAL_REHEARSAL_ORIGIN) return "local-test";
+  return "third-party";
+}
+
+function hasPathPrefix(pathname: string, prefixes: readonly string[]): boolean {
+  return prefixes.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isAllowedSmokePath(origin: string, pathname: string): boolean {
+  if (
+    ALLOWED_EXACT_PATHNAMES.has(pathname) ||
+    hasPathPrefix(pathname, ALLOWED_STATIC_PATH_PREFIXES)
+  ) {
+    return true;
+  }
+
+  return (
+    origin === "http://localhost:8080" &&
+    (LOCAL_ALLOWED_EXACT_PATHNAMES.has(pathname) ||
+      hasPathPrefix(pathname, LOCAL_ALLOWED_PATH_PREFIXES))
+  );
+}
+
+function redactEvidencePathname(pathname: string | null): string {
+  if (pathname === null) return "/:malformed-path";
+  if (pathname === "/s" || pathname.startsWith("/s/")) {
+    return "/s/:capability";
+  }
+  if (isBlockedPath(pathname)) return "/:blocked-api";
+  if (BLOCKED_EXACT_PATHS.has(pathname)) return "/:blocked-telemetry";
+  if (ALLOWED_EXACT_PATHNAMES.has(pathname)) return pathname;
+  if (hasPathPrefix(pathname, ALLOWED_STATIC_PATH_PREFIXES)) {
+    return "/assets/:asset";
+  }
+  if (
+    LOCAL_ALLOWED_EXACT_PATHNAMES.has(pathname) ||
+    hasPathPrefix(pathname, LOCAL_ALLOWED_PATH_PREFIXES)
+  ) {
+    return "/:local-dev-resource";
+  }
+  if (/^\/[^/]+$/.test(pathname)) return "/:legacy-locator";
+  return "/:redacted-path";
+}
+
+export function sanitizeProductionReadonlyAttempt(
+  url: string,
+  method: string,
+): ProductionReadonlyAttempt {
   const parsed = new URL(url);
   return {
     method,
-    origin: parsed.origin,
-    pathname: parsed.pathname || "/",
+    origin: classifyEvidenceOrigin(parsed.origin),
+    pathname: redactEvidencePathname(normalizePathname(parsed.pathname || "/")),
   };
 }
 
@@ -74,29 +177,39 @@ function normalizePathname(pathname: string): string | null {
 export function shouldBlockProductionRequest(
   url: string,
   method: string,
+  policy: ProductionReadonlyPolicy = CANONICAL_PRODUCTION_POLICY,
 ): boolean {
   const parsed = new URL(url);
   const pathname = normalizePathname(parsed.pathname || "/");
 
   return (
     !ALLOWED_METHODS.has(method.toUpperCase()) ||
+    parsed.origin !== policy.allowedOrigin ||
     isSupabaseHost(parsed.hostname.toLowerCase()) ||
     pathname === null ||
+    !isAllowedSmokePath(parsed.origin, pathname) ||
     isBlockedPath(pathname) ||
     BLOCKED_EXACT_PATHS.has(pathname)
   );
 }
 
-export async function installProductionReadonlyGuard(page: Page) {
+export async function installProductionReadonlyGuard(
+  page: Page,
+  policy: ProductionReadonlyPolicy = CANONICAL_PRODUCTION_POLICY,
+) {
   const blockedRequests: ProductionReadonlyAttempt[] = [];
   const blockedWebSockets: ProductionReadonlyAttempt[] = [];
 
   await page.route("**/*", async (route) => {
     const request = route.request();
-    const attempt = sanitizedAttempt(request.url(), request.method());
+    const attempt = sanitizeProductionReadonlyAttempt(
+      request.url(),
+      request.method(),
+    );
     const blocked = shouldBlockProductionRequest(
       request.url(),
       request.method(),
+      policy,
     );
 
     if (blocked) {
@@ -108,7 +221,9 @@ export async function installProductionReadonlyGuard(page: Page) {
   });
 
   await page.routeWebSocket("**/*", async (webSocket) => {
-    blockedWebSockets.push(sanitizedAttempt(webSocket.url(), "WEBSOCKET"));
+    blockedWebSockets.push(
+      sanitizeProductionReadonlyAttempt(webSocket.url(), "WEBSOCKET"),
+    );
     await webSocket.close({ code: 1000, reason: "production smoke is read-only" });
   });
 
