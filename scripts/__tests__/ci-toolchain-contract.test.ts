@@ -2,6 +2,8 @@ import { readFileSync, readdirSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const EXPECTED_BUN_VERSION = "1.3.14";
+const SETUP_BUN_ACTION =
+  "oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6";
 const ACTIONLINT_IMAGE =
   "docker://rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9";
 const WORKFLOW_FILES = readdirSync(".github/workflows")
@@ -39,7 +41,7 @@ describe("CI toolchain contract", () => {
     for (const [path, workflow] of workflows) {
       const lines = workflow.split(/\r?\n/);
       lines.forEach((line, index) => {
-        if (!line.includes("oven-sh/setup-bun@v2")) return;
+        if (!line.includes(SETUP_BUN_ACTION)) return;
         setupCount += 1;
         expect(
           lines.slice(index, index + 4).join("\n"),
@@ -163,7 +165,7 @@ describe("CI toolchain contract", () => {
     expect(ci).not.toContain("secrets.VITE_SUPABASE");
   });
 
-  it("runs extension verification when package inputs change", () => {
+  it("limits extension push filtering to package-relevant inputs", () => {
     for (const path of [
       "package.json",
       "bun.lock",
@@ -173,7 +175,7 @@ describe("CI toolchain contract", () => {
       "scripts/verify-extension-zip.ts",
       "scripts/verify-extension-zip.sh",
     ]) {
-      expect(extensionWorkflow.split(`- "${path}"`).length - 1).toBe(2);
+      expect(extensionWorkflow.split(`- "${path}"`).length - 1).toBe(1);
     }
   });
 
