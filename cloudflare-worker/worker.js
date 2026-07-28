@@ -565,6 +565,10 @@ async function passThrough(
     return originUnavailableResponse();
   }
   const headers = new Headers(response.headers);
+  // An origin may emit Location on an otherwise non-redirect response. The
+  // outer boundary must never reflect an upstream URL because it can contain
+  // a legacy locator or capability even when the status is not 3xx.
+  headers.delete("location");
   const isHtml =
     privateRoute
     || (headers.get("content-type") || "").toLowerCase().includes("text/html");

@@ -12,12 +12,14 @@ URLs, raw IP addresses, passwords, keys, session cookies, or secret values.
 
 - Repository: `sovergarden-dev/snote`
 - Canonical production origin: `https://note.syrin.online`
-- Approved baseline SHA: `241be9fe79a4d4956fc5bec88d73c2c1b108f9f5`
-- Current candidate SHA: `UNSET`
+- Historical audit baseline SHA: `241be9fe79a4d4956fc5bec88d73c2c1b108f9f5`
+- Current remote main SHA: `382806e683bc62e843db81fdee66a0b7f0829d5e`
+- Release candidate SHA: `UNASSIGNED (awaiting a green PR head)`
 - Current candidate branch: `security/edge-privacy-containment`
-- Deployed build ID: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`
-- Lovable deployment ID: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`
-- Cloudflare Worker version: `ac380357` (dashboard prefix)
+- Observed production build ID: `1785243143966-t3474iba`
+- Observed production build time: `2026-07-28T12:52:49.186Z`
+- Lovable deployment ID: `UNSET (the public build ID is not a deployment identity)`
+- Last observed Cloudflare Worker version: `ac380357` (dashboard prefix)
 - Worker origin: `UNSET`
 - Production cutover time: `UNSET`
 - Legacy compatibility cutoff: `UNSET`
@@ -38,9 +40,10 @@ URLs, raw IP addresses, passwords, keys, session cookies, or secret values.
 - [ ] 30-day compatibility retirement approved.
 - [ ] Dirty local-worktree cleanup approved.
 
-## GitHub baseline evidence
+## Historical GitHub baseline evidence
 
-Read-only GitHub connector inventory on 2026-07-28:
+Read-only GitHub connector inventory on 2026-07-28. This is a historical
+baseline, not a statement of the current PR or production state:
 
 - Default branch: `main`
 - Remote branches: `main` only

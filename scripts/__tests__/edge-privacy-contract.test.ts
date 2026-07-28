@@ -27,7 +27,10 @@ describe("edge privacy deployment contract", () => {
       "docs/security/release-manifests/2026-07-capability-rollout.md",
     );
 
-    expect(production).toContain('name = "syrin-prerender"');
+    expect(production).toContain('name = "syrin-prerender-no-go"');
+    expect(production).not.toMatch(
+      /^name\s*=\s*"syrin-prerender"\s*$/m,
+    );
     expect(production).toMatch(/routes\s*=\s*\[\s*\]/);
     expect(production).not.toContain('pattern = "note.syrin.online/*"');
     expect(production).not.toContain('pattern = "syrin.online/*"');
@@ -47,6 +50,18 @@ describe("edge privacy deployment contract", () => {
     expect(readme).toContain("snote.lovable.app");
     expect(readme).toMatch(/redirect/i);
     expect(manifest).toMatch(/Worker origin:\s*`UNSET`/);
+    expect(manifest).toContain(
+      "Release candidate SHA: `UNASSIGNED (awaiting a green PR head)`",
+    );
+    expect(manifest).toContain(
+      "Current remote main SHA: `382806e683bc62e843db81fdee66a0b7f0829d5e`",
+    );
+    expect(manifest).toContain(
+      "Observed production build ID: `1785243143966-t3474iba`",
+    );
+    expect(manifest).not.toContain(
+      "- Deployed build ID: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`",
+    );
     expect(manifest).toMatch(/snote\.lovable\.app[\s\S]*redirect/i);
     expect(manifest).toMatch(/non-redirecting origin/i);
   });
@@ -169,6 +184,8 @@ describe("edge privacy deployment contract", () => {
     expect(helper).toContain("/api/");
     expect(helper).toContain("/rest/v1/");
     expect(helper).toContain("/functions/v1/");
+    expect(helper).toContain("/~api/analytics/");
+    expect(helper).toContain("/~flock.js");
     expect(helper).toContain("routeWebSocket");
     expect(helper).toContain("origin");
     expect(helper).toContain("pathname");

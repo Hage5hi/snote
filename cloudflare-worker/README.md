@@ -14,7 +14,8 @@ Canonical origin là `https://note.syrin.online`. Worker phải phủ cả ba ho
 
 Hiện chưa có origin đã được chứng minh an toàn. `snote.lovable.app` redirect về
 canonical host, nên dùng hostname đó làm `ORIGIN_HOST` sẽ tạo origin redirect
-loop. Vì vậy `wrangler.toml` cố ý có `routes = []` và
+loop. Vì vậy `wrangler.toml` cố ý dùng tên Worker không-production
+`syrin-prerender-no-go`, có `routes = []` và
 `ORIGIN_HOST = "production-origin.invalid"`; đây là template fail-closed, không
 phải cấu hình được phép deploy vào production.
 

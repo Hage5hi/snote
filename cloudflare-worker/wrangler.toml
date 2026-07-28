@@ -1,4 +1,4 @@
-name = "syrin-prerender"
+name = "syrin-prerender-no-go"
 main = "worker.js"
 compatibility_date = "2024-11-01"
 workers_dev = false

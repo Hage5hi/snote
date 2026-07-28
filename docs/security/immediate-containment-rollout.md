@@ -25,8 +25,11 @@ without the explicit checkpoint below.
    `snote.lovable.app`. Route each public hostname through the generic share
    response, or make the alias non-public/disabled.
    Do not advance while any public alias can bypass the generic share response.
-5. Deploy only from the committed `cloudflare-worker/wrangler.toml` and confirm
-   `[observability.logs] invocation_logs = false` and
+5. `cloudflare-worker/wrangler.toml` is an intentionally non-production
+   `syrin-prerender-no-go` template and must not be deployed. After an isolated
+   origin and staging proof are approved, prepare a separately reviewed release
+   configuration for the production Worker. That release configuration must
+   confirm `[observability.logs] invocation_logs = false` and
    `[observability.traces] enabled = false`. Inventory Workers Logs, Tail
    Workers, Workers Logpush, and zone-level HTTP request datasets. Disable or
    redact every pipeline that can retain a raw `/s/*` request path; application

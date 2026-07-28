@@ -576,4 +576,38 @@ describe("edge privacy containment", () => {
     expect(logs.join("\n")).not.toContain(rawIp);
     expect(logs.join("\n")).not.toContain("upstream-location-secret");
   });
+
+  it.each([
+    { path: "/privacy", status: 200 },
+    { path: "/synthetic-private-capability", status: 404 },
+    { path: "/s/synthetic-share-capability", status: 500 },
+  ])(
+    "never forwards an upstream Location header on a non-redirect response for $path",
+    async ({ path, status }) => {
+      const doubles = installOriginDouble();
+      const upstreamSecret = "upstream-location-must-not-escape";
+      doubles.originFetch.mockResolvedValueOnce(
+        new Response("origin response", {
+          status,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            location: `https://origin.invalid/${upstreamSecret}`,
+          },
+        }),
+      );
+
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${path}`),
+        ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(status);
+      expect(response.headers.get("location")).toBeNull();
+      expect(await response.text()).not.toContain(upstreamSecret);
+      expect(
+        Array.from(response.headers.entries()).flat().join("\n"),
+      ).not.toContain(upstreamSecret);
+    },
+  );
 });

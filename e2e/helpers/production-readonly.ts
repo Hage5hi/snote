@@ -7,7 +7,13 @@ export type ProductionReadonlyAttempt = {
 };
 
 const ALLOWED_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
-const BLOCKED_PATH_PREFIXES = ["/api/", "/rest/v1/", "/functions/v1/"];
+const BLOCKED_PATH_PREFIXES = [
+  "/api/",
+  "/rest/v1/",
+  "/functions/v1/",
+  "/~api/analytics/",
+];
+const BLOCKED_EXACT_PATHS = new Set(["/~flock.js"]);
 
 function sanitizedAttempt(url: string, method: string): ProductionReadonlyAttempt {
   const parsed = new URL(url);
@@ -28,18 +34,32 @@ function isBlockedPath(pathname: string): boolean {
   );
 }
 
+export function shouldBlockProductionRequest(
+  url: string,
+  method: string,
+): boolean {
+  const parsed = new URL(url);
+  const pathname = (parsed.pathname || "/").toLowerCase();
+
+  return (
+    !ALLOWED_METHODS.has(method.toUpperCase()) ||
+    isSupabaseHost(parsed.hostname.toLowerCase()) ||
+    isBlockedPath(pathname) ||
+    BLOCKED_EXACT_PATHS.has(pathname)
+  );
+}
+
 export async function installProductionReadonlyGuard(page: Page) {
   const blockedRequests: ProductionReadonlyAttempt[] = [];
   const blockedWebSockets: ProductionReadonlyAttempt[] = [];
 
   await page.route("**/*", async (route) => {
     const request = route.request();
-    const parsed = new URL(request.url());
     const attempt = sanitizedAttempt(request.url(), request.method());
-    const blocked =
-      !ALLOWED_METHODS.has(request.method().toUpperCase()) ||
-      isSupabaseHost(parsed.hostname.toLowerCase()) ||
-      isBlockedPath(parsed.pathname);
+    const blocked = shouldBlockProductionRequest(
+      request.url(),
+      request.method(),
+    );
 
     if (blocked) {
       blockedRequests.push(attempt);
