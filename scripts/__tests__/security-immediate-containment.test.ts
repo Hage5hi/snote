@@ -338,8 +338,12 @@ describe("immediate containment contracts", () => {
 
     expect(worker).toContain("note.syrin.online/*");
     expect(worker).toContain(
-      'env.SITE_URL || "https://note.syrin.online"',
+      'const APPROVED_CANONICAL_ORIGIN = "https://note.syrin.online";',
     );
+    expect(worker).toContain(
+      'siteUrl.hostname.toLowerCase() !== "note.syrin.online"',
+    );
+    expect(worker).toContain("if (!siteUrl) return originUnavailableResponse();");
     expect(readme).toContain(
       '{ pattern = "note.syrin.online/*", zone_name = "syrin.online" }',
     );
