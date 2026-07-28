@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,17 +15,12 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
-import { createCapabilityApi } from "@/lib/capability/client";
-import { buildCapabilityUrl } from "@/lib/capability/url";
-import { createLegacyNoteApi } from "@/lib/legacy/cutover";
-import {
-  clearCreateRecovery,
-  loadOrCreateOwnerCandidate,
-} from "@/lib/capability/create-recovery";
 import { softNavigate } from "@/lib/soft-navigate";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
+
+const loadSupabase = async () => (await import("@/integrations/supabase/client")).supabase;
 
 function randomSlug() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -93,7 +88,6 @@ export default function Home() {
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
   const isMobile = useIsMobile();
   const { scene, committedScene, setScene } = useSceneTheme();
-  const legacyApi = useMemo(() => createLegacyNoteApi(), []);
 
   // Mobile: scenes are heavyweight WebGL/Canvas backgrounds that don't add
   // value on small screens. Clear any persisted scene from a desktop session
@@ -131,9 +125,23 @@ export default function Home() {
     const ctrl = new AbortController();
     const t = window.setTimeout(async () => {
       try {
-        const exists = await legacyApi.exists(trimmed, ctrl.signal);
+        const supabase = await loadSupabase();
         if (ctrl.signal.aborted) return;
-        setSlugStatus(exists ? "taken" : "available");
+        const { data, error } = await supabase
+          .from("notes")
+          .select("slug, char_count")
+          .eq("slug", trimmed)
+          .abortSignal(ctrl.signal)
+          .maybeSingle();
+        if (ctrl.signal.aborted) return;
+        if (error) {
+          setSlugStatus("idle");
+          return;
+        }
+        // Treat empty notes as still available — common case is auto-created
+        // from a typo or prefetch path.
+        if (!data || (data.char_count ?? 0) === 0) setSlugStatus("available");
+        else setSlugStatus("taken");
       } catch {
         if (ctrl.signal.aborted) return;
         setSlugStatus("idle");
@@ -143,7 +151,7 @@ export default function Home() {
       ctrl.abort();
       window.clearTimeout(t);
     };
-  }, [legacyApi, slug]);
+  }, [slug]);
 
   // Warm up heavy editor modules ONLY when the device looks capable. On
   // mobile / save-data / low-memory devices, skip — keeps the Home heap
@@ -155,40 +163,18 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, [isMobile]);
 
-  const createSecure = async (trimmed: string) => {
-    const ownerCandidate = loadOrCreateOwnerCandidate(trimmed);
-    const created = await createCapabilityApi().createNote(trimmed, ownerCandidate);
-    if (created.capabilities.owner !== ownerCandidate) {
-      throw new Error("secure note recovery conflict");
-    }
-    const secureUrl = new URL(buildCapabilityUrl("owner", created.capabilities.owner, trimmed));
-    await softNavigate(navigate, `${secureUrl.pathname}${secureUrl.hash}`);
-    clearCreateRecovery(trimmed, ownerCandidate);
-  };
-
-  const open = async (s: string) => {
+  const open = (s: string) => {
     const trimmed = s.trim();
     if (!SLUG_RE.test(trimmed)) {
       setError(t("home.error.invalid_slug"));
       return;
     }
     setError(null);
-    if (slugStatus === "taken") {
-      softNavigate(navigate, `/${trimmed}`);
-      return;
-    }
-    if (slugStatus !== "available") return;
-    try {
-      await createSecure(trimmed);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to create secure note");
-      setSlugStatus("idle");
-    }
+    softNavigate(navigate, `/${trimmed}`);
   };
 
-  // Prefetch a note's full opening payload on hover. We grab enc-meta AND the
-  // ydoc snapshot in one query so the eventual NotePage mount has zero
-  // network waterfall.
+  // Warm editor code on explicit hover/touch intent. Note content is not read
+  // or cached from Home; the encryption gate owns every content load.
   const prefetchSnapshot = (s: string) => {
     // Hover/touch on a recent = clear signal the user is about to open a note.
     // Warm the editor modules now (idempotent).
@@ -331,7 +317,7 @@ export default function Home() {
           </div>
           <Button
             type="submit"
-            disabled={!slug.trim() || slugStatus === "checking" || slugStatus === "idle"}
+            disabled={!slug.trim()}
           >
             {slugStatus === "taken" ? t("home.btn.open_existing") : t("home.btn.open")}
             <ArrowRight className="h-4 w-4" />
@@ -347,14 +333,7 @@ export default function Home() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              const next = randomSlug();
-              setSlug(next);
-              setError(null);
-              void createSecure(next).catch((cause) => {
-                setError(cause instanceof Error ? cause.message : "Unable to create secure note");
-              });
-            }}
+            onClick={() => softNavigate(navigate, `/${randomSlug()}`)}
           >
             <Shuffle className="h-3.5 w-3.5" />
             {t("home.btn.random")}

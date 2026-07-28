@@ -135,6 +135,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         typewriterMode(),
         keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
         EditorView.lineWrapping,
+        EditorView.contentAttributes.of({ "aria-label": "Markdown note editor" }),
         yCollab(ytext, awareness),
         // Empty slot — Vim extension is appended later via Compartment so
         // the heavy `@replit/codemirror-vim` chunk only loads on demand.

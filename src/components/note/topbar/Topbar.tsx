@@ -57,6 +57,8 @@ interface TopbarProps {
   isEncrypted: boolean;
   encryption?: Encryption | null;
   capabilityAccess?: CapabilityAccess | null;
+  allowEncryptionTransitions?: boolean;
+  currentShareUrl?: string;
   paginated: boolean;
   onTogglePagination: () => void;
   /** Compact mode for SplitView panels: hides app-wide menus (Mode, Help, theme)
@@ -91,6 +93,8 @@ export function Topbar({
   isEncrypted,
   encryption = null,
   capabilityAccess = null,
+  allowEncryptionTransitions = true,
+  currentShareUrl,
   paginated,
   onTogglePagination,
   compact = false,
@@ -197,7 +201,7 @@ export function Topbar({
             />
             <PresenceDots users={users} />
             <PinButton slug={slug} />
-            {(!capabilityAccess || capabilityAccess.scope === "owner") && (
+            {allowEncryptionTransitions && (!capabilityAccess || capabilityAccess.scope === "owner") && (
               <LockButton
                 slug={slug}
                 doc={doc}
@@ -207,7 +211,12 @@ export function Topbar({
                 encryption={encryption}
               />
             )}
-            <ShareDialog slug={slug} isEncrypted={isEncrypted} capabilityAccess={capabilityAccess} />
+            <ShareDialog
+              slug={slug}
+              isEncrypted={isEncrypted}
+              capabilityAccess={capabilityAccess}
+              currentShareUrl={currentShareUrl}
+            />
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               <NoteMenu
                 onOpenGoal={() => setGoalOpen(true)}
@@ -262,7 +271,7 @@ export function Topbar({
 
             <PinButton slug={slug} />
 
-            {(!capabilityAccess || capabilityAccess.scope === "owner") && (
+            {allowEncryptionTransitions && (!capabilityAccess || capabilityAccess.scope === "owner") && (
               <LockButton
                 slug={slug}
                 doc={doc}
@@ -273,7 +282,12 @@ export function Topbar({
               />
             )}
 
-            <ShareDialog slug={slug} isEncrypted={isEncrypted} capabilityAccess={capabilityAccess} />
+            <ShareDialog
+              slug={slug}
+              isEncrypted={isEncrypted}
+              capabilityAccess={capabilityAccess}
+              currentShareUrl={currentShareUrl}
+            />
 
             <ViewControls
               showPreview={showPreview}

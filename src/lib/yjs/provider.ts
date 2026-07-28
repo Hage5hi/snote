@@ -47,6 +47,13 @@ export type Encryption = {
   decrypt: (bytes: Uint8Array) => Promise<Uint8Array>;
 };
 
+type SnapshotDraft = {
+  state: Uint8Array;
+  text: string;
+  encryption: Encryption | null;
+  localUpdateVersion: number;
+};
+
 /** Small provider surface consumed by the editor UI in legacy and capability mode. */
 export interface YjsProviderLike {
   doc: Y.Doc;
@@ -78,6 +85,7 @@ export interface YjsProviderLike {
 const abandonedSlugs = new Set<string>();
 const activeProvidersBySlug = new Map<string, Set<SupabaseYjsProvider>>();
 const abandonedSlugCleanups = new Map<string, Set<() => void | Promise<void>>>();
+const snapshotWriteTailsBySlug = new Map<string, Promise<void>>();
 const ABANDONED_SLUG_STORAGE_PREFIX = "syrin:abandoned-slug:";
 const ABANDONED_SLUG_TTL_MS = 5 * 60_000;
 // Keep inbound messages below the smallest documented Supabase Broadcast
@@ -86,6 +94,19 @@ const ABANDONED_SLUG_TTL_MS = 5 * 60_000;
 const MAX_REALTIME_UPDATE_BYTES = 180 * 1024;
 const MAX_REALTIME_AWARENESS_BYTES = 32 * 1024;
 const REQUEST_STATE_THROTTLE_MS = 1_000;
+
+function enqueueSnapshotWrite(slug: string, write: () => Promise<void>): Promise<void> {
+  const previous = snapshotWriteTailsBySlug.get(slug) ?? Promise.resolve();
+  const queued = previous.catch(() => {}).then(write);
+  const settledTail = queued.catch(() => {});
+  snapshotWriteTailsBySlug.set(slug, settledTail);
+  void settledTail.then(() => {
+    if (snapshotWriteTailsBySlug.get(slug) === settledTail) {
+      snapshotWriteTailsBySlug.delete(slug);
+    }
+  });
+  return queued;
+}
 
 function decodeBoundedBroadcastBytes(payload: unknown, maxBytes: number): Uint8Array | null {
   if (!payload || typeof payload !== "object") return null;
@@ -238,11 +259,13 @@ export class SupabaseYjsProvider {
   private syncListeners = new Set<Listener<SyncEvent>>();
   private clientId = Math.floor(Math.random() * 0xffffffff);
   private destroyed = false;
+  private destroyPromise: Promise<void> | null = null;
   private abandoned = false;
   // Bytes of local updates that have not yet been durably saved to Postgres.
   // Reset to 0 after each successful `saveSnapshot`. Read via
   // `getPendingBytes()` / `hasUnflushedLocalChanges()`.
   private pendingBytes = 0;
+  private localUpdateVersion = 0;
   // The Realtime `subscribe` callback fires `SUBSCRIBED` once on the initial
   // join and again on every auto-reconnect. We treat reconnects specially:
   // peer broadcasts that happened while we were offline are NOT replayed by
@@ -276,6 +299,10 @@ export class SupabaseYjsProvider {
     this.awareness = new Awareness(doc);
     this.awareness.clientID = this.clientId;
     this.encryption = encryption ?? null;
+    // Track edits synchronously from construction. `connect()` may await an
+    // encrypted snapshot before opening Realtime; the editor can already be
+    // mounted during that wait, and those edits still need teardown durability.
+    this.doc.on("update", this.handleDocUpdate);
     // Bug A fix — listen to native online/offline events so the indicator
     // flips to "offline" instantly instead of waiting ~13–20s for the
     // Realtime channel to time out. We only act on "offline" here; the
@@ -534,8 +561,9 @@ export class SupabaseYjsProvider {
       }
     });
 
-    // 4) Wire up local change handlers.
-    this.doc.on("update", this.handleDocUpdate);
+    // 4) Wire up awareness changes after the channel is ready. Document
+    // updates are observed from construction so edits cannot fall into the
+    // async connection gap above.
     this.awareness.on("update", this.handleAwarenessUpdate);
 
     // Heartbeat awareness so peers know we are alive.
@@ -606,6 +634,7 @@ export class SupabaseYjsProvider {
     if (this.destroyed || this.isAbandoned()) return;
     if (origin === "remote" || origin === "remote-snapshot") return;
     this.updateCount++;
+    this.localUpdateVersion++;
     // Counter only — no event emit. UI polls `getPendingBytes()` (Phase 2.2)
     // to avoid render storms when typing fast (~30 keystrokes/s).
     this.pendingBytes += update.byteLength;
@@ -703,30 +732,51 @@ export class SupabaseYjsProvider {
     this.snapshotTimer = window.setTimeout(() => this.saveSnapshot(), getSnapshotDebounceMs());
   }
 
-  async saveSnapshot() {
+  saveSnapshot(): Promise<void> {
     this.snapshotTimer = null;
-    if (this.destroyed) return;
-    if (this.isAbandoned()) return;
+    if (this.destroyed || this.isAbandoned()) return Promise.resolve();
     if (this.hasEncryptionModeMismatch()) {
       console.warn("saveSnapshot skipped: encryption mode mismatch", {
         locatorLength: this.slug.length,
         expectedEncrypted: this.expectedEncrypted,
         haveKey: !!this.encryption,
       });
-      return;
+      return Promise.resolve();
     }
+
+    let draft: SnapshotDraft;
     try {
-      const state = Y.encodeStateAsUpdate(this.doc);
-      const text = this.doc.getText("content").toString();
-      let stateBytes = state;
-      let storedContent = text;
-      let storedCount = text.length;
+      draft = {
+        state: Y.encodeStateAsUpdate(this.doc),
+        text: this.doc.getText("content").toString(),
+        encryption: this.encryption,
+        localUpdateVersion: this.localUpdateVersion,
+      };
+    } catch (e) {
+      console.warn("Snapshot exception");
+      this.emitSync({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      return Promise.resolve();
+    }
+
+    // Preserve request order across every provider for this slug. React can
+    // remount a cached Y.Doc before the previous provider finishes teardown;
+    // a per-instance queue would let that older write finish last.
+    return enqueueSnapshotWrite(this.slug, () => this.persistSnapshot(draft));
+  }
+
+  private async persistSnapshot(draft: SnapshotDraft) {
+    if (this.destroyed || this.isAbandoned()) return;
+    if (this.encryption !== draft.encryption || this.hasEncryptionModeMismatch()) return;
+    try {
+      let stateBytes = draft.state;
+      let storedContent = draft.text;
+      let storedCount = draft.text.length;
       // Tags are derived from plaintext, so for encrypted notes we leave them
       // empty (server stays zero-knowledge).
-      let storedTags: string[] = this.encryption ? [] : extractTags(text);
-      if (this.encryption) {
+      let storedTags: string[] = draft.encryption ? [] : extractTags(draft.text);
+      if (draft.encryption) {
         try {
-          stateBytes = await this.encryption.encrypt(state);
+          stateBytes = await draft.encryption.encrypt(draft.state);
           // Server is zero-knowledge — never expose plaintext or true length.
           storedContent = "";
           storedCount = 0;
@@ -739,7 +789,7 @@ export class SupabaseYjsProvider {
       if (this.destroyed || this.isAbandoned()) return;
       // Re-check after asynchronous encryption and immediately before the
       // upsert. A mode transition in another tab must stop this stale write.
-      if (this.hasEncryptionModeMismatch()) return;
+      if (this.encryption !== draft.encryption || this.hasEncryptionModeMismatch()) return;
       const { error } = await supabase.from("notes").upsert(
         {
           slug: this.slug,
@@ -749,7 +799,7 @@ export class SupabaseYjsProvider {
           tags: storedTags,
           // Keep the row flag in lockstep with the bytes we just wrote so a
           // stale `is_encrypted` can never disagree with `ydoc_state`.
-          is_encrypted: !!this.encryption,
+          is_encrypted: !!draft.encryption,
         },
         { onConflict: "slug" }
       );
@@ -758,9 +808,13 @@ export class SupabaseYjsProvider {
         this.emitSync({ type: "error", message: error.message ?? String(error) });
       } else {
         this.lastSnapshotAt = Date.now();
-        // Durable persistence achieved — clear the pending counter and notify.
-        this.pendingBytes = 0;
-        this.emitSync({ type: "synced-durable" });
+        // An older in-flight save is not proof that a newer keystroke is
+        // durable. Only the snapshot containing the latest local version may
+        // clear the pending marker and report fully synced state.
+        if (this.localUpdateVersion === draft.localUpdateVersion) {
+          this.pendingBytes = 0;
+          this.emitSync({ type: "synced-durable" });
+        }
       }
     } catch (e) {
       console.warn("Snapshot exception");
@@ -835,15 +889,31 @@ export class SupabaseYjsProvider {
     }
   }
 
-  async destroy() {
+  destroy() {
+    if (!this.destroyPromise) {
+      this.destroyPromise = this.destroyInternal();
+    }
+    return this.destroyPromise;
+  }
+
+  private async destroyInternal() {
+    // Stop accepting new local work first, but keep the provider writable
+    // long enough to durably persist edits still inside the debounce window.
+    // `destroyed` is deliberately set only after this final save because
+    // saveSnapshot fails closed once that flag is true.
+    this.cancelPendingSnapshot();
+    this.doc.off("update", this.handleDocUpdate);
+    this.awareness.off("update", this.handleAwarenessUpdate);
+    this.pendingUpdates = [];
+
+    if (!this.isAbandoned() && this.hasUnflushedLocalChanges()) {
+      await this.saveSnapshot();
+    }
+
     this.destroyed = true;
     if (typeof window !== "undefined") {
       window.removeEventListener("offline", this.handleNativeOffline);
     }
-    this.cancelPendingSnapshot();
-    this.pendingUpdates = [];
-    this.doc.off("update", this.handleDocUpdate);
-    this.awareness.off("update", this.handleAwarenessUpdate);
     this.cleanupFns.forEach((fn) => fn());
     this.cleanupFns = [];
     if (this.channel) {

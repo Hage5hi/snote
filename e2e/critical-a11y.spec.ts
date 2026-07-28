@@ -1,5 +1,14 @@
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import * as Y from "yjs";
+
+function encodeYdocState(content: string) {
+  const doc = new Y.Doc();
+  doc.getText("content").insert(0, content);
+  const encoded = Buffer.from(Y.encodeStateAsUpdate(doc)).toString("base64");
+  doc.destroy();
+  return encoded;
+}
 
 async function seedStableUi(page: Page) {
   await page.addInitScript(() => {
@@ -36,6 +45,33 @@ async function seedStableUi(page: Page) {
           iterations: encrypted ? 600_000 : null,
         },
       }),
+    });
+  });
+  await page.route("**/rest/v1/notes?**", async (route) => {
+    const request = route.request();
+    if (request.method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+
+    const slugFilter = new URL(request.url()).searchParams.get("slug") ?? "";
+    const slug = slugFilter.startsWith("eq.") ? slugFilter.slice(3) : "";
+    const encrypted = slug === "axe-locked";
+    const content = `# ${slug}\nAccessible note body`;
+
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "access-control-allow-origin": "*" },
+      body: JSON.stringify([{
+        slug,
+        content: encrypted ? "" : content,
+        ydoc_state: encrypted ? "Y2lwaGVydGV4dA==" : encodeYdocState(content),
+        is_encrypted: encrypted,
+        enc_salt: encrypted ? "salt" : null,
+        enc_check: encrypted ? "check" : null,
+        enc_iterations: encrypted ? 600_000 : null,
+      }]),
     });
   });
 }

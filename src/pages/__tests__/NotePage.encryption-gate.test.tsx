@@ -22,6 +22,8 @@ const harness = vi.hoisted(() => ({
   providerConstruct: vi.fn(),
   providerConnect: vi.fn(),
   providerDestroy: vi.fn(),
+  topbarProps: vi.fn(),
+  capabilityOpenSession: vi.fn(),
   metaForSlug: vi.fn(),
   deriveKey: vi.fn(),
   verifyCheck: vi.fn(),
@@ -66,7 +68,12 @@ vi.mock("@/components/ui/button", () => ({
 vi.mock("@/components/ui/input", () => ({
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }));
-vi.mock("@/components/note/Topbar", () => ({ Topbar: () => null }));
+vi.mock("@/components/note/Topbar", () => ({
+  Topbar: (props: { allowEncryptionTransitions?: boolean }) => {
+    harness.topbarProps(props);
+    return null;
+  },
+}));
 vi.mock("@/components/note/PageIndicator", () => ({ PageIndicator: () => null }));
 vi.mock("@/components/note/GoalConfetti", () => ({ GoalConfetti: () => null }));
 vi.mock("@/components/note/OutlineSidebar", () => ({ OutlineSidebar: () => null }));
@@ -92,6 +99,11 @@ vi.mock("@/integrations/supabase/client", () => ({
       }),
     }),
   },
+}));
+vi.mock("@/lib/capability/client", () => ({
+  createCapabilityApi: () => ({
+    openSession: (...args: unknown[]) => harness.capabilityOpenSession(...args),
+  }),
 }));
 vi.mock("@/lib/yjs/doc-cache", () => ({
   acquireDoc: (slug: string) => {
@@ -261,6 +273,9 @@ describe("NotePage encryption gate", () => {
     harness.providerConstruct.mockClear();
     harness.providerConnect.mockClear();
     harness.providerDestroy.mockClear();
+    harness.topbarProps.mockClear();
+    harness.capabilityOpenSession.mockReset();
+    harness.capabilityOpenSession.mockResolvedValue(null);
     harness.metaForSlug.mockReset();
     harness.metaForSlug.mockImplementation(() => harness.metaPromise);
     harness.deriveKey.mockReset();
@@ -270,6 +285,50 @@ describe("NotePage encryption gate", () => {
     harness.translate = (key: string) => key;
     localStorage.clear();
     window.history.replaceState(null, "", window.location.pathname);
+  });
+
+  it("keeps capability-shaped fragments on the deployed legacy backend in legacy-only mode", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: { is_encrypted: false },
+      error: null,
+    });
+    const token = "a".repeat(43);
+    render(
+      <MemoryRouter initialEntries={[`/secret#owner=${token}&key=safe%20key`]}>
+        <Routes>
+          <Route path="/:slug" element={<NotePage legacyOnly />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(harness.metaForSlug).toHaveBeenCalledWith("secret"));
+    expect(harness.capabilityOpenSession).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(harness.topbarProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          allowEncryptionTransitions: false,
+          currentShareUrl: `${window.location.origin}/secret#safe%20key`,
+        }),
+      ),
+    );
+  });
+
+  it("disables encryption transitions in the embedded legacy-only workspace", async () => {
+    harness.metaForSlug.mockResolvedValue({
+      data: { is_encrypted: false },
+      error: null,
+    });
+    render(
+      <MemoryRouter>
+        <NotePage legacyOnly embedSlug="secret" />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() =>
+      expect(harness.topbarProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({ allowEncryptionTransitions: false }),
+      ),
+    );
   });
 
   it("fails closed when a previously encrypted note is reported as plaintext", async () => {
@@ -578,6 +637,47 @@ describe("NotePage encryption gate", () => {
 
     expect(view.queryByTestId("editor")).not.toBeInTheDocument();
     expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+    expect(harness.providerConnect).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["pathname", "/other-note"],
+    ["search", "/secret?mode=next"],
+  ])("rejects pending metadata when the live %s changes before Router commits", async (_part, target) => {
+    let resolveMetadata!: (value: {
+      data: { is_encrypted: boolean };
+      error: null;
+    }) => void;
+    const pendingMetadata = new Promise<{
+      data: { is_encrypted: boolean };
+      error: null;
+    }>((resolve) => {
+      resolveMetadata = resolve;
+    });
+    harness.metaForSlug.mockReturnValue(pendingMetadata);
+    window.history.replaceState(window.history.state, "", "/secret");
+
+    const view = render(
+      <BrowserRouter>
+        <Routes>
+          <Route path="/:slug" element={<NotePage legacyOnly />} />
+        </Routes>
+      </BrowserRouter>,
+    );
+    await waitFor(() => expect(harness.metaForSlug).toHaveBeenCalledWith("secret"));
+
+    // BrowserRouter writes the live URL before its React location commits.
+    // Keep the old route mounted and resolve its metadata inside that gap.
+    window.history.pushState(window.history.state, "", target);
+    await act(async () => {
+      resolveMetadata({ data: { is_encrypted: false }, error: null });
+      await pendingMetadata;
+      await Promise.resolve();
+    });
+
+    expect(view.queryByTestId("editor")).not.toBeInTheDocument();
+    expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
     expect(harness.providerConnect).not.toHaveBeenCalled();
   });
 

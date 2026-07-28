@@ -28,9 +28,15 @@ interface ShareDialogProps {
   slug: string;
   isEncrypted: boolean;
   capabilityAccess?: CapabilityAccess | null;
+  currentShareUrl?: string;
 }
 
-export function ShareDialog({ slug, isEncrypted, capabilityAccess = null }: ShareDialogProps) {
+export function ShareDialog({
+  slug,
+  isEncrypted,
+  capabilityAccess = null,
+  currentShareUrl,
+}: ShareDialogProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [dataUrl, setDataUrl] = useState<string>("");
@@ -48,12 +54,12 @@ export function ShareDialog({ slug, isEncrypted, capabilityAccess = null }: Shar
     if (!open) return;
     const fullUrl = capabilityAccess
       ? buildCurrentEditShareUrl(capabilityAccess, slug, encryptionSecret) ?? ""
-      : window.location.href;
+      : currentShareUrl ?? window.location.href;
     setUrl(fullUrl);
     setDataUrl("");
     setEditToken(null);
     setToken(capabilityAccess ? null : getShareToken(slug));
-  }, [open, slug, capabilityAccess, encryptionSecret]);
+  }, [open, slug, capabilityAccess, encryptionSecret, currentShareUrl]);
 
   const editUrl = capabilityAccess?.scope === "owner" && editToken
     ? buildCapabilityUrl(
@@ -106,7 +112,7 @@ export function ShareDialog({ slug, isEncrypted, capabilityAccess = null }: Shar
     }
     const base = `${window.location.origin}/s/${shareToken}`;
     if (isEncrypted && includeKey && hasKey) {
-      return base + window.location.hash;
+      return `${base}#${encodeURIComponent(encryptionSecret)}`;
     }
     return base;
   })();

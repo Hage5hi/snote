@@ -6,7 +6,7 @@ import {
   SupabaseYjsProvider,
   type Encryption,
 } from "../provider";
-import { bytesToBase64 } from "../base64";
+import { base64ToBytes, bytesToBase64 } from "../base64";
 import { clearNoteEncryptionPin, markNoteEncrypted } from "@/lib/encryption-pin";
 
 // Capture upsert calls so saveSnapshot tests can assert payloads.
@@ -65,10 +65,11 @@ afterEach(() => {
 
 function makeProvider(slug = "test-slug") {
   const doc = new Y.Doc();
+  return makeProviderForDoc(slug, doc);
+}
+
+function makeProviderForDoc(slug: string, doc: Y.Doc) {
   const p = new SupabaseYjsProvider(slug, doc);
-  // Wire the doc update handler ourselves (connect() would do this, but it
-  // needs a live Supabase channel which we deliberately skip in unit tests).
-  doc.on("update", (p as unknown as { handleDocUpdate: (u: Uint8Array, o: unknown) => void }).handleDocUpdate);
   return { provider: p, doc };
 }
 
@@ -165,7 +166,7 @@ describe("SupabaseYjsProvider — public broadcast containment", () => {
   });
 });
 
-describe("SupabaseYjsProvider — unmount cancellation", () => {
+describe("SupabaseYjsProvider — teardown durability", () => {
   beforeEach(() => {
     upsertCalls.length = 0;
     vi.useFakeTimers();
@@ -175,16 +176,138 @@ describe("SupabaseYjsProvider — unmount cancellation", () => {
     vi.useRealTimers();
   });
 
-  it("cancels a pending debounced snapshot on unmount with no late writes", async () => {
+  it("flushes a pending plaintext edit before ordinary teardown", async () => {
     const { provider, doc } = makeProvider("some-slug");
-    const saveSpy = vi.spyOn(provider, "saveSnapshot");
+    provider.setExpectedEncrypted(false);
 
     doc.getText("content").insert(0, "draft");
+    await Promise.all([provider.destroy(), provider.destroy()]);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(upsertCalls).toHaveLength(1);
+    expect(upsertCalls[0]).toMatchObject({
+      slug: "some-slug",
+      content: "draft",
+      char_count: 5,
+      is_encrypted: false,
+    });
+  });
+
+  it("flushes a pending encrypted edit before ordinary teardown", async () => {
+    const slug = "encrypted-navigation";
+    const { provider, doc } = makeProvider(slug);
+    expect(markNoteEncrypted(slug)).toBe(true);
+    provider.setEncryption({
+      encrypt: async (bytes) => bytes,
+      decrypt: async (bytes) => bytes,
+    });
+    provider.setExpectedEncrypted(true);
+
+    doc.getText("content").insert(0, "secret draft");
     await provider.destroy();
     await vi.advanceTimersByTimeAsync(1_000);
 
-    expect(saveSpy).not.toHaveBeenCalled();
+    expect(upsertCalls).toHaveLength(1);
+    expect(upsertCalls[0]).toMatchObject({
+      slug,
+      content: "",
+      char_count: 0,
+      tags: [],
+      is_encrypted: true,
+    });
+  });
+
+  it("does not resurrect an abandoned slug during teardown", async () => {
+    const { provider, doc } = makeProvider("abandoned-slug");
+    provider.setExpectedEncrypted(false);
+
+    doc.getText("content").insert(0, "must not return");
+    provider.markAbandoned();
+    await provider.destroy();
+    await vi.advanceTimersByTimeAsync(1_000);
+
     expect(upsertCalls).toHaveLength(0);
+  });
+
+  it("finishes an older save before the teardown save so stale bytes cannot win", async () => {
+    const slug = "ordered-encrypted-save";
+    const { provider, doc } = makeProvider(slug);
+    expect(markNoteEncrypted(slug)).toBe(true);
+
+    let resolveFirstEncryption!: () => void;
+    let encryptionCalls = 0;
+    provider.setEncryption({
+      encrypt: vi.fn(async (bytes) => {
+        encryptionCalls += 1;
+        if (encryptionCalls === 1) {
+          return new Promise<Uint8Array>((resolve) => {
+            resolveFirstEncryption = () => resolve(bytes);
+          });
+        }
+        return bytes;
+      }),
+      decrypt: async (bytes) => bytes,
+    });
+    provider.setExpectedEncrypted(true);
+
+    const text = doc.getText("content");
+    text.insert(0, "first");
+    const olderSave = provider.saveSnapshot();
+    await vi.waitFor(() => expect(encryptionCalls).toBe(1));
+
+    text.insert(text.length, " second");
+    const closing = provider.destroy();
+    resolveFirstEncryption();
+    await Promise.all([olderSave, closing]);
+
+    expect(upsertCalls).toHaveLength(2);
+    const restored = new Y.Doc();
+    Y.applyUpdate(restored, base64ToBytes(String(upsertCalls.at(-1)?.ydoc_state)));
+    expect(restored.getText("content").toString()).toBe("first second");
+    expect(provider.hasUnflushedLocalChanges()).toBe(false);
+  });
+
+  it("orders teardown saves across rapid remounts of the same cached document", async () => {
+    const slug = "rapid-remount-encrypted";
+    const doc = new Y.Doc();
+    const { provider: firstProvider } = makeProviderForDoc(slug, doc);
+    expect(markNoteEncrypted(slug)).toBe(true);
+
+    let resolveFirstEncryption!: () => void;
+    let firstProviderEncryptionCalls = 0;
+    firstProvider.setEncryption({
+      encrypt: vi.fn((bytes) => {
+        firstProviderEncryptionCalls += 1;
+        if (firstProviderEncryptionCalls > 1) return Promise.resolve(bytes);
+        return new Promise<Uint8Array>((resolve) => {
+          resolveFirstEncryption = () => resolve(bytes);
+        });
+      }),
+      decrypt: async (bytes) => bytes,
+    });
+    firstProvider.setExpectedEncrypted(true);
+
+    const text = doc.getText("content");
+    text.insert(0, "first");
+    const firstSave = firstProvider.saveSnapshot();
+    await vi.waitFor(() => expect(resolveFirstEncryption).toBeTypeOf("function"));
+    const firstClosing = firstProvider.destroy();
+
+    const { provider: secondProvider } = makeProviderForDoc(slug, doc);
+    secondProvider.setEncryption({
+      encrypt: async (bytes) => bytes,
+      decrypt: async (bytes) => bytes,
+    });
+    secondProvider.setExpectedEncrypted(true);
+    text.insert(text.length, " second");
+    const secondClosing = secondProvider.destroy();
+
+    resolveFirstEncryption();
+    await Promise.all([firstSave, firstClosing, secondClosing]);
+
+    const restored = new Y.Doc();
+    Y.applyUpdate(restored, base64ToBytes(String(upsertCalls.at(-1)?.ydoc_state)));
+    expect(restored.getText("content").toString()).toBe("first second");
   });
 });
 
@@ -231,6 +354,47 @@ describe("SupabaseYjsProvider — Phase 2.5 broadcast batching", () => {
     // No additional rAF flush since queue is empty.
     await new Promise((r) => setTimeout(r, 5));
     expect(provider.getBroadcastCount()).toBe(2);
+  });
+});
+
+describe("SupabaseYjsProvider — connection lifecycle", () => {
+  it("tracks an encrypted local edit made while the initial snapshot is decrypting", async () => {
+    const slug = "edit-during-decrypt";
+    const remoteDoc = new Y.Doc();
+    remoteDoc.getText("content").insert(0, "remote");
+    const encryptedSnapshot = bytesToBase64(Y.encodeStateAsUpdate(remoteDoc));
+    expect(markNoteEncrypted(slug)).toBe(true);
+
+    let resolveDecryptStarted!: () => void;
+    const decryptStarted = new Promise<void>((resolve) => {
+      resolveDecryptStarted = resolve;
+    });
+    let finishDecrypt!: () => void;
+    const doc = new Y.Doc();
+    const provider = new SupabaseYjsProvider(slug, doc);
+    provider.setEncryption({
+      encrypt: async (bytes) => bytes,
+      decrypt: (bytes) => {
+        resolveDecryptStarted();
+        return new Promise<Uint8Array>((resolve) => {
+          finishDecrypt = () => resolve(bytes);
+        });
+      },
+    });
+    provider.setExpectedEncrypted(true);
+
+    const connecting = provider.connect(
+      { name: "Tester", color: "#123456" },
+      { prefetchedYdocState: encryptedSnapshot, rowExists: true },
+    );
+    await decryptStarted;
+    doc.getText("content").insert(0, "local");
+    finishDecrypt();
+    await connecting;
+
+    expect(provider.hasUnflushedLocalChanges()).toBe(true);
+    await provider.destroy();
+    expect(upsertCalls.at(-1)?.is_encrypted).toBe(true);
   });
 });
 

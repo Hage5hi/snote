@@ -22,9 +22,7 @@ import {
 } from "@/hooks/use-split-scroll-sync";
 import { useI18n } from "@/i18n";
 
-const NotePage = lazy(() => import("./NotePage").then((module) => ({
-  default: module.CutoverNotePage,
-})));
+const NotePage = lazy(() => import("./NotePage"));
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const MIN_PANES = 2;
@@ -317,6 +315,7 @@ function SplitPane({
         }
       >
         <NotePage
+          legacyOnly
           embedSlug={slug}
           embedNarrow={paneNarrow}
           onPrimaryScroller={onPrimaryScroller}
