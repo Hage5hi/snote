@@ -62,6 +62,13 @@ describe("edge privacy deployment contract", () => {
     expect(manifest).not.toContain(
       "- Deployed build ID: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`",
     );
+    expect(manifest).toContain("Historical Lovable-managed backend inventory");
+    expect(manifest).toContain(
+      "Historical observed application build: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`",
+    );
+    expect(manifest).not.toContain(
+      "- Deployed application build: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`",
+    );
     expect(manifest).toMatch(/snote\.lovable\.app[\s\S]*redirect/i);
     expect(manifest).toMatch(/non-redirecting origin/i);
   });

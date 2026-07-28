@@ -122,16 +122,17 @@ retained.
   request-log redaction remains `UNPROVEN`
 - Cache purge state: `NOT STARTED`
 
-## Lovable-managed backend inventory
+## Historical Lovable-managed backend inventory
 
 Authenticated, read-only Lovable inventory was completed on 2026-07-28. No
 switches, secrets, functions, database rows, backups, or deployment settings
-were changed.
+were changed. This is a historical inventory snapshot, not a statement of the
+current production deployment identity.
 
 - Lovable project identifier: `REDACTED`
 - Managed backend project reference: `onfzjmfjldsbthchssfr`
 - Region: `UNVERIFIED`
-- Deployed application build: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`
+- Historical observed application build: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`
 - Production tables observed:
   - `notes`: 51 rows
   - `note_shares`: 0 rows
