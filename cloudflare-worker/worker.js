@@ -299,9 +299,15 @@ export default {
       return Response.redirect(redir.toString(), 301);
     }
 
-    // Edge cache theo full URL
+    // Edge cache for the query-free public home document.
     const cache = caches.default;
-    const cacheKey = new Request(url.toString(), { method: "GET" });
+    // Only the public home document is eligible for this crawler cache. Never
+    // retain an arbitrary query because it can contain a legacy locator or
+    // capability even though the rendered home shell is query-independent.
+    const cacheUrl = new URL(url);
+    cacheUrl.search = "";
+    cacheUrl.hash = "";
+    const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
     const cached = await cache.match(cacheKey);
     if (cached) {
       logEvent(env, "info", "cache_hit", { kind: route.kind, group: rl.group });

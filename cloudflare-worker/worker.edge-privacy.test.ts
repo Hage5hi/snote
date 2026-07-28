@@ -185,6 +185,32 @@ describe("edge privacy containment", () => {
     },
   );
 
+  it("uses a query-free cache key for crawler home responses", async () => {
+    const doubles = installOriginDouble();
+    const syntheticQuery = "private-capability-must-not-enter-edge-cache";
+
+    const response = await worker.fetch(
+      new Request(`https://note.syrin.online/?token=${syntheticQuery}`, {
+        headers: { "user-agent": "Googlebot" },
+      }),
+      ENV,
+      { waitUntil: doubles.waitUntil },
+    );
+
+    expect(response.status).toBe(200);
+    expect(doubles.cacheMatch).toHaveBeenCalledOnce();
+    expect(doubles.cachePut).toHaveBeenCalledOnce();
+    for (const cacheKey of [
+      doubles.cacheMatch.mock.calls[0]?.[0] as Request,
+      doubles.cachePut.mock.calls[0]?.[0] as Request,
+    ]) {
+      const cacheUrl = new URL(cacheKey.url);
+      expect(cacheUrl.pathname).toBe("/");
+      expect(cacheUrl.search).toBe("");
+      expect(cacheKey.url).not.toContain(syntheticQuery);
+    }
+  });
+
   it("publicly caches only fingerprinted assets", async () => {
     const doubles = installOriginDouble();
 

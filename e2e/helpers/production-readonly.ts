@@ -35,6 +35,21 @@ function isBlockedPath(pathname: string): boolean {
   );
 }
 
+function resolvePathSegments(pathname: string): string {
+  const segments: string[] = [];
+
+  for (const segment of pathname.replace(/\\/g, "/").split("/")) {
+    if (!segment || segment === ".") continue;
+    if (segment === "..") {
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+
+  return `/${segments.join("/")}`.toLowerCase();
+}
+
 function normalizePathname(pathname: string): string | null {
   let normalized = pathname;
 
@@ -45,7 +60,7 @@ function normalizePathname(pathname: string): string | null {
     try {
       const decoded = decodeURIComponent(normalized);
       if (decoded === normalized) {
-        return decoded.toLowerCase();
+        return resolvePathSegments(decoded);
       }
       normalized = decoded;
     } catch {
@@ -53,7 +68,7 @@ function normalizePathname(pathname: string): string | null {
     }
   }
 
-  return normalized.includes("%") ? null : normalized.toLowerCase();
+  return normalized.includes("%") ? null : resolvePathSegments(normalized);
 }
 
 export function shouldBlockProductionRequest(
