@@ -296,25 +296,60 @@ describe("edge privacy containment", () => {
     expect(doubles.originFetch).not.toHaveBeenCalled();
   });
 
-  it("never downgrades canonical transport when SITE_URL is misconfigured", async () => {
-    const doubles = installOriginDouble();
-    const hostileEnv = {
-      ...ENV,
-      SITE_URL: "http://note.syrin.online:8080",
-    };
+  it.each([
+    {
+      label: "downgrade and port",
+      siteUrl: "http://note.syrin.online:8080",
+      marker: "8080",
+    },
+    {
+      label: "unapproved hostname",
+      siteUrl: "https://redirect-target.invalid",
+      marker: "redirect-target.invalid",
+    },
+    {
+      label: "userinfo",
+      siteUrl: "https://site-user:site-secret@note.syrin.online/",
+      marker: "site-secret",
+    },
+    {
+      label: "non-root path",
+      siteUrl: "https://note.syrin.online/untrusted-path",
+      marker: "untrusted-path",
+    },
+    {
+      label: "query",
+      siteUrl: "https://note.syrin.online/?untrusted=query-secret",
+      marker: "query-secret",
+    },
+    {
+      label: "fragment",
+      siteUrl: "https://note.syrin.online/#untrusted-fragment",
+      marker: "untrusted-fragment",
+    },
+  ])(
+    "fails closed instead of using a $label SITE_URL",
+    async ({ siteUrl, marker }) => {
+      const doubles = installOriginDouble();
+      const hostileEnv = { ...ENV, SITE_URL: siteUrl };
 
-    const response = await worker.fetch(
-      new Request("https://syrin.online/privacy"),
-      hostileEnv,
-      { waitUntil: doubles.waitUntil },
-    );
+      const aliasResponse = await worker.fetch(
+        new Request("https://syrin.online/privacy"),
+        hostileEnv,
+        { waitUntil: doubles.waitUntil },
+      );
+      await expectFailClosedOriginResponse(aliasResponse, [marker]);
+      expect(aliasResponse.headers.get("location")).toBeNull();
 
-    expect(response.status).toBe(301);
-    expect(response.headers.get("location")).toBe(
-      "https://note.syrin.online/privacy",
-    );
-    expect(doubles.originFetch).not.toHaveBeenCalled();
-  });
+      const robotsResponse = await worker.fetch(
+        new Request("https://note.syrin.online/robots.txt"),
+        hostileEnv,
+        { waitUntil: doubles.waitUntil },
+      );
+      await expectFailClosedOriginResponse(robotsResponse, [marker]);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not reflect URL credentials when canonicalizing a public alias", async () => {
     const doubles = installOriginDouble();
@@ -378,6 +413,45 @@ describe("edge privacy containment", () => {
       expect(doubles.originFetch).not.toHaveBeenCalled();
     },
   );
+
+  it("passes a conditional 304 from the origin without leaking its Location", async () => {
+    const doubles = installOriginDouble();
+    const etag = '"version-etag"';
+    const upstreamSecret = "origin-location-must-not-escape";
+    doubles.originFetch.mockResolvedValueOnce(
+      new Response(null, {
+        status: 304,
+        headers: {
+          "content-type": "application/json",
+          etag,
+          location: `https://origin.invalid/${upstreamSecret}`,
+          "cache-control": "public, max-age=300",
+        },
+      }),
+    );
+
+    const response = await worker.fetch(
+      new Request("https://note.syrin.online/version.json", {
+        headers: { "if-none-match": etag },
+      }),
+      ENV,
+      { waitUntil: doubles.waitUntil },
+    );
+
+    expect(response.status).toBe(304);
+    expect(response.headers.get("etag")).toBe(etag);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe(
+      "no-cache, no-store, must-revalidate",
+    );
+    expect(response.headers.get("cdn-cache-control")).toBe("no-store");
+    expect(await response.text()).toBe("");
+    const originRequest = doubles.originFetch.mock.calls[0]?.[0] as Request;
+    expect(originRequest.headers.get("if-none-match")).toBe(etag);
+    expect(Array.from(response.headers.entries()).flat().join("\n")).not.toContain(
+      upstreamSecret,
+    );
+  });
 
   it.each([
     ["privacy", "/privacy"],

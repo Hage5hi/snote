@@ -38,6 +38,7 @@ const SECURITY_CSP =
 const PERMISSIONS_POLICY =
   "camera=(), geolocation=(), microphone=(), payment=()";
 const PRIVATE_ROUTE_KINDS = new Set(["share", "note", "private"]);
+const APPROVED_CANONICAL_ORIGIN = "https://note.syrin.online";
 const PUBLIC_HOSTNAMES = new Set([
   "note.syrin.online",
   "syrin.online",
@@ -579,7 +580,14 @@ async function passThrough(
     });
     return originUnavailableResponse();
   }
-  if (response.status >= 300 && response.status < 400) {
+  // 304 is a successful conditional-response status, not a redirect. The
+  // request allowlist intentionally forwards validators so public/runtime
+  // assets can revalidate without turning a cache hit into an outage.
+  if (
+    response.status !== 304
+    && response.status >= 300
+    && response.status < 400
+  ) {
     logEvent(env, "error", "origin_unavailable", {
       kind: routeKind,
       reason: "redirect",
@@ -654,14 +662,11 @@ function validateOriginHost(requestUrl, env) {
     return { ok: false, reason: "invalid" };
   }
 
-  let canonicalHostname;
-  try {
-    canonicalHostname = new URL(
-      env?.SITE_URL || "https://note.syrin.online",
-    ).hostname.toLowerCase();
-  } catch {
+  const siteUrl = canonicalSiteUrl(env);
+  if (!siteUrl) {
     return { ok: false, reason: "invalid" };
   }
+  const canonicalHostname = siteUrl.hostname.toLowerCase();
   if (
     hostname === requestUrl.hostname.toLowerCase()
     || hostname === canonicalHostname
@@ -746,13 +751,44 @@ function analyticsDeniedResponse(status) {
   });
 }
 
+function canonicalSiteUrl(env) {
+  const raw = env?.SITE_URL ?? APPROVED_CANONICAL_ORIGIN;
+  if (typeof raw !== "string" || raw !== raw.trim()) return null;
+
+  let siteUrl;
+  try {
+    siteUrl = new URL(raw);
+  } catch {
+    return null;
+  }
+
+  if (
+    siteUrl.protocol !== "https:"
+    || siteUrl.hostname.toLowerCase() !== "note.syrin.online"
+    || siteUrl.port
+    || siteUrl.username
+    || siteUrl.password
+    || siteUrl.pathname !== "/"
+    || siteUrl.search
+    || siteUrl.hash
+  ) {
+    return null;
+  }
+
+  return siteUrl;
+}
+
 function isCanonicalHost(url, env) {
-  const siteUrl = new URL(env.SITE_URL || "https://note.syrin.online");
-  return url.hostname.toLowerCase() === siteUrl.hostname.toLowerCase();
+  const siteUrl = canonicalSiteUrl(env);
+  return (
+    !!siteUrl
+    && url.hostname.toLowerCase() === siteUrl.hostname.toLowerCase()
+  );
 }
 
 function canonicalRedirect(url, env) {
-  const siteUrl = new URL(env.SITE_URL || "https://note.syrin.online");
+  const siteUrl = canonicalSiteUrl(env);
+  if (!siteUrl) return originUnavailableResponse();
   const target = new URL(url);
   target.protocol = "https:";
   target.username = "";
@@ -779,7 +815,7 @@ function escapeHtml(s) {
 }
 
 function renderHtml(meta, url, env) {
-  const site = env.SITE_URL.replace(/\/+$/, "");
+  const site = canonicalSiteUrl(env)?.origin ?? APPROVED_CANONICAL_ORIGIN;
   const canonical = `${site}${url.pathname}`;
 
   let title = "Syrin Notes — Markdown notes, realtime";
@@ -893,7 +929,7 @@ function renderGenericPrivateHtml(title, description) {
 }
 
 function renderRobotsTxt(env) {
-  const siteUrl = (env.SITE_URL || "https://note.syrin.online").replace(/\/+$/, "");
+  const siteUrl = canonicalSiteUrl(env)?.origin ?? APPROVED_CANONICAL_ORIGIN;
   return `User-agent: *
 Allow: /$
 Allow: /privacy$
