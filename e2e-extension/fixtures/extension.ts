@@ -53,12 +53,12 @@ export async function inSW<T>(sw: Worker, fn: () => Promise<T> | T): Promise<T> 
 // App origin the side panel embeds. Kept here so specs share one constant.
 export const APP_ORIGIN = "https://note.syrin.online";
 
-// Deterministic readiness helpers so specs don't rely on sleeps. `openPanel`
-// navigates to the side panel and waits for the loader to be present (i.e.
-// sidepanel.js has attached the message listener). `sendReady` posts a
-// synthetic syrin:ready with a controlled protocol/buildId. `waitForReady`
-// converges on the panel's post-handshake steady state: loader hidden,
-// fallback hidden, iframe visible.
+// Deterministic readiness helpers so specs don't rely on production timing.
+// `openPanel` replaces the embedded app with a silent document, navigates to
+// the side panel, and waits for sidepanel.js to attach its message listener.
+// `sendReady` posts a synthetic syrin:ready with a controlled protocol/buildId.
+// `waitForReady` converges on the panel's post-handshake steady state: loader
+// hidden, fallback hidden, iframe visible.
 import type { Page } from "@playwright/test";
 
 export async function openPanel(
@@ -66,6 +66,12 @@ export async function openPanel(
   extensionId: string,
 ): Promise<Page> {
   const panel = await context.newPage();
+  await panel.route(`${APP_ORIGIN}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Silent test app</title>",
+    }),
+  );
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`, {
     waitUntil: "domcontentloaded",
   });
