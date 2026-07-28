@@ -5,12 +5,21 @@ set -euo pipefail
 URL="${1:-${SMOKE_BASE_URL:-https://note.syrin.online/}}"
 echo "verify-frame-ancestors: probing canonical origin"
 
-headers=$(curl -sSIL --max-time 15 "$URL")
-csp=$(printf '%s\n' "$headers" \
+headers=$(curl -sSI --max-time 15 --max-redirs 0 "$URL")
+final_status=$(printf '%s\n' "$headers" \
+  | awk '/^HTTP\// {status=$2} END {print status}')
+if [[ ! "$final_status" =~ ^2[0-9][0-9]$ ]]; then
+  echo "verify-frame-ancestors: FAIL - expected canonical 2xx response" >&2
+  exit 1
+fi
+
+final_headers=$(printf '%s\n' "$headers" \
+  | awk '/^HTTP\// {block=""; seen=1; next} {if (seen) block=block $0 ORS} END {printf "%s", block}')
+csp=$(printf '%s\n' "$final_headers" \
   | awk 'BEGIN{IGNORECASE=1} /^content-security-policy:/ {sub(/^[^:]*:[[:space:]]*/,""); print; exit}')
-permissions=$(printf '%s\n' "$headers" \
+permissions=$(printf '%s\n' "$final_headers" \
   | awk 'BEGIN{IGNORECASE=1} /^permissions-policy:/ {sub(/^[^:]*:[[:space:]]*/,""); print; exit}')
-x_frame_options=$(printf '%s\n' "$headers" \
+x_frame_options=$(printf '%s\n' "$final_headers" \
   | awk 'BEGIN{IGNORECASE=1} /^x-frame-options:/ {sub(/^[^:]*:[[:space:]]*/,""); print; exit}')
 
 if [[ -z "$csp" ]]; then

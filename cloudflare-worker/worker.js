@@ -76,6 +76,13 @@ const PRIVATE_RESPONSE_HEADERS = [
   "x-lovable-analytics",
   "x-lovable-trace",
 ];
+const ORIGIN_SAFE_METHODS = new Set(["GET", "HEAD"]);
+const ORIGIN_REQUEST_HEADER_ALLOWLIST = [
+  "accept",
+  "if-modified-since",
+  "if-none-match",
+  "range",
+];
 
 // Rate limit (in-memory per-isolate). Token bucket đơn giản.
 // Ghi chú: Mỗi colo/isolate giữ state riêng, không 100% chính xác toàn cầu,
@@ -504,6 +511,9 @@ async function passThrough(
 ) {
   const url = new URL(request.url);
   const privateRoute = PRIVATE_ROUTE_KINDS.has(routeKind);
+  if (!ORIGIN_SAFE_METHODS.has(request.method)) {
+    return methodNotAllowedResponse();
+  }
   const origin = validateOriginHost(url, env);
   if (!origin.ok) {
     logEvent(env, "error", "origin_unavailable", {
@@ -549,10 +559,7 @@ async function passThrough(
   let originRequest;
   let response;
   try {
-    originRequest = new Request(
-      new Request(url, request),
-      { redirect: "manual" },
-    );
+    originRequest = sanitizedOriginRequest(url, request);
     response = await fetch(originRequest);
   } catch {
     logEvent(env, "error", "origin_unavailable", {
@@ -592,6 +599,19 @@ async function passThrough(
     status: response.status,
     statusText: response.statusText,
     headers,
+  });
+}
+
+function sanitizedOriginRequest(url, request) {
+  const headers = new Headers();
+  for (const name of ORIGIN_REQUEST_HEADER_ALLOWLIST) {
+    const value = request.headers.get(name);
+    if (value) headers.set(name, value);
+  }
+  return new Request(url.toString(), {
+    method: request.method,
+    headers,
+    redirect: "manual",
   });
 }
 
@@ -650,6 +670,19 @@ function originUnavailableResponse() {
   applyPrivateResponseHeaders(headers);
   return new Response("Service temporarily unavailable", {
     status: 503,
+    headers,
+  });
+}
+
+function methodNotAllowedResponse() {
+  const headers = new Headers({
+    allow: "GET, HEAD",
+    "content-type": "text/plain; charset=utf-8",
+  });
+  applyHtmlSecurityHeaders(headers);
+  applyPrivateResponseHeaders(headers);
+  return new Response("Method not allowed", {
+    status: 405,
     headers,
   });
 }

@@ -111,6 +111,44 @@ describe("edge privacy deployment contract", () => {
     );
   });
 
+  it("keeps every private fallback route under the same no-store policy", () => {
+    const vercel = JSON.parse(source("vercel.json")) as {
+      headers?: Array<{
+        source?: string;
+        headers?: Array<{ key?: string; value?: string }>;
+      }>;
+    };
+    const headers = source("public/_headers");
+    const privateVercelSources = [
+      "/s",
+      "/s/(.*)",
+      "/unlock(.*)",
+      "/embed/(.*)",
+      "/compat/(.*)",
+    ];
+    const requiredHeaders = [
+      ["Cache-Control", "private, no-store"],
+      ["CDN-Cache-Control", "no-store"],
+      ["Pragma", "no-cache"],
+      ["Expires", "0"],
+      ["Referrer-Policy", "no-referrer"],
+      ["X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet"],
+    ];
+
+    for (const route of privateVercelSources) {
+      const rule = vercel.headers?.find((entry) => entry.source === route);
+      for (const [key, value] of requiredHeaders) {
+        expect(rule?.headers).toEqual(
+          expect.arrayContaining([expect.objectContaining({ key, value })]),
+        );
+      }
+    }
+
+    for (const route of ["/s", "/s/*", "/unlock*", "/embed/*", "/compat/*"]) {
+      expect(headers).toContain(route);
+    }
+  });
+
   it("keeps executable scripts compatible with the no-inline-script CSP", () => {
     const index = source("index.html");
     const offline = source("public/offline.html");
@@ -146,6 +184,10 @@ describe("edge privacy deployment contract", () => {
     expect(privacy).not.toContain(
       "No advertising SDKs, tracking pixels, or third-party analytics.",
     );
+    expect(privacyText).toMatch(
+      /only after a Cloudflare containment boundary has been deployed and verified/i,
+    );
+    expect(privacyText).toMatch(/not currently asserted for any host/i);
   });
 
   it("uses authenticated repository dispatch with validated deployment fields", () => {
@@ -174,10 +216,23 @@ describe("edge privacy deployment contract", () => {
   it("verifies the full CSP and Permissions-Policy after deployment", () => {
     const script = source("scripts/verify-frame-ancestors.sh");
 
+    expect(script).not.toContain("curl -sSIL");
+    expect(script).toContain("--max-redirs 0");
+    expect(script).toContain("final_status");
+    expect(script).toMatch(/final_status.*\^2/);
     expect(script).toContain("permissions-policy");
     expect(script).toContain("default-src");
     expect(script).toContain("frame-ancestors");
     expect(script).toContain("chrome-extension://");
+  });
+
+  it("does not treat the no-go template as a deployable generic-share Worker", () => {
+    const rollout = source("docs/security/immediate-containment-rollout.md");
+
+    expect(rollout).toMatch(
+      /Deploy the generic share Worker from a separately reviewed, staging-proven\s+release configuration/i,
+    );
+    expect(rollout).toMatch(/wrangler\.toml[\s\S]*no-go[\s\S]*must not be deployed/i);
   });
 
   it("keeps the post-deploy smoke read-only and provider-isolated", () => {

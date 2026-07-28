@@ -72,8 +72,11 @@ without the explicit checkpoint below.
 6. Deploy the `share-rename` tombstone. Verify it returns `410` and `no-store`
    without initializing a database client, then purge cached responses for the
    retired endpoint.
-7. Deploy the generic share Worker from the committed Wrangler configuration
-   first so no live Worker depends on the old
+7. Deploy the generic share Worker from a separately reviewed, staging-proven
+   release configuration first. `cloudflare-worker/wrangler.toml` is the
+   intentional no-go template and must not be deployed; the approved release
+   configuration must target the isolated, non-redirecting origin proven in
+   staging so no live Worker depends on the old
    `note-meta` resolver. Then deploy the generic `note-meta` tombstone and
    purge both `/s/*` HTML cache entries and **every** Supabase/CDN/intermediary
    `note-meta` cache variant, including the historical `?slug=...` and

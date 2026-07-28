@@ -102,11 +102,12 @@ export default function Privacy() {
           IP addresses to product analytics or application logs.
         </p>
         <p>
-          On domains protected by the Cloudflare boundary, the application
-          analytics script and collection endpoint are blocked. Cloudflare
-          caching is limited to explicit public pages and immutable assets;
-          private note, share, unlock, embed, error, and compatibility pages are
-          marked private, uncacheable, and non-indexable.
+          The application analytics script and collection endpoint are treated
+          as blocked only after a Cloudflare containment boundary has been
+          deployed and verified. That boundary is not currently asserted for
+          any host. Until that verification is recorded, provider processing
+          described above may occur. Private-route cache and indexing guarantees
+          are likewise asserted only with the verified boundary.
         </p>
         <p>
           Admin abuse protection stores keyed admin abuse-prevention hashes derived

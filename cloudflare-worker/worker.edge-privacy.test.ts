@@ -398,6 +398,78 @@ describe("edge privacy containment", () => {
   });
 
   it.each([
+    { path: "/synthetic-private-capability", expectedOriginPath: "/" },
+    { path: "/s/synthetic-share-capability", expectedOriginPath: "/s" },
+  ])(
+    "strips browser credentials and identity headers before proxying $path",
+    async ({ path, expectedOriginPath }) => {
+      const doubles = installOriginDouble();
+      const headerSecret = "header-capability-must-not-reach-origin";
+      const rawIp = "198.51.100.91";
+      const referer = `https://note.syrin.online/private?token=${headerSecret}`;
+
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${path}`, {
+          headers: {
+            accept: "text/html",
+            authorization: `Bearer ${headerSecret}`,
+            cookie: `session=${headerSecret}`,
+            referer,
+            "x-forwarded-for": rawIp,
+            "cf-connecting-ip": rawIp,
+            "user-agent": "Mozilla/5.0",
+          },
+        }),
+        ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(200);
+      expect(doubles.originFetch).toHaveBeenCalledOnce();
+      const originRequest = doubles.originFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      const forwardedHeaders = Array.from(originRequest.headers.entries())
+        .flat()
+        .join("\n");
+
+      expect(originRequest.method).toBe("GET");
+      expect(originUrl.pathname).toBe(expectedOriginPath);
+      expect(originUrl.search).toBe("");
+      expect(originRequest.headers.get("authorization")).toBeNull();
+      expect(originRequest.headers.get("cookie")).toBeNull();
+      expect(originRequest.headers.get("referer")).toBeNull();
+      expect(originRequest.headers.get("x-forwarded-for")).toBeNull();
+      expect(originRequest.headers.get("cf-connecting-ip")).toBeNull();
+      expect(forwardedHeaders).not.toContain(headerSecret);
+      expect(forwardedHeaders).not.toContain(rawIp);
+    },
+  );
+
+  it.each(["/synthetic-private-capability", "/s/synthetic-share-capability"])(
+    "rejects a content-bearing %s request without reaching the origin",
+    async (path) => {
+      const doubles = installOriginDouble();
+      const bodySecret = "body-capability-must-not-reach-origin";
+
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${path}`, {
+          method: "POST",
+          headers: { "content-type": "text/plain" },
+          body: bodySecret,
+        }),
+        ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(405);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("x-robots-tag")).toBe(PRIVATE_ROBOTS);
+      expect(await response.text()).not.toContain(bodySecret);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
     { path: "/", expectedOriginPath: "/", kind: "home" },
     {
       path: "/synthetic-private-capability",
