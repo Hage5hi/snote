@@ -37,8 +37,9 @@ export default function Privacy() {
             service.
           </li>
           <li>
-            Cloudflare provides the public security, cache, and response-header
-            boundary for the service's public domains.
+            Cloudflare may provide the public security, cache, and response-header
+            boundary only after that containment boundary is deployed and verified.
+            No verified Cloudflare boundary is currently asserted for any host.
           </li>
           <li>
             The service may use short-lived anonymous authentication sessions

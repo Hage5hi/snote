@@ -49,6 +49,9 @@ describe("edge privacy deployment contract", () => {
     expect(readme).toMatch(/NO-GO/i);
     expect(readme).toContain("snote.lovable.app");
     expect(readme).toMatch(/redirect/i);
+    expect(readme).toMatch(/chưa hoạt động trên production/i);
+    expect(readme).toContain("chỉ là fallback cho static hosting");
+    expect(readme).toContain("SSR/Pages Functions");
     expect(manifest).toMatch(/Worker origin:\s*`UNSET`/);
     expect(manifest).toContain(
       "Release candidate SHA: `UNASSIGNED (awaiting a green PR head)`",
@@ -63,6 +66,13 @@ describe("edge privacy deployment contract", () => {
       "- Deployed build ID: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`",
     );
     expect(manifest).toContain("Historical Lovable-managed backend inventory");
+    expect(manifest).toContain(
+      "Historical verification snapshot (not a release candidate)",
+    );
+    expect(manifest).toContain(
+      "Historical evidence cutoff SHA: `17577e3581724f5688acaf97ebc6d96d365d93d7`",
+    );
+    expect(manifest).toContain("does not attest a tested source SHA");
     expect(manifest).toContain(
       "Historical observed application build: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`",
     );
@@ -125,6 +135,7 @@ describe("edge privacy deployment contract", () => {
       "/unlock(.*)",
       "/embed/(.*)",
       "/compat/(.*)",
+      "/:legacyLocator",
     ];
     const requiredHeaders = [
       ["Cache-Control", "private, no-store"],
@@ -144,7 +155,14 @@ describe("edge privacy deployment contract", () => {
       }
     }
 
-    for (const route of ["/s", "/s/*", "/unlock*", "/embed/*", "/compat/*"]) {
+    for (const route of [
+      "/s",
+      "/s/*",
+      "/unlock*",
+      "/embed/*",
+      "/compat/*",
+      "/:legacyLocator",
+    ]) {
       expect(headers).toContain(route);
     }
   });
@@ -188,6 +206,12 @@ describe("edge privacy deployment contract", () => {
       /only after a Cloudflare containment boundary has been deployed and verified/i,
     );
     expect(privacyText).toMatch(/not currently asserted for any host/i);
+    expect(privacyText).not.toContain(
+      "Cloudflare provides the public security, cache, and response-header boundary",
+    );
+    expect(privacyText).toMatch(
+      /Cloudflare may provide the public security, cache, and response-header boundary only after that containment boundary is deployed and verified/i,
+    );
   });
 
   it("uses authenticated repository dispatch with validated deployment fields", () => {

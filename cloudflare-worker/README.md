@@ -1,7 +1,7 @@
 # Cloudflare Worker — crawler containment
 
-Worker này đang chạy ở chế độ containment tạm thời cho tới khi capability
-backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy crawler
+Worker này triển khai containment tạm thời dự kiến cho tới khi capability
+backend/client được cutover, nhưng chưa hoạt động trên production. Slug cũ vẫn là edit credential, vì vậy crawler
 không được nhận nội dung, slug, token hay canonical URL của một note.
 
 ## Production NO-GO và routing bắt buộc
@@ -23,6 +23,10 @@ Chỉ thay placeholder và thêm ba route sau khi một origin riêng, không re
 đã qua staging suite với `redirect: "manual"`, và release manifest được duyệt.
 Direct origin sau đó phải non-public/disabled hoặc có containment tương đương.
 Không được cho alias nào đi vòng qua Worker.
+
+`vercel.json` và `public/_headers` chỉ là fallback cho static hosting; chúng
+không áp dụng cho SSR/Pages Functions. Staging phải chứng minh host đích thật sự
+áp dụng response policy trước khi chúng được tính là bằng chứng containment.
 
 ## Hành vi
 

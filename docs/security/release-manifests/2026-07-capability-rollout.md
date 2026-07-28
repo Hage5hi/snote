@@ -18,11 +18,30 @@ URLs, raw IP addresses, passwords, keys, session cookies, or secret values.
 - Current candidate branch: `security/edge-privacy-containment`
 - Observed production build ID: `1785243143966-t3474iba`
 - Observed production build time: `2026-07-28T12:52:49.186Z`
+- Observed production source-SHA attestation: `UNPROVEN (current artifact has no deployedSha)`
 - Lovable deployment ID: `UNSET (the public build ID is not a deployment identity)`
 - Last observed Cloudflare Worker version: `ac380357` (dashboard prefix)
 - Worker origin: `UNSET`
 - Production cutover time: `UNSET`
 - Legacy compatibility cutoff: `UNSET`
+
+## Release artifact attestation
+
+`build_id` is provider diagnostic metadata, not proof of the source commit.
+Before any future staging or production release, the controlled build
+environment must inject the exact approved lowercase 40-character Git commit
+as `SNOTE_RELEASE_SHA` and invoke `bun run build:release`. That command sets
+the strict release mode and compares the value with `git rev-parse HEAD`;
+missing, malformed, partial, or mismatched identity fails the build rather than
+emitting a claimed release. It must run from a clean, immutable Git checkout;
+a provider without the checked-out Git commit is a NO-GO for an attested
+release.
+
+The release artifact writes that value to `/version.json` as `deployedSha`.
+The post-deploy smoke fails unless the approved manifest candidate, checked-out
+commit, and live `deployedSha` match exactly. This is an artifact-to-source
+identity check, not a substitute for a signed provenance system; it remains
+`UNPROVEN` until the injection boundary and a staging deployment are reviewed.
 
 ## Change-control gates
 
@@ -266,11 +285,16 @@ this statement is used outside a disposable environment.
   and Turnstile names.
 - No production setting was changed during inventory.
 
-### 2026-07-28 - PR A local verification
+### 2026-07-28 - Historical verification snapshot (not a release candidate)
+
+- Historical evidence cutoff SHA: `17577e3581724f5688acaf97ebc6d96d365d93d7`.
+- This historical snapshot does not attest a tested source SHA or approve a
+  release candidate. Every gate must run again against the finalized immutable
+  candidate before staging or production approval.
 
 - Test-first runs proved the missing edge containment and CSP compatibility
   behavior before implementation.
-- Final coverage run passed all 110 test files and 1,194 tests.
+- Historical coverage run passed all 110 test files and 1,194 tests.
 - The focused edge/privacy suite passed 232 tests.
 - Lint, Knip, application/Node/tooling TypeScript checks, Edge Function Deno
   checks, i18n coverage, and the i18n allowlist passed.

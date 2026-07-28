@@ -296,6 +296,51 @@ describe("edge privacy containment", () => {
     expect(doubles.originFetch).not.toHaveBeenCalled();
   });
 
+  it("never downgrades canonical transport when SITE_URL is misconfigured", async () => {
+    const doubles = installOriginDouble();
+    const hostileEnv = {
+      ...ENV,
+      SITE_URL: "http://note.syrin.online:8080",
+    };
+
+    const response = await worker.fetch(
+      new Request("https://syrin.online/privacy"),
+      hostileEnv,
+      { waitUntil: doubles.waitUntil },
+    );
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe(
+      "https://note.syrin.online/privacy",
+    );
+    expect(doubles.originFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not reflect URL credentials when canonicalizing a public alias", async () => {
+    const doubles = installOriginDouble();
+    const username = "redirect-credential-user";
+    const password = "redirect-credential-secret";
+
+    // Browser Request construction rejects URL userinfo, but the boundary
+    // still treats request.url as untrusted input and must not reflect it if a
+    // runtime/proxy supplies one.
+    const credentialedRequest = {
+      url: `https://${username}:${password}@syrin.online/privacy`,
+      method: "GET",
+      headers: new Headers(),
+    } as unknown as Request;
+    const response = await worker.fetch(credentialedRequest, ENV, {
+      waitUntil: doubles.waitUntil,
+    });
+
+    const location = response.headers.get("location") ?? "";
+    expect(response.status).toBe(301);
+    expect(location).toBe("https://note.syrin.online/privacy");
+    expect(location).not.toContain(username);
+    expect(location).not.toContain(password);
+    expect(doubles.originFetch).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["syrin.online", "privacy", "/privacy"],
     ["syrin.online", "theme-init.js", "/theme-init.js"],
@@ -465,6 +510,30 @@ describe("edge privacy containment", () => {
       expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(response.headers.get("x-robots-tag")).toBe(PRIVATE_ROBOTS);
       expect(await response.text()).not.toContain(bodySecret);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    "http://note.syrin.online/insecure-private-capability",
+    "https://note.syrin.online:8443/insecure-private-capability",
+  ])(
+    "fails closed before proxying an insecure or non-standard client authority: %s",
+    async (requestUrl) => {
+      const doubles = installOriginDouble();
+      const capability = "insecure-private-capability";
+
+      const response = await worker.fetch(
+        new Request(requestUrl),
+        ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(400);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("x-robots-tag")).toBe(PRIVATE_ROBOTS);
+      expect(response.headers.get("location")).toBeNull();
+      expect(await response.text()).not.toContain(capability);
       expect(doubles.originFetch).not.toHaveBeenCalled();
     },
   );

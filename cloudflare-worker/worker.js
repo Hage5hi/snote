@@ -183,6 +183,9 @@ function logEvent(env, level, msg, fields = {}) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (!isSecureStandardTransport(url)) {
+      return insecureTransportResponse();
+    }
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const ua = request.headers.get("user-agent") ?? "";
     const isCrawler = CRAWLER_UA.test(ua);
@@ -523,7 +526,14 @@ async function passThrough(
     });
     return originUnavailableResponse();
   }
+  // The client-facing request authority is not an origin configuration
+  // input. Pin every authority component so a non-standard Cloudflare port
+  // or an HTTP request cannot select a different service on the trusted host.
+  url.protocol = "https:";
+  url.username = "";
+  url.password = "";
   url.hostname = origin.hostname;
+  url.port = "";
   if (routeKind === "share") {
     // The SPA migrates the legacy token into the URL fragment before routing.
     // Fragments never reach this worker, so the origin only needs the generic
@@ -674,6 +684,22 @@ function originUnavailableResponse() {
   });
 }
 
+function isSecureStandardTransport(url) {
+  return url.protocol === "https:" && url.port === "";
+}
+
+function insecureTransportResponse() {
+  const headers = new Headers({
+    "content-type": "text/plain; charset=utf-8",
+  });
+  applyHtmlSecurityHeaders(headers);
+  applyPrivateResponseHeaders(headers);
+  return new Response("Secure canonical request required", {
+    status: 400,
+    headers,
+  });
+}
+
 function methodNotAllowedResponse() {
   const headers = new Headers({
     allow: "GET, HEAD",
@@ -728,9 +754,11 @@ function isCanonicalHost(url, env) {
 function canonicalRedirect(url, env) {
   const siteUrl = new URL(env.SITE_URL || "https://note.syrin.online");
   const target = new URL(url);
-  target.protocol = siteUrl.protocol;
+  target.protocol = "https:";
+  target.username = "";
+  target.password = "";
   target.hostname = siteUrl.hostname;
-  target.port = siteUrl.port;
+  target.port = "";
   // Only explicitly public routes reach this function. Emit the same resolved
   // path used for classification so encoded traversal cannot reflect a private
   // raw prefix into Location, browser history, or downstream proxy logs.
