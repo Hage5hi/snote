@@ -15,16 +15,20 @@ const harness = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock("../NotePage", () => ({
-  CutoverNotePage: (props: {
+vi.mock("../NotePage", () => {
+  const MockNotePage = (props: {
     embedSlug: string;
     embedNarrow?: boolean;
     onPrimaryScroller?: (element: HTMLElement | null) => void;
   }) => {
     harness.noteProps.set(props.embedSlug, props);
     return <div>note:{props.embedSlug}</div>;
-  },
-}));
+  };
+  return {
+    default: MockNotePage,
+    CutoverNotePage: MockNotePage,
+  };
+});
 vi.mock("@/components/app/AppShell", () => ({
   AppShell: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>

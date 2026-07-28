@@ -55,6 +55,8 @@ const SUDDEN_DELETE_WINDOW_MS = 2000;
 const COUNT_DEBOUNCE_MS = 150;
 
 interface NotePageProps {
+  /** Ignore capability-shaped fragments while the capability backend is offline. */
+  legacyOnly?: boolean;
   /** When provided (e.g. from SplitView), use this slug instead of the route param. */
   embedSlug?: string;
   /** Container-derived layout mode for an embedded split pane. */
@@ -116,6 +118,7 @@ export function CutoverNotePage(props: NotePageProps) {
 }
 
 export default function NotePage({
+  legacyOnly = false,
   embedSlug,
   embedNarrow,
   onPrimaryScroller,
@@ -125,6 +128,7 @@ export default function NotePage({
   const slug = embedSlug ?? params.slug ?? "";
   const validSlug = SLUG_RE.test(slug);
   const capabilityAccess: CapabilityAccess | null = useMemo(() => {
+    if (legacyOnly) return null;
     const parsed = typeof window === "undefined"
       ? null
       : parseCapabilityLocation(new URL(
@@ -132,7 +136,7 @@ export default function NotePage({
         window.location.origin,
       ));
     return parsed && parsed.scope !== "view" && parsed.slug === slug ? parsed : null;
-  }, [slug, location.pathname, location.search, location.hash]);
+  }, [legacyOnly, slug, location.pathname, location.search, location.hash]);
   const capabilityToken = capabilityAccess?.token ?? null;
   const isMobile = typeof window !== "undefined" && window.matchMedia("(max-width: 768px)").matches;
   const { visible: showPreview, setVisible: setShowPreview } = usePreviewVisible();
@@ -337,14 +341,22 @@ export default function NotePage({
     setEncPhase("loading");
     let cancelled = false;
     const requestTarget: EncGateTarget = { slug, metaVersion };
-    const requestHash = window.location.hash;
+    const requestRouterTarget = routerTarget;
+    const requestLocation = {
+      pathname: window.location.pathname,
+      search: window.location.search,
+      hash: window.location.hash,
+    };
     const isCurrentRequest = () => !cancelled
       && currentEncTargetRef.current.slug === requestTarget.slug
       && currentEncTargetRef.current.metaVersion === requestTarget.metaVersion
+      && routerTargetRef.current === requestRouterTarget
       // BrowserRouter mutates window.history before a transition commits its
       // useLocation value. Never let old crypto authorize the new live URL in
       // that window between history mutation and React commit.
-      && window.location.hash === requestHash;
+      && window.location.pathname === requestLocation.pathname
+      && window.location.search === requestLocation.search
+      && window.location.hash === requestLocation.hash;
     (async () => {
       try {
         let data: {
@@ -453,7 +465,14 @@ export default function NotePage({
     return () => {
       cancelled = true;
     };
-  }, [slug, validSlug, metaVersion, capabilityAccess, capabilityToken]);
+  }, [
+    slug,
+    validSlug,
+    metaVersion,
+    capabilityAccess,
+    capabilityToken,
+    routerTarget,
+  ]);
 
   // A sibling tab (native storage event) or a same-tab lock/decrypt flow
   // (custom event) can change the durable pin while this provider is live.
@@ -765,6 +784,12 @@ export default function NotePage({
   // the workspace closed for that single commit until its owned pair exists.
   if (!doc || !provider) return null;
   const getContent = () => doc.getText("content").toString();
+  const legacyEncryptionSecret = legacyOnly ? readEncryptionSecret(location.hash) : "";
+  const currentShareUrl = legacyOnly && typeof window !== "undefined"
+    ? `${window.location.origin}/${slug}${
+      legacyEncryptionSecret ? `#${encodeURIComponent(legacyEncryptionSecret)}` : ""
+    }`
+    : undefined;
 
   if (embedSlug) {
     return (
@@ -790,6 +815,8 @@ export default function NotePage({
           isEncrypted={encMeta.isEncrypted}
           encryption={encryption}
           capabilityAccess={capabilityAccess}
+          allowEncryptionTransitions={!legacyOnly}
+          currentShareUrl={currentShareUrl}
           paginated={paginated}
           onTogglePagination={togglePagination}
           compact
@@ -870,6 +897,8 @@ export default function NotePage({
         isEncrypted={encMeta.isEncrypted}
         encryption={encryption}
         capabilityAccess={capabilityAccess}
+        allowEncryptionTransitions={!legacyOnly}
+        currentShareUrl={currentShareUrl}
         paginated={paginated}
         onTogglePagination={togglePagination}
         outlineOpen={outlineOpen}

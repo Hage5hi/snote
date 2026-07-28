@@ -33,7 +33,7 @@ interface PillStyle {
 }
 
 const STYLES: Record<SyncIndicatorStatus, PillStyle> = {
-  synced:   { Icon: Check,          cls: "text-success" },
+  synced:   { Icon: Check,          cls: "text-foreground" },
   syncing:  { Icon: Loader2,        cls: "text-muted-foreground", spin: true },
   conflict: { Icon: GitMerge,       cls: "text-warning" },
   error:    { Icon: AlertTriangle,  cls: "text-destructive" },
