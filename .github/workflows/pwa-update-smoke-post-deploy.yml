@@ -32,7 +32,7 @@ jobs:
           'https://note.syrin.online'
         }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
@@ -52,7 +52,7 @@ jobs:
           --retries=0
       - name: Upload failure evidence
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: pwa-update-smoke-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

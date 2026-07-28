@@ -35,6 +35,12 @@ test("fallback shows diagnostics after watchdog + retry both time out", async ({
   extensionId,
 }) => {
   const panel = await context.newPage();
+  await context.route(`${APP_ORIGIN}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Silent test app</title>",
+    }),
+  );
   // Shortcut the watchdog so the test runs in a few seconds, not 24s.
   await panel.addInitScript(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

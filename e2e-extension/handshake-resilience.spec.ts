@@ -38,6 +38,12 @@ test("offline / stale SW: fallback exposes diagnostics after watchdog + retry", 
   extensionId,
 }) => {
   const panel = await context.newPage();
+  await context.route(`${APP_ORIGIN}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Silent test app</title>",
+    }),
+  );
   await panel.addInitScript(() => {
     (window as Window & { __SYRIN_TEST_TIMEOUT_MS?: number }).__SYRIN_TEST_TIMEOUT_MS = 500;
   });
