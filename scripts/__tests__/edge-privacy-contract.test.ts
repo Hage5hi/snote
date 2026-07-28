@@ -19,12 +19,23 @@ function source(relativePath: string): string {
 }
 
 describe("edge privacy deployment contract", () => {
-  it("keeps production and staging Workers isolated and non-observing", () => {
+  it("keeps production and staging Workers isolated, non-observing, and fail-closed", () => {
     const production = source("cloudflare-worker/wrangler.toml");
     const staging = source("cloudflare-worker/wrangler.staging.toml");
+    const readme = source("cloudflare-worker/README.md");
+    const manifest = source(
+      "docs/security/release-manifests/2026-07-capability-rollout.md",
+    );
 
     expect(production).toContain('name = "syrin-prerender"');
-    expect(production).toContain('pattern = "note.syrin.online/*"');
+    expect(production).toMatch(/routes\s*=\s*\[\s*\]/);
+    expect(production).not.toContain('pattern = "note.syrin.online/*"');
+    expect(production).not.toContain('pattern = "syrin.online/*"');
+    expect(production).not.toMatch(
+      /^ORIGIN_HOST\s*=\s*"snote\.lovable\.app"\s*$/m,
+    );
+    expect(production).toContain('ORIGIN_HOST = "production-origin.invalid"');
+    expect(production).toMatch(/NO-GO/i);
     expect(production).toMatch(/\[observability\]\s+enabled\s*=\s*false/);
     expect(production).toMatch(/workers_dev\s*=\s*false/);
 
@@ -32,6 +43,12 @@ describe("edge privacy deployment contract", () => {
     expect(staging).not.toContain('pattern = "note.syrin.online/*"');
     expect(staging).not.toContain('pattern = "syrin.online/*"');
     expect(staging).toMatch(/\[observability\]\s+enabled\s*=\s*false/);
+    expect(readme).toMatch(/NO-GO/i);
+    expect(readme).toContain("snote.lovable.app");
+    expect(readme).toMatch(/redirect/i);
+    expect(manifest).toMatch(/Worker origin:\s*`UNSET`/);
+    expect(manifest).toMatch(/snote\.lovable\.app[\s\S]*redirect/i);
+    expect(manifest).toMatch(/non-redirecting origin/i);
   });
 
   it("keeps fallback hosting headers aligned with the edge policy", () => {
@@ -121,6 +138,15 @@ describe("edge privacy deployment contract", () => {
     expect(workflow).toContain("target_url");
     expect(workflow).toContain("Validate dispatch payload");
     expect(workflow).toContain("ref: ${{ env.DEPLOYED_SHA }}");
+    expect(workflow).toContain("POST_DEPLOY_SMOKE: \"1\"");
+    expect(workflow).toContain("EXPECTED_BUILD_ID: ${{ env.BUILD_ID }}");
+    expect(workflow).toContain(
+      "EXPECTED_DEPLOYED_SHA: ${{ env.DEPLOYED_SHA }}",
+    );
+    expect(workflow).toContain("git rev-parse HEAD");
+    expect(workflow).toContain("e2e/pwa-update-production-readonly.spec.ts");
+    expect(workflow).not.toContain("e2e/pwa-update-multi-click.spec.ts");
+    expect(workflow).not.toContain("e2e/pwa-update-no-url-v-param.spec.ts");
   });
 
   it("verifies the full CSP and Permissions-Policy after deployment", () => {
@@ -130,5 +156,33 @@ describe("edge privacy deployment contract", () => {
     expect(script).toContain("default-src");
     expect(script).toContain("frame-ancestors");
     expect(script).toContain("chrome-extension://");
+  });
+
+  it("keeps the post-deploy smoke read-only and provider-isolated", () => {
+    const helper = source("e2e/helpers/production-readonly.ts");
+    const spec = source("e2e/pwa-update-production-readonly.spec.ts");
+
+    expect(helper).toContain("GET");
+    expect(helper).toContain("HEAD");
+    expect(helper).toContain("OPTIONS");
+    expect(helper).toContain("supabase.co");
+    expect(helper).toContain("/api/");
+    expect(helper).toContain("/rest/v1/");
+    expect(helper).toContain("/functions/v1/");
+    expect(helper).toContain("routeWebSocket");
+    expect(helper).toContain("origin");
+    expect(helper).toContain("pathname");
+    expect(helper).not.toContain("postData");
+    expect(helper).not.toMatch(/blockedRequests\.push\(\s*request\.url/);
+    expect(spec).toContain('serviceWorkers: "block"');
+    expect(spec).toMatch(
+      /test\.skip\([\s\S]*process\.env\.POST_DEPLOY_SMOKE !== "1"/,
+    );
+    expect(spec).toContain('"/version.json"');
+    expect(spec).toContain("EXPECTED_BUILD_ID");
+    expect(spec).toContain("pwa-update-mock");
+    expect(spec).toContain("/privacy?v=legacy-noise&foo=bar");
+    expect(spec).toContain("assertNoWrites");
+    expect(spec).toContain("serviceWorkers: \"block\"");
   });
 });

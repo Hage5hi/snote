@@ -42,6 +42,23 @@ retained through Playwright traces, screenshots and video.
 Use `helpers/pwa-update-mock.ts` to control build IDs, polling and reload
 transitions. The post-deploy workflow runs:
 
+- `pwa-update-production-readonly.spec.ts` only.
+
+The production spec is gated by `POST_DEPLOY_SMOKE=1`. It performs a real
+`GET /version.json` with `Cache-Control: no-store`, verifies the returned
+`buildId`, and then exercises only `/privacy?v=legacy-noise&foo=bar`. Its
+`helpers/production-readonly.ts` guard permits only GET/HEAD/OPTIONS, blocks
+Supabase and API paths, closes every WebSocket, and records only
+`{method, origin, pathname}`. `serviceWorkers: "block"` is part of the spec.
+The workflow also verifies that the checkout SHA equals `EXPECTED_DEPLOYED_SHA`.
+
+`version.json` currently exposes a provider build ID and build timestamp, not a
+source commit SHA. The smoke therefore proves the checked-out SHA and the live
+build ID independently; it does not invent a source-SHA field or trust an
+unverified provider environment variable.
+
+The ordinary local/CI suite still runs:
+
 - `pwa-update-multi-click.spec.ts`
 - `pwa-update-no-url-v-param.spec.ts`
 

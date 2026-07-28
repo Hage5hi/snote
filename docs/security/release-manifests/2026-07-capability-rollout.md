@@ -18,6 +18,7 @@ URLs, raw IP addresses, passwords, keys, session cookies, or secret values.
 - Deployed build ID: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`
 - Lovable deployment ID: `5bfc10bd-bde7-4b47-aebe-5be33d2391c1`
 - Cloudflare Worker version: `ac380357` (dashboard prefix)
+- Worker origin: `UNSET`
 - Production cutover time: `UNSET`
 - Legacy compatibility cutoff: `UNSET`
 
@@ -283,6 +284,9 @@ this statement is used outside a disposable environment.
 
 ## Current NO-GO reasons
 
+- `snote.lovable.app` redirects to the canonical hostname; no staging-proven
+  non-redirecting origin exists, so the committed Wrangler production file
+  intentionally has no routes and retains a fail-closed `.invalid` placeholder.
 - Production analytics is active and the analytics endpoints are not contained
   at the canonical edge.
 - The canonical host is not routed through the deployed Worker.

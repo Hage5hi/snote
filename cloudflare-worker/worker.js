@@ -8,7 +8,7 @@
  * pass-through tới Lovable hosting nguyên bản mà không redirect URL chứa quyền.
  *
  * Cấu hình cần (Environment Variables / Secrets trong Cloudflare):
- *   - ORIGIN_HOST        = "snote.lovable.app"   (Lovable origin)
+ *   - ORIGIN_HOST        = hostname origin đã staging-prove là không redirect
  *   - SITE_URL           = "https://note.syrin.online"
  *
  * Route: gắn worker vào các pattern note.syrin.online/*, syrin.online/*
@@ -38,6 +38,11 @@ const SECURITY_CSP =
 const PERMISSIONS_POLICY =
   "camera=(), geolocation=(), microphone=(), payment=()";
 const PRIVATE_ROUTE_KINDS = new Set(["share", "note", "private"]);
+const PUBLIC_HOSTNAMES = new Set([
+  "note.syrin.online",
+  "syrin.online",
+  "www.syrin.online",
+]);
 const ROOT_RUNTIME_ASSET_PATHS = new Set([
   "/favicon.ico",
   "/icon-192.png",
@@ -493,7 +498,16 @@ async function passThrough(
 ) {
   const url = new URL(request.url);
   const privateRoute = PRIVATE_ROUTE_KINDS.has(routeKind);
-  url.hostname = env.ORIGIN_HOST;
+  const origin = validateOriginHost(url, env);
+  if (!origin.ok) {
+    logEvent(env, "error", "origin_unavailable", {
+      kind: routeKind,
+      reason: origin.reason,
+      status: 503,
+    });
+    return originUnavailableResponse();
+  }
+  url.hostname = origin.hostname;
   if (routeKind === "share") {
     // The SPA migrates the legacy token into the URL fragment before routing.
     // Fragments never reach this worker, so the origin only needs the generic
@@ -526,7 +540,30 @@ async function passThrough(
     );
     url.search = "";
   }
-  const response = await fetch(new Request(url, request));
+  let originRequest;
+  let response;
+  try {
+    originRequest = new Request(
+      new Request(url, request),
+      { redirect: "manual" },
+    );
+    response = await fetch(originRequest);
+  } catch {
+    logEvent(env, "error", "origin_unavailable", {
+      kind: routeKind,
+      reason: "fetch_error",
+      status: 503,
+    });
+    return originUnavailableResponse();
+  }
+  if (response.status >= 300 && response.status < 400) {
+    logEvent(env, "error", "origin_unavailable", {
+      kind: routeKind,
+      reason: "redirect",
+      status: response.status,
+    });
+    return originUnavailableResponse();
+  }
   const headers = new Headers(response.headers);
   const isHtml =
     privateRoute
@@ -544,6 +581,65 @@ async function passThrough(
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
+    headers,
+  });
+}
+
+function validateOriginHost(requestUrl, env) {
+  const raw = env?.ORIGIN_HOST;
+  if (typeof raw !== "string" || raw.length === 0) {
+    return { ok: false, reason: "missing" };
+  }
+  if (raw !== raw.trim() || raw.includes("://")) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  let originUrl;
+  try {
+    originUrl = new URL(`https://${raw}/`);
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+  const hostname = originUrl.hostname.toLowerCase();
+  if (
+    originUrl.username
+    || originUrl.password
+    || originUrl.port
+    || originUrl.pathname !== "/"
+    || originUrl.search
+    || originUrl.hash
+    || hostname !== raw.toLowerCase()
+    || hostname.endsWith(".invalid")
+  ) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  let canonicalHostname;
+  try {
+    canonicalHostname = new URL(
+      env?.SITE_URL || "https://note.syrin.online",
+    ).hostname.toLowerCase();
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+  if (
+    hostname === requestUrl.hostname.toLowerCase()
+    || hostname === canonicalHostname
+    || PUBLIC_HOSTNAMES.has(hostname)
+  ) {
+    return { ok: false, reason: "self_reference" };
+  }
+  return { ok: true, hostname };
+}
+
+function originUnavailableResponse() {
+  const headers = new Headers({
+    "content-type": "text/plain; charset=utf-8",
+  });
+  applyHtmlSecurityHeaders(headers);
+  applyPrivateResponseHeaders(headers);
+  return new Response("Service temporarily unavailable", {
+    status: 503,
     headers,
   });
 }

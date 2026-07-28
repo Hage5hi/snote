@@ -4,7 +4,7 @@ Worker này đang chạy ở chế độ containment tạm thời cho tới khi 
 backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy crawler
 không được nhận nội dung, slug, token hay canonical URL của một note.
 
-## Routing production bắt buộc
+## Production NO-GO và routing bắt buộc
 
 Canonical origin là `https://note.syrin.online`. Worker phải phủ cả ba host:
 
@@ -12,8 +12,16 @@ Canonical origin là `https://note.syrin.online`. Worker phải phủ cả ba ho
 - `syrin.online/*`
 - `www.syrin.online/*`
 
-Direct origin `snote.lovable.app` phải non-public/disabled hoặc có containment
-tương đương. Không được cho alias nào đi vòng qua Worker.
+Hiện chưa có origin đã được chứng minh an toàn. `snote.lovable.app` redirect về
+canonical host, nên dùng hostname đó làm `ORIGIN_HOST` sẽ tạo origin redirect
+loop. Vì vậy `wrangler.toml` cố ý có `routes = []` và
+`ORIGIN_HOST = "production-origin.invalid"`; đây là template fail-closed, không
+phải cấu hình được phép deploy vào production.
+
+Chỉ thay placeholder và thêm ba route sau khi một origin riêng, không redirect
+đã qua staging suite với `redirect: "manual"`, và release manifest được duyệt.
+Direct origin sau đó phải non-public/disabled hoặc có containment tương đương.
+Không được cho alias nào đi vòng qua Worker.
 
 ## Hành vi
 
@@ -33,13 +41,15 @@ tương đương. Không được cho alias nào đi vòng qua Worker.
 - `invocation_logs = false` phải giữ nguyên vì Cloudflare có thể ghi raw URL
   trước khi mã Worker thực thi.
 
-`wrangler.staging.toml` là fail-closed scaffold: `ORIGIN_HOST` và `SITE_URL`
-chỉ là placeholder. Không deploy staging cho tới khi hostname, origin cô lập và
-release-manifest entry tương ứng đã được review.
+`wrangler.staging.toml` và `wrangler.toml` đều là fail-closed scaffold:
+`ORIGIN_HOST` chỉ là placeholder `.invalid`. Không deploy staging hoặc
+production cho tới khi hostname, origin cô lập và release-manifest entry tương
+ứng đã được review.
 
 ## Triển khai
 
-Dùng duy nhất `cloudflare-worker/wrangler.toml` đã commit:
+Sau khi staging chứng minh origin không redirect, cập nhật
+`cloudflare-worker/wrangler.toml` trong một release candidate được review:
 
 ```toml
 routes = [
@@ -49,7 +59,7 @@ routes = [
 ]
 
 [vars]
-ORIGIN_HOST = "snote.lovable.app"
+ORIGIN_HOST = "<reviewed-non-redirecting-origin-hostname>"
 SITE_URL = "https://note.syrin.online"
 
 [observability]
@@ -61,6 +71,9 @@ invocation_logs = false
 [observability.traces]
 enabled = false
 ```
+
+Không copy khối minh họa này vào production khi manifest vẫn còn `Worker
+origin: UNSET`.
 
 Trước deploy phải kiểm kê Workers Logs, Tail Workers, Workers Logpush, traces và
 zone-level HTTP request datasets. Giữ toàn bộ Worker observability tắt trong

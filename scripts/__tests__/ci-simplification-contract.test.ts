@@ -14,6 +14,7 @@ const EXPECTED_APP_E2E = [
   "install-prompt-bip.spec.ts",
   "pwa-update-multi-click.spec.ts",
   "pwa-update-no-url-v-param.spec.ts",
+  "pwa-update-production-readonly.spec.ts",
   "pwa-update-sw-stall.spec.ts",
   "pwa-update-throttle.spec.ts",
   "split-view-malformed-persistence.spec.ts",

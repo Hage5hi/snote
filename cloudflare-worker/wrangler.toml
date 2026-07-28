@@ -3,14 +3,15 @@ main = "worker.js"
 compatibility_date = "2024-11-01"
 workers_dev = false
 
-routes = [
-  { pattern = "note.syrin.online/*", zone_name = "syrin.online" },
-  { pattern = "syrin.online/*", zone_name = "syrin.online" },
-  { pattern = "www.syrin.online/*", zone_name = "syrin.online" }
-]
+# PRODUCTION NO-GO TEMPLATE.
+# Do not add production routes until a dedicated origin has passed the staging
+# redirect/manual-fetch suite and the reviewed hostname replaces the invalid
+# placeholder below. snote.lovable.app redirects to the canonical hostname and
+# would create an origin loop.
+routes = []
 
 [vars]
-ORIGIN_HOST = "snote.lovable.app"
+ORIGIN_HOST = "production-origin.invalid"
 SUPABASE_PROJECT = "onfzjmfjldsbthchssfr"
 SITE_URL = "https://note.syrin.online"
 

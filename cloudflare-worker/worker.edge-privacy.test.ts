@@ -47,6 +47,33 @@ function installOriginDouble() {
   return { originFetch, cacheMatch, cachePut, waitUntil };
 }
 
+async function expectFailClosedOriginResponse(
+  response: Response,
+  secrets: string[] = [],
+) {
+  const body = await response.text();
+  const observable = [
+    body,
+    ...Array.from(response.headers.entries()).flat(),
+  ].join("\n");
+
+  expect(response.status).toBe(503);
+  expect(body).toBe("Service temporarily unavailable");
+  expect(response.headers.get("content-security-policy")).toBe(CSP);
+  expect(response.headers.get("permissions-policy")).toBe(PERMISSIONS_POLICY);
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
+  expect(response.headers.get("cdn-cache-control")).toBe("no-store");
+  expect(response.headers.get("cloudflare-cdn-cache-control")).toBe("no-store");
+  expect(response.headers.get("pragma")).toBe("no-cache");
+  expect(response.headers.get("expires")).toBe("0");
+  expect(response.headers.get("x-robots-tag")).toBe(PRIVATE_ROBOTS);
+  expect(response.headers.get("referrer-policy")).toBe("no-referrer");
+  expect(response.headers.get("location")).toBeNull();
+  expect(response.headers.get("x-frame-options")).toBeNull();
+  expect(response.headers.get("x-origin-secret")).toBeNull();
+  for (const secret of secrets) expect(observable).not.toContain(secret);
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -342,5 +369,211 @@ describe("edge privacy containment", () => {
     expect(observable).not.toContain(syntheticPath);
     expect(observable).not.toContain("synthetic-private-capability");
     expect(observable).not.toContain(syntheticIp);
+  });
+
+  it.each([
+    { path: "/", expectedOriginPath: "/", kind: "home" },
+    {
+      path: "/synthetic-private-capability",
+      expectedOriginPath: "/",
+      kind: "note",
+    },
+    {
+      path: "/s/synthetic-share-capability",
+      expectedOriginPath: "/s",
+      kind: "share",
+    },
+  ])(
+    "fails closed when the origin redirects $kind traffic to canonical",
+    async ({ path, expectedOriginPath, kind }) => {
+      const doubles = installOriginDouble();
+      const querySecret = "query-capability-must-not-escape";
+      const rawIp = "192.0.2.81";
+      const upstreamSecret = "upstream-location-secret";
+      const logs: string[] = [];
+      doubles.originFetch.mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: {
+            location: `https://note.syrin.online/${upstreamSecret}`,
+            "x-origin-secret": upstreamSecret,
+          },
+        }),
+      );
+      vi.spyOn(console, "log").mockImplementation((line) =>
+        logs.push(String(line)),
+      );
+
+      const response = await worker.fetch(
+        new Request(
+          `https://note.syrin.online${path}?token=${querySecret}`,
+          {
+            headers: {
+              "cf-connecting-ip": rawIp,
+              "user-agent": "Mozilla/5.0",
+            },
+          },
+        ),
+        ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      await expectFailClosedOriginResponse(response, [
+        querySecret,
+        rawIp,
+        upstreamSecret,
+      ]);
+      expect(doubles.originFetch).toHaveBeenCalledOnce();
+      const originRequest = doubles.originFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originRequest.redirect).toBe("manual");
+      expect(originUrl.pathname).toBe(expectedOriginPath);
+      expect(originUrl.search).toBe("");
+      expect(logs).toHaveLength(1);
+      const log = JSON.parse(logs[0]) as Record<string, unknown>;
+      expect(log).toMatchObject({
+        level: "error",
+        msg: "origin_unavailable",
+        kind,
+        reason: "redirect",
+        status: 302,
+      });
+      expect(Object.keys(log).sort()).toEqual(
+        ["kind", "level", "msg", "reason", "status", "ts"].sort(),
+      );
+      expect(logs.join("\n")).not.toContain(querySecret);
+      expect(logs.join("\n")).not.toContain(rawIp);
+      expect(logs.join("\n")).not.toContain(upstreamSecret);
+    },
+  );
+
+  it.each([
+    { label: "missing", originHost: undefined, reason: "missing" },
+    {
+      label: "URL-shaped",
+      originHost: "https://origin.invalid/path",
+      reason: "invalid",
+    },
+    {
+      label: "placeholder",
+      originHost: "production-origin.invalid",
+      reason: "invalid",
+    },
+    {
+      label: "request self-reference",
+      originHost: "note.syrin.online",
+      reason: "self_reference",
+    },
+    {
+      label: "canonical self-reference from an alias",
+      originHost: "note.syrin.online",
+      reason: "self_reference",
+      requestHost: "www.syrin.online",
+    },
+    {
+      label: "another public alias",
+      originHost: "www.syrin.online",
+      reason: "self_reference",
+    },
+  ])(
+    "fails closed before fetch for a $label origin",
+    async ({ originHost, reason, requestHost = "note.syrin.online" }) => {
+      const doubles = installOriginDouble();
+      const rawPathSecret = "private-origin-config-secret";
+      const rawIp = "192.0.2.82";
+      const logs: string[] = [];
+      vi.spyOn(console, "log").mockImplementation((line) =>
+        logs.push(String(line)),
+      );
+
+      const response = await worker.fetch(
+        new Request(`https://${requestHost}/${rawPathSecret}?token=query-secret`, {
+          headers: {
+            "cf-connecting-ip": rawIp,
+            "user-agent": "Mozilla/5.0",
+          },
+        }),
+        {
+          ORIGIN_HOST: originHost,
+          SITE_URL: "https://note.syrin.online",
+        },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      await expectFailClosedOriginResponse(response, [
+        rawPathSecret,
+        rawIp,
+        "query-secret",
+      ]);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+      expect(logs).toHaveLength(1);
+      const log = JSON.parse(logs[0]) as Record<string, unknown>;
+      expect(log).toMatchObject({
+        level: "error",
+        msg: "origin_unavailable",
+        kind: "note",
+        reason,
+        status: 503,
+      });
+      expect(Object.keys(log).sort()).toEqual(
+        ["kind", "level", "msg", "reason", "status", "ts"].sort(),
+      );
+      expect(logs.join("\n")).not.toContain(rawPathSecret);
+      expect(logs.join("\n")).not.toContain(rawIp);
+      expect(logs.join("\n")).not.toContain("query-secret");
+    },
+  );
+
+  it("fails closed after one origin fetch exception", async () => {
+    const doubles = installOriginDouble();
+    const rawPathSecret = "private-fetch-exception-secret";
+    const rawIp = "192.0.2.83";
+    const logs: string[] = [];
+    doubles.originFetch.mockRejectedValueOnce(
+      new TypeError("fetch failed with upstream-location-secret"),
+    );
+    vi.spyOn(console, "log").mockImplementation((line) =>
+      logs.push(String(line)),
+    );
+
+    const response = await worker.fetch(
+      new Request(
+        `https://note.syrin.online/${rawPathSecret}?token=query-secret`,
+        {
+          headers: {
+            "cf-connecting-ip": rawIp,
+            "user-agent": "Mozilla/5.0",
+          },
+        },
+      ),
+      ENV,
+      { waitUntil: doubles.waitUntil },
+    );
+
+    await expectFailClosedOriginResponse(response, [
+      rawPathSecret,
+      rawIp,
+      "query-secret",
+      "upstream-location-secret",
+    ]);
+    expect(doubles.originFetch).toHaveBeenCalledOnce();
+    const originRequest = doubles.originFetch.mock.calls[0]?.[0] as Request;
+    expect(originRequest.redirect).toBe("manual");
+    expect(new URL(originRequest.url).pathname).toBe("/");
+    expect(logs).toHaveLength(1);
+    const log = JSON.parse(logs[0]) as Record<string, unknown>;
+    expect(log).toMatchObject({
+      level: "error",
+      msg: "origin_unavailable",
+      kind: "note",
+      reason: "fetch_error",
+      status: 503,
+    });
+    expect(Object.keys(log).sort()).toEqual(
+      ["kind", "level", "msg", "reason", "status", "ts"].sort(),
+    );
+    expect(logs.join("\n")).not.toContain(rawPathSecret);
+    expect(logs.join("\n")).not.toContain(rawIp);
+    expect(logs.join("\n")).not.toContain("upstream-location-secret");
   });
 });
