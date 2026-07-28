@@ -80,8 +80,15 @@ test.describe("debug export — copy path parity", () => {
     expect(filePath).toBeTruthy();
     const downloaded = JSON.parse(readFileSync(filePath!, "utf8"));
     const withoutTimestamp = ({ exportedAt: _exportedAt, ...rest }) => rest;
+    const { lines: copiedLines, ...copiedMetadata } = withoutTimestamp(copied);
+    const { lines: downloadedLines, ...downloadedMetadata } =
+      withoutTimestamp(downloaded);
 
-    expect(withoutTimestamp(downloaded)).toEqual(withoutTimestamp(copied));
+    expect(downloadedMetadata).toEqual(copiedMetadata);
+    // The iframe can append a legitimate diagnostic event between the two
+    // user actions. In this low-volume fixture, the later export must preserve
+    // the earlier snapshot in order while allowing newly observed events.
+    expect(downloadedLines.slice(0, copiedLines.length)).toEqual(copiedLines);
     expect(JSON.stringify(copied)).not.toContain("parity-secret-slug");
     expect(JSON.stringify(downloaded)).not.toContain("parity-secret-slug");
     expect(copied.redacted).toBe(true);
