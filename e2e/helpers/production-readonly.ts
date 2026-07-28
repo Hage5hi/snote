@@ -14,6 +14,7 @@ const BLOCKED_PATH_PREFIXES = [
   "/~api/analytics/",
 ];
 const BLOCKED_EXACT_PATHS = new Set(["/~flock.js"]);
+const MAX_PATH_DECODE_PASSES = 3;
 
 function sanitizedAttempt(url: string, method: string): ProductionReadonlyAttempt {
   const parsed = new URL(url);
@@ -34,16 +35,38 @@ function isBlockedPath(pathname: string): boolean {
   );
 }
 
+function normalizePathname(pathname: string): string | null {
+  let normalized = pathname;
+
+  // A browser can preserve percent-encoded separators in request.url(). Decode
+  // only a bounded number of times, and fail closed for malformed or still-
+  // encoded paths so an API/telemetry request cannot bypass this smoke guard.
+  for (let pass = 0; pass < MAX_PATH_DECODE_PASSES; pass += 1) {
+    try {
+      const decoded = decodeURIComponent(normalized);
+      if (decoded === normalized) {
+        return decoded.toLowerCase();
+      }
+      normalized = decoded;
+    } catch {
+      return null;
+    }
+  }
+
+  return normalized.includes("%") ? null : normalized.toLowerCase();
+}
+
 export function shouldBlockProductionRequest(
   url: string,
   method: string,
 ): boolean {
   const parsed = new URL(url);
-  const pathname = (parsed.pathname || "/").toLowerCase();
+  const pathname = normalizePathname(parsed.pathname || "/");
 
   return (
     !ALLOWED_METHODS.has(method.toUpperCase()) ||
     isSupabaseHost(parsed.hostname.toLowerCase()) ||
+    pathname === null ||
     isBlockedPath(pathname) ||
     BLOCKED_EXACT_PATHS.has(pathname)
   );
