@@ -5,7 +5,11 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfigFromFile, type ConfigEnv } from "vite";
 import { describe, expect, it, vi } from "vitest";
-import { resolveCleanGitHead } from "../release-identity";
+import {
+  resolveCleanGitHead,
+  revalidateDeployedSha,
+  type GitCommand,
+} from "../release-identity";
 
 const root = process.cwd();
 const buildEnvironment: ConfigEnv = {
@@ -21,6 +25,31 @@ type VersionPayload = {
   builtAt?: unknown;
   deployedSha?: unknown;
 };
+
+type GitStep = {
+  args: readonly string[];
+  output?: string;
+  error?: Error;
+};
+
+function createGitSequence(steps: readonly GitStep[]): {
+  runGit: GitCommand;
+  expectComplete: () => void;
+} {
+  let index = 0;
+  return {
+    runGit(args) {
+      const step = steps[index++];
+      if (!step) throw new Error(`Unexpected Git command: ${args.join(" ")}`);
+      expect(args).toEqual(step.args);
+      if (step.error) throw step.error;
+      return step.output ?? "";
+    },
+    expectComplete() {
+      expect(index).toBe(steps.length);
+    },
+  };
+}
 
 async function withReleaseEnv<T>(
   overrides: Partial<Record<(typeof RELEASE_ENV_KEYS)[number], string>>,
@@ -70,7 +99,14 @@ async function emitVersionPayload(): Promise<VersionPayload> {
   }
 
   const emitted: Array<{ source?: string | Uint8Array }> = [];
-  await (generateBundle as Function).call(
+  type GenerateBundleHook = (
+    this: {
+      emitFile(asset: { source?: string | Uint8Array }): string;
+    },
+    outputOptions: object,
+    bundle: object,
+  ) => void | Promise<void>;
+  await (generateBundle as GenerateBundleHook).call(
     {
       emitFile(asset: { source?: string | Uint8Array }) {
         emitted.push(asset);
@@ -144,17 +180,148 @@ describe("release artifact identity contract", () => {
     );
   });
 
-  it("stamps an exact approved commit SHA into a release version artifact", async () => {
+  describe("bundle-time Git identity revalidation", () => {
+    const shaA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const shaB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const head = (sha: string): GitStep => ({
+      args: ["rev-parse", "HEAD"],
+      output: `${sha}\n`,
+    });
+    const status = (output = ""): GitStep => ({
+      args: ["status", "--porcelain", "--untracked-files=all"],
+      output,
+    });
+
+    it("drops an ordinary identity when HEAD changes before emission", () => {
+      const sequence = createGitSequence([
+        head(shaA),
+        status(),
+        head(shaB),
+        status(),
+      ]);
+      const initialSha = resolveCleanGitHead(sequence.runGit);
+
+      expect(initialSha).toBe(shaA);
+      expect(revalidateDeployedSha(initialSha, "ordinary", sequence.runGit)).toBeNull();
+      sequence.expectComplete();
+    });
+
+    it("drops an ordinary identity when the worktree becomes dirty", () => {
+      const sequence = createGitSequence([
+        head(shaA),
+        status(),
+        head(shaA),
+        status(" M vite.config.ts\n"),
+      ]);
+      const initialSha = resolveCleanGitHead(sequence.runGit);
+
+      expect(initialSha).toBe(shaA);
+      expect(revalidateDeployedSha(initialSha, "ordinary", sequence.runGit)).toBeNull();
+      sequence.expectComplete();
+    });
+
+    it("never upgrades an initially null ordinary identity", () => {
+      const sequence = createGitSequence([
+        head(shaA),
+        status("?? untracked.txt\n"),
+        head(shaB),
+        status(),
+      ]);
+      const initialSha = resolveCleanGitHead(sequence.runGit);
+
+      expect(initialSha).toBeNull();
+      expect(revalidateDeployedSha(initialSha, "ordinary", sequence.runGit)).toBeNull();
+      sequence.expectComplete();
+    });
+
+    it("keeps an ordinary identity when the clean HEAD is unchanged", () => {
+      const sequence = createGitSequence([
+        head(shaA),
+        status(),
+        head(shaA),
+        status(),
+      ]);
+      const initialSha = resolveCleanGitHead(sequence.runGit);
+
+      expect(revalidateDeployedSha(initialSha, "ordinary", sequence.runGit)).toBe(shaA);
+      sequence.expectComplete();
+    });
+
+    it("throws in strict mode when HEAD changes before emission", () => {
+      const sequence = createGitSequence([
+        head(shaA),
+        status(),
+        head(shaB),
+        status(),
+      ]);
+      const initialSha = resolveCleanGitHead(sequence.runGit);
+
+      expect(() =>
+        revalidateDeployedSha(initialSha, "strict", sequence.runGit),
+      ).toThrow(/changed after configuration/);
+      sequence.expectComplete();
+    });
+
+    it.each([
+      {
+        label: "Git is unavailable",
+        emission: [
+          {
+            args: ["rev-parse", "HEAD"],
+            error: new Error("git unavailable"),
+          },
+        ],
+      },
+      {
+        label: "HEAD is invalid",
+        emission: [head("not-a-sha")],
+      },
+      {
+        label: "the worktree becomes dirty",
+        emission: [head(shaA), status(" M vite.config.ts\n")],
+      },
+      {
+        label: "Git status fails",
+        emission: [
+          head(shaA),
+          {
+            args: ["status", "--porcelain", "--untracked-files=all"],
+            error: new Error("status unavailable"),
+          },
+        ],
+      },
+    ])("throws in strict mode when $label", ({ emission }) => {
+      const sequence = createGitSequence([
+        head(shaA),
+        status(),
+        ...emission,
+      ]);
+      const initialSha = resolveCleanGitHead(sequence.runGit);
+
+      expect(() =>
+        revalidateDeployedSha(initialSha, "strict", sequence.runGit),
+      ).toThrow(/could not be revalidated/);
+      sequence.expectComplete();
+    });
+  });
+
+  it("stamps an exact approved SHA only after clean bundle-time revalidation", async () => {
     const deployedSha = execFileSync("git", ["rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim();
-    const version = await withReleaseEnv(
-      {
-        SNOTE_RELEASE_SHA: deployedSha,
-        SNOTE_REQUIRE_RELEASE_SHA: "1",
-      },
-      emitVersionPayload,
-    );
+    const releaseEnv = {
+      SNOTE_RELEASE_SHA: deployedSha,
+      SNOTE_REQUIRE_RELEASE_SHA: "1",
+    };
+
+    if (resolveCleanGitHead() !== deployedSha) {
+      await expect(
+        withReleaseEnv(releaseEnv, emitVersionPayload),
+      ).rejects.toThrow(/could not be revalidated/);
+      return;
+    }
+
+    const version = await withReleaseEnv(releaseEnv, emitVersionPayload);
 
     expect(version.buildId).toEqual(expect.any(String));
     expect(version.builtAt).toEqual(expect.any(String));
@@ -198,17 +365,7 @@ describe("release artifact identity contract", () => {
   });
 
   it("stamps ordinary builds only when the real Git checkout is clean", async () => {
-    const status = execFileSync(
-      "git",
-      ["status", "--porcelain", "--untracked-files=all"],
-      { encoding: "utf8" },
-    );
-    const expectedSha =
-      status === ""
-        ? execFileSync("git", ["rev-parse", "HEAD"], {
-            encoding: "utf8",
-          }).trim()
-        : null;
+    const expectedSha = resolveCleanGitHead();
     const version = await withReleaseEnv({}, emitVersionPayload);
 
     expect(version.deployedSha).toBe(expectedSha);

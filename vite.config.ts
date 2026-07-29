@@ -4,7 +4,10 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
-import { resolveCleanGitHead } from "./scripts/release-identity";
+import {
+  resolveCleanGitHead,
+  revalidateDeployedSha,
+} from "./scripts/release-identity";
 
 // Editor-route chunks (NotePage, cm-vendor, yjs-vendor, md-vendor) are warmed
 // by the device-aware, intent-driven prefetch in src/pages/Home.tsx, which
@@ -72,13 +75,17 @@ function emitVersionJson(): Plugin {
     name: "emit-version-json",
     apply: "build" as const,
     generateBundle() {
+      const deployedSha = revalidateDeployedSha(
+        DEPLOYED_SHA,
+        REQUIRE_RELEASE_SHA === "1" ? "strict" : "ordinary",
+      );
       this.emitFile({
         type: "asset",
         fileName: "version.json",
         source: JSON.stringify({
           buildId: BUILD_ID,
           builtAt: new Date().toISOString(),
-          deployedSha: DEPLOYED_SHA,
+          deployedSha,
         }),
       });
     },

@@ -24,3 +24,25 @@ export function resolveCleanGitHead(
     return null;
   }
 }
+
+export function revalidateDeployedSha(
+  initialSha: string | null,
+  mode: "ordinary" | "strict",
+  runGit: GitCommand = runGitCommand,
+): string | null {
+  const currentSha = resolveCleanGitHead(runGit);
+
+  if (mode === "strict") {
+    if (currentSha === null) {
+      throw new Error(
+        "Strict release Git identity could not be revalidated from a clean worktree.",
+      );
+    }
+    if (initialSha === null || currentSha !== initialSha) {
+      throw new Error("Strict release Git identity changed after configuration.");
+    }
+    return currentSha;
+  }
+
+  return initialSha !== null && currentSha === initialSha ? initialSha : null;
+}
