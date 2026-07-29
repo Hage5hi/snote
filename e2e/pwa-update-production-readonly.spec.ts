@@ -7,6 +7,7 @@ import {
 import {
   createProductionReadonlyPolicy,
   installProductionReadonlyGuard,
+  shouldBlockProductionRequest,
 } from "./helpers/production-readonly";
 
 test.use({
@@ -41,16 +42,21 @@ test.describe("production PWA smoke (read-only)", () => {
     const guard = await installProductionReadonlyGuard(page, policy);
     expect(context.serviceWorkers()).toEqual([]);
 
-    const versionResponse = await page.request.get(
-      new URL("/version.json", baseUrl).toString(),
-      {
-        headers: {
-          "cache-control": "no-store",
-          pragma: "no-cache",
-        },
+    const versionUrl = new URL(
+      "/version.json",
+      policy.allowedOrigin,
+    ).toString();
+    expect(shouldBlockProductionRequest(versionUrl, "GET", policy)).toBe(false);
+    const versionResponse = await page.request.get(versionUrl, {
+      maxRedirects: 0,
+      headers: {
+        "cache-control": "no-store",
+        pragma: "no-cache",
       },
-    );
+    });
     expect(versionResponse.status()).toBe(200);
+    expect(versionResponse.url()).toBe(versionUrl);
+    expect(versionResponse.headers()).not.toHaveProperty("location");
     // The request itself is explicitly no-store/no-cache. Providers may
     // answer with either directive while the Worker is the production
     // response-policy source of truth.

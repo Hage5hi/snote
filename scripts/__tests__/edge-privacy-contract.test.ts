@@ -151,7 +151,7 @@ describe("edge privacy deployment contract", () => {
       "/unlock(.*)",
       "/embed/(.*)",
       "/compat/(.*)",
-      "/:legacyLocator",
+      "/((?!privacy$)[A-Za-z0-9_-]{1,64})",
     ];
     const requiredHeaders = [
       ["Cache-Control", "private, no-store"],
@@ -183,6 +183,33 @@ describe("edge privacy deployment contract", () => {
     }
   });
 
+  it("keeps public privacy detached from generic legacy noindex fallbacks", () => {
+    const vercel = JSON.parse(source("vercel.json")) as {
+      headers?: Array<{
+        source?: string;
+      }>;
+    };
+    const headers = source("public/_headers");
+    const legacySource = "/((?!privacy$)[A-Za-z0-9_-]{1,64})";
+    const legacyPattern = new RegExp(`^${legacySource}$`);
+
+    expect(vercel.headers?.some((rule) => rule.source === legacySource)).toBe(
+      true,
+    );
+    expect(vercel.headers?.some((rule) => rule.source === "/:legacyLocator")).toBe(
+      false,
+    );
+    expect(legacyPattern.test("/legacy_locator-1")).toBe(true);
+    expect(legacyPattern.test("/privacy")).toBe(false);
+    expect(legacyPattern.test(`/${"a".repeat(65)}`)).toBe(false);
+    expect(headers).toMatch(
+      /(?:^|\r?\n)\/:legacyLocator\r?\n[\s\S]*?X-Robots-Tag:\s*noindex, nofollow, noarchive, nosnippet/,
+    );
+    expect(headers).toMatch(
+      /(?:^|\r?\n)\/privacy\r?\n\s+! X-Robots-Tag(?:\r?\n|$)/,
+    );
+  });
+
   it("keeps executable scripts compatible with the no-inline-script CSP", () => {
     const index = source("index.html");
     const offline = source("public/offline.html");
@@ -204,10 +231,17 @@ describe("edge privacy deployment contract", () => {
     expect(robots).toContain("Disallow: /");
   });
 
-  it("states the deployed privacy boundary without denying provider analytics", () => {
+  it("states the preparation privacy boundary without claiming an undeployed cutover", () => {
     const privacy = source("src/pages/Privacy.tsx");
     const privacyText = privacy.replace(/\s+/g, " ");
+    const manifest = source(
+      "docs/security/release-manifests/2026-07-capability-rollout.md",
+    );
 
+    expect(manifest).toContain(
+      "Status: `PREPARATION - NO PRODUCTION MUTATION AUTHORIZED`",
+    );
+    expect(privacyText).toContain("Last updated: July 29, 2026");
     expect(privacyText).toContain("Lovable Cloud");
     expect(privacyText).toContain("Cloudflare");
     expect(privacyText).toMatch(/anonymous authentication/i);
@@ -227,6 +261,24 @@ describe("edge privacy deployment contract", () => {
     );
     expect(privacyText).toMatch(
       /Cloudflare may provide the public security, cache, and response-header boundary only after that containment boundary is deployed and verified/i,
+    );
+    expect(privacyText).toMatch(
+      /Lovable Cloud currently processes standard HTTP metadata/i,
+    );
+    expect(privacyText).toMatch(
+      /Cloudflare may process the same standard HTTP metadata only when a request is actually routed through a Cloudflare boundary/i,
+    );
+    expect(privacyText).not.toContain(
+      "Lovable Cloud and Cloudflare process standard connection metadata",
+    );
+    expect(privacyText).toMatch(
+      /When the replacement admin abuse protection is deployed and enabled/i,
+    );
+    expect(privacyText).not.toMatch(
+      /Admin abuse protection stores keyed admin abuse-prevention hashes/i,
+    );
+    expect(privacyText).not.toContain(
+      "a daily retention job removes them",
     );
   });
 

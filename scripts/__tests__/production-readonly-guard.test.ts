@@ -133,6 +133,26 @@ describe("production read-only smoke guard", () => {
     expect(spec).toContain("installProductionReadonlyGuard(page, policy)");
   });
 
+  it("keeps the API request probe canonical and refuses redirects", () => {
+    const spec = readFileSync(
+      resolve(process.cwd(), "e2e/pwa-update-production-readonly.spec.ts"),
+      "utf8",
+    );
+
+    expect(spec).toContain("shouldBlockProductionRequest");
+    expect(spec).toMatch(
+      /const versionUrl = new URL\(\s*"\/version\.json",\s*policy\.allowedOrigin,\s*\)\.toString\(\);/,
+    );
+    expect(spec).toContain(
+      'expect(shouldBlockProductionRequest(versionUrl, "GET", policy)).toBe(false)',
+    );
+    expect(spec).toContain("maxRedirects: 0");
+    expect(spec).toContain("expect(versionResponse.url()).toBe(versionUrl)");
+    expect(spec).toContain(
+      'expect(versionResponse.headers()).not.toHaveProperty("location")',
+    );
+  });
+
   it("does not start a local Vite server during a post-deploy smoke", () => {
     const config = readFileSync(resolve(process.cwd(), "playwright.config.ts"), "utf8");
 

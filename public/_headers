@@ -1,7 +1,8 @@
-# Cloudflare Pages / Netlify-style headers config.
+# Cloudflare Pages/static-assets fallback headers config.
 #
 # SOURCE OF TRUTH FOR PROD: cloudflare-worker/worker.js. This file and
-# vercel.json are defense-in-depth fallbacks for hosts that honor them.
+# vercel.json are defense-in-depth fallbacks for static hosts that explicitly
+# honor their respective formats.
 #
 # This fallback format cannot safely express the Worker's fingerprint regex,
 # so it deliberately does not apply an immutable blanket to /assets/*. The
@@ -27,6 +28,9 @@
   Expires: 0
   Referrer-Policy: no-referrer
   X-Robots-Tag: noindex, nofollow, noarchive, nosnippet
+
+/privacy
+  ! X-Robots-Tag
 
 /s
   Cache-Control: private, no-store

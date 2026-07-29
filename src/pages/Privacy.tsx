@@ -4,7 +4,7 @@ export default function Privacy() {
     <main className="mx-auto max-w-2xl px-6 py-12 text-foreground">
       <h1 className="text-2xl font-semibold tracking-tight">Privacy Policy</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Last updated: July 28, 2026
+        Last updated: July 29, 2026
       </p>
 
       <section className="mt-8 space-y-3">
@@ -94,13 +94,15 @@ export default function Privacy() {
       <section className="mt-8 space-y-3">
         <h2 className="text-lg font-medium">Network processing and logs</h2>
         <p>
-          Lovable Cloud and Cloudflare process standard connection metadata such
-          as an IP address, user agent, request time, response status, and the
-          requested path to host, deliver, measure, and protect the service.
-          Provider platform analytics may aggregate path, country, and device
-          categories. The application does not intentionally add raw note
-          content, ciphertext payloads, note capabilities, share tokens, or raw
-          IP addresses to product analytics or application logs.
+          Lovable Cloud currently processes standard HTTP metadata such as an IP
+          address, user agent, request time, response status, and the requested
+          path to host, deliver, measure, and protect the service. Cloudflare may
+          process the same standard HTTP metadata only when a request is actually
+          routed through a Cloudflare boundary. Provider platform analytics may
+          aggregate path, country, and device categories.
+          The application does not intentionally add raw note content,
+          ciphertext payloads, note capabilities, share tokens, or raw IP
+          addresses to product analytics or application logs.
         </p>
         <p>
           The application analytics script and collection endpoint are treated
@@ -111,12 +113,13 @@ export default function Privacy() {
           are likewise asserted only with the verified boundary.
         </p>
         <p>
-          Admin abuse protection stores keyed admin abuse-prevention hashes derived
-          from a gateway-verified network address, not the raw address, in the app
-          database. Failed-attempt hashes become eligible for deletion after seven
-          days; a daily retention job removes them, and each admin authentication
-          request also runs the same cleanup. Expired opaque admin-session hashes
-          are removed by that cleanup as well.
+          When the replacement admin abuse protection is deployed and enabled, it
+          is intended to store keyed admin abuse-prevention hashes derived from a
+          gateway-verified network address, not the raw address, in the app
+          database. Under that proposed retention policy, failed-attempt hashes
+          would become eligible for deletion after seven days; a daily retention
+          job and each admin authentication request would run the cleanup. Expired
+          opaque admin-session hashes would be removed by that cleanup as well.
         </p>
         <p>
           Provider-level logs, analytics, backups, and service data follow the
