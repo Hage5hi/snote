@@ -218,6 +218,43 @@ describe("edge privacy containment", () => {
     }
   });
 
+  it.each([
+    {
+      label: "canonical",
+      requestOrigin: "https://note.syrin.online",
+      env: ENV,
+    },
+    {
+      label: "staging",
+      requestOrigin: STAGING_SERVE_ORIGIN,
+      env: STAGING_ENV,
+    },
+  ])(
+    "does not reflect a sensitive query while normalizing crawler home on $label",
+    async ({ requestOrigin, env }) => {
+      const doubles = installOriginDouble();
+      const secret = "capability-secret-must-not-enter-location";
+
+      const response = await worker.fetch(
+        new Request(
+          `${requestOrigin}/%252e%252e/?token=${secret}`,
+          { headers: { "user-agent": "Googlebot" } },
+        ),
+        env,
+        { waitUntil: doubles.waitUntil },
+      );
+      const location = response.headers.get("location") ?? "";
+      const redirectUrl = new URL(location);
+
+      expect(response.status).toBe(301);
+      expect(redirectUrl.origin).toBe(requestOrigin);
+      expect(redirectUrl.pathname).toBe("/");
+      expect(redirectUrl.search).toBe("");
+      expect(location).not.toContain(secret);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
+
   it("publicly caches only fingerprinted assets", async () => {
     const doubles = installOriginDouble();
 

@@ -315,6 +315,8 @@ export default {
     if (normalizedPath !== url.pathname) {
       const redir = new URL(url);
       redir.pathname = normalizedPath;
+      redir.search = "";
+      redir.hash = "";
       return Response.redirect(redir.toString(), 301);
     }
 
