@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type BrowserContext } from "@playwright/test";
 
 export type ProductionReadonlyAttempt = {
   method: string;
@@ -15,6 +15,12 @@ const CANONICAL_PRODUCTION_POLICY = {
 const ALLOWED_EXACT_PATHNAMES = new Set([
   "/privacy",
   "/version.json",
+  "/index.html",
+  "/offline.html",
+  "/offline-retry.js",
+  "/sw-kill.js",
+  "/placeholder.svg",
+  "/syrin-note-sidepanel.zip.manifest.json",
   "/manifest.webmanifest",
   "/favicon.ico",
   "/icon-192.png",
@@ -23,9 +29,9 @@ const ALLOWED_EXACT_PATHNAMES = new Set([
   "/logo.webp",
   "/theme-init.js",
   "/sw.js",
-  "/registersw.js",
 ]);
 const ALLOWED_STATIC_PATH_PREFIXES = ["/assets/"];
+const ALLOWED_WORKBOX_PATHNAME = /^\/workbox-[A-Za-z0-9_-]+\.js$/;
 const LOCAL_ALLOWED_PATH_PREFIXES = [
   "/@vite/",
   "/src/",
@@ -83,6 +89,7 @@ function hasPathPrefix(pathname: string, prefixes: readonly string[]): boolean {
 function isAllowedSmokePath(origin: string, pathname: string): boolean {
   if (
     ALLOWED_EXACT_PATHNAMES.has(pathname) ||
+    ALLOWED_WORKBOX_PATHNAME.test(pathname) ||
     hasPathPrefix(pathname, ALLOWED_STATIC_PATH_PREFIXES)
   ) {
     return true;
@@ -120,11 +127,25 @@ export function sanitizeProductionReadonlyAttempt(
   url: string,
   method: string,
 ): ProductionReadonlyAttempt {
-  const parsed = new URL(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return {
+      method,
+      origin: "third-party",
+      pathname: "/:malformed-path",
+    };
+  }
+
   return {
     method,
     origin: classifyEvidenceOrigin(parsed.origin),
-    pathname: redactEvidencePathname(normalizePathname(parsed.pathname || "/")),
+    pathname: redactEvidencePathname(
+      hasAmbiguousRawPath(url)
+        ? null
+        : normalizePathname(parsed.pathname || "/"),
+    ),
   };
 }
 
@@ -150,7 +171,7 @@ function resolvePathSegments(pathname: string): string {
     segments.push(segment);
   }
 
-  return `/${segments.join("/")}`.toLowerCase();
+  return `/${segments.join("/")}`;
 }
 
 function normalizePathname(pathname: string): string | null {
@@ -174,12 +195,41 @@ function normalizePathname(pathname: string): string | null {
   return normalized.includes("%") ? null : resolvePathSegments(normalized);
 }
 
+function hasAmbiguousRawPath(url: string): boolean {
+  const schemeEnd = url.indexOf("://");
+  if (schemeEnd <= 0) return true;
+
+  const pathStart = url.indexOf("/", schemeEnd + 3);
+  if (pathStart < 0) return false;
+
+  const queryStart = url.indexOf("?", pathStart);
+  const fragmentStart = url.indexOf("#", pathStart);
+  const pathEnd = [queryStart, fragmentStart]
+    .filter((index) => index >= 0)
+    .reduce((lowest, index) => Math.min(lowest, index), url.length);
+  const rawPath = url.slice(pathStart, pathEnd);
+
+  return (
+    rawPath.includes("%") ||
+    rawPath.includes("\\") ||
+    rawPath.includes("//") ||
+    rawPath.split("/").some((segment) => segment === "." || segment === "..")
+  );
+}
+
 export function shouldBlockProductionRequest(
   url: string,
   method: string,
   policy: ProductionReadonlyPolicy = CANONICAL_PRODUCTION_POLICY,
 ): boolean {
-  const parsed = new URL(url);
+  if (hasAmbiguousRawPath(url)) return true;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return true;
+  }
   const pathname = normalizePathname(parsed.pathname || "/");
 
   return (
@@ -194,13 +244,13 @@ export function shouldBlockProductionRequest(
 }
 
 export async function installProductionReadonlyGuard(
-  page: Page,
+  context: BrowserContext,
   policy: ProductionReadonlyPolicy = CANONICAL_PRODUCTION_POLICY,
 ) {
   const blockedRequests: ProductionReadonlyAttempt[] = [];
   const blockedWebSockets: ProductionReadonlyAttempt[] = [];
 
-  await page.route("**/*", async (route) => {
+  await context.route("**/*", async (route) => {
     const request = route.request();
     const attempt = sanitizeProductionReadonlyAttempt(
       request.url(),
@@ -220,7 +270,7 @@ export async function installProductionReadonlyGuard(
     await route.continue();
   });
 
-  await page.routeWebSocket("**/*", async (webSocket) => {
+  await context.routeWebSocket("**/*", async (webSocket) => {
     blockedWebSockets.push(
       sanitizeProductionReadonlyAttempt(webSocket.url(), "WEBSOCKET"),
     );

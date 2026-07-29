@@ -1,9 +1,4 @@
-import { expect, test } from "@playwright/test";
-import {
-  getHardReloadCount,
-  installPwaUpdateMock,
-  waitForPwaUpdaterReady,
-} from "./helpers/pwa-update-mock";
+import { expect, test, type Page } from "@playwright/test";
 import {
   createProductionReadonlyPolicy,
   installProductionReadonlyGuard,
@@ -11,11 +6,33 @@ import {
 } from "./helpers/production-readonly";
 
 test.use({
-  serviceWorkers: "block",
+  serviceWorkers: "allow",
   trace: "off",
   screenshot: "off",
   video: "off",
 });
+
+type DeployedServiceWorkerState = {
+  activeScriptUrl: string | null;
+  activeState: string | null;
+  controllerScriptUrl: string | null;
+  scope: string;
+};
+
+async function readDeployedServiceWorkerState(
+  page: Page,
+): Promise<DeployedServiceWorkerState> {
+  return page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    return {
+      activeScriptUrl: registration.active?.scriptURL ?? null,
+      activeState: registration.active?.state ?? null,
+      controllerScriptUrl:
+        navigator.serviceWorker.controller?.scriptURL ?? null,
+      scope: registration.scope,
+    };
+  });
+}
 
 test.describe("production PWA smoke (read-only)", () => {
   test.skip(
@@ -23,7 +40,7 @@ test.describe("production PWA smoke (read-only)", () => {
     "runs only from the authenticated post-deploy smoke workflow",
   );
 
-  test("updates the public privacy route without creating notes or sockets", async ({
+  test("registers the deployed worker and serves offline privacy without writes", async ({
     page,
     context,
   }, testInfo) => {
@@ -39,7 +56,7 @@ test.describe("production PWA smoke (read-only)", () => {
       throw new Error("PLAYWRIGHT_BASE_URL is required for the production smoke");
     }
     const policy = createProductionReadonlyPolicy(baseUrl);
-    const guard = await installProductionReadonlyGuard(page, policy);
+    const guard = await installProductionReadonlyGuard(context, policy);
     expect(context.serviceWorkers()).toEqual([]);
 
     const versionUrl = new URL(
@@ -70,45 +87,101 @@ test.describe("production PWA smoke (read-only)", () => {
     expect(version.buildId).toBe(expectedBuildId);
     expect(version.deployedSha).toBe(expectedDeployedSha);
 
-    await installPwaUpdateMock(page, {
-      fromBuildId: `${expectedBuildId}-previous`,
-      toBuildId: expectedBuildId,
+    const expectedServiceWorkerUrl = new URL(
+      "/sw.js",
+      policy.allowedOrigin,
+    ).toString();
+    const expectedServiceWorkerScope = new URL(
+      "/",
+      policy.allowedOrigin,
+    ).toString();
+    const serviceWorkerCreated = context.waitForEvent("serviceworker", {
+      timeout: 30_000,
     });
+
     await page.goto("/privacy?v=legacy-noise&foo=bar", {
       waitUntil: "domcontentloaded",
     });
+    const serviceWorker = await serviceWorkerCreated;
+    expect(serviceWorker.url()).toBe(expectedServiceWorkerUrl);
     await expect(
       page.getByRole("heading", { name: "Privacy Policy" }),
     ).toBeVisible();
-    await waitForPwaUpdaterReady(page, testInfo);
-    await expect(page.getByText("New version available")).toBeVisible({
-      timeout: 5_000,
-    });
 
-    await page.getByRole("button", { name: /^Update$/ }).click();
-    for (let i = 0; i < 4; i += 1) {
-      await page
-        .getByRole("button", { name: /^Update(?:…|\.\.\.)?$/ })
-        .click({ force: true })
-        .catch(() => {});
+    await page.waitForFunction(
+      async ({ expectedScriptUrl, expectedScope }) => {
+        const registration = await navigator.serviceWorker.ready;
+        const active = registration.active;
+        return Boolean(
+          active &&
+            active.state === "activated" &&
+            active.scriptURL === expectedScriptUrl &&
+            registration.scope === expectedScope &&
+            navigator.serviceWorker.controller?.scriptURL ===
+              expectedScriptUrl,
+        );
+      },
+      {
+        expectedScriptUrl: expectedServiceWorkerUrl,
+        expectedScope: expectedServiceWorkerScope,
+      },
+      { timeout: 30_000 },
+    );
+
+    await expect
+      .poll(async () => readDeployedServiceWorkerState(page))
+      .toEqual({
+        activeScriptUrl: expectedServiceWorkerUrl,
+        activeState: "activated",
+        controllerScriptUrl: expectedServiceWorkerUrl,
+        scope: expectedServiceWorkerScope,
+      });
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return {
+          pathname: url.pathname,
+          hasLegacyVersion: url.searchParams.has("v"),
+          unrelatedValue: url.searchParams.get("foo"),
+          keys: [...url.searchParams.keys()],
+        };
+      })
+      .toEqual({
+        pathname: "/privacy",
+        hasLegacyVersion: false,
+        unrelatedValue: "bar",
+        keys: ["foo"],
+      });
+
+    await context.setOffline(true);
+    try {
+      const offlineResponse = await page.reload({
+        waitUntil: "domcontentloaded",
+      });
+      if (!offlineResponse) {
+        throw new Error("offline privacy reload did not return a response");
+      }
+      expect(offlineResponse.fromServiceWorker()).toBe(true);
+      await expect(
+        page.getByRole("heading", { name: "Privacy Policy" }),
+      ).toBeVisible();
+      await expect
+        .poll(async () => readDeployedServiceWorkerState(page))
+        .toEqual({
+          activeScriptUrl: expectedServiceWorkerUrl,
+          activeState: "activated",
+          controllerScriptUrl: expectedServiceWorkerUrl,
+          scope: expectedServiceWorkerScope,
+        });
+
+      const offlineUrl = new URL(page.url());
+      expect(offlineUrl.pathname).toBe("/privacy");
+      expect(offlineUrl.searchParams.has("v")).toBe(false);
+      expect(offlineUrl.searchParams.get("foo")).toBe("bar");
+      expect([...offlineUrl.searchParams.keys()]).toEqual(["foo"]);
+    } finally {
+      await context.setOffline(false);
     }
-
-    await expect.poll(() => getHardReloadCount(page)).toBe(1);
-    const updatedUrl = new URL(page.url());
-    expect(updatedUrl.pathname).toBe("/privacy");
-    expect(updatedUrl.searchParams.has("v")).toBe(false);
-    expect(updatedUrl.searchParams.get("foo")).toBe("bar");
-    expect([...updatedUrl.searchParams.keys()]).toEqual(["foo"]);
-
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(
-      page.getByRole("heading", { name: "Privacy Policy" }),
-    ).toBeVisible();
-    const reloadedUrl = new URL(page.url());
-    expect(reloadedUrl.pathname).toBe("/privacy");
-    expect(reloadedUrl.searchParams.has("v")).toBe(false);
-    expect(reloadedUrl.searchParams.get("foo")).toBe("bar");
-    expect([...reloadedUrl.searchParams.keys()]).toEqual(["foo"]);
 
     await testInfo.attach("production-readonly-attempts.json", {
       body: JSON.stringify(guard.attempts(), null, 2),

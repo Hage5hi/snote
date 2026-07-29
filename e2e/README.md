@@ -39,20 +39,30 @@ retained through Playwright traces, screenshots and video.
 
 ## PWA update tests
 
-Use `helpers/pwa-update-mock.ts` to control build IDs, polling and reload
-transitions. The post-deploy workflow runs:
+Local mocked specs use `helpers/pwa-update-mock.ts` to control build IDs,
+polling and UI transitions. The post-deploy workflow runs:
 
 - `pwa-update-production-readonly.spec.ts` only.
 
 The production spec is gated by `POST_DEPLOY_SMOKE=1`. It performs a real
 `GET /version.json` with `Cache-Control: no-store`, verifies the returned
 diagnostic `buildId` and source-stamped `deployedSha`, and then exercises only
-`/privacy?v=legacy-noise&foo=bar`. Its
-`helpers/production-readonly.ts` guard permits only GET/HEAD/OPTIONS, blocks
-Supabase and API paths, closes every WebSocket, and records only
-`{method, origin, pathname}`. `serviceWorkers: "block"` is part of the spec.
-The workflow also verifies that the approved manifest candidate, checked-out
-commit, and live `deployedSha` all equal `EXPECTED_DEPLOYED_SHA`.
+`/privacy?v=legacy-noise&foo=bar`. This production smoke uses the current
+deployed real service worker: it verifies registration, activation, the exact
+same-origin `/sw.js` script and root scope, then reloads offline `/privacy`
+through the active worker/cache. It does not claim to test an A-to-B update.
+
+Its `helpers/production-readonly.ts` BrowserContext guard permits only
+GET/HEAD/OPTIONS for the exact static precache boundary, blocks Supabase, API,
+analytics, arbitrary note/capability routes and all WebSockets, and records
+only sanitized `{method, origin, pathname}` evidence. The workflow also
+verifies that the approved manifest candidate, checked-out commit, and live
+`deployedSha` all equal `EXPECTED_DEPLOYED_SHA`.
+
+The workflow can be invoked by authenticated `repository_dispatch` or explicit
+`workflow_dispatch`. This repository currently has no automatic Lovable
+publish emitter, so a verified Lovable publish must be followed by one of
+those explicit dispatch paths; a Git push alone is not treated as deployment.
 
 A clean Git-backed normal build may embed its exact lowercase 40-character
 checked-out HEAD. A dirty or Git-less build, an invalid HEAD, or a failed Git
@@ -74,8 +84,10 @@ The ordinary local/CI suite still runs:
 - `pwa-update-multi-click.spec.ts`
 - `pwa-update-no-url-v-param.spec.ts`
 
-The smoke fails if a stalled worker destroys the active offline app or if an
-update adds cache-buster query parameters to note URLs.
+These local mocked specs cover update UI transitions and URL hygiene. A
+separate local two-build real harness is responsible for A-to-B activation and
+stalled update/rollback claims; the production smoke deliberately does not
+make those claims.
 
 ## Environment overrides
 
