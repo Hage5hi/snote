@@ -19,6 +19,13 @@ const ENV = {
   ORIGIN_HOST: "snote.lovable.app",
   SITE_URL: "https://note.syrin.online",
 };
+const STAGING_SERVE_ORIGIN =
+  "https://syrin-prerender-staging.thongdocnganhang1.workers.dev";
+const STAGING_ENV = {
+  ORIGIN_HOST: "isolated-staging-origin.example",
+  SITE_URL: "https://note.syrin.online",
+  EDGE_SERVE_ORIGIN: STAGING_SERVE_ORIGIN,
+};
 
 function installOriginDouble() {
   const originFetch = vi.fn(async () =>
@@ -277,6 +284,207 @@ describe("edge privacy containment", () => {
     expect(originUrl.search).toBe("");
     expect(originRequest.url).not.toContain(syntheticQuery);
   });
+
+  it.each([
+    { path: "/", expectedOriginPath: "/" },
+    { path: "/privacy", expectedOriginPath: "/privacy" },
+    { path: "/version.json", expectedOriginPath: "/version.json" },
+    { path: "/synthetic-private-capability", expectedOriginPath: "/" },
+  ])(
+    "serves the isolated staging shell for $path without redirecting",
+    async ({ path, expectedOriginPath }) => {
+      const doubles = installOriginDouble();
+
+      const response = await worker.fetch(
+        new Request(`${STAGING_SERVE_ORIGIN}${path}`, {
+          headers: { "user-agent": "Mozilla/5.0" },
+        }),
+        STAGING_ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("location")).toBeNull();
+      expect(doubles.originFetch).toHaveBeenCalledOnce();
+      const originRequest = doubles.originFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.hostname).toBe(STAGING_ENV.ORIGIN_HOST);
+      expect(originUrl.pathname).toBe(expectedOriginPath);
+      expect(originUrl.search).toBe("");
+    },
+  );
+
+  it("keeps production canonical metadata on the staging crawler home", async () => {
+    const doubles = installOriginDouble();
+
+    const response = await worker.fetch(
+      new Request(`${STAGING_SERVE_ORIGIN}/`, {
+        headers: { "user-agent": "Googlebot" },
+      }),
+      STAGING_ENV,
+      { waitUntil: doubles.waitUntil },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain(
+      '<link rel="canonical" href="https://note.syrin.online/"',
+    );
+    expect(body).toContain(
+      '<meta property="og:url" content="https://note.syrin.online/"',
+    );
+    expect(body).not.toContain(STAGING_SERVE_ORIGIN);
+    expect(doubles.originFetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps the production sitemap on staging robots.txt", async () => {
+    const doubles = installOriginDouble();
+
+    const response = await worker.fetch(
+      new Request(`${STAGING_SERVE_ORIGIN}/robots.txt`),
+      STAGING_ENV,
+      { waitUntil: doubles.waitUntil },
+    );
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+    expect(body).toContain(
+      "Sitemap: https://note.syrin.online/sitemap.xml",
+    );
+    expect(body).not.toContain(STAGING_SERVE_ORIGIN);
+    expect(doubles.originFetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      label: "HTTP",
+      edgeServeOrigin:
+        "http://syrin-prerender-staging.thongdocnganhang1.workers.dev",
+    },
+    {
+      label: "credentials",
+      edgeServeOrigin:
+        "https://edge-user:edge-secret@syrin-prerender-staging.thongdocnganhang1.workers.dev",
+    },
+    {
+      label: "port",
+      edgeServeOrigin:
+        "https://syrin-prerender-staging.thongdocnganhang1.workers.dev:8443",
+    },
+    {
+      label: "path",
+      edgeServeOrigin:
+        "https://syrin-prerender-staging.thongdocnganhang1.workers.dev/private",
+    },
+    {
+      label: "query",
+      edgeServeOrigin:
+        "https://syrin-prerender-staging.thongdocnganhang1.workers.dev/?token=edge-secret",
+    },
+    {
+      label: "fragment",
+      edgeServeOrigin:
+        "https://syrin-prerender-staging.thongdocnganhang1.workers.dev/#edge-secret",
+    },
+    {
+      label: "mismatched host",
+      edgeServeOrigin: "https://different-staging-worker.workers.dev",
+    },
+  ])(
+    "fails closed for a malformed or mismatched $label EDGE_SERVE_ORIGIN",
+    async ({ edgeServeOrigin }) => {
+      const doubles = installOriginDouble();
+      const response = await worker.fetch(
+        new Request(`${STAGING_SERVE_ORIGIN}/privacy`),
+        { ...STAGING_ENV, EDGE_SERVE_ORIGIN: edgeServeOrigin },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      await expectFailClosedOriginResponse(response, ["edge-secret"]);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    {
+      label: "production config",
+      requestOrigin: STAGING_SERVE_ORIGIN,
+      env: ENV,
+    },
+    {
+      label: "missing staging config",
+      requestOrigin: STAGING_SERVE_ORIGIN,
+      env: { ...STAGING_ENV, EDGE_SERVE_ORIGIN: undefined },
+    },
+    {
+      label: "wrong incoming authority",
+      requestOrigin: "https://unknown-staging-authority.workers.dev",
+      env: STAGING_ENV,
+    },
+  ])(
+    "fails closed for a staging request with $label",
+    async ({ requestOrigin, env }) => {
+      const doubles = installOriginDouble();
+      const response = await worker.fetch(
+        new Request(`${requestOrigin}/privacy?token=request-secret`),
+        env,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      await expectFailClosedOriginResponse(response, ["request-secret"]);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    "https://note.syrin.online",
+    "https://syrin.online",
+    "https://www.syrin.online",
+  ])(
+    "fails closed for production authority %s under staging config",
+    async (requestOrigin) => {
+      const doubles = installOriginDouble();
+      const response = await worker.fetch(
+        new Request(`${requestOrigin}/privacy?token=request-secret`),
+        STAGING_ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      await expectFailClosedOriginResponse(response, ["request-secret"]);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    "syrin-prerender-staging.thongdocnganhang1.workers.dev",
+    "syrin-prerender-staging.thongdocnganhang1.workers.dev.",
+  ])(
+    "rejects the staging serve authority as origin: %s",
+    async (originHost) => {
+      const doubles = installOriginDouble();
+      const logs: string[] = [];
+      vi.spyOn(console, "log").mockImplementation((line) =>
+        logs.push(String(line)),
+      );
+
+      const response = await worker.fetch(
+        new Request(
+          `${STAGING_SERVE_ORIGIN}/synthetic-private-capability`,
+        ),
+        { ...STAGING_ENV, ORIGIN_HOST: originHost },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      await expectFailClosedOriginResponse(response);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+      expect(JSON.parse(logs[0])).toMatchObject({
+        msg: "origin_unavailable",
+        reason: "self_reference",
+        status: 503,
+      });
+    },
+  );
 
   it("redirects a public alias route to the canonical origin", async () => {
     const doubles = installOriginDouble();

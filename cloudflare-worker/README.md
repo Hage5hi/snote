@@ -51,6 +51,20 @@ không áp dụng cho SSR/Pages Functions. Staging phải chứng minh host đí
 production cho tới khi hostname, origin cô lập và release-manifest entry tương
 ứng đã được review.
 
+## Staging authority contract
+
+The reserved staging serve authority is
+`https://syrin-prerender-staging.thongdocnganhang1.workers.dev`, configured only
+as `EDGE_SERVE_ORIGIN` in `wrangler.staging.toml`. `SITE_URL` remains exactly
+`https://note.syrin.online`, so redirects, canonical metadata, OpenGraph URLs,
+and the robots sitemap keep the public product identity. Production must not
+set `EDGE_SERVE_ORIGIN`.
+
+This staging scaffold remains **NO-GO** until `ORIGIN_HOST` is replaced by a
+reviewed isolated non-redirecting origin. The current `.invalid` placeholder is
+intentional; this contract reserves the incoming authority but does not make
+the Worker deployable.
+
 ## Triển khai
 
 Sau khi staging chứng minh origin không redirect, cập nhật

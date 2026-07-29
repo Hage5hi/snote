@@ -38,6 +38,10 @@ describe("edge privacy deployment contract", () => {
       /^ORIGIN_HOST\s*=\s*"snote\.lovable\.app"\s*$/m,
     );
     expect(production).toContain('ORIGIN_HOST = "production-origin.invalid"');
+    expect(production).toContain(
+      'SITE_URL = "https://note.syrin.online"',
+    );
+    expect(production).not.toMatch(/^EDGE_SERVE_ORIGIN\s*=/m);
     expect(production).toMatch(/NO-GO/i);
     expect(production).toMatch(/\[observability\]\s+enabled\s*=\s*false/);
     expect(production).toMatch(/workers_dev\s*=\s*false/);
@@ -45,6 +49,12 @@ describe("edge privacy deployment contract", () => {
     expect(staging).toContain('name = "syrin-prerender-staging"');
     expect(staging).not.toContain('pattern = "note.syrin.online/*"');
     expect(staging).not.toContain('pattern = "syrin.online/*"');
+    expect(staging).toContain(
+      'SITE_URL = "https://note.syrin.online"',
+    );
+    expect(staging).toContain(
+      'EDGE_SERVE_ORIGIN = "https://syrin-prerender-staging.thongdocnganhang1.workers.dev"',
+    );
     expect(staging).toMatch(/\[observability\]\s+enabled\s*=\s*false/);
     expect(readme).toMatch(/NO-GO/i);
     expect(readme).toContain("snote.lovable.app");
@@ -52,6 +62,12 @@ describe("edge privacy deployment contract", () => {
     expect(readme).toMatch(/chưa hoạt động trên production/i);
     expect(readme).toContain("chỉ là fallback cho static hosting");
     expect(readme).toContain("SSR/Pages Functions");
+    expect(readme).toContain(
+      "syrin-prerender-staging.thongdocnganhang1.workers.dev",
+    );
+    expect(readme).toMatch(
+      /staging[\s\S]*NO-GO[\s\S]*ORIGIN_HOST[\s\S]*isolated[\s\S]*non-redirecting/i,
+    );
     expect(manifest).toMatch(/Worker origin:\s*`UNSET`/);
     expect(manifest).toContain(
       "Release candidate SHA: `UNASSIGNED (awaiting a green PR head)`",

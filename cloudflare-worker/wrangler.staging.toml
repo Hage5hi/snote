@@ -3,14 +3,14 @@ main = "worker.js"
 compatibility_date = "2024-11-01"
 workers_dev = true
 
-# Fail-closed scaffold only. Staging intentionally has no production
-# custom-domain route and the placeholder vars below are not deployable. Add a
-# dedicated staging route only after its DNS name and isolated origin are
-# recorded in the release manifest.
+# Fail-closed scaffold only. The reserved workers.dev authority is allowed to
+# serve staging, but the placeholder origin below is intentionally not
+# deployable. Replace it only with a reviewed isolated non-redirecting origin.
 
 [vars]
 ORIGIN_HOST = "staging-origin.invalid"
-SITE_URL = "https://syrin-prerender-staging.workers.dev"
+SITE_URL = "https://note.syrin.online"
+EDGE_SERVE_ORIGIN = "https://syrin-prerender-staging.thongdocnganhang1.workers.dev"
 
 [observability]
 enabled = false

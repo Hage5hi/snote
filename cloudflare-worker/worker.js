@@ -10,6 +10,7 @@
  * Cấu hình cần (Environment Variables / Secrets trong Cloudflare):
  *   - ORIGIN_HOST        = hostname origin đã staging-prove là không redirect
  *   - SITE_URL           = "https://note.syrin.online"
+ *   - EDGE_SERVE_ORIGIN  = reserved staging workers.dev authority (staging only)
  *
  * Route: gắn worker vào các pattern note.syrin.online/*, syrin.online/*
  * và www.syrin.online/*. Mọi hostname share công khai phải đi qua Worker
@@ -39,6 +40,8 @@ const PERMISSIONS_POLICY =
   "camera=(), geolocation=(), microphone=(), payment=()";
 const PRIVATE_ROUTE_KINDS = new Set(["share", "note", "private"]);
 const APPROVED_CANONICAL_ORIGIN = "https://note.syrin.online";
+const APPROVED_STAGING_SERVE_ORIGIN =
+  "https://syrin-prerender-staging.thongdocnganhang1.workers.dev";
 const PUBLIC_HOSTNAMES = new Set([
   "note.syrin.online",
   "syrin.online",
@@ -187,6 +190,11 @@ export default {
     if (!isSecureStandardTransport(url)) {
       return insecureTransportResponse();
     }
+    const authority = validateRequestAuthority(url, env);
+    if (!authority.ok) {
+      return originUnavailableResponse();
+    }
+    const servesAtRequestedAuthority = authority.kind !== "alias";
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
     const ua = request.headers.get("user-agent") ?? "";
     const isCrawler = CRAWLER_UA.test(ua);
@@ -208,7 +216,7 @@ export default {
     }
 
     if (url.pathname === "/robots.txt") {
-      if (!isCanonicalHost(url, env)) {
+      if (!servesAtRequestedAuthority) {
         return canonicalRedirect(url, env);
       }
       const body = renderRobotsTxt(env);
@@ -272,7 +280,7 @@ export default {
       // Legacy note locators and share paths are credentials until cutover.
       // Passing them through avoids copying the raw path into Location and
       // another round of proxy/browser logs. Public routes may still redirect.
-      if (!PRIVATE_ROUTE_KINDS.has(route.kind) && !isCanonicalHost(url, env)) {
+      if (!PRIVATE_ROUTE_KINDS.has(route.kind) && !servesAtRequestedAuthority) {
         return canonicalRedirect(url, env);
       }
       return passThrough(request, env, route.kind);
@@ -299,7 +307,7 @@ export default {
 
     // Canonicalize only after every credential-bearing route has been
     // contained. A redirect would echo that credential in Location.
-    if (!isCanonicalHost(url, env)) {
+    if (!servesAtRequestedAuthority) {
       return canonicalRedirect(url, env);
     }
 
@@ -666,11 +674,21 @@ function validateOriginHost(requestUrl, env) {
   if (!siteUrl) {
     return { ok: false, reason: "invalid" };
   }
-  const canonicalHostname = siteUrl.hostname.toLowerCase();
+  const edgeServeOrigin = configuredEdgeServeOrigin(env);
+  if (!edgeServeOrigin.ok) {
+    return { ok: false, reason: "invalid" };
+  }
+  const comparableHostname = dnsComparisonHostname(hostname);
+  const canonicalHostname = dnsComparisonHostname(siteUrl.hostname);
+  const requestHostname = dnsComparisonHostname(requestUrl.hostname);
+  const edgeServeHostname = edgeServeOrigin.url
+    ? dnsComparisonHostname(edgeServeOrigin.url.hostname)
+    : null;
   if (
-    hostname === requestUrl.hostname.toLowerCase()
-    || hostname === canonicalHostname
-    || PUBLIC_HOSTNAMES.has(hostname)
+    comparableHostname === requestHostname
+    || comparableHostname === canonicalHostname
+    || comparableHostname === edgeServeHostname
+    || PUBLIC_HOSTNAMES.has(comparableHostname)
   ) {
     return { ok: false, reason: "self_reference" };
   }
@@ -778,12 +796,71 @@ function canonicalSiteUrl(env) {
   return siteUrl;
 }
 
-function isCanonicalHost(url, env) {
+function configuredEdgeServeOrigin(env) {
+  const raw = env?.EDGE_SERVE_ORIGIN;
+  if (typeof raw === "undefined") {
+    return { ok: true, url: null };
+  }
+  if (typeof raw !== "string" || raw !== raw.trim()) {
+    return { ok: false, url: null };
+  }
+
+  let edgeServeUrl;
+  try {
+    edgeServeUrl = new URL(raw);
+  } catch {
+    return { ok: false, url: null };
+  }
+
+  if (
+    raw !== APPROVED_STAGING_SERVE_ORIGIN
+    || edgeServeUrl.protocol !== "https:"
+    || edgeServeUrl.username
+    || edgeServeUrl.password
+    || edgeServeUrl.port
+    || edgeServeUrl.pathname !== "/"
+    || edgeServeUrl.search
+    || edgeServeUrl.hash
+  ) {
+    return { ok: false, url: null };
+  }
+
+  return { ok: true, url: edgeServeUrl };
+}
+
+function dnsComparisonHostname(hostname) {
+  const lowered = hostname.toLowerCase();
+  return lowered.endsWith(".") ? lowered.slice(0, -1) : lowered;
+}
+
+function validateRequestAuthority(url, env) {
   const siteUrl = canonicalSiteUrl(env);
-  return (
-    !!siteUrl
-    && url.hostname.toLowerCase() === siteUrl.hostname.toLowerCase()
-  );
+  if (!siteUrl) return { ok: false, reason: "invalid" };
+
+  const edgeServeOrigin = configuredEdgeServeOrigin(env);
+  if (!edgeServeOrigin.ok) {
+    return { ok: false, reason: "invalid" };
+  }
+
+  if (edgeServeOrigin.url) {
+    if (
+      !url.username
+      && !url.password
+      && url.origin === edgeServeOrigin.url.origin
+    ) {
+      return { ok: true, kind: "edge_serve" };
+    }
+    return { ok: false, reason: "unknown_authority" };
+  }
+
+  const requestHostname = url.hostname.toLowerCase();
+  if (requestHostname === siteUrl.hostname.toLowerCase()) {
+    return { ok: true, kind: "canonical" };
+  }
+  if (PUBLIC_HOSTNAMES.has(requestHostname)) {
+    return { ok: true, kind: "alias" };
+  }
+  return { ok: false, reason: "unknown_authority" };
 }
 
 function canonicalRedirect(url, env) {
