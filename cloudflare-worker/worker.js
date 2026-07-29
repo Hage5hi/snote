@@ -187,12 +187,12 @@ function logEvent(env, level, msg, fields = {}) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    if (!isSecureStandardTransport(url)) {
-      return insecureTransportResponse();
-    }
     const authority = validateRequestAuthority(url, env);
     if (!authority.ok) {
       return originUnavailableResponse();
+    }
+    if (!isSecureStandardTransport(url)) {
+      return insecureTransportResponse();
     }
     const servesAtRequestedAuthority = authority.kind !== "alias";
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";

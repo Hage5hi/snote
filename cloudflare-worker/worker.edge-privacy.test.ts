@@ -438,6 +438,24 @@ describe("edge privacy containment", () => {
   );
 
   it.each([
+    "http://syrin-prerender-staging.thongdocnganhang1.workers.dev/privacy?token=request-secret",
+    "https://syrin-prerender-staging.thongdocnganhang1.workers.dev:8443/privacy?token=request-secret",
+  ])(
+    "fails closed for non-exact staging transport %s",
+    async (requestUrl) => {
+      const doubles = installOriginDouble();
+      const response = await worker.fetch(
+        new Request(requestUrl),
+        STAGING_ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      await expectFailClosedOriginResponse(response, ["request-secret"]);
+      expect(doubles.originFetch).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
     "https://note.syrin.online",
     "https://syrin.online",
     "https://www.syrin.online",
