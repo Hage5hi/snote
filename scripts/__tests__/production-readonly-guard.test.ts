@@ -5,12 +5,45 @@ import {
   createProductionReadonlyPolicy,
   sanitizeProductionReadonlyAttempt,
   shouldBlockProductionRequest,
+  validateRollupAssetPathnames,
 } from "../../e2e/helpers/production-readonly";
 
 describe("production read-only smoke guard", () => {
+  const rollupAssetPathnames = [
+    "/assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff",
+    "/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+    "/assets/index-DOSI_W5I.js",
+    "/assets/index-SehlPl6z.css",
+    "/assets/ja-TNiK-8-v.js",
+    "/assets/wardley-L42UT6IY-vH922C2V.js",
+  ] as const;
+  const productionPolicy = createProductionReadonlyPolicy(
+    "https://note.syrin.online",
+    {
+      rollupAssetPathnames,
+      workerIdentityPath: "/sw-identity-0123456789abcdef.js",
+    },
+  );
+
   it.each([
     ["GET", "https://note.syrin.online/privacy", false],
+    [
+      "GET",
+      "https://note.syrin.online/privacy?v=legacy-noise&foo=bar",
+      false,
+    ],
+    ["GET", "https://note.syrin.online/privacy?foo=bar", false],
     ["HEAD", "https://note.syrin.online/version.json", false],
+    [
+      "GET",
+      "https://note.syrin.online/version.json?ts=1722222222222",
+      false,
+    ],
+    [
+      "GET",
+      "https://note.syrin.online/version.json?__WB_REVISION__=0123456789abcdef0123456789abcdef",
+      false,
+    ],
     ["GET", "https://note.syrin.online/manifest.webmanifest", false],
     ["GET", "https://note.syrin.online/favicon.ico", false],
     ["GET", "https://note.syrin.online/icon-192.png", false],
@@ -19,7 +52,22 @@ describe("production read-only smoke guard", () => {
     ["GET", "https://note.syrin.online/logo.webp", false],
     ["GET", "https://note.syrin.online/theme-init.js", false],
     ["GET", "https://note.syrin.online/sw.js", false],
+    [
+      "GET",
+      "https://note.syrin.online/sw-identity-0123456789abcdef.js",
+      false,
+    ],
+    [
+      "GET",
+      "https://note.syrin.online/sw-identity-0123456789abcdef.js?__WB_REVISION__=0123456789abcdef0123456789abcdef",
+      false,
+    ],
     ["GET", "https://note.syrin.online/index.html", false],
+    [
+      "GET",
+      "https://note.syrin.online/index.html?__WB_REVISION__=0123456789abcdef0123456789abcdef",
+      false,
+    ],
     ["GET", "https://note.syrin.online/offline.html", false],
     ["GET", "https://note.syrin.online/offline-retry.js", false],
     ["GET", "https://note.syrin.online/sw-kill.js", false],
@@ -45,8 +93,18 @@ describe("production read-only smoke guard", () => {
     ["GET", "https://note.syrin.online/assets/ja-TNiK-8-v.js", false],
     [
       "GET",
-      "https://note.syrin.online/assets/wardley-L42UT6IY-vH922C2V.js?cache=%2Fsafe-query",
+      "https://note.syrin.online/assets/wardley-L42UT6IY-vH922C2V.js",
       false,
+    ],
+    [
+      "GET",
+      "https://note.syrin.online/assets/wardley-L42UT6IY-vH922C2V.js?cache=%2Fsafe-query",
+      true,
+    ],
+    [
+      "GET",
+      "https://note.syrin.online/assets/absent-owner-edit-view-AbCdEf12.js",
+      true,
     ],
     ["GET", "https://note.syrin.online/registersw.js", true],
     ["GET", "https://note.syrin.online/random-root.js", true],
@@ -113,7 +171,9 @@ describe("production read-only smoke guard", () => {
     ["GET", "https://note.syrin.online/embed/owner-capability", true],
     ["GET", "https://note.syrin.online/unrelated-public-looking-path", true],
   ])("blocks=%s %s", (method, url, expected) => {
-    expect(shouldBlockProductionRequest(url, method)).toBe(expected);
+    expect(
+      shouldBlockProductionRequest(url, method, productionPolicy),
+    ).toBe(expected);
   });
 
   it.each([
@@ -130,7 +190,55 @@ describe("production read-only smoke guard", () => {
     "https://note.syrin.online//privacy",
     "https://note.syrin.online/./privacy",
   ])("fails closed for ambiguous encoded or traversal path %s", (url) => {
-    expect(shouldBlockProductionRequest(url, "GET")).toBe(true);
+    expect(
+      shouldBlockProductionRequest(url, "GET", productionPolicy),
+    ).toBe(true);
+  });
+
+  it.each([
+    "https://note.syrin.online/privacy?owner=capability-secret",
+    "https://note.syrin.online/privacy?foo=bar&edit=capability-secret",
+    "https://note.syrin.online/privacy?foo=bar&foo=bar",
+    "https://note.syrin.online/privacy?foo=bar&v=legacy-noise",
+    "https://note.syrin.online/version.json?token=capability-secret",
+    "https://note.syrin.online/version.json?ts=1722222222222&ts=1722222222222",
+    "https://note.syrin.online/version.json?ts=short",
+    "https://note.syrin.online/version.json?__WB_REVISION__=ABCDEF0123456789ABCDEF0123456789",
+    "https://note.syrin.online/sw-identity-0123456789abcdef.js?view=capability-secret",
+    "https://note.syrin.online/sw.js?__WB_REVISION__=0123456789abcdef0123456789abcdef",
+    "https://note.syrin.online/workbox-9c191d2f.js?owner=capability-secret",
+    "https://note.syrin.online/assets/index-DOSI_W5I.js?edit=capability-secret",
+  ])("blocks unexpected, duplicate, or capability-bearing queries: %s", (url) => {
+    expect(
+      shouldBlockProductionRequest(url, "GET", productionPolicy),
+    ).toBe(true);
+  });
+
+  it("strictly validates the exact static asset manifest", () => {
+    expect(validateRollupAssetPathnames(rollupAssetPathnames)).toEqual(
+      rollupAssetPathnames,
+    );
+
+    for (const invalid of [
+      null,
+      [],
+      ["/assets/z-AbCdEf12.js", "/assets/a-AbCdEf12.js"],
+      ["/assets/index-AbCdEf12.js", "/assets/index-AbCdEf12.js"],
+      ["/assets/nested/index-AbCdEf12.js"],
+      ["/assets/owner-token.js"],
+      ["/assets/index-AbCdEf12.JS"],
+      ["/assets/index-AbCdEf12.exe"],
+      ["/assets/index-AbCdEf12.js?owner=secret"],
+      ["/assets/index-AbCdEf12.js#view=secret"],
+      Array.from(
+        { length: 513 },
+        (_, index) => `/assets/chunk-${index.toString().padStart(4, "0")}-AbCdEf12.js`,
+      ),
+    ]) {
+      expect(() => validateRollupAssetPathnames(invalid)).toThrow(
+        "Invalid static asset manifest",
+      );
+    }
   });
 
   it("permits localhost only for an explicit local rehearsal policy", () => {
@@ -155,6 +263,17 @@ describe("production read-only smoke guard", () => {
     expect(() =>
       createProductionReadonlyPolicy("http://localhost:8080"),
     ).toThrow(/localhost/i);
+  });
+
+  it.each([
+    "https://user:secret@note.syrin.online/",
+    "https://note.syrin.online/private",
+    "https://note.syrin.online/?owner=capability-secret",
+    "https://note.syrin.online/#view=capability-secret",
+  ])("rejects a non-root or credential-bearing base URL: %s", (baseUrl) => {
+    expect(() => createProductionReadonlyPolicy(baseUrl)).toThrow(
+      /canonical origin/i,
+    );
   });
 
   it("redacts private locators and capabilities from failure evidence", () => {
@@ -277,6 +396,9 @@ describe("production read-only smoke guard", () => {
     expect(spec).toContain(
       'expect(versionResponse.headers()).not.toHaveProperty("location")',
     );
+    expect(spec).toContain("validateRollupAssetPathnames");
+    expect(spec).toContain("version.rollupAssetPathnames");
+    expect(spec).toContain("dist/version.json");
   });
 
   it("uses the deployed service worker for registration and offline privacy", () => {
@@ -291,7 +413,11 @@ describe("production read-only smoke guard", () => {
     expect(spec).not.toContain("getHardReloadCount");
     expect(spec).not.toMatch(/getByRole\("button",\s*\{\s*name:\s*\/\^Update/);
     expect(spec).toContain('context.waitForEvent("serviceworker"');
+    expect(spec).toContain("Promise.all");
     expect(spec).toContain("navigator.serviceWorker.ready");
+    expect(spec).toContain("MessageChannel");
+    expect(spec).toContain("snote:sw-identity:request:v1");
+    expect(spec).toContain("snote:sw-identity:response:v1");
     expect(spec).toMatch(
       /new URL\(\s*"\/sw\.js",\s*policy\.allowedOrigin,\s*\)\.toString\(\)/,
     );
@@ -308,6 +434,10 @@ describe("production read-only smoke guard", () => {
     expect(spec).toContain("/privacy?v=legacy-noise&foo=bar");
     expect(spec).toContain('searchParams.has("v")');
     expect(spec).toContain('searchParams.get("foo")');
+    expect(spec).toContain("test.describe.configure({ timeout: 120_000 })");
+    expect(spec).toMatch(
+      /finally\s*\{[\s\S]*context\.close\(\)[\s\S]*production-readonly-attempts\.json[\s\S]*assertNoWrites/,
+    );
   });
 
   it("documents the honest split between production and local PWA coverage", () => {

@@ -26,6 +26,13 @@
       ]
     },
     {
+      "source": "/sw-identity-(.*).js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
+        { "key": "CDN-Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
       "source": "/((?!privacy$)[A-Za-z0-9_-]{1,64})",
       "headers": [
         { "key": "Cache-Control", "value": "private, no-store" },

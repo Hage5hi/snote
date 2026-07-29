@@ -137,6 +137,35 @@ describe("edge privacy deployment contract", () => {
     );
   });
 
+  it("keeps the generated worker identity no-store on both fallback hosts", () => {
+    const vercel = JSON.parse(source("vercel.json")) as {
+      headers?: Array<{
+        source?: string;
+        headers?: Array<{ key?: string; value?: string }>;
+      }>;
+    };
+    const headers = source("public/_headers");
+    const vercelRule = vercel.headers?.find(
+      (rule) => rule.source === "/sw-identity-(.*).js",
+    );
+
+    expect(vercelRule?.headers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: "Cache-Control",
+          value: "no-cache, no-store, must-revalidate",
+        }),
+        expect.objectContaining({
+          key: "CDN-Cache-Control",
+          value: "no-store",
+        }),
+      ]),
+    );
+    expect(headers).toMatch(
+      /(?:^|\r?\n)\/sw-identity-\*\.js\r?\n\s+Cache-Control:\s*no-cache, no-store, must-revalidate(?:\r?\n|$)/,
+    );
+  });
+
   it("keeps every private fallback route under the same no-store policy", () => {
     const vercel = JSON.parse(source("vercel.json")) as {
       headers?: Array<{

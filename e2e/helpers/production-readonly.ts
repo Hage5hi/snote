@@ -11,6 +11,8 @@ const CANONICAL_PRODUCTION_ORIGIN = "https://note.syrin.online";
 const LOCAL_REHEARSAL_ORIGIN = "http://localhost:8080";
 const CANONICAL_PRODUCTION_POLICY = {
   allowedOrigin: CANONICAL_PRODUCTION_ORIGIN,
+  rollupAssetPathnames: new Set<string>(),
+  workerIdentityPath: null,
 };
 const ALLOWED_EXACT_PATHNAMES = new Set([
   "/privacy",
@@ -30,10 +32,31 @@ const ALLOWED_EXACT_PATHNAMES = new Set([
   "/theme-init.js",
   "/sw.js",
 ]);
+const REVISIONED_EXACT_PATHNAMES = new Set([
+  "/favicon.ico",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-maskable.png",
+  "/index.html",
+  "/logo.webp",
+  "/manifest.webmanifest",
+  "/offline.html",
+  "/offline-retry.js",
+  "/placeholder.svg",
+  "/sw-kill.js",
+  "/syrin-note-sidepanel.zip.manifest.json",
+  "/theme-init.js",
+]);
 const STATIC_ASSET_PATH_PREFIX = "/assets/";
-const ALLOWED_VITE_ASSET_PATHNAME =
-  /^\/assets\/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\.(?:css|js|woff2?)$/;
+const ALLOWED_ROLLUP_ASSET_PATHNAME =
+  /^\/assets\/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\.(?:css|js|mjs|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf)$/;
 const ALLOWED_WORKBOX_PATHNAME = /^\/workbox-[a-f0-9]{8}\.js$/;
+const ALLOWED_WORKER_IDENTITY_PATHNAME =
+  /^\/sw-identity-[a-f0-9]{16}\.js$/;
+const ALLOWED_WORKBOX_REVISION_QUERY =
+  /^\?__WB_REVISION__=[a-f0-9]{32}$/;
+const ALLOWED_VERSION_TIMESTAMP_QUERY = /^\?ts=\d{10,16}$/;
+const MAX_ROLLUP_ASSET_PATHNAMES = 512;
 const LOCAL_ALLOWED_PATH_PREFIXES = [
   "/@vite/",
   "/src/",
@@ -51,24 +74,88 @@ const MAX_PATH_DECODE_PASSES = 3;
 
 export type ProductionReadonlyPolicy = Readonly<{
   allowedOrigin: string;
+  rollupAssetPathnames: ReadonlySet<string>;
+  workerIdentityPath: string | null;
 }>;
+
+export function validateRollupAssetPathnames(value: unknown): readonly string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.length > MAX_ROLLUP_ASSET_PATHNAMES
+  ) {
+    throw new Error("Invalid static asset manifest");
+  }
+
+  const validated: string[] = [];
+  for (const entry of value) {
+    if (
+      typeof entry !== "string" ||
+      entry.length > 256 ||
+      !ALLOWED_ROLLUP_ASSET_PATHNAME.test(entry) ||
+      (validated.length > 0 && validated[validated.length - 1] >= entry)
+    ) {
+      throw new Error("Invalid static asset manifest");
+    }
+    validated.push(entry);
+  }
+  return Object.freeze(validated);
+}
+
+export function validateWorkerIdentityPath(value: unknown): string {
+  if (
+    typeof value !== "string" ||
+    !ALLOWED_WORKER_IDENTITY_PATHNAME.test(value)
+  ) {
+    throw new Error("Invalid worker identity path");
+  }
+  return value;
+}
 
 export function createProductionReadonlyPolicy(
   baseUrl: string,
-  options: { allowLocalhost?: boolean } = {},
+  options: {
+    allowLocalhost?: boolean;
+    rollupAssetPathnames?: readonly string[];
+    workerIdentityPath?: string;
+  } = {},
 ): ProductionReadonlyPolicy {
-  let origin: string;
+  let parsedBaseUrl: URL;
   try {
-    origin = new URL(baseUrl).origin;
+    parsedBaseUrl = new URL(baseUrl);
   } catch {
     throw new Error("Production read-only guard requires an absolute base URL");
   }
-
-  if (origin === CANONICAL_PRODUCTION_ORIGIN) {
-    return { allowedOrigin: origin };
+  if (
+    parsedBaseUrl.username !== "" ||
+    parsedBaseUrl.password !== "" ||
+    parsedBaseUrl.pathname !== "/" ||
+    parsedBaseUrl.search !== "" ||
+    parsedBaseUrl.hash !== ""
+  ) {
+    throw new Error(
+      "Production read-only guard requires an exact canonical origin URL",
+    );
   }
-  if (options.allowLocalhost && origin === LOCAL_REHEARSAL_ORIGIN) {
-    return { allowedOrigin: origin };
+  const origin = parsedBaseUrl.origin;
+
+  if (
+    origin === CANONICAL_PRODUCTION_ORIGIN ||
+    (options.allowLocalhost && origin === LOCAL_REHEARSAL_ORIGIN)
+  ) {
+    const rollupAssetPathnames =
+      options.rollupAssetPathnames === undefined
+        ? []
+        : validateRollupAssetPathnames(options.rollupAssetPathnames);
+    const workerIdentityPath =
+      options.workerIdentityPath === undefined
+        ? null
+        : validateWorkerIdentityPath(options.workerIdentityPath);
+    return {
+      allowedOrigin: origin,
+      rollupAssetPathnames: new Set(rollupAssetPathnames),
+      workerIdentityPath,
+    };
   }
 
   throw new Error(
@@ -88,11 +175,16 @@ function hasPathPrefix(pathname: string, prefixes: readonly string[]): boolean {
   return prefixes.some((prefix) => pathname.startsWith(prefix));
 }
 
-function isAllowedSmokePath(origin: string, pathname: string): boolean {
+function isAllowedSmokePath(
+  origin: string,
+  pathname: string,
+  policy: ProductionReadonlyPolicy,
+): boolean {
   if (
     ALLOWED_EXACT_PATHNAMES.has(pathname) ||
     ALLOWED_WORKBOX_PATHNAME.test(pathname) ||
-    ALLOWED_VITE_ASSET_PATHNAME.test(pathname)
+    policy.rollupAssetPathnames.has(pathname) ||
+    pathname === policy.workerIdentityPath
   ) {
     return true;
   }
@@ -102,6 +194,36 @@ function isAllowedSmokePath(origin: string, pathname: string): boolean {
     (LOCAL_ALLOWED_EXACT_PATHNAMES.has(pathname) ||
       hasPathPrefix(pathname, LOCAL_ALLOWED_PATH_PREFIXES))
   );
+}
+
+function isAllowedSmokeQuery(
+  origin: string,
+  pathname: string,
+  search: string,
+  policy: ProductionReadonlyPolicy,
+): boolean {
+  if (origin === LOCAL_REHEARSAL_ORIGIN) return search === "";
+  if (pathname === "/privacy") {
+    return (
+      search === "" ||
+      search === "?v=legacy-noise&foo=bar" ||
+      search === "?foo=bar"
+    );
+  }
+  if (pathname === "/version.json") {
+    return (
+      search === "" ||
+      ALLOWED_VERSION_TIMESTAMP_QUERY.test(search) ||
+      ALLOWED_WORKBOX_REVISION_QUERY.test(search)
+    );
+  }
+  if (
+    REVISIONED_EXACT_PATHNAMES.has(pathname) ||
+    pathname === policy.workerIdentityPath
+  ) {
+    return search === "" || ALLOWED_WORKBOX_REVISION_QUERY.test(search);
+  }
+  return search === "";
 }
 
 function redactEvidencePathname(pathname: string | null): string {
@@ -239,7 +361,9 @@ export function shouldBlockProductionRequest(
     parsed.origin !== policy.allowedOrigin ||
     isSupabaseHost(parsed.hostname.toLowerCase()) ||
     pathname === null ||
-    !isAllowedSmokePath(parsed.origin, pathname) ||
+    parsed.hash !== "" ||
+    !isAllowedSmokePath(parsed.origin, pathname, policy) ||
+    !isAllowedSmokeQuery(parsed.origin, pathname, parsed.search, policy) ||
     isBlockedPath(pathname) ||
     BLOCKED_EXACT_PATHS.has(pathname)
   );

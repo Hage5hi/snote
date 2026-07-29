@@ -268,6 +268,13 @@ describe("edge privacy containment", () => {
       ENV,
       { waitUntil: doubles.waitUntil },
     );
+    const workerIdentity = await worker.fetch(
+      new Request(
+        "https://note.syrin.online/sw-identity-0123456789abcdef.js",
+      ),
+      ENV,
+      { waitUntil: doubles.waitUntil },
+    );
 
     expect(fingerprinted.headers.get("cache-control")).toBe(
       "public, max-age=31536000, immutable",
@@ -276,11 +283,16 @@ describe("edge privacy containment", () => {
       "no-cache, no-store, must-revalidate",
     );
     expect(unfingerprinted.headers.get("cdn-cache-control")).toBe("no-store");
+    expect(workerIdentity.headers.get("cache-control")).toBe(
+      "no-cache, no-store, must-revalidate",
+    );
+    expect(workerIdentity.headers.get("cdn-cache-control")).toBe("no-store");
   });
 
   it.each([
     "/assets/index-AbCdEf12.js",
     "/assets/runtime.js",
+    "/sw-identity-0123456789abcdef.js",
     "/theme-init.js",
   ])("strips untrusted queries before fetching the allowed asset %s", async (path) => {
     const doubles = installOriginDouble();

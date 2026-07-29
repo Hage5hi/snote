@@ -75,6 +75,10 @@
 /sw.js
   Cache-Control: no-cache, no-store, must-revalidate
 
+/sw-identity-*.js
+  Cache-Control: no-cache, no-store, must-revalidate
+  CDN-Cache-Control: no-store
+
 /registerSW.js
   Cache-Control: no-cache, no-store, must-revalidate
 

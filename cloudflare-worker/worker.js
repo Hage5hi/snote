@@ -416,6 +416,7 @@ function isImmutableAssetPath(pathname) {
 
 function isRuntimeAssetPath(pathname) {
   if (ROOT_RUNTIME_ASSET_PATHS.has(pathname)) return true;
+  if (/^\/sw-identity-[a-f0-9]{16}\.js$/.test(pathname)) return true;
   if (/^\/workbox-[a-zA-Z0-9_-]{8,}\.js$/i.test(pathname)) return true;
   return /^\/assets\/.+\.(css|js|mjs|json|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|map)$/i.test(pathname);
 }

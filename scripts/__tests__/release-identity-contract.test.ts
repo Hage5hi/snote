@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { runInNewContext } from "node:vm";
 import { loadConfigFromFile, type ConfigEnv } from "vite";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -18,12 +19,31 @@ const buildEnvironment: ConfigEnv = {
   isSsrBuild: false,
   isPreview: false,
 };
-const RELEASE_ENV_KEYS = ["SNOTE_RELEASE_SHA", "SNOTE_REQUIRE_RELEASE_SHA"] as const;
+const RELEASE_ENV_KEYS = [
+  "SNOTE_BUILD_ID",
+  "SNOTE_RELEASE_SHA",
+  "SNOTE_REQUIRE_RELEASE_SHA",
+] as const;
 
 type VersionPayload = {
   buildId?: unknown;
   builtAt?: unknown;
   deployedSha?: unknown;
+  rollupAssetPathnames?: unknown;
+  workerIdentityPath?: unknown;
+};
+
+type EmittedReleaseAsset = {
+  fileName?: string;
+  source?: string | Uint8Array;
+  type?: string;
+};
+
+const DEFAULT_OUTPUT_BUNDLE = {
+  "assets/index-AbCdEf12.js": {
+    type: "chunk",
+    fileName: "assets/index-AbCdEf12.js",
+  },
 };
 
 type GitStep = {
@@ -76,7 +96,9 @@ async function withReleaseEnv<T>(
   }
 }
 
-async function emitVersionPayload(): Promise<VersionPayload> {
+async function emitReleaseAssets(
+  bundle: object = DEFAULT_OUTPUT_BUNDLE,
+): Promise<EmittedReleaseAsset[]> {
   const loaded = await loadConfigFromFile(
     buildEnvironment,
     resolve(root, "vite.config.ts"),
@@ -98,26 +120,46 @@ async function emitVersionPayload(): Promise<VersionPayload> {
     throw new Error("Expected emit-version-json.generateBundle to be configured");
   }
 
-  const emitted: Array<{ source?: string | Uint8Array }> = [];
+  const emitted: EmittedReleaseAsset[] = [];
   type GenerateBundleHook = (
     this: {
-      emitFile(asset: { source?: string | Uint8Array }): string;
+      emitFile(asset: EmittedReleaseAsset): string;
     },
     outputOptions: object,
     bundle: object,
   ) => void | Promise<void>;
   await (generateBundle as GenerateBundleHook).call(
     {
-      emitFile(asset: { source?: string | Uint8Array }) {
+      emitFile(asset: EmittedReleaseAsset) {
         emitted.push(asset);
-        return "version.json";
+        return asset.fileName ?? "release-asset";
       },
     },
     {},
-    {},
+    bundle,
   );
 
-  const source = emitted.find((asset) => typeof asset.source === "string")?.source;
+  return emitted;
+}
+
+async function readConfiguredBuildId(): Promise<unknown> {
+  const loaded = await loadConfigFromFile(
+    buildEnvironment,
+    resolve(root, "vite.config.ts"),
+  );
+  if (!loaded) throw new Error("Expected Vite to load vite.config.ts");
+  const configured = (
+    loaded.config.define as Record<string, unknown> | undefined
+  )?.__BUILD_ID__;
+  return typeof configured === "string" ? JSON.parse(configured) : configured;
+}
+
+async function emitVersionPayload(): Promise<VersionPayload> {
+  const emitted = await emitReleaseAssets();
+  const source = emitted.find(
+    (asset) =>
+      asset.fileName === "version.json" && typeof asset.source === "string",
+  )?.source;
   if (typeof source !== "string") throw new Error("Expected version.json asset");
   return JSON.parse(source) as VersionPayload;
 }
@@ -328,6 +370,141 @@ describe("release artifact identity contract", () => {
     expect(version.deployedSha).toBe(deployedSha);
   });
 
+  it("emits sorted exact asset membership and a matching active-worker identity", async () => {
+    const emitted = await withReleaseEnv({}, () =>
+      emitReleaseAssets({
+        first: {
+          type: "chunk",
+          fileName: "assets/zeta-ZzYyXx12.js",
+        },
+        second: {
+          type: "asset",
+          fileName: "assets/alpha-AbCdEf12.css",
+        },
+        duplicate: {
+          type: "asset",
+          fileName: "assets/alpha-AbCdEf12.css",
+        },
+        unrelated: {
+          type: "asset",
+          fileName: "robots.txt",
+        },
+      }),
+    );
+    const versionSource = emitted.find(
+      (asset) => asset.fileName === "version.json",
+    )?.source;
+    expect(typeof versionSource).toBe("string");
+    const version = JSON.parse(String(versionSource)) as VersionPayload;
+    const identitySource = emitted.find(
+      (asset) =>
+        asset.fileName === version.workerIdentityPath?.toString().slice(1),
+    )?.source;
+
+    expect(typeof identitySource).toBe("string");
+    expect(version.rollupAssetPathnames).toEqual([
+      "/assets/alpha-AbCdEf12.css",
+      "/assets/zeta-ZzYyXx12.js",
+    ]);
+    expect(version.workerIdentityPath).toMatch(
+      /^\/sw-identity-[a-f0-9]{16}\.js$/,
+    );
+
+    let messageListener:
+      | ((event: {
+          data?: unknown;
+          ports?: Array<{ postMessage(value: unknown): void }>;
+        }) => void)
+      | undefined;
+    runInNewContext(String(identitySource), {
+      self: {
+        addEventListener(type: string, listener: typeof messageListener) {
+          if (type === "message") messageListener = listener;
+        },
+      },
+    });
+    expect(messageListener).toBeTypeOf("function");
+
+    let posted: unknown;
+    messageListener?.({
+      data: { type: "snote:sw-identity:request:v1" },
+      ports: [{ postMessage: (value) => (posted = value) }],
+    });
+    expect(JSON.parse(JSON.stringify(posted))).toEqual({
+      type: "snote:sw-identity:response:v1",
+      payload: {
+        protocol: "snote-sw-identity-v1",
+        buildId: version.buildId,
+        deployedSha: version.deployedSha,
+      },
+    });
+
+    posted = undefined;
+    messageListener?.({
+      data: { type: "untrusted-message" },
+      ports: [{ postMessage: (value) => (posted = value) }],
+    });
+    expect(posted).toBeUndefined();
+    expect(identitySource).not.toContain("eval(");
+    expect(identitySource).not.toContain("new Function");
+
+    const config = readFileSync("vite.config.ts", "utf8");
+    expect(config).toContain("importScripts: [workerIdentityPath]");
+  });
+
+  it("fails closed without leaking an unsafe emitted asset pathname", async () => {
+    let failure: unknown;
+    try {
+      await withReleaseEnv({}, () =>
+        emitReleaseAssets({
+          unsafe: {
+            type: "chunk",
+            fileName: "assets/owner-capability-secret.js",
+          },
+        }),
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toBe(
+      "Unsafe emitted static asset pathname",
+    );
+    expect((failure as Error).message).not.toContain("owner-capability");
+  });
+
+  it("accepts a deterministic build id only on the source-attested release path", async () => {
+    const deployedSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+    const buildId = "release-build_2026.07.29:1";
+
+    await expect(
+      withReleaseEnv({ SNOTE_BUILD_ID: buildId }, readConfiguredBuildId),
+    ).rejects.toThrow(/source-attested release build/i);
+    await expect(
+      withReleaseEnv(
+        {
+          SNOTE_BUILD_ID: "owner capability must not appear",
+          SNOTE_RELEASE_SHA: deployedSha,
+          SNOTE_REQUIRE_RELEASE_SHA: "1",
+        },
+        readConfiguredBuildId,
+      ),
+    ).rejects.toThrow(/sanitized build identifier/i);
+    await expect(
+      withReleaseEnv(
+        {
+          SNOTE_BUILD_ID: buildId,
+          SNOTE_RELEASE_SHA: deployedSha,
+          SNOTE_REQUIRE_RELEASE_SHA: "1",
+        },
+        readConfiguredBuildId,
+      ),
+    ).resolves.toBe(buildId);
+  });
+
   it("fails closed for missing, malformed, or partially configured release identity", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -398,6 +575,8 @@ describe("release artifact identity contract", () => {
     const readme = readFileSync("e2e/README.md", "utf8");
 
     expect(workflow).toContain("EXPECTED_DEPLOYED_SHA: ${{ env.DEPLOYED_SHA }}");
+    expect(workflow).toContain("SNOTE_BUILD_ID: ${{ env.BUILD_ID }}");
+    expect(workflow).toContain("bun run build:release");
     expect(smoke).toContain("version.deployedSha");
     expect(readme).toContain("source-stamped `deployedSha`");
     expect(readme).not.toContain("does not invent a source-SHA field");

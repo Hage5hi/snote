@@ -10,7 +10,7 @@ on:
         required: true
         type: string
       build_id:
-        description: Sanitized provider build identifier (diagnostic only; not source attestation)
+        description: Exact buildId emitted by deployed version.json (diagnostic only; not source attestation)
         required: true
         type: string
       target_url:
@@ -96,6 +96,11 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - name: Build trusted local release manifest
+        env:
+          SNOTE_BUILD_ID: ${{ env.BUILD_ID }}
+          SNOTE_RELEASE_SHA: ${{ env.DEPLOYED_SHA }}
+        run: bun run build:release
       - run: bash scripts/verify-frame-ancestors.sh "$SMOKE_BASE_URL"
       - run: bunx playwright install --with-deps chromium
       - name: Run post-deploy smoke

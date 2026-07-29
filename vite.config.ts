@@ -1,5 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
@@ -23,10 +24,11 @@ import {
 // detect "the deployed version drifted from the version this tab booted with"
 // and surface the Update toast — even when the SW machinery hasn't fired
 // onNeedRefresh yet (or the user has SW disabled entirely).
-const BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
+const SANITIZED_BUILD_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const REQUIRE_RELEASE_SHA = process.env.SNOTE_REQUIRE_RELEASE_SHA;
 const RELEASE_SHA = process.env.SNOTE_RELEASE_SHA?.trim();
+const RELEASE_BUILD_ID = process.env.SNOTE_BUILD_ID?.trim();
 
 // A normal build may self-identify only from a clean Git checkout. The
 // dedicated release build remains the fail-closed path: any partial or
@@ -38,6 +40,16 @@ if (REQUIRE_RELEASE_SHA !== undefined && REQUIRE_RELEASE_SHA !== "1") {
 if (RELEASE_SHA !== undefined && REQUIRE_RELEASE_SHA !== "1") {
   throw new Error("SNOTE_RELEASE_SHA is only accepted when SNOTE_REQUIRE_RELEASE_SHA=1.");
 }
+if (RELEASE_BUILD_ID !== undefined && REQUIRE_RELEASE_SHA !== "1") {
+  throw new Error(
+    "SNOTE_BUILD_ID is accepted only by a source-attested release build.",
+  );
+}
+if (RELEASE_BUILD_ID !== undefined && !SANITIZED_BUILD_ID.test(RELEASE_BUILD_ID)) {
+  throw new Error(
+    "SNOTE_BUILD_ID must be a sanitized build identifier of 1 to 128 characters.",
+  );
+}
 if (REQUIRE_RELEASE_SHA === "1" && !RELEASE_SHA) {
   throw new Error(
     "SNOTE_REQUIRE_RELEASE_SHA=1 requires SNOTE_RELEASE_SHA to be an exact 40-character lowercase commit SHA.",
@@ -46,6 +58,14 @@ if (REQUIRE_RELEASE_SHA === "1" && !RELEASE_SHA) {
 if (RELEASE_SHA && !COMMIT_SHA.test(RELEASE_SHA)) {
   throw new Error("SNOTE_RELEASE_SHA must be an exact 40-character lowercase commit SHA.");
 }
+const BUILD_ID =
+  RELEASE_BUILD_ID ??
+  `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const workerIdentityHash = createHash("sha256")
+  .update(BUILD_ID, "utf8")
+  .digest("hex")
+  .slice(0, 16);
+const workerIdentityPath = `/sw-identity-${workerIdentityHash}.js`;
 let DEPLOYED_SHA: string | null = null;
 if (REQUIRE_RELEASE_SHA === "1") {
   let checkedOutSha: string;
@@ -74,19 +94,50 @@ function emitVersionJson(): Plugin {
   return {
     name: "emit-version-json",
     apply: "build" as const,
-    generateBundle() {
+    generateBundle(_outputOptions, bundle) {
       const deployedSha = revalidateDeployedSha(
         DEPLOYED_SHA,
         REQUIRE_RELEASE_SHA === "1" ? "strict" : "ordinary",
       );
+      const emittedAssetPathname =
+        /^assets\/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\.(?:css|js|mjs|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf)$/;
+      const relevantAsset =
+        /^assets\/.*\.(?:css|js|mjs|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf)$/i;
+      const rollupAssetPathnames = [
+        ...new Set(
+          Object.values(bundle).flatMap((output) => {
+            const fileName = output.fileName;
+            if (!relevantAsset.test(fileName)) return [];
+            if (!emittedAssetPathname.test(fileName)) {
+              throw new Error("Unsafe emitted static asset pathname");
+            }
+            return [`/${fileName}`];
+          }),
+        ),
+      ].sort();
+      const builtAt = new Date().toISOString();
+      const identityPayload = {
+        protocol: "snote-sw-identity-v1",
+        buildId: BUILD_ID,
+        deployedSha,
+      };
       this.emitFile({
         type: "asset",
         fileName: "version.json",
         source: JSON.stringify({
           buildId: BUILD_ID,
-          builtAt: new Date().toISOString(),
+          builtAt,
           deployedSha,
+          rollupAssetPathnames,
+          workerIdentityPath,
         }),
+      });
+      this.emitFile({
+        type: "asset",
+        fileName: workerIdentityPath.slice(1),
+        source: `(()=>{"use strict";const PAYLOAD=Object.freeze(${JSON.stringify(
+          identityPayload,
+        )});const RESPONSE=Object.freeze({type:"snote:sw-identity:response:v1",payload:PAYLOAD});self.addEventListener("message",event=>{if(!event.data||event.data.type!=="snote:sw-identity:request:v1")return;const port=event.ports&&event.ports[0];if(!port)return;port.postMessage(RESPONSE);});})();`,
       });
     },
   };
@@ -123,6 +174,7 @@ export default defineConfig(({ mode }) => ({
       // SW only activates in production builds — preview iframes stay clean.
       devOptions: { enabled: false },
       workbox: {
+        importScripts: [workerIdentityPath],
         clientsClaim: true,
         skipWaiting: false,
         globPatterns: ["**/*.{js,css,html,svg,png,webp,woff,woff2,json,ico}"],

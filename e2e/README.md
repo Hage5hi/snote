@@ -46,18 +46,27 @@ polling and UI transitions. The post-deploy workflow runs:
 
 The production spec is gated by `POST_DEPLOY_SMOKE=1`. It performs a real
 `GET /version.json` with `Cache-Control: no-store`, verifies the returned
-diagnostic `buildId` and source-stamped `deployedSha`, and then exercises only
-`/privacy?v=legacy-noise&foo=bar`. This production smoke uses the current
-deployed real service worker: it verifies registration, activation, the exact
-same-origin `/sw.js` script and root scope, then reloads offline `/privacy`
-through the active worker/cache. It does not claim to test an A-to-B update.
+diagnostic `buildId`, source-stamped `deployedSha`, exact Rollup asset list and
+per-build worker-identity path against a local release build of that same
+commit. It then exercises only `/privacy?v=legacy-noise&foo=bar`. This
+production smoke uses the current deployed real service worker: it verifies
+registration, activation, the exact same-origin `/sw.js` script and root
+scope, obtains the active controller's build/SHA identity over a bounded
+`MessageChannel` handshake, then repeats that identity check after reloading
+offline `/privacy` through the active worker/cache. It does not claim to test
+an A-to-B update.
 
 Its `helpers/production-readonly.ts` BrowserContext guard permits only
-GET/HEAD/OPTIONS for the exact static precache boundary, blocks Supabase, API,
-analytics, arbitrary note/capability routes and all WebSockets, and records
-only sanitized `{method, origin, pathname}` evidence. The workflow also
-verifies that the approved manifest candidate, checked-out commit, and live
-`deployedSha` all equal `EXPECTED_DEPLOYED_SHA`.
+GET/HEAD/OPTIONS for exact public roots and the locally rebuilt Rollup asset
+membership. Route-specific query rules allow only the two expected privacy
+queries, a bounded version probe, and Workbox revisions on revisioned public
+roots; hashed Rollup assets, `/sw.js` and the Workbox loader require an empty
+query. The guard blocks Supabase, API, analytics, arbitrary note/capability
+routes and all WebSockets, and records only sanitized
+`{method, origin, pathname}` evidence. The workflow also verifies that the
+approved manifest candidate, checked-out commit, local release manifest and
+live `deployedSha` all equal `EXPECTED_DEPLOYED_SHA`. The remote manifest is
+compared with the local one; it never widens the guard.
 
 The workflow can be invoked by authenticated `repository_dispatch` or explicit
 `workflow_dispatch`. This repository currently has no automatic Lovable
@@ -69,7 +78,10 @@ checked-out HEAD. A dirty or Git-less build, an invalid HEAD, or a failed Git
 status check emits `"deployedSha": null` without fabricating identity. The
 controlled path remains `bun run build:release` with an exact commit SHA in
 `SNOTE_RELEASE_SHA`; it fails closed for missing, malformed, partial, or
-checked-out-Git-mismatched release identity.
+checked-out-Git-mismatched release identity. Post-deploy verification also
+supplies the already-attested `buildId` through `SNOTE_BUILD_ID`, which is
+accepted only on that strict release path so the local comparison build is
+deterministic.
 
 A Lovable preview/staging rehearsal is still required to determine whether its
 builder exposes clean Git metadata. The current production artifact is not
