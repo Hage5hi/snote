@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
+import { resolveCleanGitHead } from "./scripts/release-identity";
 
 // Editor-route chunks (NotePage, cm-vendor, yjs-vendor, md-vendor) are warmed
 // by the device-aware, intent-driven prefetch in src/pages/Home.tsx, which
@@ -24,10 +25,10 @@ const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const REQUIRE_RELEASE_SHA = process.env.SNOTE_REQUIRE_RELEASE_SHA;
 const RELEASE_SHA = process.env.SNOTE_RELEASE_SHA?.trim();
 
-// A normal CI/local build is deliberately unverified. Only the dedicated
-// release build may stamp a source identity, and any partial or malformed
-// release configuration must stop the build rather than produce a falsely
-// attested artifact.
+// A normal build may self-identify only from a clean Git checkout. The
+// dedicated release build remains the fail-closed path: any partial or
+// malformed release configuration must stop the build rather than produce a
+// falsely attested artifact.
 if (REQUIRE_RELEASE_SHA !== undefined && REQUIRE_RELEASE_SHA !== "1") {
   throw new Error('SNOTE_REQUIRE_RELEASE_SHA must be omitted or exactly "1".');
 }
@@ -62,6 +63,8 @@ if (REQUIRE_RELEASE_SHA === "1") {
     throw new Error("SNOTE_RELEASE_SHA does not match checked-out HEAD.");
   }
   DEPLOYED_SHA = checkedOutSha;
+} else {
+  DEPLOYED_SHA = resolveCleanGitHead();
 }
 
 function emitVersionJson(): Plugin {

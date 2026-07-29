@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { loadConfigFromFile, type ConfigEnv } from "vite";
 import { describe, expect, it, vi } from "vitest";
+import { resolveCleanGitHead } from "../release-identity";
 
 const root = process.cwd();
 const buildEnvironment: ConfigEnv = {
@@ -86,6 +87,63 @@ async function emitVersionPayload(): Promise<VersionPayload> {
 }
 
 describe("release artifact identity contract", () => {
+  describe("ordinary build Git identity", () => {
+    const cleanSha = "0123456789abcdef0123456789abcdef01234567";
+
+    it("returns the exact checked-out HEAD only for an empty successful status", () => {
+      const calls: string[][] = [];
+
+      const resolved = resolveCleanGitHead((args) => {
+        calls.push([...args]);
+        if (args[0] === "rev-parse") return `${cleanSha}\n`;
+        if (args[0] === "status") return "";
+        throw new Error(`Unexpected Git command: ${args.join(" ")}`);
+      });
+
+      expect(resolved).toBe(cleanSha);
+      expect(calls).toEqual([
+        ["rev-parse", "HEAD"],
+        ["status", "--porcelain", "--untracked-files=all"],
+      ]);
+    });
+
+    it.each([
+      ["tracked changes", " M vite.config.ts\n"],
+      ["untracked files", "?? local-secret.txt\n"],
+    ])("returns null for %s", (_label, status) => {
+      const resolved = resolveCleanGitHead((args) =>
+        args[0] === "rev-parse" ? cleanSha : status,
+      );
+
+      expect(resolved).toBeNull();
+    });
+
+    it.each([
+      ["an invalid HEAD", "not-a-sha"],
+      ["an uppercase HEAD", cleanSha.toUpperCase()],
+    ])("returns null for %s", (_label, head) => {
+      const resolved = resolveCleanGitHead((args) =>
+        args[0] === "rev-parse" ? head : "",
+      );
+
+      expect(resolved).toBeNull();
+    });
+
+    it.each(["rev-parse", "status"])(
+      "returns null when Git %s is unavailable",
+      (failingCommand) => {
+        const resolved = resolveCleanGitHead((args) => {
+          if (args[0] === failingCommand) {
+            throw new Error("git unavailable");
+          }
+          return args[0] === "rev-parse" ? cleanSha : "";
+        });
+
+        expect(resolved).toBeNull();
+      },
+    );
+  });
+
   it("stamps an exact approved commit SHA into a release version artifact", async () => {
     const deployedSha = execFileSync("git", ["rev-parse", "HEAD"], {
       encoding: "utf8",
@@ -139,10 +197,21 @@ describe("release artifact identity contract", () => {
     }
   });
 
-  it("marks ordinary builds as unverified instead of fabricating a source SHA", async () => {
+  it("stamps ordinary builds only when the real Git checkout is clean", async () => {
+    const status = execFileSync(
+      "git",
+      ["status", "--porcelain", "--untracked-files=all"],
+      { encoding: "utf8" },
+    );
+    const expectedSha =
+      status === ""
+        ? execFileSync("git", ["rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim()
+        : null;
     const version = await withReleaseEnv({}, emitVersionPayload);
 
-    expect(version.deployedSha).toBeNull();
+    expect(version.deployedSha).toBe(expectedSha);
   });
 
   it("exposes an explicit cross-platform release-build entry point", () => {
@@ -189,5 +258,25 @@ describe("release artifact identity contract", () => {
     expect(ci).toContain("release version artifact must attest checked-out SHA");
     expect(ci).not.toContain("repository_dispatch:");
     expect(manifest).toContain("clean, immutable Git checkout");
+  });
+
+  it("documents conditional normal-build identity without claiming production proof", () => {
+    const readme = readFileSync("e2e/README.md", "utf8");
+    const manifest = readFileSync(
+      "docs/security/release-manifests/2026-07-capability-rollout.md",
+      "utf8",
+    );
+
+    expect(readme).toContain("clean Git-backed normal build");
+    expect(readme).toContain("dirty or Git-less build");
+    expect(readme).toContain("Lovable preview/staging rehearsal");
+    expect(manifest).toContain(
+      "Status: `PREPARATION - NO PRODUCTION MUTATION AUTHORIZED`",
+    );
+    expect(manifest).toContain("Clean Git-backed normal provider builds");
+    expect(manifest).toContain("Lovable preview/staging rehearsal");
+    expect(manifest).toContain(
+      "Observed production source-SHA attestation: `UNPROVEN",
+    );
   });
 });

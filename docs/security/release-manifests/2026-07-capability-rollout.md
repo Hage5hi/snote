@@ -2,7 +2,7 @@
 
 Status: `PREPARATION - NO PRODUCTION MUTATION AUTHORIZED`
 
-Last reviewed: 2026-07-28 (Asia/Saigon)
+Last reviewed: 2026-07-29 (Asia/Saigon)
 
 This manifest contains sanitized identifiers and aggregate evidence only. Do not
 record note content, ciphertext, slugs, capabilities, share tokens, raw private
@@ -28,20 +28,28 @@ URLs, raw IP addresses, passwords, keys, session cookies, or secret values.
 ## Release artifact attestation
 
 `build_id` is provider diagnostic metadata, not proof of the source commit.
-Before any future staging or production release, the controlled build
-environment must inject the exact approved lowercase 40-character Git commit
-as `SNOTE_RELEASE_SHA` and invoke `bun run build:release`. That command sets
-the strict release mode and compares the value with `git rev-parse HEAD`;
-missing, malformed, partial, or mismatched identity fails the build rather than
-emitting a claimed release. It must run from a clean, immutable Git checkout;
-a provider without the checked-out Git commit is a NO-GO for an attested
-release.
+Clean Git-backed normal provider builds may self-stamp only when
+`git rev-parse HEAD` returns an exact lowercase 40-character commit and
+`git status --porcelain --untracked-files=all` succeeds with empty output.
+Dirty, Git-less, invalid-HEAD, or Git-error builds emit `"deployedSha": null`
+without fabricating identity or failing an ordinary build.
+
+The controlled release path remains stricter. Before any future staging or
+production release, its environment must inject the exact approved commit as
+`SNOTE_RELEASE_SHA` and invoke `bun run build:release`. That command sets
+strict release mode and compares the value with `git rev-parse HEAD`; missing,
+malformed, partial, or mismatched identity fails the build rather than emitting
+a claimed release. It must run from a clean, immutable Git checkout; a provider
+without the checked-out Git commit is a NO-GO for an attested release.
 
 The release artifact writes that value to `/version.json` as `deployedSha`.
 The post-deploy smoke fails unless the approved manifest candidate, checked-out
 commit, and live `deployedSha` match exactly. This is an artifact-to-source
 identity check, not a substitute for a signed provenance system; it remains
 `UNPROVEN` until the injection boundary and a staging deployment are reviewed.
+A Lovable preview/staging rehearsal is still required to learn whether its
+builder exposes clean Git metadata. No current production artifact is claimed
+as attested by this preparation-only manifest.
 
 ## Change-control gates
 

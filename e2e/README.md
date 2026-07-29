@@ -54,12 +54,17 @@ Supabase and API paths, closes every WebSocket, and records only
 The workflow also verifies that the approved manifest candidate, checked-out
 commit, and live `deployedSha` all equal `EXPECTED_DEPLOYED_SHA`.
 
-An ordinary local/CI build deliberately emits `"deployedSha": null`. An
-authorized release build must be created with an exact lowercase commit SHA in
-`SNOTE_RELEASE_SHA` through `bun run build:release`; the build fails closed for
-missing, malformed, partial, or checked-out-Git-mismatched release identity. A
-provider `build_id` remains diagnostic only and cannot substitute for the
-source stamp.
+A clean Git-backed normal build may embed its exact lowercase 40-character
+checked-out HEAD. A dirty or Git-less build, an invalid HEAD, or a failed Git
+status check emits `"deployedSha": null` without fabricating identity. The
+controlled path remains `bun run build:release` with an exact commit SHA in
+`SNOTE_RELEASE_SHA`; it fails closed for missing, malformed, partial, or
+checked-out-Git-mismatched release identity.
+
+A Lovable preview/staging rehearsal is still required to determine whether its
+builder exposes clean Git metadata. The current production artifact is not
+source-attested. A provider `build_id` remains diagnostic only and cannot
+substitute for the source stamp.
 The stamp is not a signing system: it is valid only when the deployment
 environment that injects it is access-controlled and the post-deploy smoke has
 verified the live artifact.
