@@ -1,12 +1,25 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, test, type Page } from "@playwright/test";
 import {
+  startChromiumWorkerAttestation,
+  type ChromiumWorkerAttestation,
+  type TrustedChromiumWorkerArtifact,
+} from "./helpers/chromium-worker-attestation";
+import {
+  assertTrustedWorkerArtifactBody,
+  assertTrustedReleaseManifestMatch,
+  createTrustedWorkerArtifactDigest,
   createProductionReadonlyPolicy,
+  fetchBoundedReadonlyResource,
   installProductionReadonlyGuard,
-  shouldBlockProductionRequest,
-  validateRollupAssetPathnames,
-  validateWorkerIdentityPath,
+  MAX_REMOTE_VERSION_BODY_BYTES,
+  validateActiveWorkerIdentity,
+  validateProductionReleaseManifest,
+  validateTrustedServiceWorkerArtifacts,
+  type ProductionReadonlyPolicy,
+  type ProductionReleaseManifest,
+  type TrustedWorkerArtifactDigest,
 } from "./helpers/production-readonly";
 
 test.use({
@@ -16,59 +29,74 @@ test.use({
   video: "off",
 });
 
-const WORKER_IDENTITY_PROTOCOL = "snote-sw-identity-v1";
 const WORKER_IDENTITY_REQUEST = "snote:sw-identity:request:v1";
-const WORKER_IDENTITY_RESPONSE = "snote:sw-identity:response:v1";
+const PRODUCTION_SMOKE_PRIMARY_STAGES = new Set([
+  "initialization",
+  "environment",
+  "trusted-local-artifacts",
+  "remote-release-manifest",
+  "remote-worker-artifacts",
+  "worker-registration",
+  "online-worker-verification",
+  "offline-worker-verification",
+]);
+const PRODUCTION_SMOKE_CLEANUP_CODES = new Set([
+  "isolate-network",
+  "worker-attestation",
+  "readonly-guard",
+  "close-context",
+]);
+const PRODUCTION_SMOKE_AUDIT_CODES = new Set([
+  "attach-evidence",
+  "request-audit",
+]);
 
-type DeployedServiceWorkerState = {
-  activeScriptUrl: string | null;
-  activeState: string | null;
-  controllerScriptUrl: string | null;
-  scope: string;
-};
-
-type ReleaseManifest = {
-  buildId: string;
-  deployedSha: string;
-  rollupAssetPathnames: readonly string[];
-  workerIdentityPath: string;
-};
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function safeFailureCode(
+  value: unknown,
+  allowed: ReadonlySet<string>,
+): string {
+  return typeof value === "string" && allowed.has(value) ? value : "unknown";
 }
 
-function validateReleaseManifest(
-  value: unknown,
-  expectedBuildId: string,
-  expectedDeployedSha: string,
-): ReleaseManifest {
-  if (!isRecord(value)) throw new Error("Invalid release manifest");
-  expect(Object.keys(value).sort()).toEqual([
-    "buildId",
-    "builtAt",
-    "deployedSha",
-    "rollupAssetPathnames",
-    "workerIdentityPath",
-  ]);
-  expect(value.buildId).toBe(expectedBuildId);
-  expect(value.deployedSha).toBe(expectedDeployedSha);
-  expect(value.builtAt).toEqual(expect.any(String));
-
-  return {
-    buildId: expectedBuildId,
-    deployedSha: expectedDeployedSha,
-    rollupAssetPathnames: validateRollupAssetPathnames(
-      value.rollupAssetPathnames,
-    ),
-    workerIdentityPath: validateWorkerIdentityPath(value.workerIdentityPath),
-  };
+export function createProductionSmokeFailure(options: {
+  primaryStage?: unknown;
+  cleanupCode?: unknown;
+  auditCode?: unknown;
+}): Error | null {
+  const codes: string[] = [];
+  if (options.primaryStage !== undefined) {
+    codes.push(
+      `primary:${safeFailureCode(
+        options.primaryStage,
+        PRODUCTION_SMOKE_PRIMARY_STAGES,
+      )}`,
+    );
+  }
+  if (options.cleanupCode !== undefined) {
+    codes.push(
+      `cleanup:${safeFailureCode(
+        options.cleanupCode,
+        PRODUCTION_SMOKE_CLEANUP_CODES,
+      )}`,
+    );
+  }
+  if (options.auditCode !== undefined) {
+    codes.push(
+      `audit:${safeFailureCode(
+        options.auditCode,
+        PRODUCTION_SMOKE_AUDIT_CODES,
+      )}`,
+    );
+  }
+  return codes.length > 0
+    ? new Error(`Production PWA smoke failed [${codes.join(", ")}]`)
+    : null;
 }
 
 async function readTrustedLocalReleaseManifest(
   expectedBuildId: string,
   expectedDeployedSha: string,
-): Promise<ReleaseManifest> {
+): Promise<ProductionReleaseManifest> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(
@@ -77,25 +105,117 @@ async function readTrustedLocalReleaseManifest(
   } catch {
     throw new Error("Trusted local release manifest is unavailable");
   }
-  return validateReleaseManifest(
+  return validateProductionReleaseManifest(
     parsed,
     expectedBuildId,
     expectedDeployedSha,
   );
 }
 
-async function readDeployedServiceWorkerState(
+async function readTrustedLocalServiceWorkerArtifacts(
+  workerIdentityPath: string,
+) {
+  try {
+    const distPath = resolve(process.cwd(), "dist");
+    const [serviceWorkerBody, fileNames] = await Promise.all([
+      readFile(resolve(distPath, "sw.js")),
+      readdir(distPath),
+    ]);
+    const workboxFileNames = fileNames.filter((fileName) =>
+      /^workbox-[a-f0-9]{8}\.js$/.test(fileName),
+    );
+    const parsed = validateTrustedServiceWorkerArtifacts(
+      serviceWorkerBody.toString("utf8"),
+      workboxFileNames,
+      workerIdentityPath,
+    );
+    const [identityBody, workboxBody] = await Promise.all([
+      readFile(resolve(distPath, workerIdentityPath.slice(1))),
+      readFile(resolve(distPath, parsed.workboxPathname.slice(1))),
+    ]);
+    return Object.freeze({
+      ...parsed,
+      artifacts: Object.freeze([
+        Object.freeze({
+          ...createTrustedWorkerArtifactDigest("/sw.js", serviceWorkerBody),
+          source: serviceWorkerBody.toString("utf8"),
+        }),
+        Object.freeze({
+          ...createTrustedWorkerArtifactDigest(
+            workerIdentityPath,
+            identityBody,
+          ),
+          source: identityBody.toString("utf8"),
+        }),
+        Object.freeze({
+          ...createTrustedWorkerArtifactDigest(
+            parsed.workboxPathname,
+            workboxBody,
+          ),
+          source: workboxBody.toString("utf8"),
+        }),
+      ]),
+    });
+  } catch {
+    throw new Error("Trusted local service worker artifact is unavailable");
+  }
+}
+
+async function verifyRemoteWorkerArtifacts(
+  policy: ProductionReadonlyPolicy,
+  artifacts: readonly TrustedWorkerArtifactDigest[],
+): Promise<void> {
+  for (const trusted of artifacts) {
+    const artifactUrl = new URL(
+      trusted.pathname,
+      policy.allowedOrigin,
+    ).toString();
+    let body: Uint8Array;
+    try {
+      body = (
+        await fetchBoundedReadonlyResource(
+          artifactUrl,
+          policy,
+          trusted.byteLength,
+        )
+      ).body;
+    } catch {
+      throw new Error("Production worker artifact response failed validation");
+    }
+    assertTrustedWorkerArtifactBody(body, trusted);
+  }
+}
+
+async function hasExpectedServiceWorkerState(
   page: Page,
-): Promise<DeployedServiceWorkerState> {
-  return page.evaluate(async () => {
-    const registration = await navigator.serviceWorker.ready;
-    return {
-      activeScriptUrl: registration.active?.scriptURL ?? null,
-      activeState: registration.active?.state ?? null,
-      controllerScriptUrl:
-        navigator.serviceWorker.controller?.scriptURL ?? null,
-      scope: registration.scope,
-    };
+  expectedScriptUrl: string,
+  expectedScope: string,
+): Promise<boolean> {
+  return page.evaluate(
+    async ({ scriptUrl, scope }) => {
+      const registration =
+        await navigator.serviceWorker.getRegistration("/");
+      return Boolean(
+        registration &&
+          registration.active?.scriptURL === scriptUrl &&
+          registration.active.state === "activated" &&
+          navigator.serviceWorker.controller?.scriptURL === scriptUrl &&
+          registration.scope === scope,
+      );
+    },
+    { scriptUrl: expectedScriptUrl, scope: expectedScope },
+  );
+}
+
+async function hasExpectedPrivacyUrl(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const url = new URL(window.location.href);
+    return (
+      url.pathname === "/privacy" &&
+      !url.searchParams.has("v") &&
+      url.searchParams.get("foo") === "bar" &&
+      [...url.searchParams.keys()].length === 1
+    );
   });
 }
 
@@ -144,23 +264,12 @@ async function requestActiveWorkerIdentity(page: Page): Promise<unknown> {
   );
 }
 
-function expectActiveWorkerIdentity(
-  identity: unknown,
-  expectedBuildId: string,
-  expectedDeployedSha: string,
-): void {
-  expect(identity).toEqual({
-    type: WORKER_IDENTITY_RESPONSE,
-    payload: {
-      protocol: WORKER_IDENTITY_PROTOCOL,
-      buildId: expectedBuildId,
-      deployedSha: expectedDeployedSha,
-    },
-  });
-}
-
 test.describe("production PWA smoke (read-only)", () => {
   test.describe.configure({ timeout: 120_000 });
+  test.skip(
+    ({ browserName }) => browserName !== "chromium",
+    "exact loaded service-worker source attestation is Chromium-only",
+  );
   test.skip(
     process.env.POST_DEPLOY_SMOKE !== "1",
     "runs only from the authenticated post-deploy smoke workflow",
@@ -173,12 +282,16 @@ test.describe("production PWA smoke (read-only)", () => {
     let guard:
       | Awaited<ReturnType<typeof installProductionReadonlyGuard>>
       | undefined;
-    let offline = false;
-    let cleanupFailure: Error | undefined;
-    let primaryFailure: unknown;
-    let auditFailure: unknown;
+    let workerAttestation: ChromiumWorkerAttestation | undefined;
+    let cleanupFailureCode: string | undefined;
+    let primaryFailure = false;
+    let auditFailureCode: string | undefined;
+    let primaryStage = "initialization";
+    let networkIsolated = false;
+    let contextClosed = false;
 
     try {
+      primaryStage = "environment";
       const expectedBuildId = process.env.EXPECTED_BUILD_ID;
       const expectedDeployedSha = process.env.EXPECTED_DEPLOYED_SHA;
       if (!expectedBuildId) throw new Error("EXPECTED_BUILD_ID is required");
@@ -194,48 +307,69 @@ test.describe("production PWA smoke (read-only)", () => {
           "PLAYWRIGHT_BASE_URL is required for the production smoke",
         );
       }
+      primaryStage = "trusted-local-artifacts";
       const trustedManifest = await readTrustedLocalReleaseManifest(
         expectedBuildId,
         expectedDeployedSha,
       );
+      const trustedWorkerArtifacts =
+        await readTrustedLocalServiceWorkerArtifacts(
+          trustedManifest.workerIdentityPath,
+        );
       const policy = createProductionReadonlyPolicy(baseUrl, {
         rollupAssetPathnames: trustedManifest.rollupAssetPathnames,
         workerIdentityPath: trustedManifest.workerIdentityPath,
+        workboxPathname: trustedWorkerArtifacts.workboxPathname,
+        precacheRevisionRequestTargets:
+          trustedWorkerArtifacts.precacheRevisionRequestTargets,
       });
-      guard = await installProductionReadonlyGuard(context, policy);
-      expect(context.serviceWorkers()).toEqual([]);
+      guard = await installProductionReadonlyGuard(page, policy);
+      if (context.serviceWorkers().length !== 0) {
+        throw new Error(
+          "Production smoke started with an unexpected service worker",
+        );
+      }
 
+      primaryStage = "remote-release-manifest";
       const versionUrl = new URL(
-        "/version.json",
+        "/version.json?source=network",
         policy.allowedOrigin,
       ).toString();
-      expect(shouldBlockProductionRequest(versionUrl, "GET", policy)).toBe(false);
-      const versionResponse = await page.request.get(versionUrl, {
-        maxRedirects: 0,
-        headers: {
-          "cache-control": "no-store",
-          pragma: "no-cache",
-        },
-      });
-      expect(versionResponse.status()).toBe(200);
-      expect(versionResponse.url()).toBe(versionUrl);
-      expect(versionResponse.headers()).not.toHaveProperty("location");
-      expect(versionResponse.headers()["cache-control"] ?? "").toMatch(
-        /no-store|no-cache/i,
+      const versionResponse = await fetchBoundedReadonlyResource(
+        versionUrl,
+        policy,
+        MAX_REMOTE_VERSION_BODY_BYTES,
       );
-      const version = validateReleaseManifest(
-        await versionResponse.json(),
+      if (
+        !/no-store|no-cache/i.test(
+          versionResponse.headers.get("cache-control") ?? "",
+        )
+      ) {
+        throw new Error("Production version response failed validation");
+      }
+      let remoteVersionPayload: unknown;
+      try {
+        remoteVersionPayload = JSON.parse(
+          new TextDecoder("utf-8", { fatal: true }).decode(
+            versionResponse.body,
+          ),
+        );
+      } catch {
+        throw new Error("Production version response was not valid JSON");
+      }
+      const version = validateProductionReleaseManifest(
+        remoteVersionPayload,
         expectedBuildId,
         expectedDeployedSha,
       );
-      expect(version.deployedSha).toBe(expectedDeployedSha);
-      expect(version.rollupAssetPathnames).toEqual(
-        trustedManifest.rollupAssetPathnames,
-      );
-      expect(version.workerIdentityPath).toBe(
-        trustedManifest.workerIdentityPath,
+      assertTrustedReleaseManifestMatch(version, trustedManifest);
+      primaryStage = "remote-worker-artifacts";
+      await verifyRemoteWorkerArtifacts(
+        policy,
+        trustedWorkerArtifacts.artifacts,
       );
 
+      primaryStage = "worker-registration";
       const expectedServiceWorkerUrl = new URL(
         "/sw.js",
         policy.allowedOrigin,
@@ -244,6 +378,23 @@ test.describe("production PWA smoke (read-only)", () => {
         "/",
         policy.allowedOrigin,
       ).toString();
+      const chromiumWorkerArtifacts: readonly TrustedChromiumWorkerArtifact[] =
+        Object.freeze(
+          trustedWorkerArtifacts.artifacts.map((artifact) =>
+            Object.freeze({
+              ...artifact,
+              absoluteUrl: new URL(
+                artifact.pathname,
+                policy.allowedOrigin,
+              ).toString(),
+            }),
+          ),
+        );
+      workerAttestation = await startChromiumWorkerAttestation(
+        page,
+        expectedServiceWorkerScope,
+        chromiumWorkerArtifacts,
+      );
       const serviceWorkerCreated = context.waitForEvent("serviceworker", {
         timeout: 30_000,
       });
@@ -255,63 +406,43 @@ test.describe("production PWA smoke (read-only)", () => {
         }),
       ]);
       expect(navigationResponse).not.toBeNull();
-      expect(serviceWorker.url()).toBe(expectedServiceWorkerUrl);
+      if (serviceWorker.url() !== expectedServiceWorkerUrl) {
+        throw new Error("Production service worker URL failed validation");
+      }
       await expect(
         page.getByRole("heading", { name: "Privacy Policy" }),
       ).toBeVisible();
 
-      await page.waitForFunction(
-        async ({ expectedScriptUrl, expectedScope }) => {
-          const registration = await navigator.serviceWorker.ready;
-          const active = registration.active;
-          return Boolean(
-            active &&
-              active.state === "activated" &&
-              active.scriptURL === expectedScriptUrl &&
-              registration.scope === expectedScope &&
-              navigator.serviceWorker.controller?.scriptURL ===
-                expectedScriptUrl,
-          );
-        },
-        {
-          expectedScriptUrl: expectedServiceWorkerUrl,
-          expectedScope: expectedServiceWorkerScope,
-        },
-        { timeout: 30_000 },
-      );
-
+      primaryStage = "online-worker-verification";
       await expect
-        .poll(async () => readDeployedServiceWorkerState(page))
-        .toEqual({
-          activeScriptUrl: expectedServiceWorkerUrl,
-          activeState: "activated",
-          controllerScriptUrl: expectedServiceWorkerUrl,
-          scope: expectedServiceWorkerScope,
-        });
-      expectActiveWorkerIdentity(
+        .poll(
+          () =>
+            hasExpectedServiceWorkerState(
+              page,
+              expectedServiceWorkerUrl,
+              expectedServiceWorkerScope,
+            ),
+          { timeout: 30_000 },
+        )
+        .toBe(true);
+      await page.evaluate(async () => {
+        const registration =
+          await navigator.serviceWorker.getRegistration();
+        if (!registration) {
+          throw new Error("Active service worker registration is missing");
+        }
+        await registration.update();
+      });
+      await workerAttestation.verifyActivatedController();
+      validateActiveWorkerIdentity(
         await requestActiveWorkerIdentity(page),
         expectedBuildId,
         expectedDeployedSha,
       );
-      await expect
-        .poll(() => {
-          const url = new URL(page.url());
-          return {
-            pathname: url.pathname,
-            hasLegacyVersion: url.searchParams.has("v"),
-            unrelatedValue: url.searchParams.get("foo"),
-            keys: [...url.searchParams.keys()],
-          };
-        })
-        .toEqual({
-          pathname: "/privacy",
-          hasLegacyVersion: false,
-          unrelatedValue: "bar",
-          keys: ["foo"],
-        });
+      await expect.poll(() => hasExpectedPrivacyUrl(page)).toBe(true);
 
+      primaryStage = "offline-worker-verification";
       await context.setOffline(true);
-      offline = true;
       const offlineResponse = await page.reload({
         waitUntil: "domcontentloaded",
       });
@@ -323,43 +454,68 @@ test.describe("production PWA smoke (read-only)", () => {
         page.getByRole("heading", { name: "Privacy Policy" }),
       ).toBeVisible();
       await expect
-        .poll(async () => readDeployedServiceWorkerState(page))
-        .toEqual({
-          activeScriptUrl: expectedServiceWorkerUrl,
-          activeState: "activated",
-          controllerScriptUrl: expectedServiceWorkerUrl,
-          scope: expectedServiceWorkerScope,
-        });
-      expectActiveWorkerIdentity(
+        .poll(() =>
+          hasExpectedServiceWorkerState(
+            page,
+            expectedServiceWorkerUrl,
+            expectedServiceWorkerScope,
+          ),
+        )
+        .toBe(true);
+      validateActiveWorkerIdentity(
         await requestActiveWorkerIdentity(page),
         expectedBuildId,
         expectedDeployedSha,
       );
 
-      const offlineUrl = new URL(page.url());
-      expect(offlineUrl.pathname).toBe("/privacy");
-      expect(offlineUrl.searchParams.has("v")).toBe(false);
-      expect(offlineUrl.searchParams.get("foo")).toBe("bar");
-      expect([...offlineUrl.searchParams.keys()]).toEqual(["foo"]);
-    } catch (error) {
-      primaryFailure = error;
+      if (!(await hasExpectedPrivacyUrl(page))) {
+        throw new Error("Offline privacy URL failed validation");
+      }
+    } catch {
+      primaryFailure = true;
     } finally {
-      if (offline) {
+      try {
+        await context.setOffline(true);
+        networkIsolated = true;
+      } catch {
+        cleanupFailureCode = "isolate-network";
+      }
+      if (workerAttestation) {
         try {
-          await context.setOffline(false);
-          offline = false;
+          await workerAttestation.dispose();
         } catch {
-          cleanupFailure = new Error(
-            "Production smoke could not restore network state",
-          );
+          cleanupFailureCode ??= "worker-attestation";
         }
       }
-      try {
-        await context.close();
-      } catch {
-        cleanupFailure ??= new Error(
-          "Production smoke context shutdown failed",
-        );
+      if (!networkIsolated) {
+        try {
+          await context.close();
+          contextClosed = true;
+        } catch {
+          cleanupFailureCode ??= "close-context";
+        }
+      }
+      if (guard && (networkIsolated || contextClosed)) {
+        try {
+          await guard.dispose();
+        } catch {
+          cleanupFailureCode ??= "readonly-guard";
+        }
+      }
+      if (guard) {
+        try {
+          await guard.assertNoWrites();
+        } catch {
+          auditFailureCode ??= "request-audit";
+        }
+      }
+      if (!contextClosed) {
+        try {
+          await context.close();
+          contextClosed = true;
+        } catch {
+          cleanupFailureCode ??= "close-context";
+        }
       }
       try {
         await testInfo.attach("production-readonly-attempts.json", {
@@ -367,25 +523,14 @@ test.describe("production PWA smoke (read-only)", () => {
           contentType: "application/json",
         });
       } catch {
-        auditFailure = new Error(
-          "Production smoke could not attach sanitized audit evidence",
-        );
-      }
-      try {
-        guard?.assertNoWrites();
-      } catch (error) {
-        auditFailure ??= error;
-      }
-      try {
-        expect(
-          cleanupFailure,
-          "production smoke network/context cleanup must succeed",
-        ).toBeUndefined();
-      } catch (error) {
-        auditFailure ??= error;
+        auditFailureCode ??= "attach-evidence";
       }
     }
-    if (primaryFailure) throw primaryFailure;
-    if (auditFailure) throw auditFailure;
+    const failure = createProductionSmokeFailure({
+      primaryStage: primaryFailure ? primaryStage : undefined,
+      cleanupCode: cleanupFailureCode,
+      auditCode: auditFailureCode,
+    });
+    if (failure) throw failure;
   });
 });

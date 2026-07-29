@@ -30,7 +30,9 @@ describe("extension privacy contract", () => {
   it("discloses network metadata without claiming IP geolocation", () => {
     const privacy = read("src/pages/Privacy.tsx");
 
-    expect(privacy).toContain("standard connection metadata");
+    expect(privacy).toContain(
+      "Lovable Cloud currently processes standard HTTP metadata",
+    );
     expect(privacy).toContain("browser language");
     expect(privacy).toContain("does not use IP geolocation");
   });

@@ -31,6 +31,21 @@ Playwright PWA specs should use `e2e/helpers/pwa-update-mock.ts`, which exposes
 deterministic build IDs and transition latches. Do not reduce a timeout merely
 to hide an update that has not reached the verified state.
 
+The real lifecycle suite is intentionally separate:
+
+```sh
+bun run test:e2e:pwa-transition
+```
+
+It owns the fixed loopback port `4178`, generates both builds under
+`.tmp/pwa-transition/`, permits only the exact internal build IDs
+`pwa-e2e-a`/`pwa-e2e-b`, and cannot coexist with release-attestation
+variables. Its control endpoint is loopback-only and token-gated. The test
+server keeps `/version.json?source=network` live while it can hold or reject
+the exact unqueried `/version.json` fetch that Workbox performs during B's
+install; Workbox uses `__WB_REVISION__` as the cache key, not as that network
+request URL.
+
 ## Browsers
 
 - `PLAYWRIGHT_PROJECT=chromium|firefox|webkit` selects one project.

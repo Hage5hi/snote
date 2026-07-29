@@ -225,7 +225,7 @@ function showUpdateToast(options: {
 }
 
 async function readRemoteVersion(): Promise<{ buildId?: string } | null> {
-  const res = await fetch(`/version.json?ts=${Date.now()}`, {
+  const res = await fetch("/version.json?source=network", {
     cache: "no-store",
     credentials: "omit",
   });
@@ -360,17 +360,12 @@ export function registerAppUpdater(): void {
         console.log("[pwa-update] waiting-sw fallback → hard reload", { currentBuildId: getCurrentBuildId(), pendingBuildId });
         recoverAndReloadCleanUrl(pendingBuildId);
       }, RELOAD_FALLBACK_MS);
-      let done = false;
-      const onCtrl = () => {
-        if (done) return;
-        done = true;
-        window.clearTimeout(fallback);
-        reloadCleanUrl(pendingBuildId);
-      };
-      navigator.serviceWorker?.addEventListener("controllerchange", onCtrl, { once: true });
-      cleanupTasks.push(() => navigator.serviceWorker?.removeEventListener("controllerchange", onCtrl));
+      // Generated registerSW owns the immediate navigation for ordinary
+      // Workbox updates. Keep this fallback armed for externally discovered
+      // workers, whose controlling event intentionally does not reload.
+      cleanupTasks.push(() => window.clearTimeout(fallback));
       scrubLegacyVersionParamFromVisibleUrl();
-      void updateSWFn(false).catch(() => {
+      void updateSWFn().catch(() => {
         window.clearTimeout(fallback);
         recoverAndReloadCleanUrl(pendingBuildId);
       });

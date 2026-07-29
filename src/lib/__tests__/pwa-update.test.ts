@@ -40,7 +40,10 @@ async function fresh() {
 }
 
 function respondVersion(buildId: string) {
-  const fetchMock = vi.fn(async () => ({
+  const fetchMock = vi.fn(async (
+    _input: RequestInfo | URL,
+    _init?: RequestInit,
+  ) => ({
     ok: true,
     json: async () => ({ buildId }),
   }));
@@ -63,10 +66,25 @@ function installServiceWorkerHarness(
     update: vi.fn(async () => {}),
     unregister,
   } as unknown as ServiceWorkerRegistration;
+  const serviceWorkerEvents = new EventTarget();
+  const addEventListener = vi.fn((
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | AddEventListenerOptions,
+  ) => {
+    serviceWorkerEvents.addEventListener(type, listener, options);
+  });
+  const removeEventListener = vi.fn((
+    type: string,
+    listener: EventListenerOrEventListenerObject,
+    options?: boolean | EventListenerOptions,
+  ) => {
+    serviceWorkerEvents.removeEventListener(type, listener, options);
+  });
   const serviceWorker = {
     getRegistrations: vi.fn(async () => [registration]),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
+    addEventListener,
+    removeEventListener,
   };
   const deleteCache = vi.fn(async () => true);
   Object.defineProperty(navigator, "serviceWorker", {
@@ -85,7 +103,14 @@ function installServiceWorkerHarness(
     },
   });
   registerSWMock.mockReturnValue(updateSW);
-  return { registration, unregister, deleteCache };
+  return {
+    registration,
+    unregister,
+    deleteCache,
+    dispatchControllerChange: () => {
+      serviceWorkerEvents.dispatchEvent(new Event("controllerchange"));
+    },
+  };
 }
 
 function silenceJsdomReloadWarning() {
@@ -123,6 +148,27 @@ describe("registerAppUpdater", () => {
     vi.restoreAllMocks();
   });
 
+  it("polls one fixed network-only version URL without dynamic data", async () => {
+    const fetchMock = respondVersion("build-a");
+    const mod = await fresh();
+
+    mod.registerAppUpdater();
+    await flush(10);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/version.json?source=network",
+      {
+        cache: "no-store",
+        credentials: "omit",
+      },
+    );
+    expect(
+      fetchMock.mock.calls.every(
+        ([url]) => url === "/version.json?source=network",
+      ),
+    ).toBe(true);
+  });
+
   it("preserves the active offline worker and caches when the waiting worker rejects", async () => {
     const navigationWarning = silenceJsdomReloadWarning();
     vi.stubEnv("DEV", false);
@@ -131,7 +177,8 @@ describe("registerAppUpdater", () => {
     const updateSW = vi.fn(async () => {
       throw new Error("waiting worker rejected");
     });
-    const { registration, unregister, deleteCache } = installServiceWorkerHarness(updateSW);
+    const { registration, unregister, deleteCache } =
+      installServiceWorkerHarness(updateSW);
     const mod = await fresh();
     mod.registerAppUpdater();
     const opts = registerSWMock.mock.calls[0][0];
@@ -144,7 +191,7 @@ describe("registerAppUpdater", () => {
     toastOptions.action.props.onClick({ preventDefault: () => {} } as Event);
     await flush(20);
 
-    expect(updateSW).toHaveBeenCalledWith(false);
+    expect(updateSW).toHaveBeenCalledWith();
     expect(unregister).not.toHaveBeenCalled();
     expect(deleteCache).not.toHaveBeenCalled();
     navigationWarning.mockRestore();
@@ -158,7 +205,8 @@ describe("registerAppUpdater", () => {
     (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = false;
     respondVersion("build-b");
     const updateSW = vi.fn(() => new Promise<void>(() => {}));
-    const { registration, unregister, deleteCache } = installServiceWorkerHarness(updateSW);
+    const { registration, unregister, deleteCache } =
+      installServiceWorkerHarness(updateSW);
     const mod = await fresh();
     mod.registerAppUpdater();
     const opts = registerSWMock.mock.calls[0][0];
@@ -171,10 +219,50 @@ describe("registerAppUpdater", () => {
     toastOptions.action.props.onClick({ preventDefault: () => {} } as Event);
     await vi.advanceTimersByTimeAsync(25);
 
-    expect(updateSW).toHaveBeenCalledWith(false);
+    expect(updateSW).toHaveBeenCalledWith();
     expect(unregister).not.toHaveBeenCalled();
     expect(deleteCache).not.toHaveBeenCalled();
     navigationWarning.mockRestore();
+  });
+
+  it.each([
+    ["controller changes before the fallback", 20],
+    ["controller changes after the fallback", 40],
+  ])("falls back to one navigation when %s", async (_scenario, controllerDelayMs) => {
+    vi.useFakeTimers();
+    vi.stubEnv("DEV", false);
+    vi.stubEnv("VITE_PWA_RELOAD_FALLBACK_MS", "25");
+    (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = false;
+    respondVersion("build-b");
+
+    const appNavigation = vi.fn();
+    window.addEventListener("snote:e2e-pwa-hard-reload", appNavigation);
+    let dispatchControllerChange = () => {};
+    const updateSW = vi.fn(async () => {
+      window.setTimeout(() => {
+        dispatchControllerChange();
+      }, controllerDelayMs);
+    });
+    const harness = installServiceWorkerHarness(updateSW);
+    dispatchControllerChange = harness.dispatchControllerChange;
+
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    const opts = registerSWMock.mock.calls[0][0];
+    opts.onRegisteredSW?.("/sw.js", harness.registration);
+    await opts.onNeedRefresh?.();
+
+    // Keep the real service-worker branch, but make the app fallback observable
+    // without asking jsdom to perform a real navigation.
+    (window as unknown as { __SNOTE_E2E_ENABLE_PWA_UPDATE__?: boolean }).__SNOTE_E2E_ENABLE_PWA_UPDATE__ = true;
+    const toastOptions = toastMock.mock.calls.at(-1)![1] as {
+      action: { props: { onClick: (event: Event) => void } };
+    };
+    toastOptions.action.props.onClick({ preventDefault: () => {} } as Event);
+    await vi.advanceTimersByTimeAsync(60);
+    window.removeEventListener("snote:e2e-pwa-hard-reload", appNavigation);
+
+    expect(appNavigation).toHaveBeenCalledOnce();
   });
 
   it("keeps the toast open until the running buildId actually changes to the remote build", async () => {

@@ -44,5 +44,9 @@ export function revalidateDeployedSha(
     return currentSha;
   }
 
-  return initialSha !== null && currentSha === initialSha ? initialSha : null;
+  if (initialSha === null) return null;
+  if (currentSha !== initialSha) {
+    throw new Error("Ordinary build Git identity changed after configuration.");
+  }
+  return initialSha;
 }

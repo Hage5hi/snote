@@ -374,17 +374,20 @@ describe("edge privacy deployment contract", () => {
     expect(helper).toContain("pathname");
     expect(helper).not.toContain("postData");
     expect(helper).not.toMatch(/blockedRequests\.push\(\s*request\.url/);
-    expect(helper).toContain("BrowserContext");
     expect(spec).toContain('serviceWorkers: "allow"');
     expect(spec).toMatch(
       /test\.skip\([\s\S]*process\.env\.POST_DEPLOY_SMOKE !== "1"/,
     );
-    expect(spec).toContain('"/version.json"');
+    expect(spec).toContain('"/version.json?source=network"');
     expect(spec).toContain("EXPECTED_BUILD_ID");
     expect(spec).not.toContain("pwa-update-mock");
-    expect(spec).toContain("navigator.serviceWorker.ready");
+    expect(spec).not.toContain("navigator.serviceWorker.ready");
+    expect(spec).not.toContain("page.waitForFunction");
+    expect(spec).toContain(
+      'navigator.serviceWorker.getRegistration("/")',
+    );
     expect(spec).toContain("await context.setOffline(true)");
-    expect(spec).toContain("await context.setOffline(false)");
+    expect(spec).not.toContain("context.setOffline(false)");
     expect(spec).toContain("/privacy?v=legacy-noise&foo=bar");
     expect(spec).toContain("assertNoWrites");
   });

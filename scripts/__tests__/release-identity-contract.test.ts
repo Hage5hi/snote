@@ -1,7 +1,8 @@
 /** @vitest-environment node */
 
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { runInNewContext } from "node:vm";
 import { loadConfigFromFile, type ConfigEnv } from "vite";
@@ -21,13 +22,14 @@ const buildEnvironment: ConfigEnv = {
 };
 const RELEASE_ENV_KEYS = [
   "SNOTE_BUILD_ID",
+  "SNOTE_PWA_TRANSITION_BUILD_ID",
+  "SNOTE_PWA_TRANSITION_HARNESS",
   "SNOTE_RELEASE_SHA",
   "SNOTE_REQUIRE_RELEASE_SHA",
 ] as const;
 
 type VersionPayload = {
   buildId?: unknown;
-  builtAt?: unknown;
   deployedSha?: unknown;
   rollupAssetPathnames?: unknown;
   workerIdentityPath?: unknown;
@@ -234,7 +236,7 @@ describe("release artifact identity contract", () => {
       output,
     });
 
-    it("drops an ordinary identity when HEAD changes before emission", () => {
+    it("fails closed when an ordinary build HEAD changes before emission", () => {
       const sequence = createGitSequence([
         head(shaA),
         status(),
@@ -244,11 +246,13 @@ describe("release artifact identity contract", () => {
       const initialSha = resolveCleanGitHead(sequence.runGit);
 
       expect(initialSha).toBe(shaA);
-      expect(revalidateDeployedSha(initialSha, "ordinary", sequence.runGit)).toBeNull();
+      expect(() =>
+        revalidateDeployedSha(initialSha, "ordinary", sequence.runGit),
+      ).toThrow(/Ordinary build Git identity changed after configuration/);
       sequence.expectComplete();
     });
 
-    it("drops an ordinary identity when the worktree becomes dirty", () => {
+    it("fails closed when an ordinary build worktree becomes dirty", () => {
       const sequence = createGitSequence([
         head(shaA),
         status(),
@@ -258,7 +262,9 @@ describe("release artifact identity contract", () => {
       const initialSha = resolveCleanGitHead(sequence.runGit);
 
       expect(initialSha).toBe(shaA);
-      expect(revalidateDeployedSha(initialSha, "ordinary", sequence.runGit)).toBeNull();
+      expect(() =>
+        revalidateDeployedSha(initialSha, "ordinary", sequence.runGit),
+      ).toThrow(/Ordinary build Git identity changed after configuration/);
       sequence.expectComplete();
     });
 
@@ -288,6 +294,57 @@ describe("release artifact identity contract", () => {
       expect(revalidateDeployedSha(initialSha, "ordinary", sequence.runGit)).toBe(shaA);
       sequence.expectComplete();
     });
+
+    it.each([
+      {
+        label: "HEAD changes",
+        emission: [head(shaB), status()],
+      },
+      {
+        label: "the worktree becomes dirty",
+        emission: [head(shaA), status(" M vite.config.ts\n")],
+      },
+    ])(
+      "fails closed before emitting a path that hashes a different payload when $label",
+      ({ emission }) => {
+        const sequence = createGitSequence([
+          head(shaA),
+          status(),
+          ...emission,
+        ]);
+        const initialSha = resolveCleanGitHead(sequence.runGit);
+        const identityPathFor = (deployedSha: string | null) =>
+          `/sw-identity-${createHash("sha256")
+            .update(
+              JSON.stringify({
+                protocol: "snote-sw-identity-v1",
+                buildId: "ordinary-build",
+                deployedSha,
+              }),
+              "utf8",
+            )
+            .digest("hex")
+            .slice(0, 16)}.js`;
+        const configuredPath = identityPathFor(initialSha);
+
+        const emitIdentity = () => {
+          const deployedSha = revalidateDeployedSha(
+            initialSha,
+            "ordinary",
+            sequence.runGit,
+          );
+          return {
+            configuredPath,
+            payloadPath: identityPathFor(deployedSha),
+          };
+        };
+
+        expect(emitIdentity).toThrow(
+          /Ordinary build Git identity changed after configuration/,
+        );
+        sequence.expectComplete();
+      },
+    );
 
     it("throws in strict mode when HEAD changes before emission", () => {
       const sequence = createGitSequence([
@@ -366,7 +423,7 @@ describe("release artifact identity contract", () => {
     const version = await withReleaseEnv(releaseEnv, emitVersionPayload);
 
     expect(version.buildId).toEqual(expect.any(String));
-    expect(version.builtAt).toEqual(expect.any(String));
+    expect(version).not.toHaveProperty("builtAt");
     expect(version.deployedSha).toBe(deployedSha);
   });
 
@@ -408,6 +465,20 @@ describe("release artifact identity contract", () => {
     ]);
     expect(version.workerIdentityPath).toMatch(
       /^\/sw-identity-[a-f0-9]{16}\.js$/,
+    );
+    const expectedIdentityHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          protocol: "snote-sw-identity-v1",
+          buildId: version.buildId,
+          deployedSha: version.deployedSha,
+        }),
+        "utf8",
+      )
+      .digest("hex")
+      .slice(0, 16);
+    expect(version.workerIdentityPath).toBe(
+      `/sw-identity-${expectedIdentityHash}.js`,
     );
 
     let messageListener:
@@ -505,6 +576,134 @@ describe("release artifact identity contract", () => {
     ).resolves.toBe(buildId);
   });
 
+  it("isolates deterministic PWA transition identities from release attestation", async () => {
+    for (const harnessValue of ["", "0", "true", " 1"]) {
+      await expect(
+        withReleaseEnv(
+          {
+            SNOTE_PWA_TRANSITION_HARNESS: harnessValue,
+            SNOTE_PWA_TRANSITION_BUILD_ID: "pwa-e2e-a",
+          },
+          readConfiguredBuildId,
+        ),
+      ).rejects.toThrow(
+        /SNOTE_PWA_TRANSITION_HARNESS must be omitted or exactly "1"/,
+      );
+    }
+
+    await expect(
+      withReleaseEnv(
+        { SNOTE_PWA_TRANSITION_BUILD_ID: "pwa-e2e-a" },
+        readConfiguredBuildId,
+      ),
+    ).rejects.toThrow(/only accepted when SNOTE_PWA_TRANSITION_HARNESS=1/);
+    await expect(
+      withReleaseEnv(
+        { SNOTE_PWA_TRANSITION_HARNESS: "1" },
+        readConfiguredBuildId,
+      ),
+    ).rejects.toThrow(/requires SNOTE_PWA_TRANSITION_BUILD_ID/);
+
+    for (const buildId of [
+      "pwa-e2e-c",
+      "pwa-e2e-a ",
+      "PWA-E2E-A",
+      "owner-edit-view-capability-secret",
+    ]) {
+      await expect(
+        withReleaseEnv(
+          {
+            SNOTE_PWA_TRANSITION_HARNESS: "1",
+            SNOTE_PWA_TRANSITION_BUILD_ID: buildId,
+          },
+          readConfiguredBuildId,
+        ),
+      ).rejects.toThrow(/must be exactly pwa-e2e-a or pwa-e2e-b/);
+    }
+
+    for (const conflictingEnv of [
+      { SNOTE_REQUIRE_RELEASE_SHA: "" },
+      { SNOTE_RELEASE_SHA: "" },
+      { SNOTE_BUILD_ID: "" },
+    ]) {
+      await expect(
+        withReleaseEnv(
+          {
+            SNOTE_PWA_TRANSITION_HARNESS: "1",
+            SNOTE_PWA_TRANSITION_BUILD_ID: "pwa-e2e-a",
+            ...conflictingEnv,
+          },
+          readConfiguredBuildId,
+        ),
+      ).rejects.toThrow(/cannot coexist with release identity variables/);
+    }
+
+    const fixtureA = await withReleaseEnv(
+      {
+        SNOTE_PWA_TRANSITION_HARNESS: "1",
+        SNOTE_PWA_TRANSITION_BUILD_ID: "pwa-e2e-a",
+      },
+      emitVersionPayload,
+    );
+    const fixtureB = await withReleaseEnv(
+      {
+        SNOTE_PWA_TRANSITION_HARNESS: "1",
+        SNOTE_PWA_TRANSITION_BUILD_ID: "pwa-e2e-b",
+      },
+      emitVersionPayload,
+    );
+
+    expect(Object.keys(fixtureA).sort()).toEqual([
+      "buildId",
+      "deployedSha",
+      "rollupAssetPathnames",
+      "workerIdentityPath",
+    ]);
+    expect(fixtureA.buildId).toBe("pwa-e2e-a");
+    expect(fixtureB.buildId).toBe("pwa-e2e-b");
+    expect(fixtureA.deployedSha).toBeNull();
+    expect(fixtureB.deployedSha).toBeNull();
+    expect(fixtureA.workerIdentityPath).toMatch(
+      /^\/sw-identity-[a-f0-9]{16}\.js$/,
+    );
+    expect(fixtureB.workerIdentityPath).toMatch(
+      /^\/sw-identity-[a-f0-9]{16}\.js$/,
+    );
+    expect(fixtureA.workerIdentityPath).not.toBe(fixtureB.workerIdentityPath);
+  });
+
+  it("defines a bounded, non-destructive sequential PWA fixture builder", () => {
+    const builderPath = resolve(
+      root,
+      "scripts/build-pwa-transition-fixtures.ts",
+    );
+
+    expect(existsSync(builderPath)).toBe(true);
+    if (!existsSync(builderPath)) return;
+    const builder = readFileSync(builderPath, "utf8");
+
+    expect(builder).toContain('resolve(REPO_ROOT, ".tmp", "pwa-transition")');
+    expect(builder).toContain('"pwa-e2e-a"');
+    expect(builder).toContain('"pwa-e2e-b"');
+    expect(builder).toContain('"--outDir"');
+    expect(builder).toContain("execFileSync");
+    expect(builder).toContain("assertSafeOutputRoot");
+    expect(builder).toContain("lstatSync");
+    expect(builder).toContain("isSymbolicLink()");
+    expect(builder).toContain("realpathSync.native");
+    expect(builder).toContain("Object.keys(version).sort()");
+    expect(builder).toContain('"version.json"');
+    expect(builder).toContain('"sw.js"');
+    expect(builder).toMatch(/workbox-\[a-f0-9\]\{8\}/);
+    expect(builder).toContain("workboxModuleSpecifier");
+    expect(builder).toContain('name.slice(');
+    expect(builder).toContain('-".js".length');
+    expect(builder).toContain("previousIdentityPath");
+    expect(builder).not.toMatch(
+      /\b(?:rm|rmSync|rmdir|rmdirSync|unlink|unlinkSync)\b/,
+    );
+  });
+
   it("fails closed for missing, malformed, or partially configured release identity", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -577,7 +776,8 @@ describe("release artifact identity contract", () => {
     expect(workflow).toContain("EXPECTED_DEPLOYED_SHA: ${{ env.DEPLOYED_SHA }}");
     expect(workflow).toContain("SNOTE_BUILD_ID: ${{ env.BUILD_ID }}");
     expect(workflow).toContain("bun run build:release");
-    expect(smoke).toContain("version.deployedSha");
+    expect(smoke).toContain("validateProductionReleaseManifest");
+    expect(smoke).toContain("expectedDeployedSha");
     expect(readme).toContain("source-stamped `deployedSha`");
     expect(readme).not.toContain("does not invent a source-SHA field");
   });

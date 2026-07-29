@@ -82,9 +82,12 @@ jobs:
         run: >-
           bunx playwright test
           e2e/critical-a11y.spec.ts
+          e2e/production-readonly-guard-local.spec.ts
           e2e/pwa-update-sw-stall.spec.ts
           --project=chromium
           --retries=0
+      - name: Run real Chromium PWA transition harness
+        run: bun run test:e2e:pwa-transition
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
@@ -117,6 +120,9 @@ jobs:
       - run: bunx playwright install --with-deps ${{ matrix.browser }}
       - name: Run full browser suite
         run: bunx playwright test --project=${{ matrix.browser }} --retries=0
+      - name: Run real Chromium PWA transition harness
+        if: matrix.browser == 'chromium'
+        run: bun run test:e2e:pwa-transition
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f

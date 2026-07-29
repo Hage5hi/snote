@@ -33,11 +33,13 @@
   "include": [
     "scripts/**/*.ts",
     "e2e/**/*.ts",
+    "e2e-pwa-transition/**/*.ts",
     "e2e-extension/**/*.ts",
     "chrome-extension/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts",
+    "playwright.pwa-transition.config.ts",
     "tailwind.config.ts"
   ]
 }

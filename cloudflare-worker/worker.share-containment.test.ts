@@ -92,7 +92,7 @@ async function expectContainedShare({
     }),
     {
       ORIGIN_HOST: "snote.lovable.app",
-      SITE_URL: "https://syrin.online",
+      SITE_URL: "https://note.syrin.online",
       SUPABASE_PROJECT: "example",
       SUPABASE_ANON_KEY: "anon",
       NOTE_META_SECRET: "secret",

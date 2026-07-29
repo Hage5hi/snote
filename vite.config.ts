@@ -29,11 +29,56 @@ const SANITIZED_BUILD_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 const REQUIRE_RELEASE_SHA = process.env.SNOTE_REQUIRE_RELEASE_SHA;
 const RELEASE_SHA = process.env.SNOTE_RELEASE_SHA?.trim();
 const RELEASE_BUILD_ID = process.env.SNOTE_BUILD_ID?.trim();
+const PWA_TRANSITION_HARNESS =
+  process.env.SNOTE_PWA_TRANSITION_HARNESS;
+const PWA_TRANSITION_BUILD_ID =
+  process.env.SNOTE_PWA_TRANSITION_BUILD_ID;
+const IS_PWA_TRANSITION_HARNESS = PWA_TRANSITION_HARNESS === "1";
+const RELEASE_IDENTITY_ENV_PRESENT = [
+  "SNOTE_REQUIRE_RELEASE_SHA",
+  "SNOTE_RELEASE_SHA",
+  "SNOTE_BUILD_ID",
+].some((key) => process.env[key] !== undefined);
 
 // A normal build may self-identify only from a clean Git checkout. The
 // dedicated release build remains the fail-closed path: any partial or
 // malformed release configuration must stop the build rather than produce a
 // falsely attested artifact.
+if (
+  PWA_TRANSITION_HARNESS !== undefined &&
+  PWA_TRANSITION_HARNESS !== "1"
+) {
+  throw new Error(
+    'SNOTE_PWA_TRANSITION_HARNESS must be omitted or exactly "1".',
+  );
+}
+if (
+  PWA_TRANSITION_BUILD_ID !== undefined &&
+  !IS_PWA_TRANSITION_HARNESS
+) {
+  throw new Error(
+    "SNOTE_PWA_TRANSITION_BUILD_ID is only accepted when SNOTE_PWA_TRANSITION_HARNESS=1.",
+  );
+}
+if (IS_PWA_TRANSITION_HARNESS && RELEASE_IDENTITY_ENV_PRESENT) {
+  throw new Error(
+    "SNOTE_PWA_TRANSITION_HARNESS cannot coexist with release identity variables.",
+  );
+}
+if (IS_PWA_TRANSITION_HARNESS && PWA_TRANSITION_BUILD_ID === undefined) {
+  throw new Error(
+    "SNOTE_PWA_TRANSITION_HARNESS=1 requires SNOTE_PWA_TRANSITION_BUILD_ID.",
+  );
+}
+if (
+  IS_PWA_TRANSITION_HARNESS &&
+  PWA_TRANSITION_BUILD_ID !== "pwa-e2e-a" &&
+  PWA_TRANSITION_BUILD_ID !== "pwa-e2e-b"
+) {
+  throw new Error(
+    "SNOTE_PWA_TRANSITION_BUILD_ID must be exactly pwa-e2e-a or pwa-e2e-b.",
+  );
+}
 if (REQUIRE_RELEASE_SHA !== undefined && REQUIRE_RELEASE_SHA !== "1") {
   throw new Error('SNOTE_REQUIRE_RELEASE_SHA must be omitted or exactly "1".');
 }
@@ -59,15 +104,14 @@ if (RELEASE_SHA && !COMMIT_SHA.test(RELEASE_SHA)) {
   throw new Error("SNOTE_RELEASE_SHA must be an exact 40-character lowercase commit SHA.");
 }
 const BUILD_ID =
-  RELEASE_BUILD_ID ??
+  (IS_PWA_TRANSITION_HARNESS
+    ? PWA_TRANSITION_BUILD_ID
+    : RELEASE_BUILD_ID) ??
   `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-const workerIdentityHash = createHash("sha256")
-  .update(BUILD_ID, "utf8")
-  .digest("hex")
-  .slice(0, 16);
-const workerIdentityPath = `/sw-identity-${workerIdentityHash}.js`;
 let DEPLOYED_SHA: string | null = null;
-if (REQUIRE_RELEASE_SHA === "1") {
+if (IS_PWA_TRANSITION_HARNESS) {
+  DEPLOYED_SHA = null;
+} else if (REQUIRE_RELEASE_SHA === "1") {
   let checkedOutSha: string;
   try {
     checkedOutSha = execFileSync("git", ["rev-parse", "HEAD"], {
@@ -89,16 +133,28 @@ if (REQUIRE_RELEASE_SHA === "1") {
 } else {
   DEPLOYED_SHA = resolveCleanGitHead();
 }
+const initialIdentityPayload = {
+  protocol: "snote-sw-identity-v1",
+  buildId: BUILD_ID,
+  deployedSha: DEPLOYED_SHA,
+};
+const workerIdentityHash = createHash("sha256")
+  .update(JSON.stringify(initialIdentityPayload), "utf8")
+  .digest("hex")
+  .slice(0, 16);
+const workerIdentityPath = `/sw-identity-${workerIdentityHash}.js`;
 
 function emitVersionJson(): Plugin {
   return {
     name: "emit-version-json",
     apply: "build" as const,
     generateBundle(_outputOptions, bundle) {
-      const deployedSha = revalidateDeployedSha(
-        DEPLOYED_SHA,
-        REQUIRE_RELEASE_SHA === "1" ? "strict" : "ordinary",
-      );
+      const deployedSha = IS_PWA_TRANSITION_HARNESS
+        ? null
+        : revalidateDeployedSha(
+            DEPLOYED_SHA,
+            REQUIRE_RELEASE_SHA === "1" ? "strict" : "ordinary",
+          );
       const emittedAssetPathname =
         /^assets\/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\.(?:css|js|mjs|json|png|jpe?g|gif|svg|webp|ico|woff2?|ttf)$/;
       const relevantAsset =
@@ -115,7 +171,6 @@ function emitVersionJson(): Plugin {
           }),
         ),
       ].sort();
-      const builtAt = new Date().toISOString();
       const identityPayload = {
         protocol: "snote-sw-identity-v1",
         buildId: BUILD_ID,
@@ -126,7 +181,6 @@ function emitVersionJson(): Plugin {
         fileName: "version.json",
         source: JSON.stringify({
           buildId: BUILD_ID,
-          builtAt,
           deployedSha,
           rollupAssetPathnames,
           workerIdentityPath,

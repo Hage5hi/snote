@@ -45,28 +45,36 @@ polling and UI transitions. The post-deploy workflow runs:
 - `pwa-update-production-readonly.spec.ts` only.
 
 The production spec is gated by `POST_DEPLOY_SMOKE=1`. It performs a real
-`GET /version.json` with `Cache-Control: no-store`, verifies the returned
-diagnostic `buildId`, source-stamped `deployedSha`, exact Rollup asset list and
-per-build worker-identity path against a local release build of that same
-commit. It then exercises only `/privacy?v=legacy-noise&foo=bar`. This
-production smoke uses the current deployed real service worker: it verifies
-registration, activation, the exact same-origin `/sw.js` script and root
-scope, obtains the active controller's build/SHA identity over a bounded
-`MessageChannel` handshake, then repeats that identity check after reloading
-offline `/privacy` through the active worker/cache. It does not claim to test
-an A-to-B update.
+`GET /version.json?source=network` with `Cache-Control: no-store`, verifies the
+returned diagnostic `buildId`, source-stamped `deployedSha`, exact Rollup asset
+list and per-build worker-identity path against a local release build of that
+same commit. Before navigation it also compares SHA-256 and byte length for the
+remote `/sw.js`, per-build identity script and exact Workbox loader against
+that trusted local build. Those direct probes reject redirects and stream each
+body through a hard byte cap before buffering. It then exercises only
+`/privacy?v=legacy-noise&foo=bar`. This production smoke uses the current
+deployed real service worker: it verifies registration, activation, the exact
+same-origin `/sw.js` script and root scope, compares the actual Chromium worker
+responses and loaded script sources with the trusted local bytes, and obtains
+the active controller's build/SHA identity over a bounded `MessageChannel`
+handshake. It repeats that identity check after reloading offline `/privacy`
+through the active worker/cache. It does not claim to test an A-to-B update.
 
-Its `helpers/production-readonly.ts` BrowserContext guard permits only
+Its `helpers/production-readonly.ts` BrowserContext guard intercepts outbound
+requests emitted by both the page and the Service Worker. It permits only
 GET/HEAD/OPTIONS for exact public roots and the locally rebuilt Rollup asset
-membership. Route-specific query rules allow only the two expected privacy
-queries, a bounded version probe, and Workbox revisions on revisioned public
-roots; hashed Rollup assets, `/sw.js` and the Workbox loader require an empty
-query. The guard blocks Supabase, API, analytics, arbitrary note/capability
-routes and all WebSockets, and records only sanitized
-`{method, origin, pathname}` evidence. The workflow also verifies that the
-approved manifest candidate, checked-out commit, local release manifest and
-live `deployedSha` all equal `EXPECTED_DEPLOYED_SHA`. The remote manifest is
-compared with the local one; it never widens the guard.
+membership, aborting every rejected request before it reaches the destination.
+The critical Chromium suite proves this with a real loopback worker whose
+blocked POST never reaches its server. Route-specific query rules allow only
+the two expected privacy queries, a fixed `?source=network` version probe that
+bypasses Workbox precache, the exact locally rebuilt Workbox loader and the
+exact precache revision requests parsed from that trusted worker. Hashed
+Rollup assets and `/sw.js` require an empty query. The guard blocks Supabase,
+API, analytics and arbitrary note/capability routes, closes WebSockets, and
+records only sanitized `{method, origin, pathname}` evidence. The workflow
+also verifies that the approved manifest candidate, checked-out commit, local
+release manifest and live `deployedSha` all equal `EXPECTED_DEPLOYED_SHA`.
+The remote manifest is compared with the local one; it never widens the guard.
 
 The workflow can be invoked by authenticated `repository_dispatch` or explicit
 `workflow_dispatch`. This repository currently has no automatic Lovable
@@ -97,12 +105,25 @@ The ordinary local/CI suite still runs:
 - `pwa-update-no-url-v-param.spec.ts`
 
 These local mocked specs cover update UI transitions and URL hygiene. They
-cannot make that claim for a real worker lifecycle or rollback.
-A separate local two-build real harness is planned next; it is not yet
-implemented.
-The current repository therefore does not yet provide real A-to-B activation
-or stalled-worker rollback proof, and the production smoke deliberately does
-not make those claims.
+do not substitute for the real worker lifecycle harness:
+
+```sh
+bun run test:e2e:pwa-transition
+```
+
+That Chromium-only command builds deterministic `pwa-e2e-a` and `pwa-e2e-b`
+artifacts under ignored `.tmp/pwa-transition/`, starts a token-gated loopback
+server, and runs exactly two tests with zero retries. The success test proves
+that accepting an installed B worker causes exactly one app navigation and
+that B still serves `/privacy` offline. The failure test proves an installing B
+worker becomes `redundant` when Workbox's real network fetch for B's precached
+`version.json` is rejected, while active A still serves `/privacy` offline.
+Before that rejection it also proves A controls and serves a real `/privacy`
+navigation from its cache. Conditions are observed through worker lifecycle
+events and server state rather than fixed sleeps.
+
+The production smoke deliberately remains read-only and does not claim to
+perform this A-to-B transition against the live site.
 
 ## Environment overrides
 

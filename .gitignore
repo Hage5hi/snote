@@ -49,6 +49,7 @@ bun.lockb
 /artifacts/
 /reports/
 /coverage/
+/.tmp/
 *.pyc
 __pycache__/
 
