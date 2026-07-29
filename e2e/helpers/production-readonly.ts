@@ -30,8 +30,10 @@ const ALLOWED_EXACT_PATHNAMES = new Set([
   "/theme-init.js",
   "/sw.js",
 ]);
-const ALLOWED_STATIC_PATH_PREFIXES = ["/assets/"];
-const ALLOWED_WORKBOX_PATHNAME = /^\/workbox-[A-Za-z0-9_-]+\.js$/;
+const STATIC_ASSET_PATH_PREFIX = "/assets/";
+const ALLOWED_VITE_ASSET_PATHNAME =
+  /^\/assets\/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8}\.(?:css|js|woff2?)$/;
+const ALLOWED_WORKBOX_PATHNAME = /^\/workbox-[a-f0-9]{8}\.js$/;
 const LOCAL_ALLOWED_PATH_PREFIXES = [
   "/@vite/",
   "/src/",
@@ -90,7 +92,7 @@ function isAllowedSmokePath(origin: string, pathname: string): boolean {
   if (
     ALLOWED_EXACT_PATHNAMES.has(pathname) ||
     ALLOWED_WORKBOX_PATHNAME.test(pathname) ||
-    hasPathPrefix(pathname, ALLOWED_STATIC_PATH_PREFIXES)
+    ALLOWED_VITE_ASSET_PATHNAME.test(pathname)
   ) {
     return true;
   }
@@ -110,7 +112,7 @@ function redactEvidencePathname(pathname: string | null): string {
   if (isBlockedPath(pathname)) return "/:blocked-api";
   if (BLOCKED_EXACT_PATHS.has(pathname)) return "/:blocked-telemetry";
   if (ALLOWED_EXACT_PATHNAMES.has(pathname)) return pathname;
-  if (hasPathPrefix(pathname, ALLOWED_STATIC_PATH_PREFIXES)) {
+  if (pathname.startsWith(STATIC_ASSET_PATH_PREFIX)) {
     return "/assets/:asset";
   }
   if (

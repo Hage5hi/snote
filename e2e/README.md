@@ -84,10 +84,13 @@ The ordinary local/CI suite still runs:
 - `pwa-update-multi-click.spec.ts`
 - `pwa-update-no-url-v-param.spec.ts`
 
-These local mocked specs cover update UI transitions and URL hygiene. A
-separate local two-build real harness is responsible for A-to-B activation and
-stalled update/rollback claims; the production smoke deliberately does not
-make those claims.
+These local mocked specs cover update UI transitions and URL hygiene. They
+cannot make that claim for a real worker lifecycle or rollback.
+A separate local two-build real harness is planned next; it is not yet
+implemented.
+The current repository therefore does not yet provide real A-to-B activation
+or stalled-worker rollback proof, and the production smoke deliberately does
+not make those claims.
 
 ## Environment overrides
 

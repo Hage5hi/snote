@@ -30,7 +30,24 @@ describe("production read-only smoke guard", () => {
       false,
     ],
     ["GET", "https://note.syrin.online/workbox-9c191d2f.js", false],
-    ["GET", "https://note.syrin.online/assets/main-abc123.js", false],
+    ["GET", "https://note.syrin.online/assets/index-DOSI_W5I.js", false],
+    ["GET", "https://note.syrin.online/assets/index-SehlPl6z.css", false],
+    [
+      "GET",
+      "https://note.syrin.online/assets/KaTeX_Typewriter-Regular-C0xS9mPB.woff",
+      false,
+    ],
+    [
+      "GET",
+      "https://note.syrin.online/assets/KaTeX_Typewriter-Regular-CO6r4hn1.woff2",
+      false,
+    ],
+    ["GET", "https://note.syrin.online/assets/ja-TNiK-8-v.js", false],
+    [
+      "GET",
+      "https://note.syrin.online/assets/wardley-L42UT6IY-vH922C2V.js?cache=%2Fsafe-query",
+      false,
+    ],
     ["GET", "https://note.syrin.online/registersw.js", true],
     ["GET", "https://note.syrin.online/random-root.js", true],
     ["GET", "https://note.syrin.online/random-root.json", true],
@@ -38,8 +55,30 @@ describe("production read-only smoke guard", () => {
     ["GET", "https://note.syrin.online/SW.JS", true],
     ["GET", "https://note.syrin.online/ASSETS/main.js", true],
     ["GET", "https://note.syrin.online/Workbox-9c191d2f.js", true],
+    ["GET", "https://note.syrin.online/assets/main.js", true],
+    ["GET", "https://note.syrin.online/assets/main-abc123.js", true],
+    ["GET", "https://note.syrin.online/assets/main-abc123456.js", true],
+    ["GET", "https://note.syrin.online/assets/main-abc12345.exe", true],
+    ["GET", "https://note.syrin.online/assets/main-abc12345.JS", true],
+    ["GET", "https://note.syrin.online/assets/.main-abc12345.js", true],
+    [
+      "GET",
+      "https://note.syrin.online/assets/nested/main-abc12345.js",
+      true,
+    ],
+    [
+      "GET",
+      "https://note.syrin.online/assets/main-abc12345.js/extra",
+      true,
+    ],
     ["GET", "https://note.syrin.online/workbox-.js", true],
+    ["GET", "https://note.syrin.online/workbox-loader.js", true],
+    ["GET", "https://note.syrin.online/workbox-ABCDEF12.js", true],
+    ["GET", "https://note.syrin.online/workbox-NOT_A_HASH.js", true],
+    ["GET", "https://note.syrin.online/workbox-9c191d2.js", true],
+    ["GET", "https://note.syrin.online/workbox-9c191d2ff.js", true],
     ["GET", "https://note.syrin.online/workbox-9c191d2f.css", true],
+    ["GET", "https://note.syrin.online/workbox-9c191d2f.js.map", true],
     ["GET", "https://note.syrin.online/workbox-9c191d2f.js/extra", true],
     [
       "GET",
@@ -84,6 +123,8 @@ describe("production read-only smoke guard", () => {
     "https://note.syrin.online/assets/../privacy",
     "https://note.syrin.online/assets/%2e%2e/privacy",
     "https://note.syrin.online/assets%2fmain.js",
+    "https://note.syrin.online/assets/%69ndex-DOSI_W5I.js?foo=bar",
+    "https://note.syrin.online/assets/index-DOSI_W5I.js%2fextra?foo=bar",
     "https://note.syrin.online/workbox-9c191d2f.js%2fextra",
     "https://note.syrin.online/workbox-%2539c191d2f.js",
     "https://note.syrin.online//privacy",
@@ -181,6 +222,18 @@ describe("production read-only smoke guard", () => {
       "private-token-should-not-appear",
     );
 
+    const blockedAsset = sanitizeProductionReadonlyAttempt(
+      "https://note.syrin.online/assets/nested/private-capability.js?token=query-secret",
+      "GET",
+    );
+    expect(blockedAsset).toEqual({
+      method: "GET",
+      origin: "canonical",
+      pathname: "/assets/:asset",
+    });
+    expect(JSON.stringify(blockedAsset)).not.toContain("private-capability");
+    expect(JSON.stringify(blockedAsset)).not.toContain("query-secret");
+
     expect(shouldBlockProductionRequest("not-an-absolute-url", "GET")).toBe(
       true,
     );
@@ -268,8 +321,15 @@ describe("production read-only smoke guard", () => {
     );
     expect(readme).toMatch(/local mocked specs[\s\S]*UI transitions/i);
     expect(readme).toMatch(
-      /separate local two-build real harness[\s\S]*A(?:-to-|.?→.?)B[\s\S]*stalled update/i,
+      /separate local two-build real harness[\s\S]*(?:planned|next|not yet implemented)/i,
     );
+    expect(readme).toMatch(
+      /does not yet provide real A-to-B[\s\S]*stalled-worker rollback proof/i,
+    );
+    expect(readme).toMatch(
+      /mocked specs[\s\S]*cannot make that claim/i,
+    );
+    expect(readme).not.toMatch(/harness is responsible/i);
     expect(readme).toMatch(/repository_dispatch[\s\S]*workflow_dispatch/i);
     expect(readme).toMatch(
       /no automatic Lovable\s+publish emitter/i,
