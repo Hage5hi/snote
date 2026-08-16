@@ -124,11 +124,12 @@ The finding was limited to the development/build dependency graph through
 ESLint, TypeScript-ESLint, `@vitest/coverage-v8`, and
 `vite-plugin-pwa → workbox-build`.
 
-The only patched `brace-expansion` release is `5.0.8`, so it is not forced into
-legacy `minimatch` ranges. Instead, ESLint 10 removes its legacy consumer.
-Vitest's build-only `test-exclude@8.0.0` override retains the 7.x runtime source
-while moving its dependency graph to patched lines. All remaining compatible
-5.x paths resolve to `brace-expansion@5.0.8`.
+The only patched `brace-expansion` release at the time was `5.0.8`, so it is
+not forced into legacy `minimatch` ranges. Instead, ESLint 10 removes its
+legacy consumer. Vitest's build-only `test-exclude@8.0.0` override retains the
+7.x runtime source while moving its dependency graph to patched lines. All
+remaining compatible 5.x paths now resolve to `brace-expansion@5.0.9` (see the
+2026-08 refresh below).
 
 Workbox `7.4.1` still reaches EJS solely through its build-time Rollup plugin.
 EJS declares Jake `^10.8.5`, whose `filelist@1` chain cannot receive the patch;
@@ -139,6 +140,27 @@ narrowly pinned `filelist@2.0.2` override removes that final build-only path
 without globally replacing `glob`, `minimatch`, or `brace-expansion`. The full
 audit remains mandatory in both CI workflows; no advisory suppression or audit
 exception is granted.
+
+### Resolved dependency-audit blocker (2026-08 refresh)
+
+The 2026-08-17 lockfile refresh clears the three high advisories reported by
+`bun audit --audit-level=high` after the 2026-07 toolchain refresh:
+
+- `fast-uri` (`ajv` path) [GHSA-7p8r-x3mc-p8w7](https://github.com/advisories/GHSA-7p8r-x3mc-p8w7),
+  resolved `3.1.4` → `3.1.5`;
+- `brace-expansion` (ESLint, TypeScript-ESLint, `@vitest/coverage-v8`,
+  `vite-plugin-pwa → workbox-build` paths)
+  [GHSA-rgw5-rvv9-x895](https://github.com/advisories/GHSA-rgw5-rvv9-x895),
+  resolved `5.0.8` → `5.0.9`;
+- `nanoid` (`postcss` path)
+  [GHSA-2v37-7h3g-55p8](https://github.com/advisories/GHSA-2v37-7h3g-55p8),
+  resolved `3.3.16` → `3.3.18` (the advisory floor moved from `3.3.17` to
+  `3.3.18` between 2026-08-09 and 2026-08-17).
+
+The fix is a three-line `bun.lock` resolution update with official registry
+integrity hashes. `package.json` ranges, overrides, and every other resolution
+are unchanged. All three bumps stay inside the dependents' existing semver
+ranges, so no new override or direct dependency was introduced.
 
 ## Scan triage rule
 
