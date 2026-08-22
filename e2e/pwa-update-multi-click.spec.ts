@@ -1,7 +1,7 @@
 // E2E: clicking Update multiple times only triggers one reload path and the
 // note URL never gains a ?v= cache-buster, even under rapid repeated clicks.
 import { expect, test } from "@playwright/test";
-import { getHardReloadCountForPoll, installPwaUpdateMock, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
+import { getHardReloadCount, installPwaUpdateMock, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
 
 test("multiple Update clicks apply the new build without adding ?v to the URL", async ({ page }, testInfo) => {
   // Record every URL the page navigates to so a `?v=` regression is easy to
@@ -64,7 +64,7 @@ test("multiple Update clicks apply the new build without adding ?v to the URL", 
       .catch(() => {});
   }
 
-  await expect.poll(() => getHardReloadCountForPoll(page)).toBe(1);
+  await expect.poll(() => getHardReloadCount(page)).toBe(1);
   await expect(toast).toBeHidden({ timeout: 5_000 });
 
   const swAfter = await snapshotSwRegs();

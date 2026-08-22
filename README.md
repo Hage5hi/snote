@@ -136,4 +136,7 @@ skills into this repository.
 
 ## License
 
-See the repository license and third-party notices before redistribution.
+No decision has been made yet: this repository currently contains no
+LICENSE file and no third-party NOTICES file, and choosing a license is an
+owner decision. Until one is recorded, do not redistribute the application
+or its bundled dependencies.
