@@ -45,20 +45,22 @@ function loadConfig() {
 }
 
 describe("staging build isolation", () => {
-  it("documents a supported, fail-closed local HMAC secret flow", () => {
+  it("documents a PowerShell 5.1-compatible, fileless local HMAC secret flow", () => {
     const plan = readFileSync(
       resolve(process.cwd(), "docs/security/staging-plan-2026-08.md"),
       "utf8",
     );
 
-    expect(plan).toContain('Join-Path $GeneratedWorkdir "supabase/functions/.env"');
-    expect(plan).toContain("bun run scripts/create-local-function-env.ts $GeneratedWorkdir");
+    expect(plan).toContain("[Security.Cryptography.RandomNumberGenerator]::Create()");
+    expect(plan).toContain("$SecretRng.GetBytes($SecretBytes)");
+    expect(plan).toContain("$env:CAPABILITY_HMAC_SECRET =");
     expect(plan).toMatch(/supabase@2\.115\.0 --workdir \$GeneratedWorkdir start 2>&1/);
     expect(plan).not.toMatch(/\bstart\b[^\r\n]*--env-file/);
-    expect(plan).not.toContain("RandomNumberGenerator");
     expect(plan).toMatch(
-      /finally\s*\{[\s\S]*Remove-Item -LiteralPath \$SecretFilePath[\s\S]*Test-Path -LiteralPath \$SecretFilePath[\s\S]*throw/,
+      /finally\s*\{[\s\S]*Remove-Item Env:CAPABILITY_HMAC_SECRET[\s\S]*Test-Path Env:CAPABILITY_HMAC_SECRET[\s\S]*throw/,
     );
+    expect(plan).not.toContain("create-local-function-env");
+    expect(plan).not.toContain("supabase/functions/.env");
     expect(plan).not.toMatch(/(?:Write-(?:Host|Output)|echo).*CAPABILITY_HMAC_SECRET/i);
   });
 

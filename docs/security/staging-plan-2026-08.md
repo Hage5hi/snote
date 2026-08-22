@@ -20,7 +20,8 @@ G3A is the current, repository-only change:
 - `bun run staging:prepare` requires clean Git-tracked Supabase sources, rejects
   ambient or linked state, and creates a disposable OS-temp workdir containing
   Edge Function sources plus an explicit allowlist of additive migrations;
-- the generated config uses `snote-staging-local`; its manifest records the
+- the generated config uses `snote-staging-local`, binds the capability HMAC
+  only from the launching process environment, and its manifest records the
   reviewed commit plus SHA-256 hashes for config, functions, and migrations;
 - `20260724000000_atomic_capability_cutover.sql` is excluded.
 
@@ -50,19 +51,22 @@ bun run staging:prepare
 $GeneratedWorkdir = "<path emitted by staging:prepare>"
 ```
 
-Before adding any runtime-only file, verify that the manifest source commit is
-the reviewed checkout HEAD, every manifest hash matches its generated file, all
-22 allowlisted migrations are present, the atomic cutover migration is absent,
-and the generated config contains `snote-staging-local` but not the production
-project ref. Only after those checks pass, continue in the same shell:
+Before exporting any runtime-only secret, verify that the manifest source
+commit is the reviewed checkout HEAD, every manifest hash matches its generated
+file, all 22 allowlisted migrations are present, the atomic cutover migration
+is absent, and the generated config contains `snote-staging-local` but not the
+production project ref. Only after those checks pass, continue in the same
+shell:
 
 ```powershell
 $SupabaseCliVersion = (bunx supabase@2.115.0 --workdir $GeneratedWorkdir --version 2>$null).Trim()
 if ($SupabaseCliVersion -ne "2.115.0") { throw "Unexpected Supabase CLI version" }
-$SecretFilePath = Join-Path $GeneratedWorkdir "supabase/functions/.env"
-bun run scripts/create-local-function-env.ts $GeneratedWorkdir
-if ($LASTEXITCODE -ne 0) { throw "Unable to create local function environment" }
+$SecretBytes = New-Object byte[] 32
+$SecretRng = [Security.Cryptography.RandomNumberGenerator]::Create()
 try {
+  $SecretRng.GetBytes($SecretBytes)
+  $env:CAPABILITY_HMAC_SECRET = -join ($SecretBytes | ForEach-Object { $_.ToString("x2") })
+  [Array]::Clear($SecretBytes, 0, $SecretBytes.Length)
   $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir start 2>&1
   if ($LASTEXITCODE -ne 0) { throw "Local Supabase startup failed" }
   $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir db reset --local 2>&1
@@ -79,25 +83,28 @@ try {
   $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop 2>&1
   throw
 } finally {
-  if (Test-Path -LiteralPath $SecretFilePath) {
-    Remove-Item -LiteralPath $SecretFilePath -Force -ErrorAction Stop
+  [Array]::Clear($SecretBytes, 0, $SecretBytes.Length)
+  $SecretBytes = $null
+  $SecretRng.Dispose()
+  $SecretRng = $null
+  if (Test-Path Env:CAPABILITY_HMAC_SECRET) {
+    Remove-Item Env:CAPABILITY_HMAC_SECRET -ErrorAction Stop
   }
-  if (Test-Path -LiteralPath $SecretFilePath) {
-    throw "Failed to remove local function environment"
+  if (Test-Path Env:CAPABILITY_HMAC_SECRET) {
+    throw "Failed to clear local capability HMAC secret"
   }
 }
 ```
 
-The Bun helper creates 32 random bytes without returning or printing them,
-refuses to overwrite an existing file, and creates the local Edge Runtime's
-standard `supabase/functions/.env` with owner-only mode on platforms that expose
-POSIX permission bits. On Windows it inherits the current user's OS-temp ACL.
-Supabase loads this standard file during `start`; no unsupported `start
---env-file` flag is used. The file is removed and its absence verified whether
-startup succeeds or fails. Startup output is discarded because it includes
-local JWT credentials. Status output is captured only in process memory,
-reduced to the client-safe API URL and anon key, then cleared; never print those
-variables or persist the raw status output.
+`RandomNumberGenerator.Create()` works on Windows PowerShell 5.1 and fills a
+32-byte buffer without writing the secret to a file or stdout. The generated
+config declares `CAPABILITY_HMAC_SECRET = "env(CAPABILITY_HMAC_SECRET)"`, so
+`start` receives it only from the current process environment. The byte buffer
+is cleared, the RNG is disposed, and the environment entry is removed and its
+absence verified whether startup succeeds or fails. Startup output is discarded
+because it includes local JWT credentials. Status output is captured only in
+process memory, reduced to the client-safe API URL and anon key, then cleared;
+never print those variables or persist the raw status output.
 
 `--workdir` is the Supabase global project-directory flag; `db reset --local`
 recreates the local database and applies only migrations copied into that

@@ -238,10 +238,16 @@ function rewriteConfig(source: string): string {
   if (projectAssignments.length !== 1) {
     throw new Error("Supabase config must contain exactly one project_id assignment.");
   }
-  const rewritten = source.replace(
+  if (/^\s*\[edge_runtime\.secrets\]\s*$/m.test(source)) {
+    throw new Error("Source config must not define staging Edge Runtime secrets.");
+  }
+  const rewrittenProject = source.replace(
     /^project_id\s*=\s*"[^"\r\n]*"\s*$/m,
     `project_id = "${LOCAL_PROJECT_ID}"`,
   );
+  const rewritten = `${rewrittenProject.trimEnd()}\n\n` +
+    `[edge_runtime.secrets]\n` +
+    `CAPABILITY_HMAC_SECRET = "env(CAPABILITY_HMAC_SECRET)"\n`;
   if (rewritten.includes(PRODUCTION_PROJECT_REF)) {
     throw new Error("Generated Supabase config retained the production project reference.");
   }

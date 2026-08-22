@@ -124,10 +124,12 @@ describe("prepareStagingWorkdir", () => {
     expect(relative(fixture.repoRoot, result.workdir)).toMatch(/^\.\./);
     expect(readdirSync(generatedMigrations).sort()).toEqual(SELECTED_MIGRATIONS);
     expect(readdirSync(generatedMigrations)).not.toContain(ATOMIC_CUTOVER);
-    expect(readFileSync(resolve(generatedSupabase, "config.toml"), "utf8"))
-      .toContain('project_id = "snote-staging-local"');
-    expect(readFileSync(resolve(generatedSupabase, "config.toml"), "utf8"))
-      .not.toContain("onfzjmfjldsbthchssfr");
+    const generatedConfig = readFileSync(resolve(generatedSupabase, "config.toml"), "utf8");
+    expect(generatedConfig).toContain('project_id = "snote-staging-local"');
+    expect(generatedConfig).toContain(
+      '[edge_runtime.secrets]\nCAPABILITY_HMAC_SECRET = "env(CAPABILITY_HMAC_SECRET)"',
+    );
+    expect(generatedConfig).not.toContain("onfzjmfjldsbthchssfr");
     expect(readFileSync(resolve(generatedSupabase, "functions/note-session/index.ts"), "utf8"))
       .toBe("export {};\n");
 
