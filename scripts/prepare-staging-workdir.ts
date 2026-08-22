@@ -51,14 +51,6 @@ export type PrepareStagingWorkdirOptions = Readonly<{
   sourceCommit?: string;
 }>;
 
-type StagingManifest = Readonly<{
-  schemaVersion: 1;
-  sourceCommit: string;
-  generatedAt: string;
-  excludedMigration: typeof ATOMIC_CUTOVER;
-  migrations: ReadonlyArray<Readonly<{ file: string; sha256: string }>>;
-}>;
-
 function isWithin(parent: string, candidate: string): boolean {
   const relation = relative(resolve(parent), resolve(candidate));
   return relation === "" || (
@@ -140,16 +132,17 @@ export function prepareStagingWorkdir(
   ) {
     throw new Error("Invalid staging migration allowlist.");
   }
-  for (const file of APPROVED_MIGRATIONS) {
-    assertRegularFile(resolve(migrationsPath, file), `allowlisted migration ${file}`);
-  }
-
   const expectedSourceMigrations = [...APPROVED_MIGRATIONS, ATOMIC_CUTOVER].sort();
-  const sourceMigrations = readdirSync(migrationsPath)
-    .filter((file) => file.endsWith(".sql"))
+  const sourceEntries = readdirSync(migrationsPath, { withFileTypes: true })
+    .filter((entry) => entry.name.endsWith(".sql"));
+  if (sourceEntries.some((entry) => !entry.isFile())) {
+    throw new Error("Missing or invalid source migration file.");
+  }
+  const sourceMigrations = sourceEntries
+    .map((entry) => entry.name)
     .sort();
   if (JSON.stringify(sourceMigrations) !== JSON.stringify(expectedSourceMigrations)) {
-    throw new Error("Source migrations differ from the reviewed staging selection.");
+    throw new Error("Missing or unexpected source migration for the staging selection.");
   }
 
   const sourceCommit = readSourceCommit(repoRoot, options.sourceCommit);
@@ -168,11 +161,8 @@ export function prepareStagingWorkdir(
       cpSync(sourcePath, resolve(generatedMigrations, file));
       return { file, sha256: hashFile(sourcePath) };
     });
-    const manifest: StagingManifest = {
-      schemaVersion: 1,
+    const manifest = {
       sourceCommit,
-      generatedAt: new Date().toISOString(),
-      excludedMigration: ATOMIC_CUTOVER,
       migrations,
     };
     const manifestPath = resolve(createdRoot, "staging-manifest.json");
