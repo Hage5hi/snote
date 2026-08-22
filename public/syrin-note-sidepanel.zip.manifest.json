@@ -1,6 +1,6 @@
 {
   "$comment": "Deterministic drift guard. Rebuild with `bun run scripts/build-extension-zip.ts`; verify with `bun run scripts/verify-extension-zip.ts`.",
   "version": "1.3.6",
-  "bytes": 351836,
-  "sha256": "f05e9bbd24450a49cec93770901ee2abd34cb783e18bbd82ac8d2ff8a454f08b"
+  "bytes": 352304,
+  "sha256": "4d63bafd3515bfb419cb0304058bf2d99ef6ec8eccf154871397bb14206816de"
 }
