@@ -86,9 +86,16 @@ async function assertKeyboardNavReachesFallback(panel: Page) {
   // Force the fallback button to be reachable by un-hiding it for the
   // assertion (the timeout-based flow normally takes 8s). We're verifying
   // that when the fallback IS visible, keyboard nav lands on it.
+  // The embedded site (whose Home page autofocuses its input) can pull
+  // focus into the cross-origin iframe mid-loop, sending the remaining Tab
+  // presses into the remote page instead of the panel. Remove the iframe
+  // from the panel's tab order for the duration of this assertion so the
+  // keyboard path being tested is the panel's own.
   await panel.evaluate(() => {
     const fb = document.getElementById("fallback");
     if (fb) (fb as HTMLElement).hidden = false;
+    const iframe = document.getElementById("app");
+    if (iframe) iframe.setAttribute("tabindex", "-1");
   });
   await panel.locator("body").focus();
   // Tab forward until activeElement.id === "open-tab", up to 6 hops.

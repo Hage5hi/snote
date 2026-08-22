@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { getHardReloadCount, installPwaUpdateMock, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
+import { getHardReloadCountForPoll, installPwaUpdateMock, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
 
 test("Update preserves the note URL without appending or keeping ?v cache-busters", async ({ page }, testInfo) => {
   await installPwaUpdateMock(page, {
@@ -13,7 +13,7 @@ test("Update preserves the note URL without appending or keeping ?v cache-buster
   await expect(page.getByText("New version available")).toBeVisible({ timeout: 5_000 });
 
   await page.getByRole("button", { name: /^Update$/ }).click();
-  await expect.poll(() => getHardReloadCount(page)).toBe(1);
+  await expect.poll(() => getHardReloadCountForPoll(page)).toBe(1);
 
   const url = new URL(page.url());
   expect(url.pathname).toBe("/123");
