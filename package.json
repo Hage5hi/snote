@@ -21,6 +21,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "typecheck:edge": "deno check --frozen supabase/functions/*/index.ts",
+    "staging:prepare": "bun run scripts/prepare-staging-workdir.ts",
     "cutover:verify": "bun run scripts/verify-capability-cutover.ts",
     "test:e2e": "bash scripts/run-playwright.sh test",
     "test:e2e:pwa-transition": "bun run build:pwa-transition && bunx playwright test --config=playwright.pwa-transition.config.ts --project=chromium --retries=0",
