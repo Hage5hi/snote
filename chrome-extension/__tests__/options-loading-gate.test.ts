@@ -1,18 +1,16 @@
 /**
- * Regression tests for the options-page initialization race observed on CI:
- * the async chrome.storage.sync.get callback can land after the page is
- * interactive, overwrite whatever the user already entered back to storage
- * defaults, and the subsequent Save then persists the defaults while still
- * reporting "✓ Saved".
+ * Regression tests for the options-page initialization race observed on CI,
+ * plus its fail-closed contract:
  *
- * The contract under test:
  *  - the form is inert and reports data-settings-ready="false" until BOTH
- *    the synced settings and the local telemetry preference have loaded;
+ *    the synced settings and the local telemetry preference have loaded
+ *    (either callback order);
  *  - controls are enabled and the attribute flips to "true" only then —
  *    this attribute is the deterministic ready signal E2E waits on (no
  *    fixed sleeps);
- *  - a late storage callback therefore cannot overwrite user input,
- *    because interaction is structurally impossible before it lands.
+ *  - if either storage read fails (chrome.runtime.lastError), the form
+ *    NEVER becomes ready, a visible reload hint is announced, and Save
+ *    cannot overwrite preferences from an unconfirmed initial state.
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
@@ -24,7 +22,10 @@ type GetCb = (s: Record<string, unknown>) => void;
 
 interface ChromeMock {
   storage: {
-    sync: { get: (d: Record<string, unknown>, cb: GetCb) => void; set: (data: Record<string, unknown>, cb: () => void) => void };
+    sync: {
+      get: (d: Record<string, unknown>, cb: GetCb) => void;
+      set: (data: Record<string, unknown>, cb: () => void) => void;
+    };
     local: {
       get: (d: Record<string, unknown>, cb: GetCb) => void;
       set: (data: Record<string, unknown>, cb?: () => void) => void;
@@ -39,12 +40,18 @@ import { initOptions } from "../options.js";
 
 let heldSyncGet: GetCb | null = null;
 let heldLocalGet: GetCb | null = null;
+let syncGetFails = false;
+let localGetFails = false;
 let stored: Record<string, unknown> = {};
+let syncSetCalls: Record<string, unknown>[] = [];
 
 function mountWithHeldStorage() {
   heldSyncGet = null;
   heldLocalGet = null;
+  syncGetFails = false;
+  localGetFails = false;
   stored = {};
+  syncSetCalls = [];
   const chromeMock: ChromeMock = {
     storage: {
       sync: {
@@ -52,6 +59,7 @@ function mountWithHeldStorage() {
           heldSyncGet = cb;
         },
         set: (data, cb) => {
+          syncSetCalls.push(data);
           Object.assign(stored, data);
           cb();
         },
@@ -72,58 +80,169 @@ function mountWithHeldStorage() {
   initOptions();
 }
 
-function readyState(): string | null {
-  return (document.getElementById("settings") as HTMLElement).getAttribute("data-settings-ready");
+/** Runs the held sync read; simulates chrome.runtime.lastError when asked. */
+function runSyncRead(settings?: Record<string, unknown>) {
+  if (syncGetFails) {
+    chrome.runtime.lastError = { message: "sync read failed" };
+    heldSyncGet!(settings ?? {});
+    chrome.runtime.lastError = null;
+  } else {
+    heldSyncGet!(settings ?? {});
+  }
 }
 
-function controlsDisabled(): boolean[] {
-  const ids = ["defaultSlug", "debug", "telemetryEnabled", "save", "clearDiagnostics"];
-  return ids.map((id) => (document.getElementById(id) as HTMLButtonElement | null)?.disabled ?? true);
+function runLocalRead(value = false) {
+  if (localGetFails) {
+    chrome.runtime.lastError = { message: "local read failed" };
+    heldLocalGet!({ "syrin:telemetryEnabled": value });
+    chrome.runtime.lastError = null;
+  } else {
+    heldLocalGet!({ "syrin:telemetryEnabled": value });
+  }
+}
+
+function form(): HTMLElement {
+  const el = document.getElementById("settings");
+  if (!el) throw new Error("missing #settings form");
+  return el;
+}
+
+function readyState(): string | null {
+  return form().getAttribute("data-settings-ready");
+}
+
+/** All interactive controls, each required to exist — no fallbacks. */
+function controls(): HTMLInputElement[] {
+  const ids = ["defaultSlug", "debug", "telemetryEnabled", "clearDiagnostics", "save"];
+  const found = ids.map((id) => {
+    const el = document.getElementById(id);
+    if (!el) throw new Error(`missing #${id}`);
+    return el as HTMLInputElement;
+  });
+  for (const value of ["home", "slug", "last"]) {
+    const radio = form().querySelector(`input[name="openMode"][value="${value}"]`);
+    if (!radio) throw new Error(`missing openMode radio ${value}`);
+    found.push(radio as HTMLInputElement);
+  }
+  return found;
+}
+
+const allDisabled = () => controls().every((c) => c.disabled);
+const allEnabled = () => controls().every((c) => !c.disabled);
+
+function submit() {
+  form().dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
 }
 
 beforeEach(() => {
   document.documentElement.innerHTML = "<html><head></head><body></body></html>";
 });
 
-describe("options.js — loading gate", () => {
+describe("options.js — loading gate (success orders)", () => {
   it("keeps the form inert and not ready while storage callbacks are pending", () => {
     mountWithHeldStorage();
 
     expect(readyState()).toBe("false");
-    expect(controlsDisabled().every(Boolean)).toBe(true);
+    expect(allDisabled()).toBe(true);
   });
 
-  it("stays not ready when only the telemetry preference has loaded", () => {
+  it("stays not ready after only the telemetry preference loads (local-first order)", () => {
     mountWithHeldStorage();
 
-    heldLocalGet!({ "syrin:telemetryEnabled": true });
+    runLocalRead(true);
     expect(readyState()).toBe("false");
-    expect(controlsDisabled().every(Boolean)).toBe(true);
+    expect(allDisabled()).toBe(true);
   });
 
-  it("becomes ready with restored values once both loads complete", () => {
+  it("stays not ready after only the synced settings load (sync-first order)", () => {
     mountWithHeldStorage();
 
-    heldLocalGet!({ "syrin:telemetryEnabled": true });
-    heldSyncGet!({ openMode: "slug", defaultSlug: "journal", debug: true });
+    runSyncRead({ openMode: "slug", defaultSlug: "journal", debug: true });
+    expect(readyState()).toBe("false");
+    expect(allDisabled()).toBe(true);
+  });
+
+  it("becomes ready with restored values once both loads complete (local-first)", () => {
+    mountWithHeldStorage();
+
+    runLocalRead(true);
+    runSyncRead({ openMode: "slug", defaultSlug: "journal", debug: true });
 
     expect(readyState()).toBe("true");
-    expect(controlsDisabled().every((d) => !d)).toBe(true);
+    expect(allEnabled()).toBe(true);
     const slug = document.getElementById("defaultSlug") as HTMLInputElement;
     expect(slug.value).toBe("journal");
     expect(slug.disabled).toBe(false);
-    const radio = document.querySelector('input[name="openMode"][value="slug"]') as HTMLInputElement;
+    const radio = form().querySelector('input[name="openMode"][value="slug"]') as HTMLInputElement;
     expect(radio.checked).toBe(true);
     const telemetry = document.getElementById("telemetryEnabled") as HTMLInputElement;
     expect(telemetry.checked).toBe(true);
   });
 
-  it("flips the E2E-ready attribute, the deterministic wait signal", () => {
+  it("becomes ready once both loads complete in the sync-first order too", () => {
     mountWithHeldStorage();
 
+    runSyncRead({ openMode: "slug", defaultSlug: "journal", debug: false });
     expect(readyState()).toBe("false");
-    heldLocalGet!({ "syrin:telemetryEnabled": false });
-    heldSyncGet!({ openMode: "home", defaultSlug: "", debug: false });
+    runLocalRead(false);
+
     expect(readyState()).toBe("true");
+    expect(allEnabled()).toBe(true);
+  });
+});
+
+describe("options.js — loading gate (fail-closed reads)", () => {
+  it("never becomes ready when the synced-settings read fails", () => {
+    mountWithHeldStorage();
+    syncGetFails = true;
+
+    runSyncRead();
+    runLocalRead(true);
+
+    expect(readyState()).toBe("false");
+    expect(allDisabled()).toBe(true);
+    const error = document.getElementById("loadError");
+    expect(error, "load error region must exist").not.toBeNull();
+    expect((error as HTMLElement).hidden).toBe(false);
+  });
+
+  it("never becomes ready when the telemetry read fails", () => {
+    mountWithHeldStorage();
+    localGetFails = true;
+
+    runSyncRead({ openMode: "slug", defaultSlug: "journal", debug: true });
+    runLocalRead();
+
+    expect(readyState()).toBe("false");
+    expect(allDisabled()).toBe(true);
+    expect((document.getElementById("loadError") as HTMLElement).hidden).toBe(false);
+  });
+
+  it("does not let Save overwrite preferences from an unread initial state", () => {
+    mountWithHeldStorage();
+    localGetFails = true;
+    runSyncRead({ openMode: "slug", defaultSlug: "journal", debug: true });
+    runLocalRead();
+
+    submit();
+
+    expect(syncSetCalls).toEqual([]);
+  });
+
+  it("keeps the form inert when the markup loads without JS having run", () => {
+    // The HTML alone must already disable everything: fieldsets disabled in
+    // markup and the save button disabled in markup, so a JS crash or a
+    // storage failure before init leaves the page fail-closed. JSDOM does
+    // not propagate fieldset.disabled onto descendants' .disabled property,
+    // so assert the effective state via the closest disabled ancestor.
+    document.documentElement.innerHTML = HTML.replace(/<script[\s\S]*?<\/script>/, "");
+    const effectivelyDisabled = controls().every((c) => {
+      if (c.disabled) return true;
+      const ancestor = c.closest("fieldset") as HTMLFieldSetElement | null;
+      return ancestor?.disabled === true;
+    });
+    expect(effectivelyDisabled).toBe(true);
+    expect(readyState()).toBe("false");
+    expect(form().getAttribute("aria-busy")).toBe("true");
   });
 });
