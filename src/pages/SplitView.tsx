@@ -28,10 +28,6 @@ const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const MIN_PANES = 2;
 const MAX_PANES = 4;
 
-type SplitViewProps = {
-  legacyOnly?: boolean;
-};
-
 /**
  * SplitView shows 2–4 notes at once. Route: /:slugs where slugs = "a+b",
  * "a+b+c", or "a+b+c+d". Optional sync-scroll keeps every pane at the same
@@ -42,7 +38,7 @@ type SplitViewProps = {
  *   3 → top row (n1 | n2), bottom row = n3 full width
  *   4 → 2×2 grid
  */
-export default function SplitView({ legacyOnly = true }: SplitViewProps) {
+export default function SplitView() {
   const { slug = "" } = useParams();
   const [syncScroll, setSyncScroll] = useState(true);
 
@@ -72,7 +68,6 @@ export default function SplitView({ legacyOnly = true }: SplitViewProps) {
   return (
     <SplitViewBody
       slugs={slugs}
-      legacyOnly={legacyOnly}
       syncScroll={syncScroll}
       setSyncScroll={setSyncScroll}
       registerScroller={registerScroller}
@@ -82,13 +77,11 @@ export default function SplitView({ legacyOnly = true }: SplitViewProps) {
 
 function SplitViewBody({
   slugs,
-  legacyOnly,
   syncScroll,
   setSyncScroll,
   registerScroller,
 }: {
   slugs: string[];
-  legacyOnly: boolean;
   syncScroll: boolean;
   setSyncScroll: (v: (b: boolean) => boolean) => void;
   registerScroller: SplitScrollerRegistration;
@@ -266,7 +259,6 @@ function SplitViewBody({
               key={`${s}-${i}`}
               index={i}
               slug={s}
-              legacyOnly={legacyOnly}
               compact={compact}
               active={activePane === i}
               className={`${spanClass} ${borderClass}`}
@@ -282,7 +274,6 @@ function SplitViewBody({
 function SplitPane({
   index,
   slug,
-  legacyOnly,
   compact,
   active,
   className,
@@ -290,7 +281,6 @@ function SplitPane({
 }: {
   index: number;
   slug: string;
-  legacyOnly: boolean;
   compact: boolean;
   active: boolean;
   className: string;
@@ -325,7 +315,7 @@ function SplitPane({
         }
       >
         <NotePage
-          legacyOnly={legacyOnly}
+          legacyOnly
           embedSlug={slug}
           embedNarrow={paneNarrow}
           onPrimaryScroller={onPrimaryScroller}

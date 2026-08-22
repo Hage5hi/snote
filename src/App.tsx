@@ -55,7 +55,7 @@ function SlugDispatcher() {
   if (slug.includes("+")) {
     return (
       <Suspense fallback={EditorFallback}>
-        <SplitView legacyOnly={!capabilityRoutesEnabled} />
+        <SplitView />
       </Suspense>
     );
   }

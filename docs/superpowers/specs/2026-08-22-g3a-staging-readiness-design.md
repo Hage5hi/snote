@@ -7,10 +7,11 @@
 
 1. Capability routes are enabled only when
    `VITE_CAPABILITY_ROUTES_ENABLED === "true"`. `App.tsx` owns the decision and
-   passes `legacyOnly` to ordinary and split note routes. Missing or malformed
-   values retain the deployed legacy-only behavior.
-2. `bun run staging:prepare` creates an OS-temp Supabase workdir from a fixed
-   migration allowlist. It copies Edge Functions, rewrites the project ID to
+   applies it to ordinary single-note routes. Missing or malformed values retain
+   the deployed legacy-only behavior; Split View stays legacy-only until it has
+   a per-pane capability format.
+2. `bun run staging:prepare` creates an OS-temp Supabase workdir from reviewed
+   Git blobs and a fixed migration allowlist. It copies Edge Functions, rewrites the project ID to
    `snote-staging-local`, rejects ambient project linkage and the production
    ref, excludes `20260724000000_atomic_capability_cutover.sql`, and records the
    source commit plus SHA-256 hashes for every generated config, function, and

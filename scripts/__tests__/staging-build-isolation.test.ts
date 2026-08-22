@@ -45,7 +45,7 @@ function loadConfig() {
 describe("staging build isolation", () => {
   it("rejects capability routes when Supabase values would fall back to .env", async () => {
     await withEnv({ VITE_CAPABILITY_ROUTES_ENABLED: "true" }, async () => {
-      await expect(loadConfig()).rejects.toThrow(/production Supabase project/i);
+      await expect(loadConfig()).rejects.toThrow(/complete staging Supabase environment/i);
     });
   });
 
@@ -57,6 +57,24 @@ describe("staging build isolation", () => {
       VITE_SUPABASE_URL: "http://127.0.0.1:54321",
     }, async () => {
       await expect(loadConfig()).resolves.not.toBeNull();
+    });
+  });
+
+  it.each([
+    "VITE_SUPABASE_PROJECT_ID",
+    "VITE_SUPABASE_PUBLISHABLE_KEY",
+    "VITE_SUPABASE_URL",
+  ] as const)("rejects capability routes when %s is not explicit", async (missingKey) => {
+    const explicitEnv: Record<(typeof ENV_KEYS)[number], string> = {
+      VITE_CAPABILITY_ROUTES_ENABLED: "true",
+      VITE_SUPABASE_PROJECT_ID: "snote-staging-local",
+      VITE_SUPABASE_PUBLISHABLE_KEY: "local-publishable-placeholder",
+      VITE_SUPABASE_URL: "http://127.0.0.1:54321",
+    };
+    delete explicitEnv[missingKey];
+
+    await withEnv(explicitEnv, async () => {
+      await expect(loadConfig()).rejects.toThrow(/complete staging Supabase environment/i);
     });
   });
 

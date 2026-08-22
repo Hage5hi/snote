@@ -204,6 +204,19 @@ describe("prepareStagingWorkdir", () => {
     expect(readdirSync(fixture.tempParent)).toEqual([]);
   });
 
+  it("rejects a tracked function change hidden by assume-unchanged", () => {
+    const fixture = createFixture();
+    const functionPath = "supabase/functions/note-session/index.ts";
+    execFileSync("git", ["update-index", "--assume-unchanged", functionPath], {
+      cwd: fixture.repoRoot,
+      stdio: "ignore",
+    });
+    writeFileSync(resolve(fixture.repoRoot, functionPath), "ambient-change\n", "utf8");
+
+    expect(() => prepareStagingWorkdir(fixture)).toThrow(/clean/i);
+    expect(readdirSync(fixture.tempParent)).toEqual([]);
+  });
+
   it("rejects a committed Edge Function environment file", () => {
     const fixture = createFixture();
     const environmentPath = resolve(fixture.repoRoot, "supabase/functions/.env");

@@ -61,11 +61,11 @@ function resize(element: Element, width: number) {
   });
 }
 
-function renderSplit(path = "/alpha+beta", legacyOnly?: boolean) {
+function renderSplit(path = "/alpha+beta") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/:slug" element={<SplitView legacyOnly={legacyOnly} />} />
+        <Route path="/:slug" element={<SplitView />} />
         <Route path="/" element={<div>home</div>} />
       </Routes>
     </MemoryRouter>,
@@ -122,15 +122,12 @@ describe("SplitView responsive behavior", () => {
     expect(harness.noteProps.get("beta")?.embedNarrow).toBe(false);
   });
 
-  it.each([
-    [undefined, true],
-    [false, false],
-  ] as const)("forwards legacyOnly=%s to every pane", async (legacyOnly, expected) => {
-    renderSplit("/alpha+beta", legacyOnly);
+  it("keeps every pane on the legacy backend", async () => {
+    renderSplit("/alpha+beta");
     await screen.findByText("note:alpha");
 
-    expect(harness.noteProps.get("alpha")?.legacyOnly).toBe(expected);
-    expect(harness.noteProps.get("beta")?.legacyOnly).toBe(expected);
+    expect(harness.noteProps.get("alpha")?.legacyOnly).toBe(true);
+    expect(harness.noteProps.get("beta")?.legacyOnly).toBe(true);
   });
 
   it("exposes sync state to assistive technology", async () => {

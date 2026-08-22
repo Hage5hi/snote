@@ -13,9 +13,10 @@ command output, logs, test artifacts, or evidence.
 
 G3A is the current, repository-only change:
 
-- `VITE_CAPABILITY_ROUTES_ENABLED` activates existing capability note routes
-  only when its exact build-time value is `true`; missing or malformed values
-  preserve legacy-only routing;
+- `VITE_CAPABILITY_ROUTES_ENABLED` activates the existing single-note
+  capability route only when its exact build-time value is `true`; missing or
+  malformed values preserve legacy-only routing, and Split View remains
+  legacy-only until it has a per-pane capability format;
 - `bun run staging:prepare` requires clean Git-tracked Supabase sources, rejects
   ambient or linked state, and creates a disposable OS-temp workdir containing
   Edge Function sources plus an explicit allowlist of additive migrations;
@@ -40,11 +41,26 @@ Run from the reviewed checkout:
 
 ```powershell
 bun run staging:prepare
-$SupabaseCliVersion = (bunx supabase@2.115.0 --version).Trim()
+$GeneratedWorkdir = "<path emitted by staging:prepare>"
+$SupabaseCliVersion = (bunx supabase@2.115.0 --workdir $GeneratedWorkdir --version 2>$null).Trim()
 if ($SupabaseCliVersion -ne "2.115.0") { throw "Unexpected Supabase CLI version" }
-bunx --no-install supabase@2.115.0 --workdir "<generated-workdir>" start
-bunx --no-install supabase@2.115.0 --workdir "<generated-workdir>" db reset --local
+$null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir start 2>&1
+if ($LASTEXITCODE -ne 0) { throw "Local Supabase startup failed" }
+bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir db reset --local
+$LocalStatus = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir status -o env 2>$null
+if ($LASTEXITCODE -ne 0) { throw "Unable to read local Supabase status" }
+$LocalEnv = ConvertFrom-StringData ($LocalStatus -join "`n")
+$LocalApiUrl = $LocalEnv.API_URL.Trim('"')
+$LocalPublishableKey = $LocalEnv.ANON_KEY.Trim('"')
+$LocalEnv.Clear()
+$LocalStatus = $null
+if (!$LocalApiUrl -or !$LocalPublishableKey) { throw "Incomplete local Supabase status" }
 ```
+
+Startup output is discarded because it includes local JWT credentials. Status
+output is captured only in process memory, reduced to the client-safe API URL
+and anon key, then cleared; never print those variables or persist the raw
+status output.
 
 `--workdir` is the Supabase global project-directory flag; `db reset --local`
 recreates the local database and applies only migrations copied into that
@@ -75,8 +91,8 @@ process; never rely on the committed `.env` fallback:
 ```powershell
 $env:VITE_CAPABILITY_ROUTES_ENABLED = "true"
 $env:VITE_SUPABASE_PROJECT_ID = "snote-staging-local"
-$env:VITE_SUPABASE_URL = "<local API URL from the generated stack>"
-$env:VITE_SUPABASE_PUBLISHABLE_KEY = "<local publishable key from the same stack>"
+$env:VITE_SUPABASE_URL = $LocalApiUrl
+$env:VITE_SUPABASE_PUBLISHABLE_KEY = $LocalPublishableKey
 bun run build:check
 $ProductionProjectRef = "onfzjmfjldsbthchssfr"
 if (Get-ChildItem dist -Recurse -File | Select-String -SimpleMatch $ProductionProjectRef -Quiet) {

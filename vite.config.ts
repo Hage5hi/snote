@@ -202,10 +202,15 @@ function assertCapabilityBackendIsolation(mode: string): void {
   const loadedEnv = loadEnv(mode, process.cwd(), "VITE_");
   if (loadedEnv.VITE_CAPABILITY_ROUTES_ENABLED !== "true") return;
 
-  const projectId = loadedEnv.VITE_SUPABASE_PROJECT_ID?.trim();
-  const publishableKey = loadedEnv.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
-  const rawUrl = loadedEnv.VITE_SUPABASE_URL?.trim();
-  if (!projectId || !publishableKey || !rawUrl) {
+  const projectId = process.env.VITE_SUPABASE_PROJECT_ID?.trim();
+  const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const rawUrl = process.env.VITE_SUPABASE_URL?.trim();
+  if (
+    process.env.VITE_CAPABILITY_ROUTES_ENABLED !== "true" ||
+    !projectId ||
+    !publishableKey ||
+    !rawUrl
+  ) {
     throw new Error(
       "Capability routes require complete staging Supabase environment values.",
     );

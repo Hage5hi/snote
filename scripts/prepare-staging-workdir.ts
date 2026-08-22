@@ -1,7 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -136,6 +135,9 @@ function readCleanSourceSnapshot(repoRoot: string): SourceSnapshot {
       throw new Error("Staging Supabase sources must be tracked regular files.");
     }
     const path = entry.slice(separator + 1);
+    if (!/^[A-Za-z0-9._/-]+$/.test(path)) {
+      throw new Error("Staging Supabase source paths must use portable characters.");
+    }
     const basename = path.split("/").at(-1)?.toLowerCase();
     if (
       path.startsWith("supabase/functions/") &&
@@ -149,6 +151,50 @@ function readCleanSourceSnapshot(repoRoot: string): SourceSnapshot {
     throw new Error("Staging Supabase sources must be tracked regular files.");
   }
   return { commit, paths };
+}
+
+function readGitBlobs(
+  repoRoot: string,
+  commit: string,
+  paths: readonly string[],
+): ReadonlyMap<string, Buffer> {
+  let output: Buffer;
+  try {
+    output = execFileSync("git", ["cat-file", "--batch"], {
+      cwd: repoRoot,
+      input: paths.map((path) => `${commit}:${path}\n`).join(""),
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  } catch {
+    throw new Error("Unable to read the reviewed staging source commit.");
+  }
+
+  const blobs = new Map<string, Buffer>();
+  let offset = 0;
+  for (const path of paths) {
+    const headerEnd = output.indexOf(0x0a, offset);
+    if (headerEnd < 0) {
+      throw new Error("Invalid Git blob response for staging sources.");
+    }
+    const header = output.subarray(offset, headerEnd).toString("ascii");
+    const match = /^([0-9a-f]{40}) blob ([0-9]+)$/.exec(header);
+    if (!match) {
+      throw new Error("Invalid Git blob response for staging sources.");
+    }
+    const size = Number(match[2]);
+    const start = headerEnd + 1;
+    const end = start + size;
+    if (!Number.isSafeInteger(size) || size < 0 || end >= output.length || output[end] !== 0x0a) {
+      throw new Error("Invalid Git blob response for staging sources.");
+    }
+    blobs.set(path, Buffer.from(output.subarray(start, end)));
+    offset = end + 1;
+  }
+  if (offset !== output.length) {
+    throw new Error("Invalid Git blob response for staging sources.");
+  }
+  return blobs;
 }
 
 function rewriteConfig(source: string): string {
@@ -200,6 +246,14 @@ export function prepareStagingWorkdir(
   assertDirectory(migrationsPath, "migration directory");
 
   const snapshot = readCleanSourceSnapshot(repoRoot);
+  const sourceBlobs = readGitBlobs(repoRoot, snapshot.commit, snapshot.paths);
+  for (const path of snapshot.paths) {
+    const sourcePath = resolve(repoRoot, path);
+    assertRegularFile(sourcePath, "staging source");
+    if (!sourceBlobs.get(path)?.equals(readFileSync(sourcePath))) {
+      throw new Error("Staging Supabase sources must match a clean Git commit.");
+    }
+  }
   const expectedSourceMigrations = [...APPROVED_MIGRATIONS, ATOMIC_CUTOVER]
     .map((file) => `supabase/migrations/${file}`)
     .sort();
@@ -219,7 +273,9 @@ export function prepareStagingWorkdir(
   if (functionFiles.length === 0) {
     throw new Error("No tracked Edge Function sources were found.");
   }
-  const rewrittenConfig = rewriteConfig(readFileSync(configPath, "utf8"));
+  const rewrittenConfig = rewriteConfig(
+    sourceBlobs.get("supabase/config.toml")!.toString("utf8"),
+  );
   let createdRoot: string | undefined;
   try {
     createdRoot = mkdtempSync(join(tempParent, "snote-g3a-"));
@@ -239,11 +295,9 @@ export function prepareStagingWorkdir(
 
     const generatedFunctions = resolve(generatedSupabase, "functions");
     const functionArtifacts = functionFiles.map((file) => {
-      const sourcePath = resolve(functionsPath, file);
-      assertRegularFile(sourcePath, "Edge Function source");
       const outputPath = resolve(generatedFunctions, file);
       mkdirSync(dirname(outputPath), { recursive: true });
-      cpSync(sourcePath, outputPath);
+      writeFileSync(outputPath, sourceBlobs.get(`${functionPrefix}${file}`)!);
       return {
         file: `supabase/functions/${file}`,
         sha256: hashFile(outputPath),
@@ -251,10 +305,8 @@ export function prepareStagingWorkdir(
     });
 
     const migrationArtifacts = APPROVED_MIGRATIONS.map((file) => {
-      const sourcePath = resolve(migrationsPath, file);
-      assertRegularFile(sourcePath, "source migration");
       const outputPath = resolve(generatedMigrations, file);
-      cpSync(sourcePath, outputPath);
+      writeFileSync(outputPath, sourceBlobs.get(`supabase/migrations/${file}`)!);
       return {
         file: `supabase/migrations/${file}`,
         sha256: hashFile(outputPath),
