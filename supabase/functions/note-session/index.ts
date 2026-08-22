@@ -17,8 +17,8 @@ import {
   rpcStatus,
   verifyRealtimeAuth,
 } from "../_shared/capability-edge.ts";
+import { isUsableSlug } from "../_shared/slug.ts";
 
-const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const UPDATE_ID_RE = /^[a-f0-9]{64}$/;
 const PAYLOAD_RE = /^[A-Za-z0-9_-]+$/;
 const MAX_ENCODED_PAYLOAD_CHARS = 5_592_406;
@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
     if (body?.action === "create") {
       if (!bearer) return capabilityJson({ error: "unauthorized" }, 401);
       const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
-      if (!SLUG_RE.test(slug)) return capabilityFailure("invalid");
+      if (!isUsableSlug(slug)) return capabilityFailure("invalid");
       const auth = await verifyRealtimeAuth(req, environment);
       if (auth.mode === "unavailable") return capabilityFailure("unavailable");
 
@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
           && Number.isSafeInteger(iterations) && iterations >= 100_000 && iterations <= 2_000_000
         : isEncrypted === false && salt === null && check === null && iterations === null;
       if (
-        !SLUG_RE.test(slug)
+        !isUsableSlug(slug)
         || !UPDATE_ID_RE.test(checkpointId)
         || !PAYLOAD_RE.test(payload)
         || payload.length > MAX_ENCODED_PAYLOAD_CHARS

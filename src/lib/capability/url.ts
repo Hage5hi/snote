@@ -1,3 +1,5 @@
+import { isUsableSlug } from "@/lib/slug";
+
 export const CAPABILITY_TOKEN_RE = /^[A-Za-z0-9_-]{43}$/;
 export type CapabilityScope = "owner" | "edit" | "view";
 
@@ -7,7 +9,6 @@ export type CapabilityAccess = {
   token: string;
 };
 
-const NOTE_SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
 export const CANONICAL_ORIGIN = "https://note.syrin.online";
 
 function fragmentParams(hash: string): URLSearchParams | null {
@@ -36,7 +37,7 @@ export function parseCapabilityLocation(location: Pick<URL, "pathname" | "search
   }
 
   const segments = location.pathname.split("/").filter(Boolean);
-  if (segments.length !== 1 || !NOTE_SLUG_RE.test(segments[0]) || segments[0] === "s") return null;
+  if (segments.length !== 1 || !isUsableSlug(segments[0])) return null;
   return { slug: segments[0], scope, token };
 }
 
@@ -75,7 +76,7 @@ export function buildCapabilityUrl(
   encryptionSecret?: string,
 ): string {
   if (!CAPABILITY_TOKEN_RE.test(token)) throw new Error("invalid capability");
-  if (scope !== "view" && (!slug || !NOTE_SLUG_RE.test(slug))) throw new Error("invalid slug");
+  if (scope !== "view" && (!slug || !isUsableSlug(slug))) throw new Error("invalid slug");
   const params = new URLSearchParams({ [scope]: token });
   if (encryptionSecret) params.set("key", encryptionSecret);
   const path = scope === "view" ? "/s" : `/${slug}`;

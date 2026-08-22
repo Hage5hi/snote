@@ -1,5 +1,6 @@
 import { CAPABILITY_TOKEN_RE, type CapabilityScope } from "./url";
 import { decodeCapabilityPayload } from "./encoding";
+import { isUsableSlug } from "@/lib/slug";
 import {
   createDefaultCapabilityAuthSource,
   type CapabilityAuthSource,
@@ -86,7 +87,6 @@ type ApiOptions = {
 
 const UPDATE_ID_RE = /^[a-f0-9]{64}$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const MAX_PAYLOAD_LIMIT_BYTES = 4 * 1024 * 1024;
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -117,7 +117,7 @@ function assertSession(value: unknown): NoteSession {
         && session.realtimeExpiresAt === null;
   if (
     !UUID_RE.test(session.noteId ?? "")
-    || !SLUG_RE.test(session.slug ?? "")
+    || !isUsableSlug(session.slug ?? "")
     || !["owner", "edit", "view"].includes(session.scope ?? "")
     || !validTransport
     || session.realtimeTopic !== `note:${session.noteId}`

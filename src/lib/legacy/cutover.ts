@@ -1,9 +1,9 @@
 import * as Y from "yjs";
 import { CAPABILITY_TOKEN_RE, buildCapabilityUrl } from "@/lib/capability/url";
 import { capabilityPayloadId, encodeCapabilityPayload } from "@/lib/capability/encoding";
+import { isUsableSlug } from "@/lib/slug";
 import type { Encryption } from "@/lib/yjs/provider";
 
-const SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const LEGACY_TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 const CONFIGURED_LEGACY_SHARE_CUTOFF = import.meta.env.VITE_LEGACY_SHARE_CUTOFF ?? "";
@@ -34,7 +34,7 @@ function endpoint(baseUrl: string) {
 }
 
 function assertSlug(slug: string) {
-  if (!SLUG_RE.test(slug)) throw new Error("invalid slug");
+  if (!isUsableSlug(slug)) throw new Error("invalid slug");
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
@@ -134,7 +134,7 @@ const PAYLOAD_RE = /^[A-Za-z0-9_-]+$/;
 function isRecovery(value: unknown): value is LegacyImportRecovery {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<LegacyImportRecovery>;
-  return SLUG_RE.test(candidate.sourceSlug ?? "")
+  return isUsableSlug(candidate.sourceSlug ?? "")
     && HASH_RE.test(candidate.sourceFingerprint ?? "")
     && CAPABILITY_TOKEN_RE.test(candidate.owner ?? "")
     && HASH_RE.test(candidate.checkpointId ?? "")
