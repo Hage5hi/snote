@@ -8,6 +8,7 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -48,7 +49,6 @@ const APPROVED_MIGRATIONS = [
 export type PrepareStagingWorkdirOptions = Readonly<{
   repoRoot?: string;
   tempParent?: string;
-  sourceCommit?: string;
 }>;
 
 function isWithin(parent: string, candidate: string): boolean {
@@ -72,14 +72,91 @@ function assertDirectory(path: string, label: string): void {
   }
 }
 
-function readSourceCommit(repoRoot: string, supplied?: string): string {
-  const commit = supplied?.trim() || execFileSync("git", ["rev-parse", "HEAD"], {
+function canonicalDirectory(path: string, label: string): string {
+  assertDirectory(path, label);
+  try {
+    return realpathSync.native(path);
+  } catch {
+    throw new Error(`Unable to resolve ${label}: ${path}`);
+  }
+}
+
+function runGit(repoRoot: string, args: readonly string[]): string {
+  return execFileSync("git", [...args], {
     cwd: repoRoot,
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-  }).trim();
-  if (!commit) throw new Error("Unable to determine the staging source commit.");
+    maxBuffer: 16 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+}
+
+function readCleanSourceCommit(repoRoot: string): string {
+  let commit: string;
+  let status: string;
+  let tree: string;
+  try {
+    commit = runGit(repoRoot, ["rev-parse", "HEAD^{commit}"]).trim();
+    status = runGit(repoRoot, [
+      "status",
+      "--porcelain=v1",
+      "-z",
+      "--untracked-files=all",
+      "--ignored=matching",
+      "--",
+      "supabase/config.toml",
+      "supabase/functions",
+      "supabase/migrations",
+    ]);
+    tree = runGit(repoRoot, [
+      "ls-tree",
+      "-r",
+      "-z",
+      commit,
+      "--",
+      "supabase/config.toml",
+      "supabase/functions",
+      "supabase/migrations",
+    ]);
+  } catch {
+    throw new Error("Unable to verify the staging source checkout.");
+  }
+  if (!/^[0-9a-f]{40}$/.test(commit) || status !== "") {
+    throw new Error("Staging Supabase sources must match a clean Git commit.");
+  }
+  const treeEntries = tree.split("\0").filter(Boolean);
+  if (
+    treeEntries.length === 0 ||
+    treeEntries.some((entry) => !/^100(?:644|755) blob [0-9a-f]{40}\t/.test(entry))
+  ) {
+    throw new Error("Staging Supabase sources must be tracked regular files.");
+  }
   return commit;
+}
+
+function listRegularFiles(root: string): string[] {
+  const files: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const pathname = resolve(directory, entry.name);
+      const stats = lstatSync(pathname);
+      if (stats.isSymbolicLink()) {
+        throw new Error("Staging Edge Function sources must not contain links.");
+      }
+      if (stats.isDirectory()) visit(pathname);
+      else if (stats.isFile()) {
+        const file = relative(root, pathname).replaceAll("\\", "/");
+        const basename = file.split("/").at(-1)?.toLowerCase();
+        if (basename === ".env" || basename?.startsWith(".env.")) {
+          throw new Error("Staging Edge Function environment files are forbidden.");
+        }
+        files.push(file);
+      } else {
+        throw new Error("Staging Edge Function sources must be regular files.");
+      }
+    }
+  };
+  visit(root);
+  return files.sort();
 }
 
 function rewriteConfig(source: string): string {
@@ -104,8 +181,14 @@ function hashFile(path: string): string {
 export function prepareStagingWorkdir(
   options: PrepareStagingWorkdirOptions = {},
 ): { workdir: string; manifestPath: string } {
-  const repoRoot = resolve(options.repoRoot ?? DEFAULT_REPO_ROOT);
-  const tempParent = resolve(options.tempParent ?? tmpdir());
+  const repoRoot = canonicalDirectory(
+    resolve(options.repoRoot ?? DEFAULT_REPO_ROOT),
+    "source checkout",
+  );
+  const tempParent = canonicalDirectory(
+    resolve(options.tempParent ?? tmpdir()),
+    "temporary output parent",
+  );
   const supabaseRoot = resolve(repoRoot, "supabase");
   const configPath = resolve(supabaseRoot, "config.toml");
   const functionsPath = resolve(supabaseRoot, "functions");
@@ -114,7 +197,6 @@ export function prepareStagingWorkdir(
   if (isWithin(repoRoot, tempParent)) {
     throw new Error("Staging output parent must be outside the source checkout.");
   }
-  assertDirectory(tempParent, "temporary output parent");
   if (
     existsSync(resolve(supabaseRoot, ".temp/project-ref")) ||
     existsSync(resolve(supabaseRoot, ".branches"))
@@ -145,29 +227,64 @@ export function prepareStagingWorkdir(
     throw new Error("Missing or unexpected source migration for the staging selection.");
   }
 
-  const sourceCommit = readSourceCommit(repoRoot, options.sourceCommit);
+  const sourceCommit = readCleanSourceCommit(repoRoot);
   const rewrittenConfig = rewriteConfig(readFileSync(configPath, "utf8"));
+  const functionFiles = listRegularFiles(functionsPath);
   let createdRoot: string | undefined;
   try {
     createdRoot = mkdtempSync(join(tempParent, "snote-g3a-"));
-    const generatedSupabase = resolve(createdRoot, "supabase");
+    const canonicalRoot = realpathSync.native(createdRoot);
+    if (
+      !isWithin(tempParent, canonicalRoot) ||
+      canonicalRoot === tempParent ||
+      isWithin(repoRoot, canonicalRoot)
+    ) {
+      throw new Error("Staging output must resolve outside the source checkout.");
+    }
+    const generatedSupabase = resolve(canonicalRoot, "supabase");
     const generatedMigrations = resolve(generatedSupabase, "migrations");
     mkdirSync(generatedMigrations, { recursive: true });
-    writeFileSync(resolve(generatedSupabase, "config.toml"), rewrittenConfig, "utf8");
-    cpSync(functionsPath, resolve(generatedSupabase, "functions"), { recursive: true });
+    const generatedConfig = resolve(generatedSupabase, "config.toml");
+    writeFileSync(generatedConfig, rewrittenConfig, "utf8");
 
-    const migrations = APPROVED_MIGRATIONS.map((file) => {
-      const sourcePath = resolve(migrationsPath, file);
-      cpSync(sourcePath, resolve(generatedMigrations, file));
-      return { file, sha256: hashFile(sourcePath) };
+    const generatedFunctions = resolve(generatedSupabase, "functions");
+    const functionArtifacts = functionFiles.map((file) => {
+      const sourcePath = resolve(functionsPath, file);
+      const outputPath = resolve(generatedFunctions, file);
+      mkdirSync(dirname(outputPath), { recursive: true });
+      cpSync(sourcePath, outputPath);
+      return {
+        file: `supabase/functions/${file}`,
+        sha256: hashFile(outputPath),
+      };
     });
+
+    const migrationArtifacts = APPROVED_MIGRATIONS.map((file) => {
+      const sourcePath = resolve(migrationsPath, file);
+      const outputPath = resolve(generatedMigrations, file);
+      cpSync(sourcePath, outputPath);
+      return {
+        file: `supabase/migrations/${file}`,
+        sha256: hashFile(outputPath),
+      };
+    });
+    if (readCleanSourceCommit(repoRoot) !== sourceCommit) {
+      throw new Error("Staging Supabase sources changed while being copied.");
+    }
     const manifest = {
       sourceCommit,
-      migrations,
+      files: [
+        {
+          file: "supabase/config.toml",
+          sha256: hashFile(generatedConfig),
+        },
+        ...functionArtifacts,
+        ...migrationArtifacts,
+      ].sort((left, right) => left.file.localeCompare(right.file)),
     };
-    const manifestPath = resolve(createdRoot, "staging-manifest.json");
+    const manifestPath = resolve(canonicalRoot, "staging-manifest.json");
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
-    return { workdir: createdRoot, manifestPath };
+    return { workdir: canonicalRoot, manifestPath };
   } catch (error) {
     if (createdRoot) rmSync(createdRoot, { recursive: true, force: true });
     throw error;
