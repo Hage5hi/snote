@@ -144,6 +144,54 @@ describe("prepareStagingWorkdir", () => {
     });
   });
 
+  it("accepts a clean autocrlf checkout and emits reviewed blob bytes", () => {
+    const fixture = createFixture();
+    execFileSync("git", ["config", "core.autocrlf", "true"], {
+      cwd: fixture.repoRoot,
+      stdio: "ignore",
+    });
+    const configPath = resolve(fixture.repoRoot, "supabase/config.toml");
+    rmSync(configPath);
+    execFileSync("git", ["checkout", "--", "supabase/config.toml"], {
+      cwd: fixture.repoRoot,
+      stdio: "ignore",
+    });
+    expect(readFileSync(configPath, "utf8")).toContain("\r\n");
+    expect(execFileSync("git", ["status", "--porcelain"], {
+      cwd: fixture.repoRoot,
+      encoding: "utf8",
+    })).toBe("");
+
+    const result = prepareStagingWorkdir(fixture);
+    expect(readFileSync(resolve(result.workdir, "supabase/config.toml"), "utf8"))
+      .not.toContain("\r\n");
+  });
+
+  it("rejects a Git replacement ref that changes the reviewed commit", () => {
+    const fixture = createFixture();
+    writeFileSync(
+      resolve(fixture.repoRoot, "supabase/functions/note-session/index.ts"),
+      "replacement-content\n",
+      "utf8",
+    );
+    commitFixture(fixture.repoRoot, "replacement commit");
+    const replacementCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: fixture.repoRoot,
+      encoding: "utf8",
+    }).trim();
+    execFileSync("git", ["replace", fixture.sourceCommit, replacementCommit], {
+      cwd: fixture.repoRoot,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["reset", "--hard", fixture.sourceCommit], {
+      cwd: fixture.repoRoot,
+      stdio: "ignore",
+    });
+
+    expect(() => prepareStagingWorkdir(fixture)).toThrow(/clean|verify/i);
+    expect(readdirSync(fixture.tempParent)).toEqual([]);
+  });
+
   it("fails before returning output when an allowlisted migration is missing", () => {
     const fixture = createFixture();
     rmSync(

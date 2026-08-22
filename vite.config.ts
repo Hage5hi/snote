@@ -1,6 +1,7 @@
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { readFileSync, writeFileSync } from "node:fs";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
@@ -198,9 +199,9 @@ function emitVersionJson(): Plugin {
   };
 }
 
-function assertCapabilityBackendIsolation(mode: string): void {
+function assertCapabilityBackendIsolation(mode: string): URL | null {
   const loadedEnv = loadEnv(mode, process.cwd(), "VITE_");
-  if (loadedEnv.VITE_CAPABILITY_ROUTES_ENABLED !== "true") return;
+  if (loadedEnv.VITE_CAPABILITY_ROUTES_ENABLED !== "true") return null;
 
   const projectId = process.env.VITE_SUPABASE_PROJECT_ID?.trim();
   const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
@@ -229,10 +230,36 @@ function assertCapabilityBackendIsolation(mode: string): void {
       "Capability routes cannot target the production Supabase project.",
     );
   }
+  return url;
+}
+
+function stagingStaticHeadersPlugin(backendUrl: URL): Plugin {
+  const productionHost = `${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`;
+  const websocketUrl = new URL(backendUrl);
+  websocketUrl.protocol = backendUrl.protocol === "https:" ? "wss:" : "ws:";
+
+  return {
+    name: "staging-static-headers",
+    apply: "build",
+    writeBundle(outputOptions) {
+      if (!outputOptions.dir) {
+        throw new Error("Staging build requires a directory output.");
+      }
+      const headersPath = path.resolve(outputOptions.dir, "_headers");
+      const source = readFileSync(headersPath, "utf8");
+      const rewritten = source
+        .replaceAll(`https://${productionHost}`, backendUrl.origin)
+        .replaceAll(`wss://${productionHost}`, websocketUrl.origin);
+      if (rewritten === source || rewritten.includes(PRODUCTION_SUPABASE_PROJECT_REF)) {
+        throw new Error("Unable to isolate the staging static headers.");
+      }
+      writeFileSync(headersPath, rewritten, "utf8");
+    },
+  };
 }
 
 export default defineConfig(({ mode }) => {
-  assertCapabilityBackendIsolation(mode);
+  const capabilityBackend = assertCapabilityBackendIsolation(mode);
   return {
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),
@@ -247,6 +274,7 @@ export default defineConfig(({ mode }) => {
   plugins: [
     react(),
     mode === "development" && componentTagger(),
+    capabilityBackend && stagingStaticHeadersPlugin(capabilityBackend),
     VitePWA({
       // Keep the existing public/manifest.webmanifest as-is.
       manifest: false,

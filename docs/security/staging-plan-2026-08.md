@@ -28,6 +28,12 @@ G3A does not run Docker or the Supabase CLI, link a project, create an account,
 generate a secret, deploy, merge PR #10, or mutate production. Its output is
 readiness code and local test evidence, not staging evidence.
 
+G3A is complete only when route tests prove exact opt-in with Split View still
+legacy-only, generator tests prove the allowlist and reviewed-commit bytes,
+an actual staging build contains the staging CSP instead of the production
+backend, and the existing quality, type, unit, build, audit, extension, and
+browser-discovery gates remain green on the final reviewed SHA.
+
 ## G3B — local polling rehearsal
 
 G3B requires separate owner approval. It is local-only and may start only when
@@ -44,23 +50,42 @@ bun run staging:prepare
 $GeneratedWorkdir = "<path emitted by staging:prepare>"
 $SupabaseCliVersion = (bunx supabase@2.115.0 --workdir $GeneratedWorkdir --version 2>$null).Trim()
 if ($SupabaseCliVersion -ne "2.115.0") { throw "Unexpected Supabase CLI version" }
-$null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir start 2>&1
-if ($LASTEXITCODE -ne 0) { throw "Local Supabase startup failed" }
-bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir db reset --local
-$LocalStatus = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir status -o env 2>$null
-if ($LASTEXITCODE -ne 0) { throw "Unable to read local Supabase status" }
-$LocalEnv = ConvertFrom-StringData ($LocalStatus -join "`n")
-$LocalApiUrl = $LocalEnv.API_URL.Trim('"')
-$LocalPublishableKey = $LocalEnv.ANON_KEY.Trim('"')
-$LocalEnv.Clear()
-$LocalStatus = $null
-if (!$LocalApiUrl -or !$LocalPublishableKey) { throw "Incomplete local Supabase status" }
+$SecretFilePath = Join-Path ([IO.Path]::GetTempPath()) ("snote-g3b-" + [Guid]::NewGuid().ToString("N") + ".env")
+$SecretBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+$CapabilityHmacSecret = [Convert]::ToHexString($SecretBytes).ToLowerInvariant()
+[Array]::Clear($SecretBytes, 0, $SecretBytes.Length)
+try {
+  [IO.File]::WriteAllText(
+    $SecretFilePath,
+    "CAPABILITY_HMAC_SECRET=$CapabilityHmacSecret`n",
+    [Text.UTF8Encoding]::new($false)
+  )
+  $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir start --env-file $SecretFilePath 2>&1
+  if ($LASTEXITCODE -ne 0) { throw "Local Supabase startup failed" }
+  bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir db reset --local
+  $LocalStatus = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir status -o env 2>$null
+  if ($LASTEXITCODE -ne 0) { throw "Unable to read local Supabase status" }
+  $LocalEnv = ConvertFrom-StringData ($LocalStatus -join "`n")
+  $LocalApiUrl = $LocalEnv.API_URL.Trim('"')
+  $LocalPublishableKey = $LocalEnv.ANON_KEY.Trim('"')
+  $LocalEnv.Clear()
+  $LocalStatus = $null
+  if (!$LocalApiUrl -or !$LocalPublishableKey) { throw "Incomplete local Supabase status" }
+} catch {
+  $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop 2>&1
+  throw
+} finally {
+  Remove-Item -LiteralPath $SecretFilePath -Force -ErrorAction SilentlyContinue
+  $CapabilityHmacSecret = $null
+}
 ```
 
-Startup output is discarded because it includes local JWT credentials. Status
-output is captured only in process memory, reduced to the client-safe API URL
-and anon key, then cleared; never print those variables or persist the raw
-status output.
+The 32 random bytes become a local-only HMAC secret for the Edge Runtime. Its
+temporary env file is outside the repository and is removed whether startup
+succeeds or fails. Startup output is discarded because it includes local JWT
+credentials. Status output is captured only in process memory, reduced to the
+client-safe API URL and anon key, then cleared; never print those variables or
+persist the raw status output.
 
 `--workdir` is the Supabase global project-directory flag; `db reset --local`
 recreates the local database and applies only migrations copied into that
@@ -101,8 +126,9 @@ if (Get-ChildItem dist -Recurse -File | Select-String -SimpleMatch $ProductionPr
 ```
 
 The build itself fails closed if capability routes resolve to the production
-project ID or canonical production Supabase hostname. Keep managed Auth disabled
-so the API returns polling sessions. G3B may claim only:
+project ID or canonical production Supabase hostname, and rewrites the static
+CSP fallback to the verified staging backend. Keep managed Auth disabled so the
+API returns polling sessions. G3B may claim only:
 
 - owner/edit/view scope isolation and cross-note denial;
 - idempotent replay, reversed/concurrent saves, and checkpoint conflict codes;
@@ -115,9 +141,10 @@ so the API returns polling sessions. G3B may claim only:
 
 The private Realtime path is out of scope for G3B. On any failure and again
 during normal teardown, return to `false,false`, record the terminal state, stop
-the generated local stack with its explicit workdir, and retain only redacted
-evidence. Delete the disposable workdir after its manifest and results have been
-reviewed.
+the generated local stack with
+`bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop`, and retain
+only redacted evidence. Delete the disposable workdir after its manifest and
+results have been reviewed.
 
 ## G3C — hosted staging
 

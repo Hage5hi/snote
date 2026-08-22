@@ -1,7 +1,9 @@
 /** @vitest-environment node */
 
-import { resolve } from "node:path";
-import { loadConfigFromFile, type ConfigEnv } from "vite";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { build, loadConfigFromFile, type ConfigEnv } from "vite";
 import { describe, expect, it } from "vitest";
 
 const CONFIG_ENV: ConfigEnv = {
@@ -43,6 +45,18 @@ function loadConfig() {
 }
 
 describe("staging build isolation", () => {
+  it("keeps the local capability HMAC secret ephemeral and off output", () => {
+    const plan = readFileSync(
+      resolve(process.cwd(), "docs/security/staging-plan-2026-08.md"),
+      "utf8",
+    );
+
+    expect(plan).toContain("RandomNumberGenerator]::GetBytes(32)");
+    expect(plan).toContain("start --env-file $SecretFilePath");
+    expect(plan).toMatch(/finally\s*\{[\s\S]*Remove-Item -LiteralPath \$SecretFilePath/);
+    expect(plan).not.toMatch(/(?:Write-(?:Host|Output)|echo).*CapabilityHmacSecret/i);
+  });
+
   it("rejects capability routes when Supabase values would fall back to .env", async () => {
     await withEnv({ VITE_CAPABILITY_ROUTES_ENABLED: "true" }, async () => {
       await expect(loadConfig()).rejects.toThrow(/complete staging Supabase environment/i);
@@ -77,6 +91,37 @@ describe("staging build isolation", () => {
       await expect(loadConfig()).rejects.toThrow(/complete staging Supabase environment/i);
     });
   });
+
+  it("writes a staging CSP without the production backend", async () => {
+    const outDir = mkdtempSync(join(tmpdir(), "snote-staging-build-"));
+    try {
+      await withEnv({
+        VITE_CAPABILITY_ROUTES_ENABLED: "true",
+        VITE_SUPABASE_PROJECT_ID: "snote-staging-local",
+        VITE_SUPABASE_PUBLISHABLE_KEY: "local-publishable-placeholder",
+        VITE_SUPABASE_URL: "http://127.0.0.1:54321",
+      }, async () => {
+        await build({
+          configFile: resolve(process.cwd(), "vite.config.ts"),
+          mode: "production",
+          logLevel: "silent",
+          build: { outDir, emptyOutDir: true },
+        });
+      });
+
+      const headers = readFileSync(resolve(outDir, "_headers"), "utf8");
+      expect(headers).not.toContain("onfzjmfjldsbthchssfr");
+      expect(headers).toContain("http://127.0.0.1:54321");
+      expect(headers).toContain("ws://127.0.0.1:54321");
+      const productionRef = Buffer.from("onfzjmfjldsbthchssfr");
+      const leakedArtifact = readdirSync(outDir, { recursive: true, withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .find((entry) => readFileSync(resolve(entry.parentPath, entry.name)).includes(productionRef));
+      expect(leakedArtifact).toBeUndefined();
+    } finally {
+      rmSync(outDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it.each([
     ["project id", "ONFZJMFJLDSBTHCHSSFR", "http://127.0.0.1:54321"],

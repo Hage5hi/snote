@@ -80,7 +80,7 @@ function canonicalDirectory(path: string, label: string): string {
 }
 
 function runGit(repoRoot: string, args: readonly string[]): string {
-  return execFileSync("git", [...args], {
+  return execFileSync("git", ["--no-replace-objects", ...args], {
     cwd: repoRoot,
     encoding: "utf8",
     maxBuffer: 16 * 1024 * 1024,
@@ -91,6 +91,7 @@ function runGit(repoRoot: string, args: readonly string[]): string {
 type SourceSnapshot = Readonly<{
   commit: string;
   paths: readonly string[];
+  blobIds: ReadonlyMap<string, string>;
 }>;
 
 function readCleanSourceSnapshot(repoRoot: string): SourceSnapshot {
@@ -126,12 +127,12 @@ function readCleanSourceSnapshot(repoRoot: string): SourceSnapshot {
   if (!/^[0-9a-f]{40}$/.test(commit) || status !== "") {
     throw new Error("Staging Supabase sources must match a clean Git commit.");
   }
-  const paths = tree.split("\0").filter(Boolean).map((entry) => {
+  const entries = tree.split("\0").filter(Boolean).map((entry) => {
     const separator = entry.indexOf("\t");
-    if (
-      separator < 0 ||
-      !/^100(?:644|755) blob [0-9a-f]{40}$/.test(entry.slice(0, separator))
-    ) {
+    const metadata = separator < 0
+      ? null
+      : /^100(?:644|755) blob ([0-9a-f]{40})$/.exec(entry.slice(0, separator));
+    if (!metadata) {
       throw new Error("Staging Supabase sources must be tracked regular files.");
     }
     const path = entry.slice(separator + 1);
@@ -145,22 +146,27 @@ function readCleanSourceSnapshot(repoRoot: string): SourceSnapshot {
     ) {
       throw new Error("Staging Edge Function environment files are forbidden.");
     }
-    return path;
-  }).sort();
-  if (paths.length === 0) {
+    return { path, blobId: metadata[1] };
+  }).sort((left, right) => left.path.localeCompare(right.path));
+  if (entries.length === 0) {
     throw new Error("Staging Supabase sources must be tracked regular files.");
   }
-  return { commit, paths };
+  return {
+    commit,
+    paths: entries.map(({ path }) => path),
+    blobIds: new Map(entries.map(({ path, blobId }) => [path, blobId])),
+  };
 }
 
 function readGitBlobs(
   repoRoot: string,
   commit: string,
   paths: readonly string[],
+  expectedBlobIds: ReadonlyMap<string, string>,
 ): ReadonlyMap<string, Buffer> {
   let output: Buffer;
   try {
-    output = execFileSync("git", ["cat-file", "--batch"], {
+    output = execFileSync("git", ["--no-replace-objects", "cat-file", "--batch"], {
       cwd: repoRoot,
       input: paths.map((path) => `${commit}:${path}\n`).join(""),
       maxBuffer: 64 * 1024 * 1024,
@@ -179,7 +185,7 @@ function readGitBlobs(
     }
     const header = output.subarray(offset, headerEnd).toString("ascii");
     const match = /^([0-9a-f]{40}) blob ([0-9]+)$/.exec(header);
-    if (!match) {
+    if (!match || match[1] !== expectedBlobIds.get(path)) {
       throw new Error("Invalid Git blob response for staging sources.");
     }
     const size = Number(match[2]);
@@ -195,6 +201,36 @@ function readGitBlobs(
     throw new Error("Invalid Git blob response for staging sources.");
   }
   return blobs;
+}
+
+function readWorkingTreeBlobIds(
+  repoRoot: string,
+  paths: readonly string[],
+): readonly string[] {
+  let output: string;
+  try {
+    output = execFileSync(
+      "git",
+      ["--no-replace-objects", "hash-object", "--stdin-paths"],
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        input: `${paths.join("\n")}\n`,
+        maxBuffer: 16 * 1024 * 1024,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+  } catch {
+    throw new Error("Unable to verify the staging source checkout.");
+  }
+  const blobIds = output.trim().split(/\r?\n/);
+  if (
+    blobIds.length !== paths.length ||
+    blobIds.some((blobId) => !/^[0-9a-f]{40}$/.test(blobId))
+  ) {
+    throw new Error("Unable to verify the staging source checkout.");
+  }
+  return blobIds;
 }
 
 function rewriteConfig(source: string): string {
@@ -246,11 +282,17 @@ export function prepareStagingWorkdir(
   assertDirectory(migrationsPath, "migration directory");
 
   const snapshot = readCleanSourceSnapshot(repoRoot);
-  const sourceBlobs = readGitBlobs(repoRoot, snapshot.commit, snapshot.paths);
-  for (const path of snapshot.paths) {
+  const sourceBlobs = readGitBlobs(
+    repoRoot,
+    snapshot.commit,
+    snapshot.paths,
+    snapshot.blobIds,
+  );
+  const workingTreeBlobIds = readWorkingTreeBlobIds(repoRoot, snapshot.paths);
+  for (const [index, path] of snapshot.paths.entries()) {
     const sourcePath = resolve(repoRoot, path);
     assertRegularFile(sourcePath, "staging source");
-    if (!sourceBlobs.get(path)?.equals(readFileSync(sourcePath))) {
+    if (workingTreeBlobIds[index] !== snapshot.blobIds.get(path)) {
       throw new Error("Staging Supabase sources must match a clean Git commit.");
     }
   }
