@@ -46,16 +46,19 @@ jobs:
           bunx playwright test
           --config=e2e-extension/playwright.config.ts
           --retries=0
+      # Playwright resolves outputDir/reporter folders relative to its
+      # config directory (e2e-extension/), so the evidence lives under
+      # e2e-extension/ — NOT the repo root. Source and the shipped zip are
+      # recoverable from the commit SHA and are not failure evidence.
       - name: Upload failure evidence
         if: failure()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: extension-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            playwright-report/
-            test-results/
-            chrome-extension/
-            public/syrin-note-sidepanel.zip
-            public/syrin-note-sidepanel.zip.manifest.json
-          if-no-files-found: ignore
+            e2e-extension/playwright-report/
+            e2e-extension/test-results/
+          # A path drift must surface as a failed upload, not silently
+          # produce a useless artifact.
+          if-no-files-found: error
           retention-days: 14

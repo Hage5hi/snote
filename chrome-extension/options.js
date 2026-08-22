@@ -24,7 +24,7 @@ export function initOptions() {
   const validate = () => {
     const mode = currentMode();
     const slug = slugInput.value.trim();
-    slugInput.disabled = mode !== "slug";
+    slugInput.disabled = loading || mode !== "slug";
 
     let valid = true;
     let showError = false;
@@ -36,9 +36,39 @@ export function initOptions() {
       }
     }
     slugError.hidden = !showError;
-    saveBtn.disabled = !valid;
+    saveBtn.disabled = loading || !valid;
     return valid;
   };
+
+  // Loading gate: chrome.storage callbacks are asynchronous and can land
+  // arbitrarily late. Until BOTH the synced settings and the local telemetry
+  // preference have loaded, the whole form stays inert, so a late storage
+  // callback can never overwrite values the user already entered (and then
+  // have Save persist the defaults behind a "✓ Saved" status). E2E waits on
+  // data-settings-ready="true" — a deterministic signal, never a sleep.
+  let loading = true;
+  let syncLoaded = false;
+  let telemetryLoaded = !telemetryInput;
+  const radios = Array.from(form.querySelectorAll('input[name="openMode"]'));
+
+  const applyLoadingState = () => {
+    form.setAttribute("data-settings-ready", loading ? "false" : "true");
+    for (const control of [...radios, debugInput, telemetryInput, clearDiagnosticsBtn]) {
+      if (control) control.disabled = loading;
+    }
+  };
+
+  const maybeFinishLoading = () => {
+    if (!loading || !syncLoaded || !telemetryLoaded) return;
+    loading = false;
+    applyLoadingState();
+    validate();
+  };
+
+  applyLoadingState();
+  // validate() also applies the loading-aware disabled states for the slug
+  // input and the save button.
+  validate();
 
   chrome.storage.sync.get(DEFAULTS, (settings) => {
     const mode = settings.openMode || "home";
@@ -47,7 +77,9 @@ export function initOptions() {
     else form.querySelector('input[name="openMode"][value="home"]').checked = true;
     slugInput.value = settings.defaultSlug || "";
     debugInput.checked = !!settings.debug;
+    syncLoaded = true;
     validate();
+    maybeFinishLoading();
   });
 
   // Telemetry opt-in lives in local storage — device-scoped, never synced.
@@ -56,6 +88,8 @@ export function initOptions() {
       telemetryInput.checked = chrome.runtime.lastError
         ? false
         : !!s?.[TELEMETRY_KEY];
+      telemetryLoaded = true;
+      maybeFinishLoading();
     });
   }
 
@@ -79,7 +113,7 @@ export function initOptions() {
 
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (!validate()) return;
+    if (loading || !validate()) return;
     const mode = currentMode();
     const slug = slugInput.value.trim();
     const syncedSettings = {
