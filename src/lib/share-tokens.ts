@@ -34,12 +34,6 @@ export function getShareToken(slug: string): string | null {
   return read()[slug] ?? null;
 }
 
-export function setShareToken(slug: string, token: string) {
-  const store = read();
-  store[slug] = token;
-  write(store);
-}
-
 export function clearShareToken(slug: string) {
   const store = read();
   delete store[slug];
