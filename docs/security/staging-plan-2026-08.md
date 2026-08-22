@@ -43,26 +43,30 @@ It creates no account and contacts no remote project.
 
 ### Workdir and migration procedure
 
-Run from the reviewed checkout:
+Run the generator from the reviewed checkout and record its emitted path:
 
 ```powershell
 bun run staging:prepare
 $GeneratedWorkdir = "<path emitted by staging:prepare>"
+```
+
+Before adding any runtime-only file, verify that the manifest source commit is
+the reviewed checkout HEAD, every manifest hash matches its generated file, all
+22 allowlisted migrations are present, the atomic cutover migration is absent,
+and the generated config contains `snote-staging-local` but not the production
+project ref. Only after those checks pass, continue in the same shell:
+
+```powershell
 $SupabaseCliVersion = (bunx supabase@2.115.0 --workdir $GeneratedWorkdir --version 2>$null).Trim()
 if ($SupabaseCliVersion -ne "2.115.0") { throw "Unexpected Supabase CLI version" }
-$SecretFilePath = Join-Path ([IO.Path]::GetTempPath()) ("snote-g3b-" + [Guid]::NewGuid().ToString("N") + ".env")
-$SecretBytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
-$CapabilityHmacSecret = [Convert]::ToHexString($SecretBytes).ToLowerInvariant()
-[Array]::Clear($SecretBytes, 0, $SecretBytes.Length)
+$SecretFilePath = Join-Path $GeneratedWorkdir "supabase/functions/.env"
+bun run scripts/create-local-function-env.ts $GeneratedWorkdir
+if ($LASTEXITCODE -ne 0) { throw "Unable to create local function environment" }
 try {
-  [IO.File]::WriteAllText(
-    $SecretFilePath,
-    "CAPABILITY_HMAC_SECRET=$CapabilityHmacSecret`n",
-    [Text.UTF8Encoding]::new($false)
-  )
-  $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir start --env-file $SecretFilePath 2>&1
+  $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir start 2>&1
   if ($LASTEXITCODE -ne 0) { throw "Local Supabase startup failed" }
-  bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir db reset --local
+  $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir db reset --local 2>&1
+  if ($LASTEXITCODE -ne 0) { throw "Local database reset failed" }
   $LocalStatus = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir status -o env 2>$null
   if ($LASTEXITCODE -ne 0) { throw "Unable to read local Supabase status" }
   $LocalEnv = ConvertFrom-StringData ($LocalStatus -join "`n")
@@ -75,32 +79,32 @@ try {
   $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop 2>&1
   throw
 } finally {
-  Remove-Item -LiteralPath $SecretFilePath -Force -ErrorAction SilentlyContinue
-  $CapabilityHmacSecret = $null
+  if (Test-Path -LiteralPath $SecretFilePath) {
+    Remove-Item -LiteralPath $SecretFilePath -Force -ErrorAction Stop
+  }
+  if (Test-Path -LiteralPath $SecretFilePath) {
+    throw "Failed to remove local function environment"
+  }
 }
 ```
 
-The 32 random bytes become a local-only HMAC secret for the Edge Runtime. Its
-temporary env file is outside the repository and is removed whether startup
-succeeds or fails. Startup output is discarded because it includes local JWT
-credentials. Status output is captured only in process memory, reduced to the
-client-safe API URL and anon key, then cleared; never print those variables or
-persist the raw status output.
+The Bun helper creates 32 random bytes without returning or printing them,
+refuses to overwrite an existing file, and creates the local Edge Runtime's
+standard `supabase/functions/.env` with owner-only mode on platforms that expose
+POSIX permission bits. On Windows it inherits the current user's OS-temp ACL.
+Supabase loads this standard file during `start`; no unsupported `start
+--env-file` flag is used. The file is removed and its absence verified whether
+startup succeeds or fails. Startup output is discarded because it includes
+local JWT credentials. Status output is captured only in process memory,
+reduced to the client-safe API URL and anon key, then cleared; never print those
+variables or persist the raw status output.
 
 `--workdir` is the Supabase global project-directory flag; `db reset --local`
 recreates the local database and applies only migrations copied into that
 generated directory. Never use the source checkout as the workdir and never use
-an ambient linked project. Before any probe, verify all of the following:
-
-- the manifest source commit equals the reviewed checkout HEAD;
-- every manifest hash matches its generated config, function, or migration
-  file, including all 22 allowlisted migrations;
-- `20260724000000_atomic_capability_cutover.sql` must not appear in the
-  generated workdir or migration ledger;
-- the generated config contains `snote-staging-local`, while
-  `onfzjmfjldsbthchssfr` must be rejected;
-- the database ledger contains exactly the allowlisted timestamps in order;
-- direct protected-table access is denied for both `anon` and `authenticated`.
+an ambient linked project. Before any functional probe, also verify that the
+database ledger contains exactly the allowlisted timestamps in order and that
+direct protected-table access is denied for both `anon` and `authenticated`.
 
 ### Runtime sequence
 
@@ -120,9 +124,13 @@ $env:VITE_SUPABASE_URL = $LocalApiUrl
 $env:VITE_SUPABASE_PUBLISHABLE_KEY = $LocalPublishableKey
 bun run build:check
 $ProductionProjectRef = "onfzjmfjldsbthchssfr"
-if (Get-ChildItem dist -Recurse -File | Select-String -SimpleMatch $ProductionProjectRef -Quiet) {
+$ProductionLeak = Get-ChildItem dist -Recurse -File |
+  Select-String -SimpleMatch $ProductionProjectRef |
+  Select-Object -First 1
+if ($null -ne $ProductionLeak) {
   throw "Production Supabase reference found in the staging artifact"
 }
+$ProductionLeak = $null
 ```
 
 The build itself fails closed if capability routes resolve to the production

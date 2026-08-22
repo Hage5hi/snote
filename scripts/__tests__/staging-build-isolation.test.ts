@@ -45,16 +45,21 @@ function loadConfig() {
 }
 
 describe("staging build isolation", () => {
-  it("keeps the local capability HMAC secret ephemeral and off output", () => {
+  it("documents a supported, fail-closed local HMAC secret flow", () => {
     const plan = readFileSync(
       resolve(process.cwd(), "docs/security/staging-plan-2026-08.md"),
       "utf8",
     );
 
-    expect(plan).toContain("RandomNumberGenerator]::GetBytes(32)");
-    expect(plan).toContain("start --env-file $SecretFilePath");
-    expect(plan).toMatch(/finally\s*\{[\s\S]*Remove-Item -LiteralPath \$SecretFilePath/);
-    expect(plan).not.toMatch(/(?:Write-(?:Host|Output)|echo).*CapabilityHmacSecret/i);
+    expect(plan).toContain('Join-Path $GeneratedWorkdir "supabase/functions/.env"');
+    expect(plan).toContain("bun run scripts/create-local-function-env.ts $GeneratedWorkdir");
+    expect(plan).toMatch(/supabase@2\.115\.0 --workdir \$GeneratedWorkdir start 2>&1/);
+    expect(plan).not.toMatch(/\bstart\b[^\r\n]*--env-file/);
+    expect(plan).not.toContain("RandomNumberGenerator");
+    expect(plan).toMatch(
+      /finally\s*\{[\s\S]*Remove-Item -LiteralPath \$SecretFilePath[\s\S]*Test-Path -LiteralPath \$SecretFilePath[\s\S]*throw/,
+    );
+    expect(plan).not.toMatch(/(?:Write-(?:Host|Output)|echo).*CAPABILITY_HMAC_SECRET/i);
   });
 
   it("rejects capability routes when Supabase values would fall back to .env", async () => {
