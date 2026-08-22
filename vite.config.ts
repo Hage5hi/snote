@@ -211,14 +211,11 @@ function assertCapabilityBackendIsolation(mode: string): void {
     );
   }
 
-  let hostname: string;
-  try {
-    const url = new URL(rawUrl);
-    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
-    hostname = url.hostname.toLowerCase().replace(/\.$/, "");
-  } catch {
+  const url = URL.parse(rawUrl);
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
     throw new Error("Capability routes require a valid staging Supabase URL.");
   }
+  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
   if (
     projectId.toLowerCase() === PRODUCTION_SUPABASE_PROJECT_REF ||
     hostname === `${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`

@@ -69,20 +69,7 @@ function createFixture(): Fixture {
     writeFileSync(resolve(migrationRoot, file), `-- ${file}\n`, "utf8");
   }
   execFileSync("git", ["init"], { cwd: repoRoot, stdio: "ignore" });
-  execFileSync("git", ["add", "."], { cwd: repoRoot, stdio: "ignore" });
-  execFileSync(
-    "git",
-    [
-      "-c",
-      "user.name=Snote test",
-      "-c",
-      "user.email=snote-test@example.invalid",
-      "commit",
-      "-m",
-      "fixture",
-    ],
-    { cwd: repoRoot, stdio: "ignore" },
-  );
+  commitFixture(repoRoot, "fixture");
   const sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: repoRoot,
     encoding: "utf8",
@@ -94,19 +81,19 @@ function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function listFiles(root: string, directory = root): string[] {
-  return readdirSync(directory, { withFileTypes: true })
-    .flatMap((entry) => {
-      const pathname = resolve(directory, entry.name);
-      return entry.isDirectory()
-        ? listFiles(root, pathname)
-        : [relative(root, pathname).replaceAll("\\", "/")];
-    })
+function listFiles(root: string): string[] {
+  return readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      relative(root, resolve(entry.parentPath, entry.name)).replaceAll("\\", "/"),
+    )
     .sort();
 }
 
-function commitFixture(repoRoot: string, message: string): void {
-  execFileSync("git", ["add", "-A"], { cwd: repoRoot, stdio: "ignore" });
+function commitFixture(repoRoot: string, message: string, stage = true): void {
+  if (stage) {
+    execFileSync("git", ["add", "-A"], { cwd: repoRoot, stdio: "ignore" });
+  }
   execFileSync(
     "git",
     [
@@ -248,19 +235,7 @@ describe("prepareStagingWorkdir", () => {
       ],
       { cwd: fixture.repoRoot, stdio: "ignore" },
     );
-    execFileSync(
-      "git",
-      [
-        "-c",
-        "user.name=Snote test",
-        "-c",
-        "user.email=snote-test@example.invalid",
-        "commit",
-        "-m",
-        "track forbidden symlink",
-      ],
-      { cwd: fixture.repoRoot, stdio: "ignore" },
-    );
+    commitFixture(fixture.repoRoot, "track forbidden symlink", false);
     execFileSync(
       "git",
       ["checkout-index", "--force", "--", "supabase/functions/linked-function"],

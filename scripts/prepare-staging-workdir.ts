@@ -7,7 +7,6 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -90,7 +89,12 @@ function runGit(repoRoot: string, args: readonly string[]): string {
   });
 }
 
-function readCleanSourceCommit(repoRoot: string): string {
+type SourceSnapshot = Readonly<{
+  commit: string;
+  paths: readonly string[];
+}>;
+
+function readCleanSourceSnapshot(repoRoot: string): SourceSnapshot {
   let commit: string;
   let status: string;
   let tree: string;
@@ -123,40 +127,28 @@ function readCleanSourceCommit(repoRoot: string): string {
   if (!/^[0-9a-f]{40}$/.test(commit) || status !== "") {
     throw new Error("Staging Supabase sources must match a clean Git commit.");
   }
-  const treeEntries = tree.split("\0").filter(Boolean);
-  if (
-    treeEntries.length === 0 ||
-    treeEntries.some((entry) => !/^100(?:644|755) blob [0-9a-f]{40}\t/.test(entry))
-  ) {
+  const paths = tree.split("\0").filter(Boolean).map((entry) => {
+    const separator = entry.indexOf("\t");
+    if (
+      separator < 0 ||
+      !/^100(?:644|755) blob [0-9a-f]{40}$/.test(entry.slice(0, separator))
+    ) {
+      throw new Error("Staging Supabase sources must be tracked regular files.");
+    }
+    const path = entry.slice(separator + 1);
+    const basename = path.split("/").at(-1)?.toLowerCase();
+    if (
+      path.startsWith("supabase/functions/") &&
+      (basename === ".env" || basename?.startsWith(".env."))
+    ) {
+      throw new Error("Staging Edge Function environment files are forbidden.");
+    }
+    return path;
+  }).sort();
+  if (paths.length === 0) {
     throw new Error("Staging Supabase sources must be tracked regular files.");
   }
-  return commit;
-}
-
-function listRegularFiles(root: string): string[] {
-  const files: string[] = [];
-  const visit = (directory: string): void => {
-    for (const entry of readdirSync(directory, { withFileTypes: true })) {
-      const pathname = resolve(directory, entry.name);
-      const stats = lstatSync(pathname);
-      if (stats.isSymbolicLink()) {
-        throw new Error("Staging Edge Function sources must not contain links.");
-      }
-      if (stats.isDirectory()) visit(pathname);
-      else if (stats.isFile()) {
-        const file = relative(root, pathname).replaceAll("\\", "/");
-        const basename = file.split("/").at(-1)?.toLowerCase();
-        if (basename === ".env" || basename?.startsWith(".env.")) {
-          throw new Error("Staging Edge Function environment files are forbidden.");
-        }
-        files.push(file);
-      } else {
-        throw new Error("Staging Edge Function sources must be regular files.");
-      }
-    }
-  };
-  visit(root);
-  return files.sort();
+  return { commit, paths };
 }
 
 function rewriteConfig(source: string): string {
@@ -207,29 +199,27 @@ export function prepareStagingWorkdir(
   assertDirectory(functionsPath, "Edge Functions directory");
   assertDirectory(migrationsPath, "migration directory");
 
-  const approvedMigrationNames = new Set<string>(APPROVED_MIGRATIONS);
-  if (
-    approvedMigrationNames.size !== APPROVED_MIGRATIONS.length ||
-    approvedMigrationNames.has(ATOMIC_CUTOVER)
-  ) {
-    throw new Error("Invalid staging migration allowlist.");
-  }
-  const expectedSourceMigrations = [...APPROVED_MIGRATIONS, ATOMIC_CUTOVER].sort();
-  const sourceEntries = readdirSync(migrationsPath, { withFileTypes: true })
-    .filter((entry) => entry.name.endsWith(".sql"));
-  if (sourceEntries.some((entry) => !entry.isFile())) {
-    throw new Error("Missing or invalid source migration file.");
-  }
-  const sourceMigrations = sourceEntries
-    .map((entry) => entry.name)
+  const snapshot = readCleanSourceSnapshot(repoRoot);
+  const expectedSourceMigrations = [...APPROVED_MIGRATIONS, ATOMIC_CUTOVER]
+    .map((file) => `supabase/migrations/${file}`)
     .sort();
+  const sourceMigrations = snapshot.paths
+    .filter((path) => path.startsWith("supabase/migrations/"));
   if (JSON.stringify(sourceMigrations) !== JSON.stringify(expectedSourceMigrations)) {
     throw new Error("Missing or unexpected source migration for the staging selection.");
   }
+  if (!snapshot.paths.includes("supabase/config.toml")) {
+    throw new Error("Supabase config must be tracked by Git.");
+  }
 
-  const sourceCommit = readCleanSourceCommit(repoRoot);
+  const functionPrefix = "supabase/functions/";
+  const functionFiles = snapshot.paths
+    .filter((path) => path.startsWith(functionPrefix))
+    .map((path) => path.slice(functionPrefix.length));
+  if (functionFiles.length === 0) {
+    throw new Error("No tracked Edge Function sources were found.");
+  }
   const rewrittenConfig = rewriteConfig(readFileSync(configPath, "utf8"));
-  const functionFiles = listRegularFiles(functionsPath);
   let createdRoot: string | undefined;
   try {
     createdRoot = mkdtempSync(join(tempParent, "snote-g3a-"));
@@ -250,6 +240,7 @@ export function prepareStagingWorkdir(
     const generatedFunctions = resolve(generatedSupabase, "functions");
     const functionArtifacts = functionFiles.map((file) => {
       const sourcePath = resolve(functionsPath, file);
+      assertRegularFile(sourcePath, "Edge Function source");
       const outputPath = resolve(generatedFunctions, file);
       mkdirSync(dirname(outputPath), { recursive: true });
       cpSync(sourcePath, outputPath);
@@ -261,6 +252,7 @@ export function prepareStagingWorkdir(
 
     const migrationArtifacts = APPROVED_MIGRATIONS.map((file) => {
       const sourcePath = resolve(migrationsPath, file);
+      assertRegularFile(sourcePath, "source migration");
       const outputPath = resolve(generatedMigrations, file);
       cpSync(sourcePath, outputPath);
       return {
@@ -268,11 +260,15 @@ export function prepareStagingWorkdir(
         sha256: hashFile(outputPath),
       };
     });
-    if (readCleanSourceCommit(repoRoot) !== sourceCommit) {
+    const finalSnapshot = readCleanSourceSnapshot(repoRoot);
+    if (
+      finalSnapshot.commit !== snapshot.commit ||
+      JSON.stringify(finalSnapshot.paths) !== JSON.stringify(snapshot.paths)
+    ) {
       throw new Error("Staging Supabase sources changed while being copied.");
     }
     const manifest = {
-      sourceCommit,
+      sourceCommit: snapshot.commit,
       files: [
         {
           file: "supabase/config.toml",
