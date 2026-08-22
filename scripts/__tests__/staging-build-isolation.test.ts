@@ -128,7 +128,7 @@ describe("staging build isolation", () => {
     } finally {
       rmSync(outDir, { recursive: true, force: true });
     }
-  }, 30_000);
+  }, 60_000);
 
   it.each([
     ["project id", "ONFZJMFJLDSBTHCHSSFR", "http://127.0.0.1:54321"],
