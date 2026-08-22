@@ -9,8 +9,10 @@ post-cutover probes remain mandatory operational gates.
 
 G2 closed at candidate `f712a99c` by independent review: no open P0–P2
 findings; fresh full 3-browser matrix green on the exact head; PR #10
-remains draft and unmerged. The overall release is still NO-GO for
-merge/deploy until G3 (staging, see
+remains draft and unmerged. The docs-only G3 planning commit is `75c61c46`;
+the final immutable staging identity will be the reviewed implementation head.
+G3A readiness code and local tests are not staging evidence or deployment. The
+overall release is still NO-GO for merge/deploy until G3 (see
 [staging-plan-2026-08.md](security/staging-plan-2026-08.md)) and the later
 operational gates complete. No new P3 hunting is authorized beyond real
 blockers.
