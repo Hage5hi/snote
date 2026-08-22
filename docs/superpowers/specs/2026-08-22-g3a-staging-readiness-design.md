@@ -13,7 +13,8 @@
    migration allowlist. It copies Edge Functions, rewrites the project ID to
    `snote-staging-local`, rejects ambient project linkage and the production
    ref, excludes `20260724000000_atomic_capability_cutover.sql`, and records the
-   source commit plus migration SHA-256 hashes. It never runs the Supabase CLI.
+   source commit plus SHA-256 hashes for every generated config, function, and
+   migration file. It never runs the Supabase CLI.
 3. A separately approved local rehearsal starts at
    `writes=false, privateRealtime=false`, moves at most to `true,false` after
    denial/API probes, and exercises polling. Anonymous Auth, Turnstile, private
