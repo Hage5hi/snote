@@ -5,6 +5,16 @@ claim that staging or production has been migrated. Local tests prove the code
 contracts only; backup, deploy, cache purge, 48-hour soak, atomic cutover, and
 post-cutover probes remain mandatory operational gates.
 
+## Rollout status (2026-08-22)
+
+G2 closed at candidate `f712a99c` by independent review: no open P0–P2
+findings; fresh full 3-browser matrix green on the exact head; PR #10
+remains draft and unmerged. The overall release is still NO-GO for
+merge/deploy until G3 (staging, see
+[staging-plan-2026-08.md](security/staging-plan-2026-08.md)) and the later
+operational gates complete. No new P3 hunting is authorized beyond real
+blockers.
+
 Slugs are locators, never authorization credentials. New notes use
 owner/edit/view capabilities. Legacy notes are exact-match, read-only, and may
 only be copied into a new capability-managed note.
