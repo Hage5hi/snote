@@ -23,6 +23,7 @@ const SharePage = lazy(() => import("./pages/SharePage"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 
 const queryClient = new QueryClient();
+const capabilityRoutesEnabled = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
 // EditorSkeleton mimics the topbar + editor layout so there's no shift when
 // the lazy NotePage chunk lands.
 const EditorFallback = <EditorSkeleton />;
@@ -54,13 +55,13 @@ function SlugDispatcher() {
   if (slug.includes("+")) {
     return (
       <Suspense fallback={EditorFallback}>
-        <SplitView />
+        <SplitView legacyOnly={!capabilityRoutesEnabled} />
       </Suspense>
     );
   }
   return (
     <Suspense fallback={EditorFallback}>
-      <NotePage legacyOnly />
+      <NotePage legacyOnly={!capabilityRoutesEnabled} />
     </Suspense>
   );
 }

@@ -7,6 +7,7 @@ import SplitView from "../SplitView";
 const harness = vi.hoisted(() => ({
   noteProps: new Map<string, {
     embedNarrow?: boolean;
+    legacyOnly?: boolean;
     onPrimaryScroller?: (element: HTMLElement | null) => void;
   }>(),
   observers: [] as Array<{
@@ -19,6 +20,7 @@ vi.mock("../NotePage", () => {
   const MockNotePage = (props: {
     embedSlug: string;
     embedNarrow?: boolean;
+    legacyOnly?: boolean;
     onPrimaryScroller?: (element: HTMLElement | null) => void;
   }) => {
     harness.noteProps.set(props.embedSlug, props);
@@ -59,11 +61,11 @@ function resize(element: Element, width: number) {
   });
 }
 
-function renderSplit(path = "/alpha+beta") {
+function renderSplit(path = "/alpha+beta", legacyOnly?: boolean) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="/:slug" element={<SplitView />} />
+        <Route path="/:slug" element={<SplitView legacyOnly={legacyOnly} />} />
         <Route path="/" element={<div>home</div>} />
       </Routes>
     </MemoryRouter>,
@@ -118,6 +120,17 @@ describe("SplitView responsive behavior", () => {
 
     expect(harness.noteProps.get("alpha")?.embedNarrow).toBe(true);
     expect(harness.noteProps.get("beta")?.embedNarrow).toBe(false);
+  });
+
+  it.each([
+    [undefined, true],
+    [false, false],
+  ] as const)("forwards legacyOnly=%s to every pane", async (legacyOnly, expected) => {
+    renderSplit("/alpha+beta", legacyOnly);
+    await screen.findByText("note:alpha");
+
+    expect(harness.noteProps.get("alpha")?.legacyOnly).toBe(expected);
+    expect(harness.noteProps.get("beta")?.legacyOnly).toBe(expected);
   });
 
   it("exposes sync state to assistive technology", async () => {
