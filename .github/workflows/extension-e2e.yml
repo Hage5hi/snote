@@ -55,10 +55,10 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: extension-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          # A path drift must surface as a failed upload, not silently
+          # produce a useless artifact.
           path: |
             e2e-extension/playwright-report/
             e2e-extension/test-results/
-          # A path drift must surface as a failed upload, not silently
-          # produce a useless artifact.
           if-no-files-found: error
           retention-days: 14

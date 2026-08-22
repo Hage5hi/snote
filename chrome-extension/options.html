@@ -11,8 +11,8 @@
       <h1>Side Panel Settings</h1>
       <p class="subtitle">Choose what opens when you launch the side panel.</p>
 
-      <form id="settings">
-        <fieldset>
+      <form id="settings" data-settings-ready="false" aria-busy="true">
+        <fieldset disabled>
           <legend>When I open the side panel, go to:</legend>
 
           <label class="radio">
@@ -46,7 +46,7 @@
           </label>
         </fieldset>
 
-        <fieldset>
+        <fieldset disabled>
           <legend>Developer</legend>
           <label class="radio">
             <input type="checkbox" id="debug" name="debug" />
@@ -61,8 +61,13 @@
           </button>
         </fieldset>
 
+        <p id="loadError" class="error" role="alert" hidden>
+          Couldn't load your settings from browser storage. Reload the page
+          to retry. Nothing was saved.
+        </p>
+
         <div class="actions">
-          <button type="submit" id="save">Save</button>
+          <button type="submit" id="save" disabled>Save</button>
           <span id="status" class="status" aria-live="polite"></span>
         </div>
       </form>

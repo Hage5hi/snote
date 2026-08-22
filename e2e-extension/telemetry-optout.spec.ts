@@ -89,16 +89,37 @@ test("persistence: opt-out survives options-page reload; diagnostics UI reflects
   extensionId,
   serviceWorker,
 }) => {
-  // Toggle off via the options page (source of truth for user intent).
+  // Seed telemetry=true so the initially-loaded state is distinguishable
+  // from the unchecked default: an unwired checkbox would show unchecked,
+  // a correctly-loaded one shows checked.
+  await setTelemetry(serviceWorker, true);
+
   const opts = await context.newPage();
   await opts.goto(`chrome-extension://${extensionId}/options.html`);
+  await expect(opts.locator("#settings")).toHaveAttribute("data-settings-ready", "true");
   const telemetry = opts.locator("#telemetryEnabled");
+  await expect(telemetry).toBeChecked();
+
+  // Toggle off via the options page (source of truth for user intent).
   await telemetry.uncheck();
   await opts.locator("#save").click();
   await expect(opts.locator("#status")).toHaveText("✓ Saved");
 
-  // Reload — should stay unchecked (persisted across "restart").
+  // Confirm the intent actually reached storage before reloading.
+  const storedFlag = await serviceWorker.evaluate(
+    (key) =>
+      new Promise((resolve) => {
+        // @ts-expect-error chrome global in SW
+        chrome.storage.local.get({ [key]: true }, (s) => resolve(s[key]));
+      }),
+    ENABLED_KEY,
+  );
+  expect(storedFlag).toBe(false);
+
+  // Reload — the persisted opt-out must load back (ready-gated, so an
+  // unloaded page can never fake a pass with its default state).
   await opts.reload();
+  await expect(opts.locator("#settings")).toHaveAttribute("data-settings-ready", "true");
   await expect(opts.locator("#telemetryEnabled")).not.toBeChecked();
   await opts.close();
 
