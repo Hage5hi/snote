@@ -68,22 +68,6 @@ export async function getHardReloadCount(page: Page): Promise<number> {
 }
 
 /**
- * Poll-safe variant of getHardReloadCount for use with expect.poll around
- * the Update click. The click reloads the document; on WebKit an evaluate
- * issued inside the teardown window fails with "Target page, context or
- * browser has been closed" and would abort an otherwise-passing poll.
- * Returning -1 lets the poll keep waiting; a genuinely dead page still
- * ends in a clear poll timeout instead of a teardown error.
- */
-export async function getHardReloadCountForPoll(page: Page): Promise<number> {
-  try {
-    return await getHardReloadCount(page);
-  } catch {
-    return -1;
-  }
-}
-
-/**
  * Wait for the version poller to have fetched at least once and populated
  * window.__SNOTE_PWA_UPDATE_STATE__. Fails fast with an attached diagnostic
  * (state snapshot, console log) if the poller stalls, so CI failures point
