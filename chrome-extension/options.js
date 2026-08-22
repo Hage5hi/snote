@@ -42,24 +42,39 @@ export function initOptions() {
 
   // Loading gate: chrome.storage callbacks are asynchronous and can land
   // arbitrarily late. Until BOTH the synced settings and the local telemetry
-  // preference have loaded, the whole form stays inert, so a late storage
-  // callback can never overwrite values the user already entered (and then
-  // have Save persist the defaults behind a "✓ Saved" status). E2E waits on
-  // data-settings-ready="true" — a deterministic signal, never a sleep.
+  // preference have loaded, the whole form stays inert (disabled fieldsets
+  // ship in the markup itself, so a JS or storage failure before init also
+  // leaves the page fail-closed). A late storage callback can never
+  // overwrite values the user already entered. If either read fails, the
+  // form never becomes ready: a visible, announced error asks for a reload,
+  // and Save cannot overwrite preferences from an unread initial state.
+  // E2E waits on data-settings-ready="true" — deterministic, never a sleep.
   let loading = true;
+  let loadFailed = false;
   let syncLoaded = false;
   let telemetryLoaded = !telemetryInput;
   const radios = Array.from(form.querySelectorAll('input[name="openMode"]'));
+  const fieldsets = Array.from(form.querySelectorAll("fieldset"));
+  const loadError = document.getElementById("loadError");
 
   const applyLoadingState = () => {
     form.setAttribute("data-settings-ready", loading ? "false" : "true");
+    form.setAttribute("aria-busy", loading ? "true" : "false");
+    for (const fieldset of fieldsets) fieldset.disabled = loading;
     for (const control of [...radios, debugInput, telemetryInput, clearDiagnosticsBtn]) {
       if (control) control.disabled = loading;
     }
+    saveBtn.disabled = loading;
+  };
+
+  const failLoading = () => {
+    if (loadFailed) return;
+    loadFailed = true;
+    if (loadError) loadError.hidden = false;
   };
 
   const maybeFinishLoading = () => {
-    if (!loading || !syncLoaded || !telemetryLoaded) return;
+    if (loadFailed || !loading || !syncLoaded || !telemetryLoaded) return;
     loading = false;
     applyLoadingState();
     validate();
@@ -71,13 +86,19 @@ export function initOptions() {
   validate();
 
   chrome.storage.sync.get(DEFAULTS, (settings) => {
+    syncLoaded = true;
+    if (chrome.runtime.lastError) {
+      // Never fall back to defaults as if they were the user's stored
+      // settings — the initial state is unknown, so nothing may be saved.
+      failLoading();
+      return;
+    }
     const mode = settings.openMode || "home";
     const radio = form.querySelector(`input[name="openMode"][value="${mode}"]`);
     if (radio) radio.checked = true;
     else form.querySelector('input[name="openMode"][value="home"]').checked = true;
     slugInput.value = settings.defaultSlug || "";
     debugInput.checked = !!settings.debug;
-    syncLoaded = true;
     validate();
     maybeFinishLoading();
   });
@@ -85,10 +106,13 @@ export function initOptions() {
   // Telemetry opt-in lives in local storage — device-scoped, never synced.
   if (telemetryInput) {
     chrome.storage.local.get({ [TELEMETRY_KEY]: false }, (s) => {
-      telemetryInput.checked = chrome.runtime.lastError
-        ? false
-        : !!s?.[TELEMETRY_KEY];
       telemetryLoaded = true;
+      if (chrome.runtime.lastError) {
+        // An unread preference must not render as a confirmed "off".
+        failLoading();
+        return;
+      }
+      telemetryInput.checked = !!s?.[TELEMETRY_KEY];
       maybeFinishLoading();
     });
   }
