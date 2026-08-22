@@ -44,6 +44,7 @@ let syncGetFails = false;
 let localGetFails = false;
 let stored: Record<string, unknown> = {};
 let syncSetCalls: Record<string, unknown>[] = [];
+let chromeRef: ChromeMock;
 
 function mountWithHeldStorage() {
   heldSyncGet = null;
@@ -77,15 +78,16 @@ function mountWithHeldStorage() {
   };
   document.documentElement.innerHTML = HTML.replace(/<script[\s\S]*?<\/script>/, "");
   (globalThis as unknown as { chrome: ChromeMock }).chrome = chromeMock;
+  chromeRef = chromeMock;
   initOptions();
 }
 
 /** Runs the held sync read; simulates chrome.runtime.lastError when asked. */
 function runSyncRead(settings?: Record<string, unknown>) {
   if (syncGetFails) {
-    chrome.runtime.lastError = { message: "sync read failed" };
+    chromeRef.runtime.lastError = { message: "sync read failed" };
     heldSyncGet!(settings ?? {});
-    chrome.runtime.lastError = null;
+    chromeRef.runtime.lastError = null;
   } else {
     heldSyncGet!(settings ?? {});
   }
@@ -93,9 +95,9 @@ function runSyncRead(settings?: Record<string, unknown>) {
 
 function runLocalRead(value = false) {
   if (localGetFails) {
-    chrome.runtime.lastError = { message: "local read failed" };
+    chromeRef.runtime.lastError = { message: "local read failed" };
     heldLocalGet!({ "syrin:telemetryEnabled": value });
-    chrome.runtime.lastError = null;
+    chromeRef.runtime.lastError = null;
   } else {
     heldLocalGet!({ "syrin:telemetryEnabled": value });
   }
