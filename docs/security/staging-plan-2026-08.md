@@ -31,8 +31,7 @@ readiness code and local test evidence, not staging evidence.
 
 G3B requires separate owner approval. It is local-only and may start only when
 the G3A head is reviewed, the worktree is clean, the Docker engine is healthy,
-disk capacity is sufficient, and the exact `supabase@2.115.0` development
-dependency is present in the frozen lockfile.
+disk capacity is sufficient, and the exact Supabase CLI version is recorded.
 It creates no account and contacts no remote project.
 
 ### Workdir and migration procedure
@@ -41,10 +40,10 @@ Run from the reviewed checkout:
 
 ```powershell
 bun run staging:prepare
-$SupabaseCliVersion = (bunx --no-install supabase --version).Trim()
+$SupabaseCliVersion = (bunx supabase@2.115.0 --version).Trim()
 if ($SupabaseCliVersion -ne "2.115.0") { throw "Unexpected Supabase CLI version" }
-bunx --no-install supabase --workdir "<generated-workdir>" start
-bunx --no-install supabase --workdir "<generated-workdir>" db reset --local
+bunx --no-install supabase@2.115.0 --workdir "<generated-workdir>" start
+bunx --no-install supabase@2.115.0 --workdir "<generated-workdir>" db reset --local
 ```
 
 `--workdir` is the Supabase global project-directory flag; `db reset --local`
