@@ -1,4 +1,4 @@
-import { test, expect } from "./fixtures/extension";
+import { test, expect, APP_ORIGIN } from "./fixtures/extension";
 import type { Page, Worker } from "@playwright/test";
 
 // Drives the same chrome.sidePanel.open({windowId}) API as Alt+S, using a
@@ -55,6 +55,17 @@ async function openPanelAndGet(
   // Playwright Page. Open the same extension document in a controlled page
   // for the URL, focus and keyboard assertions after proving open() worked.
   const panel = await context.newPage();
+  // Serve a silent stand-in for the app so the panel never receives a real
+  // `syrin:ready` handshake: the fallback transition below must depend only
+  // on the synthetic version-mismatch handshake, not on whether (or when)
+  // the live site finishes loading. The iframe `src` attribute keeps the
+  // real URL, so the mode-specific URL assertions are unaffected.
+  await panel.route(`${APP_ORIGIN}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: "<!doctype html><title>Silent test app</title>",
+    }),
+  );
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`, {
     waitUntil: "domcontentloaded",
   });
@@ -83,22 +94,28 @@ async function assertPanelFocusable(panel: Page) {
 }
 
 async function assertKeyboardNavReachesFallback(panel: Page) {
-  // Force the fallback button to be reachable by un-hiding it for the
-  // assertion (the timeout-based flow normally takes 8s). We're verifying
-  // that when the fallback IS visible, keyboard nav lands on it.
-  // The embedded site (whose Home page autofocuses its input) can pull
-  // focus into the cross-origin iframe mid-loop, sending the remaining Tab
-  // presses into the remote page instead of the panel. Remove the iframe
-  // from the panel's tab order for the duration of this assertion so the
-  // keyboard path being tested is the panel's own.
+  // Drive the product's real fallback transition: a `syrin:ready`
+  // handshake with an unsupported protocol version takes sidepanel.js
+  // through showFallback(), which hides the iframe and reveals the
+  // fallback panel. No DOM is patched from the test.
   await panel.evaluate(() => {
-    const fb = document.getElementById("fallback");
-    if (fb) (fb as HTMLElement).hidden = false;
-    const iframe = document.getElementById("app");
-    if (iframe) iframe.setAttribute("tabindex", "-1");
+    const ev = new MessageEvent("message", {
+      data: { type: "syrin:ready", protocol: 999, buildId: "b-e2e", appVersion: "e2e" },
+      source: (document.getElementById("app") as HTMLIFrameElement).contentWindow,
+    });
+    Object.defineProperty(ev, "origin", { value: "https://note.syrin.online" });
+    window.dispatchEvent(ev);
   });
+
+  // The transition must do the product's own hiding: fallback visible,
+  // iframe out of the way (and therefore unable to hold or steal focus).
+  await expect(panel.locator("#fallback")).toBeVisible();
+  await expect(panel.locator("#fallback-reason")).toBeVisible();
+  await expect(panel.locator("iframe#app")).toBeHidden();
+
+  // With the iframe hidden, Tab from the body must reach the fallback's
+  // primary action within a few hops.
   await panel.locator("body").focus();
-  // Tab forward until activeElement.id === "open-tab", up to 6 hops.
   let landedOnButton = false;
   for (let i = 0; i < 6; i++) {
     await panel.keyboard.press("Tab");
