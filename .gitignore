@@ -50,6 +50,7 @@ bun.lockb
 /reports/
 /coverage/
 /.tmp/
+/.worktrees/
 *.pyc
 __pycache__/
 
