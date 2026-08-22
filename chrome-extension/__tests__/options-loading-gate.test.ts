@@ -44,6 +44,7 @@ let syncGetFails = false;
 let localGetFails = false;
 let stored: Record<string, unknown> = {};
 let syncSetCalls: Record<string, unknown>[] = [];
+let localSetCalls: Record<string, unknown>[] = [];
 let chromeRef: ChromeMock;
 
 function mountWithHeldStorage() {
@@ -53,6 +54,7 @@ function mountWithHeldStorage() {
   localGetFails = false;
   stored = {};
   syncSetCalls = [];
+  localSetCalls = [];
   const chromeMock: ChromeMock = {
     storage: {
       sync: {
@@ -69,7 +71,10 @@ function mountWithHeldStorage() {
         get: (_d, cb) => {
           heldLocalGet = cb;
         },
-        set: (_data, cb) => cb?.(),
+        set: (data, cb) => {
+          localSetCalls.push(data);
+          cb?.();
+        },
         remove: (_key, cb) => cb?.(),
       },
       onChanged: { addListener: () => {} },
@@ -171,6 +176,8 @@ describe("options.js — loading gate (success orders)", () => {
     runSyncRead({ openMode: "slug", defaultSlug: "journal", debug: true });
 
     expect(readyState()).toBe("true");
+    expect(form().getAttribute("aria-busy")).toBe("false");
+    expect((document.getElementById("loadError") as HTMLElement).hidden).toBe(true);
     expect(allEnabled()).toBe(true);
     const slug = document.getElementById("defaultSlug") as HTMLInputElement;
     expect(slug.value).toBe("journal");
@@ -189,6 +196,8 @@ describe("options.js — loading gate (success orders)", () => {
     runLocalRead(false);
 
     expect(readyState()).toBe("true");
+    expect(form().getAttribute("aria-busy")).toBe("false");
+    expect((document.getElementById("loadError") as HTMLElement).hidden).toBe(true);
     expect(allEnabled()).toBe(true);
   });
 });
@@ -206,6 +215,40 @@ describe("options.js — loading gate (fail-closed reads)", () => {
     const error = document.getElementById("loadError");
     expect(error, "load error region must exist").not.toBeNull();
     expect((error as HTMLElement).hidden).toBe(false);
+  });
+
+  it("ends aria-busy on the sync-read terminal failure so the alert is announced", () => {
+    mountWithHeldStorage();
+    syncGetFails = true;
+
+    runSyncRead();
+    runLocalRead(true);
+
+    // aria-busy must end before the alert is visible: assistive tech may
+    // defer changes inside a busy region forever if busy never clears.
+    expect(form().getAttribute("aria-busy")).toBe("false");
+    expect(readyState()).toBe("false");
+    expect((document.getElementById("loadError") as HTMLElement).hidden).toBe(false);
+    expect(allDisabled()).toBe(true);
+    submit();
+    expect(syncSetCalls).toEqual([]);
+    expect(localSetCalls).toEqual([]);
+  });
+
+  it("ends aria-busy on the local-read terminal failure so the alert is announced", () => {
+    mountWithHeldStorage();
+    localGetFails = true;
+
+    runSyncRead({ openMode: "slug", defaultSlug: "journal", debug: true });
+    runLocalRead();
+
+    expect(form().getAttribute("aria-busy")).toBe("false");
+    expect(readyState()).toBe("false");
+    expect((document.getElementById("loadError") as HTMLElement).hidden).toBe(false);
+    expect(allDisabled()).toBe(true);
+    submit();
+    expect(syncSetCalls).toEqual([]);
+    expect(localSetCalls).toEqual([]);
   });
 
   it("never becomes ready when the telemetry read fails", () => {
@@ -229,6 +272,7 @@ describe("options.js — loading gate (fail-closed reads)", () => {
     submit();
 
     expect(syncSetCalls).toEqual([]);
+    expect(localSetCalls).toEqual([]);
   });
 
   it("keeps the form inert when the markup loads without JS having run", () => {

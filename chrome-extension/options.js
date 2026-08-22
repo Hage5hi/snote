@@ -70,6 +70,11 @@ export function initOptions() {
   const failLoading = () => {
     if (loadFailed) return;
     loadFailed = true;
+    // End aria-busy BEFORE the alert becomes visible: assistive technology
+    // may defer changes inside a busy region, so a form that stays busy
+    // forever would swallow the error announcement (WAI-ARIA 1.2). The
+    // form itself remains inert and not ready — only the busy state ends.
+    form.setAttribute("aria-busy", "false");
     if (loadError) loadError.hidden = false;
   };
 
