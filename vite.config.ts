@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import react from "@vitejs/plugin-react-swc";
@@ -26,6 +26,7 @@ import {
 // onNeedRefresh yet (or the user has SW disabled entirely).
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 const SANITIZED_BUILD_ID = /^[A-Za-z0-9._:-]{1,128}$/;
+const PRODUCTION_SUPABASE_PROJECT_REF = "onfzjmfjldsbthchssfr";
 const REQUIRE_RELEASE_SHA = process.env.SNOTE_REQUIRE_RELEASE_SHA;
 const RELEASE_SHA = process.env.SNOTE_RELEASE_SHA?.trim();
 const RELEASE_BUILD_ID = process.env.SNOTE_BUILD_ID?.trim();
@@ -197,7 +198,40 @@ function emitVersionJson(): Plugin {
   };
 }
 
-export default defineConfig(({ mode }) => ({
+function assertCapabilityBackendIsolation(mode: string): void {
+  const loadedEnv = loadEnv(mode, process.cwd(), "VITE_");
+  if (loadedEnv.VITE_CAPABILITY_ROUTES_ENABLED !== "true") return;
+
+  const projectId = loadedEnv.VITE_SUPABASE_PROJECT_ID?.trim();
+  const publishableKey = loadedEnv.VITE_SUPABASE_PUBLISHABLE_KEY?.trim();
+  const rawUrl = loadedEnv.VITE_SUPABASE_URL?.trim();
+  if (!projectId || !publishableKey || !rawUrl) {
+    throw new Error(
+      "Capability routes require complete staging Supabase environment values.",
+    );
+  }
+
+  let hostname: string;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+    hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    throw new Error("Capability routes require a valid staging Supabase URL.");
+  }
+  if (
+    projectId.toLowerCase() === PRODUCTION_SUPABASE_PROJECT_REF ||
+    hostname === `${PRODUCTION_SUPABASE_PROJECT_REF}.supabase.co`
+  ) {
+    throw new Error(
+      "Capability routes cannot target the production Supabase project.",
+    );
+  }
+}
+
+export default defineConfig(({ mode }) => {
+  assertCapabilityBackendIsolation(mode);
+  return {
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
@@ -418,4 +452,5 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-}));
+  };
+});
