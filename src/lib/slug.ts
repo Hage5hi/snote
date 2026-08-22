@@ -6,7 +6,7 @@
 // from notes), and `note` is claimed inside SlugDispatcher. Reserved-name
 // rejection is therefore case-insensitive for all three names: a note whose
 // slug is any case variant could be unreachable or dispatch to the wrong
-// page. The contract test in src/lib/__tests__/slug-contract.test.ts keeps
+// page. The contract test in src/lib/__tests__/slug-contract.test.tsx keeps
 // this list in sync with the actual route table and proves the case
 // behavior with the real router.
 

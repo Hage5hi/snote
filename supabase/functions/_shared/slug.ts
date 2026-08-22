@@ -1,5 +1,5 @@
 // Edge-side mirror of src/lib/slug.ts. Keep both files in sync; the
-// contract test in src/lib/__tests__/slug-contract.test.ts asserts the
+// contract test in src/lib/__tests__/slug-contract.test.tsx asserts the
 // reserved list matches the router and that both Edge validators use this
 // module.
 

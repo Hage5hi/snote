@@ -1,6 +1,6 @@
 # Snote
 
-Private realtime Markdown notes that work offline.
+Realtime Markdown notes that work offline.
 
 Production: [note.syrin.online](https://note.syrin.online/)
 

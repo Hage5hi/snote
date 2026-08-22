@@ -42,11 +42,13 @@ Verify:
 - crawler/private routes get generic `no-store`/`noindex` bodies that never
   contain slug, token, or note content;
 - `/~api/analytics` and `/~flock.js` are denied, not proxied;
-- origin/routes fail closed: `wrangler.toml`/`wrangler.staging.toml` are
-  intentional no-go scaffolds — no production route is declared and the
-  origin is `.invalid`, so a deploy as-is would attach nothing and serve
-  nothing; configuring a real route/origin is a separate owner-approved
-  production step;
+- origin/routes fail closed: both Wrangler configs are intentional no-go
+  scaffolds with a `.invalid` origin. Production (`wrangler.toml`) declares
+  no routes and disables workers.dev, so deploying it attaches nothing.
+  Staging (`wrangler.staging.toml`) keeps workers.dev enabled for the
+  reserved staging authority and would serve fail-closed responses there;
+  replacing the origin with a real one, or attaching any production route,
+  is a separate owner-approved step;
 - logs/redirects carry no raw private identifiers (incl. query stripping on
   redirects).
 
@@ -99,7 +101,7 @@ routes).
   drifted to 3.3.18 after the handoff).
 - Reserved-slug contract — `src/lib/slug.ts` + `supabase/functions/_shared/slug.ts`
   reject `note`/`privacy`/`s` at every creation/navigation site; pinned by
-  `src/lib/__tests__/slug-contract.test.ts` against the actual route table.
+  `src/lib/__tests__/slug-contract.test.tsx` against the actual route table.
 - ShareDialog no longer offers legacy share-link creation; `share-create`
   is a 410 tombstone and `setShareToken` is removed with it.
 - README security model is labeled target architecture; current production
