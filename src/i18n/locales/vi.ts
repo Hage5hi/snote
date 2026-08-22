@@ -218,7 +218,7 @@ const vi: Dictionary = {
     "share.aria": "Share QR",
     "share.tooltip": "Share QR code",
     "share.dialog_title": "Share note",
-    "share.dialog_desc": "Qu\u00e9t QR b\u1eb1ng \u0111i\u1ec7n tho\u1ea1i \u0111\u1ec3 m\u1edf note nhanh, ho\u1eb7c t\u1ea1o link ch\u1ec9 \u0111\u1ecdc b\u00ean d\u01b0\u1edbi.",
+    "share.dialog_desc": "Qu\u00e9t QR b\u1eb1ng \u0111i\u1ec7n tho\u1ea1i \u0111\u1ec3 m\u1edf note nhanh.",
     "share.warn_key_in_url": "URL c\u00f3 ch\u1ee9a key gi\u1ea3i m\u00e3 (#) \u2014 ch\u1ec9 chia s\u1ebb v\u1edbi ng\u01b0\u1eddi b\u1ea1n tin t\u01b0\u1edfng.",
     "share.no_key": "URL kh\u00f4ng ch\u1ee9a key \u2014 ng\u01b0\u1eddi nh\u1eadn c\u1ea7n bi\u1ebft key \u0111\u1ec3 m\u1edf.",
     "share.readonly_heading": "Link ch\u1ec9 \u0111\u1ecdc",
