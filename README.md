@@ -1,6 +1,6 @@
 # Snote
 
-Private, capability-secured realtime Markdown notes that work offline.
+Private realtime Markdown notes that work offline.
 
 Production: [note.syrin.online](https://note.syrin.online/)
 
@@ -18,6 +18,14 @@ Production: [note.syrin.online](https://note.syrin.online/)
   French, Spanish, German and Portuguese.
 
 ## Security model
+
+> **Current runtime state (to be updated only with deployment evidence):**
+> ordinary notes are served through the legacy `legacyOnly` route — direct
+> `public.notes` table reads/upserts with public slug Realtime — as the
+> production-access hotfix. The capability model below is the staged target
+> architecture in this repository. It becomes production behavior only after
+> the Edge APIs, migrations, Worker containment, staging rehearsal, 48-hour
+> soak, and the approved atomic cutover described in the runbooks.
 
 A slug locates a note; it never grants access. New notes use 32-byte random
 capabilities:
