@@ -21,8 +21,13 @@ bunx tsc --noEmit -p tsconfig.tools.json
 bun run typecheck:edge
 bun run test:coverage
 bun run build:check
+SNOTE_RELEASE_SHA=$(git rev-parse HEAD) bun run build:release
 bash scripts/audit-extension.sh
 ```
+
+The release build requires a clean Git worktree and the exact commit SHA; it
+emits `deployedSha` plus the content-addressed Worker identity into
+`dist/version.json`.
 
 CI additionally runs the PR Chromium critical browser suite (`e2e-pr`) and
 the extension E2E. No deploy step exists; nothing here touches production.
@@ -38,8 +43,10 @@ Verify:
   contain slug, token, or note content;
 - `/~api/analytics` and `/~flock.js` are denied, not proxied;
 - origin/routes fail closed: `wrangler.toml`/`wrangler.staging.toml` are
-  intentional no-go scaffolds (empty routes, `.invalid` origin) — deploying
-  them as-is must be impossible;
+  intentional no-go scaffolds — no production route is declared and the
+  origin is `.invalid`, so a deploy as-is would attach nothing and serve
+  nothing; configuring a real route/origin is a separate owner-approved
+  production step;
 - logs/redirects carry no raw private identifiers (incl. query stripping on
   redirects).
 
@@ -106,4 +113,7 @@ routes).
   approved — see `docs/security/release-manifests/2026-07-capability-rollout.md`.
 - The atomic cutover migration must never be applied as an ordinary
   migration.
-- Aggregate coverage has no CI threshold yet (audit P2, tracked separately).
+- Aggregate coverage has no CI threshold and the measured file set varies
+  between local and CI runs (≈56–62% on identical heads); treat the
+  percentage as non-comparable until thresholds land (audit P2, tracked
+  separately).

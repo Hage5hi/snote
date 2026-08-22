@@ -9,9 +9,11 @@ Production: [note.syrin.online](https://note.syrin.online/)
 - CodeMirror 6 editing with Markdown, Vim and typewriter modes.
 - Sanitized preview with KaTeX, Mermaid and code highlighting.
 - Responsive editor, preview and split layouts.
-- Yjs CRDT updates with an acknowledged IndexedDB outbox.
+- Yjs CRDT sync (whole-document snapshots on the current legacy route; the
+  acknowledged IndexedDB outbox ships with the capability cutover).
 - Optional client-side encryption with an unlock-before-mount boundary.
-- Revocable owner, edit and view capabilities.
+- Revocable owner, edit and view capabilities (staged for the capability
+  cutover — not the current legacy route).
 - PWA offline support and safe service-worker updates.
 - Chrome side-panel extension.
 - Nine lazy-loaded locales: English, Vietnamese, Chinese, Japanese, Korean,
