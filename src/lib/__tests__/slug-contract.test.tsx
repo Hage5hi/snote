@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { render } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 import {
   RESERVED_SLUGS,
@@ -36,15 +38,55 @@ const sharedValidatorSites = [
   "supabase/functions/note-manage/index.ts",
 ];
 
+function RouteProbe({ label }: { label: string }) {
+  return <div data-route-probe={label} />;
+}
+
 describe("slug contract", () => {
   it("reserves exactly the router-reserved single-segment names", () => {
     expect([...routerReserved].sort()).toEqual([...RESERVED_SLUGS].sort());
   });
 
-  it("rejects every reserved slug while accepting ordinary slugs", () => {
+  it("dispatches every case variant of a static reserved route away from notes, using the real router", () => {
+    // react-router matches static routes case-insensitively by default:
+    // /PRIVACY and /S must never fall through to /:slug. The route table
+    // here mirrors the static single-segment routes extracted from
+    // App.tsx, so adding a reserved route without updating RESERVED_SLUGS
+    // fails the sync test above, and loosening router case behavior fails
+    // here.
+    for (const reserved of staticRouteSlugs) {
+      for (const variant of [
+        reserved,
+        reserved.toUpperCase(),
+        reserved[0].toUpperCase() + reserved.slice(1),
+      ]) {
+        const { container, unmount } = render(
+          <MemoryRouter initialEntries={[`/${variant}`]}>
+            <Routes>
+              <Route path={`/${reserved}`} element={<RouteProbe label={reserved} />} />
+              <Route path="/:slug" element={<RouteProbe label="__slug__" />} />
+            </Routes>
+          </MemoryRouter>,
+        );
+        expect(
+          container.querySelector("[data-route-probe]")?.getAttribute("data-route-probe"),
+          `/${variant}`,
+        ).toBe(reserved);
+        unmount();
+      }
+    }
+  });
+
+  it("rejects every case variant of every reserved slug", () => {
     for (const reserved of RESERVED_SLUGS) {
-      expect(isReservedSlug(reserved)).toBe(true);
-      expect(isUsableSlug(reserved)).toBe(false);
+      for (const variant of [
+        reserved,
+        reserved.toUpperCase(),
+        reserved[0].toUpperCase() + reserved.slice(1),
+      ]) {
+        expect(isReservedSlug(variant), variant).toBe(true);
+        expect(isUsableSlug(variant), variant).toBe(false);
+      }
     }
 
     const usable = [
@@ -56,15 +98,6 @@ describe("slug contract", () => {
       "a".repeat(64),
     ];
     for (const slug of usable) {
-      expect(isUsableSlug(slug)).toBe(true);
-    }
-  });
-
-  it("keeps reserved-name rejection case-sensitive like the router", () => {
-    // React Router matches "/note" case-sensitively, so "Note" still reaches
-    // NotePage. If the router ever becomes case-insensitive, these entries
-    // must move into RESERVED_SLUGS.
-    for (const slug of ["Note", "PRIVACY", "S"]) {
       expect(isUsableSlug(slug)).toBe(true);
     }
   });
@@ -95,19 +128,21 @@ describe("slug contract", () => {
     }
   });
 
-  it("keeps the Edge reserved list identical to the web reserved list", () => {
+  it("keeps the Edge reserved list identical and case-insensitive like the web list", () => {
     const edgeSource = readFileSync(
       "supabase/functions/_shared/slug.ts",
       "utf8",
     );
-    const match = edgeSource.match(
+    const listMatch = edgeSource.match(
       /RESERVED_SLUGS = \[([^\]]*)\] as const/,
     );
-    expect(match).not.toBeNull();
-    const edgeReserved = match![1]
+    expect(listMatch).not.toBeNull();
+    const edgeReserved = listMatch![1]
       .split(",")
       .map((entry) => entry.trim().replace(/^"|"$/g, ""))
       .filter(Boolean);
     expect(edgeReserved.sort()).toEqual([...RESERVED_SLUGS].sort());
+    // The Edge check must lowercase before comparing, same as the web module.
+    expect(edgeSource).toMatch(/isReservedSlug[\s\S]*?toLowerCase/);
   });
 });

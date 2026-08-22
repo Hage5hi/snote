@@ -9,9 +9,10 @@ export const RESERVED_SLUGS = ["note", "privacy", "s"] as const;
 
 export type ReservedSlug = (typeof RESERVED_SLUGS)[number];
 
-/** True when `value` collides with a router-reserved single-segment path. */
-export function isReservedSlug(value: string): value is ReservedSlug {
-  return (RESERVED_SLUGS as readonly string[]).includes(value);
+/** True when `value` collides (case-insensitively) with a router-reserved path. */
+export function isReservedSlug(value: string): boolean {
+  const lowered = value.toLowerCase();
+  return (RESERVED_SLUGS as readonly string[]).some((slug) => slug === lowered);
 }
 
 /** A slug is usable when it matches the charset/length rule and is not reserved. */
