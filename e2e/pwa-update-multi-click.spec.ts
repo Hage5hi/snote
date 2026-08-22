@@ -1,7 +1,7 @@
 // E2E: clicking Update multiple times only triggers one reload path and the
 // note URL never gains a ?v= cache-buster, even under rapid repeated clicks.
 import { expect, test } from "@playwright/test";
-import { getHardReloadCount, installPwaUpdateMock, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
+import { getHardReloadCountForPoll, installPwaUpdateMock, waitForPwaUpdaterReady } from "./helpers/pwa-update-mock";
 
 test("multiple Update clicks apply the new build without adding ?v to the URL", async ({ page }, testInfo) => {
   // Record every URL the page navigates to so a `?v=` regression is easy to
@@ -52,11 +52,19 @@ test("multiple Update clicks apply the new build without adding ?v to the URL", 
   const update = page.getByRole("button", { name: /^Update$/ });
   await update.click();
   // Rapid follow-up clicks should be ignored (button becomes "Update…").
+  // Bound each click's wait: once the update applies, the toast (and its
+  // button) is dismissed, and an unbounded locator wait for the vanishing
+  // button would otherwise eat the whole test budget — the exact WebKit
+  // flake where the spec stalled in the follow-up loop and never reached
+  // the reload-count poll.
   for (let i = 0; i < 4; i++) {
-    await page.getByRole("button", { name: /^Update(…)?$/ }).click({ force: true }).catch(() => {});
+    await page
+      .getByRole("button", { name: /^Update(…)?$/ })
+      .click({ force: true, timeout: 2_000 })
+      .catch(() => {});
   }
 
-  await expect.poll(() => getHardReloadCount(page)).toBe(1);
+  await expect.poll(() => getHardReloadCountForPoll(page)).toBe(1);
   await expect(toast).toBeHidden({ timeout: 5_000 });
 
   const swAfter = await snapshotSwRegs();
