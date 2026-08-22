@@ -28,10 +28,24 @@ const nextStep = workflow.indexOf("\n      - ", stepStart + 1);
 const stepEnd = nextStep === -1 ? workflow.length : nextStep;
 const step = stepStart === -1 ? "" : workflow.slice(stepStart, stepEnd);
 
+const uploadStepCount =
+  (workflow.match(/^\s*- name: Upload failure evidence$/gm) ?? []).length;
+
+const runStepStart = workflow.indexOf("- name: Run unpacked extension suite");
+const runStepNext = workflow.indexOf("\n      - ", runStepStart + 1);
+const runStep =
+  runStepStart === -1
+    ? ""
+    : workflow.slice(
+        runStepStart,
+        runStepNext === -1 ? workflow.length : runStepNext,
+      );
+
 const pathBlockMatch = step.match(/path: \|\n([\s\S]*?)\n\s{10}if-no-files-found:/);
 
 describe("extension-e2e failure evidence artifact paths", () => {
   it("has exactly one Upload failure evidence step with a parseable path block", () => {
+    expect(uploadStepCount).toBe(1);
     expect(stepStart).toBeGreaterThan(-1);
     expect(stepEnd).toBeGreaterThan(stepStart);
     expect(pathBlockMatch).not.toBeNull();
@@ -63,9 +77,10 @@ describe("extension-e2e failure evidence artifact paths", () => {
     expect(step).toMatch(/if-no-files-found:\s*error/);
   });
 
-  it("actually runs the suite with the e2e-extension Playwright config", () => {
-    expect(workflow).toContain(
-      "--config=e2e-extension/playwright.config.ts",
-    );
+  it("runs the suite with the e2e-extension Playwright config in the run step itself", () => {
+    expect(runStep, "Run unpacked extension suite step must exist").not.toBe("");
+    expect(runStep).toContain("--config=e2e-extension/playwright.config.ts");
+    // The upload step must not grow a stray config flag of its own.
+    expect(step).not.toContain("--config=");
   });
 });
