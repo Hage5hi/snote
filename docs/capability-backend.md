@@ -186,7 +186,7 @@ limit. Also verify `storage_limit_bytes`, `update_limit_count`, and
 `capability_quarantine_oversized()` after changing a limit. It marks exceptions
 `read_only_quarantine`; it never truncates or deletes data.
 
-Create admission hashes the single gateway-overwritten `x-forwarded-for`
+Create admission hashes the single gateway-overwritten `sb-forwarded-for`
 address with a separate HMAC domain; forwarded chains and missing/unverified
 addresses fail closed. Staging must prove the gateway overwrites client input
 before enabling note creation. The database stores only the resulting

@@ -7,9 +7,10 @@ without the explicit checkpoint below.
 
 1. Create and verify a database backup/PITR restore point.
 2. In staging, prove that the Supabase gateway overwrites client-supplied
-   `X-Forwarded-For` and supplies exactly one IP literal. If that cannot be
-   demonstrated, leave the admin functions disabled; they intentionally return
-   `503` rather than trust an ambiguous header.
+   `Sb-Forwarded-For` and supplies exactly one IP literal. Do not use the
+   generic `X-Forwarded-For` proxy chain as an admission identity. If that
+   cannot be demonstrated, leave the admin functions disabled; they
+   intentionally return `503` rather than trust an ambiguous header.
 3. Provision `ADMIN_RATE_LIMIT_HMAC_SECRET` with at least 32 random bytes and
    set `ADMIN_SESSION_TTL_MINUTES` between 5 and 30 (default: 15). Do not reuse
    the admin passphrase as the HMAC secret.

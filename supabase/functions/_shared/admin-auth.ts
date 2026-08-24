@@ -70,10 +70,10 @@ function isIpLiteral(value: string): boolean {
 export async function getAdminSubjectHash(
   req: Request,
 ): Promise<{ ok: true; subjectHash: string } | { ok: false }> {
-  // Supabase's gateway is the sole trusted writer for this header. Reject
-  // forwarded chains: staging must prove the gateway overwrites client input
-  // before these functions are enabled.
-  const rawIp = req.headers.get("x-forwarded-for")?.trim() ?? "";
+  // Hosted staging proves Supabase owns and overwrites this single-address
+  // header. The generic X-Forwarded-For value is a proxy chain and is not an
+  // admission identity.
+  const rawIp = req.headers.get("sb-forwarded-for")?.trim() ?? "";
   if (!rawIp || rawIp.includes(",") || rawIp.length > 45 || !isIpLiteral(rawIp)) {
     return { ok: false };
   }
@@ -182,4 +182,3 @@ export async function verifyAdminPass(
 export async function hashAdminPass(input: string): Promise<string> {
   return await bcrypt.hash(input, 12);
 }
-

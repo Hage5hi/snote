@@ -242,8 +242,10 @@ route exposure, and `verify_jwt` mode. The inventory must explicitly decide
 `raw` and `share-revoke`; no function inherits an assumed gateway setting.
 
 Client-supplied forwarding headers must be tested through the real gateway for
-both admin login and capability note create/import. Continue only when the
-gateway overwrites spoofed values with one valid address literal. Otherwise
+both admin login and capability note create/import. `Sb-Forwarded-For` is the
+only admission identity: continue only when the gateway overwrites spoofed
+values with one valid address literal. Treat `X-Forwarded-For` only as a
+negative-control proxy chain and never as an admission identity. Otherwise
 those admission paths remain fail-closed with `503`.
 
 ### Synthetic data and recovery
