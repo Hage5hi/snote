@@ -85,14 +85,19 @@ try {
   $LocalPublishableKey = $LocalEnv.ANON_KEY.Trim('"')
   if (!$LocalApiUrl -or !$LocalPublishableKey) { throw "Incomplete local Supabase status" }
 } catch {
+  $StartupError = $_
   $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop 2>&1
+  $StopExitCode = $LASTEXITCODE
   if (Test-Path -LiteralPath $RuntimeSecretCache) {
     Remove-Item -LiteralPath $RuntimeSecretCache -Recurse -Force -ErrorAction Stop
   }
   if (Test-Path -LiteralPath $RuntimeSecretCache) {
     throw "Failed to remove Supabase runtime secret cache"
   }
-  throw
+  if ($StopExitCode -ne 0) {
+    throw "Supabase stop failed; local stack state is unknown"
+  }
+  throw $StartupError
 } finally {
   if ($null -ne $LocalEnv) { $LocalEnv.Clear() }
   $LocalEnv = $null
@@ -143,19 +148,43 @@ Before building the local SPA, set all four values in the current PowerShell
 process; never rely on the committed `.env` fallback:
 
 ```powershell
-$env:VITE_CAPABILITY_ROUTES_ENABLED = "true"
-$env:VITE_SUPABASE_PROJECT_ID = "snote-staging-local"
-$env:VITE_SUPABASE_URL = $LocalApiUrl
-$env:VITE_SUPABASE_PUBLISHABLE_KEY = $LocalPublishableKey
-bun run build:check
-$ProductionProjectRef = "onfzjmfjldsbthchssfr"
-$ProductionLeak = Get-ChildItem dist -Recurse -File |
-  Select-String -SimpleMatch $ProductionProjectRef |
-  Select-Object -First 1
-if ($null -ne $ProductionLeak) {
-  throw "Production Supabase reference found in the staging artifact"
+$StagingBuildEnvKeys = @(
+  "VITE_CAPABILITY_ROUTES_ENABLED",
+  "VITE_SUPABASE_PROJECT_ID",
+  "VITE_SUPABASE_URL",
+  "VITE_SUPABASE_PUBLISHABLE_KEY"
+)
+$ExistingStagingBuildEnv = @($StagingBuildEnvKeys | Where-Object {
+  Test-Path -LiteralPath "Env:$_"
+})
+if ($ExistingStagingBuildEnv.Count -ne 0) {
+  throw "Staging build environment already exists in this shell"
 }
-$ProductionLeak = $null
+try {
+  $env:VITE_CAPABILITY_ROUTES_ENABLED = "true"
+  $env:VITE_SUPABASE_PROJECT_ID = "snote-staging-local"
+  $env:VITE_SUPABASE_URL = $LocalApiUrl
+  $env:VITE_SUPABASE_PUBLISHABLE_KEY = $LocalPublishableKey
+  bun run build:check
+  if ($LASTEXITCODE -ne 0) { throw "Staging build failed" }
+  $ProductionProjectRef = "onfzjmfjldsbthchssfr"
+  $ProductionLeak = Get-ChildItem dist -Recurse -File |
+    Select-String -SimpleMatch $ProductionProjectRef |
+    Select-Object -First 1
+  if ($null -ne $ProductionLeak) {
+    throw "Production Supabase reference found in the staging artifact"
+  }
+} finally {
+  $ProductionLeak = $null
+  foreach ($Name in $StagingBuildEnvKeys) {
+    Remove-Item -LiteralPath "Env:$Name" -ErrorAction SilentlyContinue
+  }
+  foreach ($Name in $StagingBuildEnvKeys) {
+    if (Test-Path -LiteralPath "Env:$Name") {
+      throw "Failed to clear staging build environment"
+    }
+  }
+}
 ```
 
 The build itself fails closed if capability routes resolve to the production
@@ -174,9 +203,17 @@ API returns polling sessions. G3B may claim only:
 
 The private Realtime path is out of scope for G3B. On any failure and again
 during normal teardown, return to `false,false`, record the terminal state, stop
-the generated local stack with
-`bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop`, and retain
-only redacted evidence. After `stop`, remove and verify the absence of
+the generated local stack with the command below, and retain only redacted
+evidence:
+
+```powershell
+$null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop 2>&1
+if ($LASTEXITCODE -ne 0) {
+  throw "Supabase stop failed; local stack state is unknown"
+}
+```
+
+Only after that command returns zero, remove and verify the absence of
 `$GeneratedWorkdir/supabase/.temp/start-secrets`, then delete and verify the
 absence of the entire disposable workdir. If the CLI, shell, or host is
 interrupted, perform that cleanup before resuming any other work. The local HMAC

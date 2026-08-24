@@ -69,6 +69,32 @@ describe("staging build isolation", () => {
     expect(plan).not.toMatch(/(?:Write-(?:Host|Output)|echo).*CAPABILITY_HMAC_SECRET/i);
   });
 
+  it("documents fail-closed cleanup for the staging build environment", () => {
+    const plan = readFileSync(
+      resolve(process.cwd(), "docs/security/staging-plan-2026-08.md"),
+      "utf8",
+    );
+
+    for (const key of ENV_KEYS) {
+      expect(plan).toContain(`"${key}"`);
+    }
+    expect(plan).toContain("Staging build environment already exists in this shell");
+    expect(plan).toContain('if ($LASTEXITCODE -ne 0) { throw "Staging build failed" }');
+    expect(plan).toMatch(
+      /finally\s*\{[\s\S]*Remove-Item -LiteralPath "Env:\$Name"[\s\S]*Test-Path -LiteralPath "Env:\$Name"[\s\S]*throw/,
+    );
+  });
+
+  it("requires local stack stop to succeed before cleanup is considered complete", () => {
+    const plan = readFileSync(
+      resolve(process.cwd(), "docs/security/staging-plan-2026-08.md"),
+      "utf8",
+    );
+
+    expect(plan).toContain("$StopExitCode = $LASTEXITCODE");
+    expect(plan).toContain("Supabase stop failed; local stack state is unknown");
+  });
+
   it("rejects capability routes when Supabase values would fall back to .env", async () => {
     await withEnv({ VITE_CAPABILITY_ROUTES_ENABLED: "true" }, async () => {
       await expect(loadConfig()).rejects.toThrow(/complete staging Supabase environment/i);
