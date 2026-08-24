@@ -5,17 +5,19 @@ claim that staging or production has been migrated. Local tests prove the code
 contracts only; backup, deploy, cache purge, 48-hour soak, atomic cutover, and
 post-cutover probes remain mandatory operational gates.
 
-## Rollout status (2026-08-22)
+## Rollout status (2026-08-24)
 
 G2 closed at candidate `f712a99c` by independent review: no open P0–P2
 findings; fresh full 3-browser matrix green on the exact head; PR #10
-remains draft and unmerged. The docs-only G3 planning commit is `75c61c46`;
-the final immutable staging identity will be the reviewed implementation head.
-G3A readiness code and local tests are not staging evidence or deployment. The
-overall release is still NO-GO for merge/deploy until G3 (see
-[staging-plan-2026-08.md](security/staging-plan-2026-08.md)) and the later
-operational gates complete. No new P3 hunting is authorized beyond real
-blockers.
+remains draft and unmerged. G3A readiness is present at candidate
+`651aa9c006959c649874a863923be2aa71b76e25`. A local-only G3B backend polling
+rehearsal passed against that exact source and was cleanly torn down; see the
+[redacted G3B evidence](security/g3b-local-polling-evidence-2026-08-24.md).
+It does not prove the remaining browser, cryptographic, hosted-edge, gateway,
+or restore boundaries. The overall release is still NO-GO for merge/deploy
+until G3 (see [staging-plan-2026-08.md](security/staging-plan-2026-08.md)) and
+the later operational gates complete. No new P3 hunting is authorized beyond
+real blockers.
 
 Slugs are locators, never authorization credentials. New notes use
 owner/edit/view capabilities. Legacy notes are exact-match, read-only, and may
