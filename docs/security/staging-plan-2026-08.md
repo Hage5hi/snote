@@ -39,8 +39,9 @@ browser-discovery gates remain green on the final reviewed SHA.
 
 G3B requires separate owner approval. It is local-only and may start only when
 the G3A head is reviewed, the worktree is clean, the Docker engine is healthy,
-disk capacity is sufficient, and the exact Supabase CLI version is recorded.
-It creates no account and contacts no remote project.
+disk capacity is sufficient, the exact Supabase CLI version is recorded, and
+no untrusted local principal can read the disposable workdir. It creates no
+account and contacts no remote project.
 
 ### Workdir and migration procedure
 
@@ -61,6 +62,12 @@ shell:
 ```powershell
 $SupabaseCliVersion = (bunx supabase@2.115.0 --workdir $GeneratedWorkdir --version 2>$null).Trim()
 if ($SupabaseCliVersion -ne "2.115.0") { throw "Unexpected Supabase CLI version" }
+if (Test-Path Env:CAPABILITY_HMAC_SECRET) {
+  throw "CAPABILITY_HMAC_SECRET already exists in this shell"
+}
+$RuntimeSecretCache = Join-Path $GeneratedWorkdir "supabase/.temp/start-secrets"
+$LocalStatus = $null
+$LocalEnv = $null
 $SecretBytes = New-Object byte[] 32
 $SecretRng = [Security.Cryptography.RandomNumberGenerator]::Create()
 try {
@@ -76,13 +83,20 @@ try {
   $LocalEnv = ConvertFrom-StringData ($LocalStatus -join "`n")
   $LocalApiUrl = $LocalEnv.API_URL.Trim('"')
   $LocalPublishableKey = $LocalEnv.ANON_KEY.Trim('"')
-  $LocalEnv.Clear()
-  $LocalStatus = $null
   if (!$LocalApiUrl -or !$LocalPublishableKey) { throw "Incomplete local Supabase status" }
 } catch {
   $null = bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop 2>&1
+  if (Test-Path -LiteralPath $RuntimeSecretCache) {
+    Remove-Item -LiteralPath $RuntimeSecretCache -Recurse -Force -ErrorAction Stop
+  }
+  if (Test-Path -LiteralPath $RuntimeSecretCache) {
+    throw "Failed to remove Supabase runtime secret cache"
+  }
   throw
 } finally {
+  if ($null -ne $LocalEnv) { $LocalEnv.Clear() }
+  $LocalEnv = $null
+  $LocalStatus = $null
   [Array]::Clear($SecretBytes, 0, $SecretBytes.Length)
   $SecretBytes = $null
   $SecretRng.Dispose()
@@ -97,14 +111,18 @@ try {
 ```
 
 `RandomNumberGenerator.Create()` works on Windows PowerShell 5.1 and fills a
-32-byte buffer without writing the secret to a file or stdout. The generated
-config declares `CAPABILITY_HMAC_SECRET = "env(CAPABILITY_HMAC_SECRET)"`, so
-`start` receives it only from the current process environment. The byte buffer
-is cleared, the RNG is disposed, and the environment entry is removed and its
-absence verified whether startup succeeds or fails. Startup output is discarded
-because it includes local JWT credentials. Status output is captured only in
-process memory, reduced to the client-safe API URL and anon key, then cleared;
-never print those variables or persist the raw status output.
+32-byte buffer without printing the secret. The generated config declares
+`CAPABILITY_HMAC_SECRET = "env(CAPABILITY_HMAC_SECRET)"`, so the value originates
+only in the current process environment. Supabase CLI 2.115.0 then materializes
+the merged Edge Runtime environment under
+`supabase/.temp/start-secrets/<runtime>/env/docker.env` inside the disposable
+workdir for Docker; this flow is not fileless. Treat that whole workdir as
+sensitive while the stack runs and never copy its `.temp` tree into evidence.
+The byte buffer is cleared, the RNG is disposed, and the parent-shell entry is
+removed and its absence verified whether startup succeeds or fails. Startup
+output is discarded because it includes local JWT credentials. Raw status is
+cleared in `finally`, including parse and missing-key failures; never print or
+persist it.
 
 `--workdir` is the Supabase global project-directory flag; `db reset --local`
 recreates the local database and applies only migrations copied into that
@@ -158,8 +176,11 @@ The private Realtime path is out of scope for G3B. On any failure and again
 during normal teardown, return to `false,false`, record the terminal state, stop
 the generated local stack with
 `bunx --no-install supabase@2.115.0 --workdir $GeneratedWorkdir stop`, and retain
-only redacted evidence. Delete the disposable workdir after its manifest and
-results have been reviewed.
+only redacted evidence. After `stop`, remove and verify the absence of
+`$GeneratedWorkdir/supabase/.temp/start-secrets`, then delete and verify the
+absence of the entire disposable workdir. If the CLI, shell, or host is
+interrupted, perform that cleanup before resuming any other work. The local HMAC
+is synthetic and must never be reused outside this one rehearsal.
 
 ## G3C — hosted staging
 
