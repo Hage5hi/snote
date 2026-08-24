@@ -42,11 +42,14 @@ describe("edge privacy deployment contract", () => {
       'SITE_URL = "https://note.syrin.online"',
     );
     expect(production).not.toMatch(/^EDGE_SERVE_ORIGIN\s*=/m);
+    expect(production).not.toMatch(/^STAGING_SUPABASE_ORIGIN\s*=/m);
     expect(production).toMatch(/NO-GO/i);
     expect(production).toMatch(/\[observability\]\s+enabled\s*=\s*false/);
     expect(production).toMatch(/workers_dev\s*=\s*false/);
 
     expect(staging).toContain('name = "syrin-prerender-staging"');
+    expect(staging).toMatch(/routes\s*=\s*\[\s*\]/);
+    expect(staging).toContain("preview_urls = false");
     expect(staging).not.toContain('pattern = "note.syrin.online/*"');
     expect(staging).not.toContain('pattern = "syrin.online/*"');
     expect(staging).toContain(
@@ -54,6 +57,9 @@ describe("edge privacy deployment contract", () => {
     );
     expect(staging).toContain(
       'EDGE_SERVE_ORIGIN = "https://syrin-prerender-staging.thongdocnganhang1.workers.dev"',
+    );
+    expect(staging).toContain(
+      'STAGING_SUPABASE_ORIGIN = "https://staging-project.invalid"',
     );
     expect(staging).toMatch(/\[observability\]\s+enabled\s*=\s*false/);
     expect(readme).toMatch(/NO-GO/i);

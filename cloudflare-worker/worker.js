@@ -11,6 +11,8 @@
  *   - ORIGIN_HOST        = hostname origin đã staging-prove là không redirect
  *   - SITE_URL           = "https://note.syrin.online"
  *   - EDGE_SERVE_ORIGIN  = reserved staging workers.dev authority (staging only)
+ *   - STAGING_SUPABASE_ORIGIN = isolated https://<project-ref>.supabase.co
+ *                               origin (required and accepted in staging only)
  *
  * Route: gắn worker vào các pattern note.syrin.online/*, syrin.online/*
  * và www.syrin.online/*. Mọi hostname share công khai phải đi qua Worker
@@ -27,21 +29,30 @@ const CRAWLER_UA = /(facebookexternalhit|Facebot|meta-externalagent|meta-externa
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const RAW_NOTE_RE = /^([a-zA-Z0-9_-]{1,64})\.md$/i;
 const SHARE_ROBOTS = "noindex, nofollow, noarchive, nosnippet";
-const SECURITY_CSP =
+const PRODUCTION_SUPABASE_ORIGIN =
+  "https://onfzjmfjldsbthchssfr.supabase.co";
+const PRODUCTION_SUPABASE_WS_ORIGIN =
+  "wss://onfzjmfjldsbthchssfr.supabase.co";
+const SECURITY_CSP_PREFIX =
   "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; " +
   "frame-ancestors 'self' chrome-extension://*; script-src 'self' https://challenges.cloudflare.com; " +
   "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://flagcdn.com " +
-  "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev; font-src 'self' data:; " +
-  "connect-src 'self' https://onfzjmfjldsbthchssfr.supabase.co " +
-  "wss://onfzjmfjldsbthchssfr.supabase.co https://challenges.cloudflare.com; " +
+  "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev; font-src 'self' data:; ";
+const SECURITY_CSP_SUFFIX =
+  " https://challenges.cloudflare.com; " +
   "frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; " +
   "manifest-src 'self'; upgrade-insecure-requests;";
+const SECURITY_CSP = securityCsp(
+  PRODUCTION_SUPABASE_ORIGIN,
+  PRODUCTION_SUPABASE_WS_ORIGIN,
+);
 const PERMISSIONS_POLICY =
   "camera=(), geolocation=(), microphone=(), payment=()";
 const PRIVATE_ROUTE_KINDS = new Set(["share", "note", "private"]);
 const APPROVED_CANONICAL_ORIGIN = "https://note.syrin.online";
 const APPROVED_STAGING_SERVE_ORIGIN =
   "https://syrin-prerender-staging.thongdocnganhang1.workers.dev";
+const SUPABASE_PROJECT_HOST_RE = /^[a-z0-9]{20}\.supabase\.co$/;
 const PUBLIC_HOSTNAMES = new Set([
   "note.syrin.online",
   "syrin.online",
@@ -189,10 +200,10 @@ export default {
     const url = new URL(request.url);
     const authority = validateRequestAuthority(url, env);
     if (!authority.ok) {
-      return originUnavailableResponse();
+      return originUnavailableResponse(env);
     }
     if (!isSecureStandardTransport(url)) {
-      return insecureTransportResponse();
+      return insecureTransportResponse(env);
     }
     const servesAtRequestedAuthority = authority.kind !== "alias";
     const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
@@ -250,7 +261,7 @@ export default {
       logEvent(env, "info", "prerender", {
         kind: "share", status: 200,
       });
-      return renderGenericShareHtml();
+      return renderGenericShareHtml(env);
     }
     // A legacy note slug is still an edit credential until the capability
     // cutover. Never read a content-bearing cache or metadata endpoint for a
@@ -259,7 +270,7 @@ export default {
       logEvent(env, "info", "prerender", {
         kind: "note", status: 200,
       });
-      return renderGenericNoteHtml();
+      return renderGenericNoteHtml(env);
     }
     if (isCrawler && route.kind === "private") {
       logEvent(env, "info", "prerender", {
@@ -268,6 +279,7 @@ export default {
       return renderGenericPrivateHtml(
         "Private route - Syrin Notes",
         "Open a private Syrin Notes route in your browser.",
+        env,
       );
     }
 
@@ -333,7 +345,7 @@ export default {
     if (cached) {
       logEvent(env, "info", "cache_hit", { kind: route.kind, group: rl.group });
       const cachedHeaders = new Headers(cached.headers);
-      applyHtmlSecurityHeaders(cachedHeaders);
+      applyHtmlSecurityHeaders(cachedHeaders, env);
       return new Response(cached.body, {
         status: cached.status,
         statusText: cached.statusText,
@@ -364,7 +376,7 @@ export default {
           "x-robots-tag": isEncrypted ? "noindex, nofollow" : "index, follow",
           vary: "User-Agent",
         });
-        applyHtmlSecurityHeaders(headers);
+        applyHtmlSecurityHeaders(headers, env);
         return new Response(null, {
           status: 304,
           headers,
@@ -380,7 +392,7 @@ export default {
         "x-ratelimit-remaining": String(rl.remaining),
         vary: "User-Agent",
       });
-      applyHtmlSecurityHeaders(responseHeaders);
+      applyHtmlSecurityHeaders(responseHeaders, env);
       const response = new Response(html, {
         status,
         headers: responseHeaders,
@@ -527,7 +539,7 @@ async function passThrough(
   const url = new URL(request.url);
   const privateRoute = PRIVATE_ROUTE_KINDS.has(routeKind);
   if (!ORIGIN_SAFE_METHODS.has(request.method)) {
-    return methodNotAllowedResponse();
+    return methodNotAllowedResponse(env);
   }
   const origin = validateOriginHost(url, env);
   if (!origin.ok) {
@@ -536,7 +548,7 @@ async function passThrough(
       reason: origin.reason,
       status: 503,
     });
-    return originUnavailableResponse();
+    return originUnavailableResponse(env);
   }
   // The client-facing request authority is not an origin configuration
   // input. Pin every authority component so a non-standard Cloudflare port
@@ -589,7 +601,7 @@ async function passThrough(
       reason: "fetch_error",
       status: 503,
     });
-    return originUnavailableResponse();
+    return originUnavailableResponse(env);
   }
   // 304 is a successful conditional-response status, not a redirect. The
   // request allowlist intentionally forwards validators so public/runtime
@@ -604,7 +616,7 @@ async function passThrough(
       reason: "redirect",
       status: response.status,
     });
-    return originUnavailableResponse();
+    return originUnavailableResponse(env);
   }
   const headers = new Headers(response.headers);
   // An origin may emit Location on an otherwise non-redirect response. The
@@ -621,7 +633,7 @@ async function passThrough(
     headers.set("cache-control", "no-cache, no-store, must-revalidate");
     headers.set("cdn-cache-control", "no-store");
   }
-  if (isHtml) applyHtmlSecurityHeaders(headers);
+  if (isHtml) applyHtmlSecurityHeaders(headers, env);
   if (privateRoute) applyPrivateResponseHeaders(headers);
 
   return new Response(response.body, {
@@ -698,11 +710,11 @@ function validateOriginHost(requestUrl, env) {
   return { ok: true, hostname };
 }
 
-function originUnavailableResponse() {
+function originUnavailableResponse(env) {
   const headers = new Headers({
     "content-type": "text/plain; charset=utf-8",
   });
-  applyHtmlSecurityHeaders(headers);
+  applyHtmlSecurityHeaders(headers, env);
   applyPrivateResponseHeaders(headers);
   return new Response("Service temporarily unavailable", {
     status: 503,
@@ -714,11 +726,11 @@ function isSecureStandardTransport(url) {
   return url.protocol === "https:" && url.port === "";
 }
 
-function insecureTransportResponse() {
+function insecureTransportResponse(env) {
   const headers = new Headers({
     "content-type": "text/plain; charset=utf-8",
   });
-  applyHtmlSecurityHeaders(headers);
+  applyHtmlSecurityHeaders(headers, env);
   applyPrivateResponseHeaders(headers);
   return new Response("Secure canonical request required", {
     status: 400,
@@ -726,12 +738,12 @@ function insecureTransportResponse() {
   });
 }
 
-function methodNotAllowedResponse() {
+function methodNotAllowedResponse(env) {
   const headers = new Headers({
     allow: "GET, HEAD",
     "content-type": "text/plain; charset=utf-8",
   });
-  applyHtmlSecurityHeaders(headers);
+  applyHtmlSecurityHeaders(headers, env);
   applyPrivateResponseHeaders(headers);
   return new Response("Method not allowed", {
     status: 405,
@@ -739,8 +751,22 @@ function methodNotAllowedResponse() {
   });
 }
 
-function applyHtmlSecurityHeaders(headers) {
-  headers.set("content-security-policy", SECURITY_CSP);
+function securityCsp(httpOrigin, websocketOrigin) {
+  const supabaseSources = httpOrigin && websocketOrigin
+    ? ` ${httpOrigin} ${websocketOrigin}`
+    : "";
+  return `${SECURITY_CSP_PREFIX}connect-src 'self'${supabaseSources}${SECURITY_CSP_SUFFIX}`;
+}
+
+function securityCspForEnv(env) {
+  const origins = configuredSupabaseConnectOrigins(env);
+  return origins.ok
+    ? securityCsp(origins.httpOrigin, origins.websocketOrigin)
+    : securityCsp(null, null);
+}
+
+function applyHtmlSecurityHeaders(headers, env) {
+  headers.set("content-security-policy", securityCspForEnv(env));
   headers.set("permissions-policy", PERMISSIONS_POLICY);
   // The extension/embed contract is expressed by CSP frame-ancestors.
   headers.delete("x-frame-options");
@@ -831,6 +857,55 @@ function configuredEdgeServeOrigin(env) {
   return { ok: true, url: edgeServeUrl };
 }
 
+function configuredSupabaseConnectOrigins(
+  env,
+  edgeServeOrigin = configuredEdgeServeOrigin(env),
+) {
+  if (!edgeServeOrigin.ok) return { ok: false };
+
+  const raw = env?.STAGING_SUPABASE_ORIGIN;
+  if (!edgeServeOrigin.url) {
+    if (typeof raw !== "undefined") return { ok: false };
+    return {
+      ok: true,
+      httpOrigin: PRODUCTION_SUPABASE_ORIGIN,
+      websocketOrigin: PRODUCTION_SUPABASE_WS_ORIGIN,
+    };
+  }
+
+  if (typeof raw !== "string" || raw !== raw.trim()) {
+    return { ok: false };
+  }
+
+  let origin;
+  try {
+    origin = new URL(raw);
+  } catch {
+    return { ok: false };
+  }
+  const hostname = origin.hostname.toLowerCase();
+  if (
+    origin.protocol !== "https:"
+    || origin.origin !== raw
+    || origin.username
+    || origin.password
+    || origin.port
+    || origin.pathname !== "/"
+    || origin.search
+    || origin.hash
+    || !SUPABASE_PROJECT_HOST_RE.test(hostname)
+    || origin.origin === PRODUCTION_SUPABASE_ORIGIN
+  ) {
+    return { ok: false };
+  }
+
+  return {
+    ok: true,
+    httpOrigin: origin.origin,
+    websocketOrigin: `wss://${hostname}`,
+  };
+}
+
 function dnsComparisonHostname(hostname) {
   const lowered = hostname.toLowerCase();
   return lowered.endsWith(".") ? lowered.slice(0, -1) : lowered;
@@ -842,6 +917,9 @@ function validateRequestAuthority(url, env) {
 
   const edgeServeOrigin = configuredEdgeServeOrigin(env);
   if (!edgeServeOrigin.ok) {
+    return { ok: false, reason: "invalid" };
+  }
+  if (!configuredSupabaseConnectOrigins(env, edgeServeOrigin).ok) {
     return { ok: false, reason: "invalid" };
   }
 
@@ -868,7 +946,7 @@ function validateRequestAuthority(url, env) {
 
 function canonicalRedirect(url, env) {
   const siteUrl = canonicalSiteUrl(env);
-  if (!siteUrl) return originUnavailableResponse();
+  if (!siteUrl) return originUnavailableResponse(env);
   const target = new URL(url);
   target.protocol = "https:";
   target.username = "";
@@ -955,21 +1033,23 @@ function renderHtml(meta, url, env) {
 </html>`;
 }
 
-function renderGenericShareHtml() {
+function renderGenericShareHtml(env) {
   return renderGenericPrivateHtml(
     "Shared note — Syrin Notes",
     "Open a private, revocable shared note on Syrin Notes.",
+    env,
   );
 }
 
-function renderGenericNoteHtml() {
+function renderGenericNoteHtml(env) {
   return renderGenericPrivateHtml(
     "Private note — Syrin Notes",
     "Open a private note on Syrin Notes.",
+    env,
   );
 }
 
-function renderGenericPrivateHtml(title, description) {
+function renderGenericPrivateHtml(title, description, env) {
   const html = `<!doctype html>
 <html lang="en">
 <head>
@@ -999,7 +1079,7 @@ function renderGenericPrivateHtml(title, description) {
     "content-type": "text/html; charset=utf-8",
     vary: "User-Agent",
   });
-  applyHtmlSecurityHeaders(headers);
+  applyHtmlSecurityHeaders(headers, env);
   applyPrivateResponseHeaders(headers);
 
   return new Response(html, {

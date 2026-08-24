@@ -344,7 +344,7 @@ describe("immediate containment contracts", () => {
     expect(worker).toContain(
       'siteUrl.hostname.toLowerCase() !== "note.syrin.online"',
     );
-    expect(worker).toContain("if (!siteUrl) return originUnavailableResponse();");
+    expect(worker).toContain("if (!siteUrl) return originUnavailableResponse(env);");
     expect(readme).toContain(
       '{ pattern = "note.syrin.online/*", zone_name = "syrin.online" }',
     );

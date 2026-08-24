@@ -60,10 +60,21 @@ as `EDGE_SERVE_ORIGIN` in `wrangler.staging.toml`. `SITE_URL` remains exactly
 and the robots sitemap keep the public product identity. Production must not
 set `EDGE_SERVE_ORIGIN`.
 
+Staging must also set `STAGING_SUPABASE_ORIGIN` to the isolated
+`https://<project-ref>.supabase.co` origin. The Worker derives the matching WSS
+origin for CSP, rejects the production project and malformed/non-Supabase
+origins, and refuses this variable when `EDGE_SERVE_ORIGIN` is absent. This is
+the only staging-specific backend input; it is not a Worker secret.
+
+Keeping the production `SITE_URL` here is a metadata-only exception: the
+Worker does not fetch, route, connect, or authenticate against that hostname.
+The isolated Pages hostname remains the only `ORIGIN_HOST` in staging.
+
 This staging scaffold remains **NO-GO** until `ORIGIN_HOST` is replaced by a
-reviewed isolated non-redirecting origin. The current `.invalid` placeholder is
-intentional; this contract reserves the incoming authority but does not make
-the Worker deployable.
+reviewed isolated non-redirecting origin and `STAGING_SUPABASE_ORIGIN` is
+replaced by the isolated staging project origin. The current `.invalid`
+placeholders are intentional; this contract reserves the incoming authority
+but does not make the Worker deployable.
 
 ## Triển khai
 

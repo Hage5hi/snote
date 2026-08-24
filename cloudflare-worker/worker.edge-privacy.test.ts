@@ -21,10 +21,21 @@ const ENV = {
 };
 const STAGING_SERVE_ORIGIN =
   "https://syrin-prerender-staging.thongdocnganhang1.workers.dev";
+const STAGING_SUPABASE_ORIGIN =
+  "https://abcdefghijklmnopqrst.supabase.co";
+const STAGING_SUPABASE_WS_ORIGIN =
+  "wss://abcdefghijklmnopqrst.supabase.co";
+const STAGING_CSP = CSP
+  .replace("https://onfzjmfjldsbthchssfr.supabase.co", STAGING_SUPABASE_ORIGIN)
+  .replace("wss://onfzjmfjldsbthchssfr.supabase.co", STAGING_SUPABASE_WS_ORIGIN);
+const RESTRICTIVE_CSP = CSP
+  .replace(" https://onfzjmfjldsbthchssfr.supabase.co", "")
+  .replace(" wss://onfzjmfjldsbthchssfr.supabase.co", "");
 const STAGING_ENV = {
   ORIGIN_HOST: "isolated-staging-origin.example",
   SITE_URL: "https://note.syrin.online",
   EDGE_SERVE_ORIGIN: STAGING_SERVE_ORIGIN,
+  STAGING_SUPABASE_ORIGIN,
 };
 
 function installOriginDouble() {
@@ -57,6 +68,7 @@ function installOriginDouble() {
 async function expectFailClosedOriginResponse(
   response: Response,
   secrets: string[] = [],
+  expectedCsp = CSP,
 ) {
   const body = await response.text();
   const observable = [
@@ -66,7 +78,7 @@ async function expectFailClosedOriginResponse(
 
   expect(response.status).toBe(503);
   expect(body).toBe("Service temporarily unavailable");
-  expect(response.headers.get("content-security-policy")).toBe(CSP);
+  expect(response.headers.get("content-security-policy")).toBe(expectedCsp);
   expect(response.headers.get("permissions-policy")).toBe(PERMISSIONS_POLICY);
   expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("cdn-cache-control")).toBe("no-store");
@@ -386,6 +398,57 @@ describe("edge privacy containment", () => {
     expect(doubles.originFetch).not.toHaveBeenCalled();
   });
 
+  it("uses only the isolated staging Supabase origin in staging HTML CSP", async () => {
+    const doubles = installOriginDouble();
+
+    const response = await worker.fetch(
+      new Request(`${STAGING_SERVE_ORIGIN}/synthetic-private-capability`, {
+        headers: { "user-agent": "Mozilla/5.0" },
+      }),
+      STAGING_ENV,
+      { waitUntil: doubles.waitUntil },
+    );
+
+    const csp = response.headers.get("content-security-policy");
+    expect(response.status).toBe(200);
+    expect(csp).toBe(STAGING_CSP);
+    expect(csp).toContain(STAGING_SUPABASE_ORIGIN);
+    expect(csp).toContain(STAGING_SUPABASE_WS_ORIGIN);
+    expect(csp).not.toContain("onfzjmfjldsbthchssfr");
+  });
+
+  it.each([
+    undefined,
+    "https://onfzjmfjldsbthchssfr.supabase.co",
+    "http://abcdefghijklmnopqrst.supabase.co",
+    "https://abcdefghijklmnopqrst.supabase.co/private",
+    "https://untrusted.example",
+  ])("fails closed for an invalid staging Supabase origin: %s", async (origin) => {
+    const doubles = installOriginDouble();
+    const response = await worker.fetch(
+      new Request(`${STAGING_SERVE_ORIGIN}/synthetic-private-capability`),
+      { ...STAGING_ENV, STAGING_SUPABASE_ORIGIN: origin },
+      { waitUntil: doubles.waitUntil },
+    );
+
+    await expectFailClosedOriginResponse(response, [], RESTRICTIVE_CSP);
+    expect(doubles.originFetch).not.toHaveBeenCalled();
+    expect(response.headers.get("content-security-policy"))
+      .not.toContain("onfzjmfjldsbthchssfr");
+  });
+
+  it("refuses a staging Supabase override in production mode", async () => {
+    const doubles = installOriginDouble();
+    const response = await worker.fetch(
+      new Request("https://note.syrin.online/synthetic-private-capability"),
+      { ...ENV, STAGING_SUPABASE_ORIGIN },
+      { waitUntil: doubles.waitUntil },
+    );
+
+    await expectFailClosedOriginResponse(response, [], RESTRICTIVE_CSP);
+    expect(doubles.originFetch).not.toHaveBeenCalled();
+  });
+
   it("keeps the production sitemap on staging robots.txt", async () => {
     const doubles = installOriginDouble();
 
@@ -450,7 +513,11 @@ describe("edge privacy containment", () => {
         { waitUntil: doubles.waitUntil },
       );
 
-      await expectFailClosedOriginResponse(response, ["edge-secret"]);
+      await expectFailClosedOriginResponse(
+        response,
+        ["edge-secret"],
+        RESTRICTIVE_CSP,
+      );
       expect(doubles.originFetch).not.toHaveBeenCalled();
     },
   );
@@ -481,7 +548,16 @@ describe("edge privacy containment", () => {
         { waitUntil: doubles.waitUntil },
       );
 
-      await expectFailClosedOriginResponse(response, ["request-secret"]);
+      const expectedCsp = env === ENV
+        ? CSP
+        : env.EDGE_SERVE_ORIGIN === STAGING_SERVE_ORIGIN
+          ? STAGING_CSP
+          : RESTRICTIVE_CSP;
+      await expectFailClosedOriginResponse(
+        response,
+        ["request-secret"],
+        expectedCsp,
+      );
       expect(doubles.originFetch).not.toHaveBeenCalled();
     },
   );
@@ -499,7 +575,11 @@ describe("edge privacy containment", () => {
         { waitUntil: doubles.waitUntil },
       );
 
-      await expectFailClosedOriginResponse(response, ["request-secret"]);
+      await expectFailClosedOriginResponse(
+        response,
+        ["request-secret"],
+        STAGING_CSP,
+      );
       expect(doubles.originFetch).not.toHaveBeenCalled();
     },
   );
@@ -518,7 +598,11 @@ describe("edge privacy containment", () => {
         { waitUntil: doubles.waitUntil },
       );
 
-      await expectFailClosedOriginResponse(response, ["request-secret"]);
+      await expectFailClosedOriginResponse(
+        response,
+        ["request-secret"],
+        STAGING_CSP,
+      );
       expect(doubles.originFetch).not.toHaveBeenCalled();
     },
   );
@@ -543,7 +627,7 @@ describe("edge privacy containment", () => {
         { waitUntil: doubles.waitUntil },
       );
 
-      await expectFailClosedOriginResponse(response);
+      await expectFailClosedOriginResponse(response, [], STAGING_CSP);
       expect(doubles.originFetch).not.toHaveBeenCalled();
       expect(JSON.parse(logs[0])).toMatchObject({
         msg: "origin_unavailable",

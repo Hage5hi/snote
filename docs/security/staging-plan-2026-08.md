@@ -6,8 +6,11 @@ implementation head, not either historical SHA. The release remains NO-GO for
 merge or deployment until the applicable gates below have passed.
 
 No G3 step may use production data, the production Supabase project reference,
-or a production hostname. No secret value may enter the repository, chat,
-command output, logs, test artifacts, or evidence.
+or fetch/route/authenticate against a production hostname. The public
+`https://note.syrin.online` URL may appear only as canonical/robots/OpenGraph
+metadata emitted by the staging Worker; it is never an origin or backend in
+G3. No secret value may enter the repository, chat, command output, logs, test
+artifacts, or evidence.
 
 ## G3A — repository readiness
 
@@ -223,7 +226,9 @@ is synthetic and must never be reused outside this one rehearsal.
 
 G3C requires separate owner approval. It creates an isolated staging Supabase
 project and staging-only Cloudflare endpoint. Production data, credentials,
-hostnames, DNS routes, and the production project ref remain forbidden.
+DNS routes, backend hostnames, and the production project ref remain forbidden;
+the canonical product URL is allowed only as inert public metadata as described
+above.
 
 ### Auth, Realtime, and runtime
 
