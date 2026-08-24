@@ -20,8 +20,15 @@ DROP POLICY IF EXISTS "Authenticated users can upload own avatar" ON storage.obj
 DROP POLICY IF EXISTS "Users can update own avatar" ON storage.objects;
 DROP POLICY IF EXISTS "Users can delete own avatar" ON storage.objects;
 
--- 2. Empty the buckets (if any objects snuck in).
-DELETE FROM storage.objects WHERE bucket_id IN ('bug-attachments', 'avatars');
+-- 2. Allow this migration's cleanup deletes for the current transaction only.
+DO $cleanup$
+BEGIN
+  PERFORM set_config('storage.allow_delete_query', 'true', true);
 
--- 3. Drop the buckets.
-DELETE FROM storage.buckets WHERE id IN ('bug-attachments', 'avatars');
+  -- Empty the buckets (if any objects snuck in).
+  DELETE FROM storage.objects WHERE bucket_id IN ('bug-attachments', 'avatars');
+
+  -- 3. Drop the buckets.
+  DELETE FROM storage.buckets WHERE id IN ('bug-attachments', 'avatars');
+END;
+$cleanup$;
