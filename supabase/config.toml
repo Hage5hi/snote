@@ -1,18 +1,52 @@
 project_id = "onfzjmfjldsbthchssfr"
 
-# Capability tokens are opaque CSPRNG values, not Supabase Auth JWTs. These
-# functions authenticate the exact Bearer value themselves and fail closed.
+# Supabase Auth JWT verification is explicitly disabled at the gateway for
+# every deployed function. Each function owns its public, capability, admin,
+# or tombstone contract.
+[functions.admin-delete]
+verify_jwt = false
+
+[functions.admin-list]
+verify_jwt = false
+
+[functions.admin-rotate]
+verify_jwt = false
+
+[functions.admin-session]
+verify_jwt = false
+
+[functions.cleanup]
+verify_jwt = false
+
+[functions.legacy-note-open]
+verify_jwt = false
+
+[functions.note-manage]
+verify_jwt = false
+
+[functions.note-meta]
+verify_jwt = false
+
 [functions.note-session]
 verify_jwt = false
 
 [functions.note-sync]
 verify_jwt = false
 
-[functions.note-manage]
+[functions.old-slug-cleanup-status]
+verify_jwt = false
+
+[functions.raw]
+verify_jwt = false
+
+[functions.share-create]
+verify_jwt = false
+
+[functions.share-rename]
+verify_jwt = false
+
+[functions.share-revoke]
 verify_jwt = false
 
 [functions.share-view]
-verify_jwt = false
-
-[functions.legacy-note-open]
 verify_jwt = false

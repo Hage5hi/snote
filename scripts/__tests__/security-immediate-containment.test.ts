@@ -139,10 +139,11 @@ describe("immediate containment contracts", () => {
     );
   });
 
-  it("derives a privacy-preserving client key only from strict provider X-Forwarded-For", () => {
+  it("derives a privacy-preserving client key only from strict Supabase-Forwarded-For", () => {
     const auth = source("supabase/functions/_shared/admin-auth.ts");
-    expect(auth).toContain('headers.get("x-forwarded-for")');
+    expect(auth).toContain('headers.get("sb-forwarded-for")');
     expect(auth).toContain('rawIp.includes(",")');
+    expect(auth).not.toContain('headers.get("x-forwarded-for")');
     expect(auth).not.toContain("cf-connecting-ip");
     expect(auth).not.toContain("x-real-ip");
     expect(auth).toContain('Deno.env.get("ADMIN_RATE_LIMIT_HMAC_SECRET")');
