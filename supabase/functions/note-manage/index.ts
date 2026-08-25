@@ -17,8 +17,8 @@ import {
   rpcStatus,
   verifyRealtimeAuth,
 } from "../_shared/capability-edge.ts";
+import { isUsableSlug } from "../_shared/slug.ts";
 
-const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const MAX_CHECKPOINT_BYTES = 4 * 1024 * 1024;
 
 Deno.serve(async (req) => {
@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
 
     if (action === "rename") {
       const slug = typeof body?.slug === "string" ? body.slug.trim() : "";
-      if (!SLUG_RE.test(slug)) return capabilityFailure("invalid");
+      if (!isUsableSlug(slug)) return capabilityFailure("invalid");
       params = { slug };
     } else if (action === "delete") {
       params = {};

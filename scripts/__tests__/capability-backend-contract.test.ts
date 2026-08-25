@@ -1,5 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   createCapabilityToken,
@@ -12,6 +13,12 @@ import {
 
 const root = process.cwd();
 const source = (path: string) => readFileSync(resolve(root, path), "utf8").replace(/\r\n/g, "\n");
+const deployableFunctionNames = readdirSync(resolve(root, "supabase/functions"), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory() && entry.name !== "_shared")
+  .map((entry) => entry.name)
+  .sort();
 const capabilityMigrationPaths = [
   "supabase/migrations/20260722000000_capability_backend.sql",
   "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql",
@@ -68,15 +75,40 @@ describe("capability primitives", () => {
   it("admits only one gateway-verified address and stores a domain-separated hash", async () => {
     const secret = "B".repeat(43);
     const subject = await hashCapabilityAdmissionSubject(new Request("https://example.test", {
-      headers: { "x-forwarded-for": "203.0.113.7" },
+      headers: { "sb-forwarded-for": "203.0.113.7" },
     }), secret);
     expect(subject).toMatch(/^[a-f0-9]{64}$/);
     expect(subject).not.toBe(await hashCapabilityToken("A".repeat(43), secret));
     await expect(hashCapabilityAdmissionSubject(new Request("https://example.test"), secret))
       .resolves.toBeNull();
     await expect(hashCapabilityAdmissionSubject(new Request("https://example.test", {
-      headers: { "x-forwarded-for": "203.0.113.7, 198.51.100.4" },
+      headers: { "sb-forwarded-for": "203.0.113.7, 198.51.100.4" },
     }), secret)).resolves.toBeNull();
+    await expect(hashCapabilityAdmissionSubject(new Request("https://example.test", {
+      headers: { "x-forwarded-for": "203.0.113.7" },
+    }), secret)).resolves.toBeNull();
+  });
+
+  it("rejects router-reserved slugs at both capability entry points", async () => {
+    const session = source("supabase/functions/note-session/index.ts");
+    const manage = source("supabase/functions/note-manage/index.ts");
+    expect(session).toContain('from "../_shared/slug.ts"');
+    expect(manage).toContain('from "../_shared/slug.ts"');
+    expect(session).not.toContain("const SLUG_RE");
+    expect(manage).not.toContain("const SLUG_RE");
+    expect(session.match(/isUsableSlug\(slug\)/g) ?? []).toHaveLength(2);
+    expect(manage.match(/isUsableSlug\(slug\)/g) ?? []).toHaveLength(1);
+
+    const slugPath = resolve(root, "supabase/functions/_shared/slug.ts");
+    expect(existsSync(slugPath)).toBe(true);
+    const slugModule = await import(pathToFileURL(slugPath).href);
+    for (const reserved of ["note", "privacy", "s"]) {
+      expect(slugModule.isUsableSlug(reserved)).toBe(false);
+      expect(slugModule.isUsableSlug(reserved.toUpperCase())).toBe(false);
+    }
+    expect(slugModule.isUsableSlug("my-note_1")).toBe(true);
+    expect(slugModule.isUsableSlug("bad slug")).toBe(false);
+    expect(slugModule.isUsableSlug("x".repeat(65))).toBe(false);
   });
 
   it("decodes bounded canonical payloads without allocating oversized input", () => {
@@ -583,5 +615,21 @@ describe("Edge capability endpoints", () => {
     expect(contract).toContain("{ updateId, payload }");
     expect(contract).toContain("idempotent");
     expect(contract).toContain("read_only_quarantine");
+  });
+});
+
+describe("Supabase function gateway configuration", () => {
+  const config = source("supabase/config.toml");
+
+  it.each(deployableFunctionNames)("configures exactly one verify_jwt=false stanza for %s", (name) => {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const headers = [...config.matchAll(new RegExp(`^\\[functions\\.${escapedName}\\]$`, "gm"))];
+
+    expect(headers).toHaveLength(1);
+
+    const stanzaStart = headers[0].index ?? 0;
+    const nextStanza = config.indexOf("\n[", stanzaStart + 1);
+    const stanza = config.slice(stanzaStart, nextStanza < 0 ? undefined : nextStanza);
+    expect(stanza).toMatch(/^verify_jwt\s*=\s*false$/m);
   });
 });
