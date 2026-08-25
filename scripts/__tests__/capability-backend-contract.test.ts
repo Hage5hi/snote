@@ -75,18 +75,26 @@ describe("capability primitives", () => {
   it("admits only one gateway-verified address and stores a domain-separated hash", async () => {
     const secret = "B".repeat(43);
     const subject = await hashCapabilityAdmissionSubject(new Request("https://example.test", {
-      headers: { "sb-forwarded-for": "203.0.113.7" },
+      headers: { "cf-connecting-ip": "203.0.113.7" },
     }), secret);
     expect(subject).toMatch(/^[a-f0-9]{64}$/);
     expect(subject).not.toBe(await hashCapabilityToken("A".repeat(43), secret));
     await expect(hashCapabilityAdmissionSubject(new Request("https://example.test"), secret))
       .resolves.toBeNull();
     await expect(hashCapabilityAdmissionSubject(new Request("https://example.test", {
-      headers: { "sb-forwarded-for": "203.0.113.7, 198.51.100.4" },
+      headers: { "cf-connecting-ip": "203.0.113.7, 198.51.100.4" },
     }), secret)).resolves.toBeNull();
-    await expect(hashCapabilityAdmissionSubject(new Request("https://example.test", {
-      headers: { "x-forwarded-for": "203.0.113.7" },
-    }), secret)).resolves.toBeNull();
+    for (const header of [
+      "x-forwarded-for",
+      "sb-forwarded-for",
+      "x-real-ip",
+      "true-client-ip",
+      "x-envoy-external-address",
+    ]) {
+      await expect(hashCapabilityAdmissionSubject(new Request("https://example.test", {
+        headers: { [header]: "203.0.113.7" },
+      }), secret)).resolves.toBeNull();
+    }
   });
 
   it("rejects router-reserved slugs at both capability entry points", async () => {

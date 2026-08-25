@@ -62,14 +62,14 @@ export async function hashCapabilityToken(token: string, secret: string): Promis
 
 /**
  * Hash the gateway-authenticated request subject without retaining an address.
- * A forwarded chain is rejected. Hosted staging must prove that Supabase owns
- * and overwrites Sb-Forwarded-For instead of accepting client-supplied values.
+ * A forwarded chain is rejected. Hosted rollout must prove that Cloudflare
+ * owns and overwrites CF-Connecting-IP instead of accepting client input.
  */
 export async function hashCapabilityAdmissionSubject(
   req: Request,
   secret: string,
 ): Promise<string | null> {
-  const rawAddress = req.headers.get("sb-forwarded-for")?.trim() ?? "";
+  const rawAddress = req.headers.get("cf-connecting-ip")?.trim() ?? "";
   const secretBytes = encoder.encode(secret);
   if (
     !rawAddress
