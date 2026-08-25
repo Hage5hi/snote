@@ -163,7 +163,7 @@ describe("CI toolchain contract", () => {
     expect(ci).not.toContain("secrets.VITE_SUPABASE");
   });
 
-  it("runs extension verification when package inputs change", () => {
+  it("runs extension verification for package-input pushes", () => {
     for (const path of [
       "package.json",
       "bun.lock",
@@ -173,7 +173,7 @@ describe("CI toolchain contract", () => {
       "scripts/verify-extension-zip.ts",
       "scripts/verify-extension-zip.sh",
     ]) {
-      expect(extensionWorkflow.split(`- "${path}"`).length - 1).toBe(2);
+      expect(extensionWorkflow.split(`- "${path}"`).length - 1).toBe(1);
     }
   });
 
