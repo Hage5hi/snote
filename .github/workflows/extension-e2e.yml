@@ -15,17 +15,6 @@ on:
       - "bun.lock"
       - ".github/workflows/extension-e2e.yml"
   pull_request:
-    paths:
-      - "chrome-extension/**"
-      - "e2e-extension/**"
-      - "scripts/audit-extension.sh"
-      - "scripts/build-extension-zip.ts"
-      - "scripts/extension-archive.ts"
-      - "scripts/verify-extension-zip.ts"
-      - "scripts/verify-extension-zip.sh"
-      - "package.json"
-      - "bun.lock"
-      - ".github/workflows/extension-e2e.yml"
   workflow_dispatch:
 
 concurrency:

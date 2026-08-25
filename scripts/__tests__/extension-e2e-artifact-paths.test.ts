@@ -44,6 +44,10 @@ const runStep =
 const pathBlockMatch = step.match(/path: \|\n([\s\S]*?)\n\s{10}if-no-files-found:/);
 
 describe("extension-e2e failure evidence artifact paths", () => {
+  it("runs the repository-required extension check on every pull request", () => {
+    expect(workflow).toMatch(/\n  pull_request:\s*\n  workflow_dispatch:/);
+  });
+
   it("has exactly one Upload failure evidence step with a parseable path block", () => {
     expect(uploadStepCount).toBe(1);
     expect(stepStart).toBeGreaterThan(-1);
