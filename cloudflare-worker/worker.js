@@ -80,6 +80,10 @@ const ROOT_RUNTIME_ASSET_PATHS = new Set([
   "/theme-init.js",
   "/version.json",
 ]);
+const PAGES_RUNTIME_ORIGIN_PATHS = new Map([
+  ["/index.html", "/"],
+  ["/offline.html", "/offline"],
+]);
 const PRIVATE_RESPONSE_HEADERS = [
   "content-security-policy-report-only",
   "etag",
@@ -585,9 +589,13 @@ async function passThrough(
     // Only the normalized allowlisted asset path is sent upstream. Query
     // strings are never needed for content-addressed or runtime artifacts and
     // may contain capabilities that must not enter provider request logs.
-    url.pathname = resolveContainmentDotSegments(
+    const runtimePath = resolveContainmentDotSegments(
       normalizeContainmentPath(url.pathname),
     );
+    // Cloudflare Pages canonicalizes these reviewed HTML filenames with a 308.
+    // Fetch their exact non-redirecting aliases so Workbox revision URLs remain
+    // available while arbitrary origin redirects still fail closed below.
+    url.pathname = PAGES_RUNTIME_ORIGIN_PATHS.get(runtimePath) ?? runtimePath;
     url.search = "";
   }
   let originRequest;
