@@ -186,10 +186,11 @@ limit. Also verify `storage_limit_bytes`, `update_limit_count`, and
 `capability_quarantine_oversized()` after changing a limit. It marks exceptions
 `read_only_quarantine`; it never truncates or deletes data.
 
-Create admission hashes the single gateway-overwritten `x-forwarded-for`
-address with a separate HMAC domain; forwarded chains and missing/unverified
-addresses fail closed. Staging must prove the gateway overwrites client input
-before enabling note creation. The database stores only the resulting
+Create admission hashes the single Cloudflare-owned `cf-connecting-ip` address
+with a separate HMAC domain; forwarded chains and missing/unverified addresses
+fail closed. There is no secondary-header fallback. Staging must prove that the
+exact public invocation path rejects or overwrites client attempts to set the
+header before enabling note creation. The database stores only the resulting
 `subject_hash`, never a raw address.
 
 ## Migration and rollout order

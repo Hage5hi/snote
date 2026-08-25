@@ -70,10 +70,9 @@ function isIpLiteral(value: string): boolean {
 export async function getAdminSubjectHash(
   req: Request,
 ): Promise<{ ok: true; subjectHash: string } | { ok: false }> {
-  // Hosted staging proves Supabase owns and overwrites this single-address
-  // header. The generic X-Forwarded-For value is a proxy chain and is not an
-  // admission identity.
-  const rawIp = req.headers.get("sb-forwarded-for")?.trim() ?? "";
+  // Supabase's managed API edge runs behind Cloudflare. Hosted rollout must
+  // prove that client input is rejected or overwritten before trusting this.
+  const rawIp = req.headers.get("cf-connecting-ip")?.trim() ?? "";
   if (!rawIp || rawIp.includes(",") || rawIp.length > 45 || !isIpLiteral(rawIp)) {
     return { ok: false };
   }
