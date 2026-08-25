@@ -217,6 +217,20 @@ describe("prepareStagingWorkdir", () => {
     expect(readdirSync(fixture.tempParent)).toEqual([]);
   });
 
+  it("rejects current Supabase CLI project linkage before creating output", () => {
+    const fixture = createFixture();
+    const linkPath = resolve(
+      fixture.repoRoot,
+      "supabase/.temp/linked-project.json",
+    );
+    mkdirSync(resolve(linkPath, ".."), { recursive: true });
+    writeFileSync(linkPath, '{"projectRef":"remote-project-ref"}\n', "utf8");
+
+    expect(() => prepareStagingWorkdir(fixture))
+      .toThrow(/link/i);
+    expect(readdirSync(fixture.tempParent)).toEqual([]);
+  });
+
   it("rejects a source config without one project id assignment", () => {
     const fixture = createFixture();
     writeFileSync(resolve(fixture.repoRoot, "supabase/config.toml"), "api_port = 54321\n");

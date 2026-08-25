@@ -279,6 +279,7 @@ export function prepareStagingWorkdir(
   }
   if (
     existsSync(resolve(supabaseRoot, ".temp/project-ref")) ||
+    existsSync(resolve(supabaseRoot, ".temp/linked-project.json")) ||
     existsSync(resolve(supabaseRoot, ".branches"))
   ) {
     throw new Error("Refusing to prepare staging from a linked Supabase source tree.");
