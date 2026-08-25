@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -12,6 +12,12 @@ import {
 
 const root = process.cwd();
 const source = (path: string) => readFileSync(resolve(root, path), "utf8").replace(/\r\n/g, "\n");
+const deployableFunctionNames = readdirSync(resolve(root, "supabase/functions"), {
+  withFileTypes: true,
+})
+  .filter((entry) => entry.isDirectory() && entry.name !== "_shared")
+  .map((entry) => entry.name)
+  .sort();
 const capabilityMigrationPaths = [
   "supabase/migrations/20260722000000_capability_backend.sql",
   "supabase/migrations/20260723000000_capability_checkpoint_compaction.sql",
@@ -586,5 +592,21 @@ describe("Edge capability endpoints", () => {
     expect(contract).toContain("{ updateId, payload }");
     expect(contract).toContain("idempotent");
     expect(contract).toContain("read_only_quarantine");
+  });
+});
+
+describe("Supabase function gateway configuration", () => {
+  const config = source("supabase/config.toml");
+
+  it.each(deployableFunctionNames)("configures exactly one verify_jwt=false stanza for %s", (name) => {
+    const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const headers = [...config.matchAll(new RegExp(`^\\[functions\\.${escapedName}\\]$`, "gm"))];
+
+    expect(headers).toHaveLength(1);
+
+    const stanzaStart = headers[0].index ?? 0;
+    const nextStanza = config.indexOf("\n[", stanzaStart + 1);
+    const stanza = config.slice(stanzaStart, nextStanza < 0 ? undefined : nextStanza);
+    expect(stanza).toMatch(/^verify_jwt\s*=\s*false$/m);
   });
 });
