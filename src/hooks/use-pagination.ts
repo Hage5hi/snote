@@ -74,6 +74,7 @@ export function usePagination() {
     let scroller: HTMLElement | null = null;
     let resizeObs: ResizeObserver | null = null;
     let mutObs: MutationObserver | null = null;
+    let attachTimer: number | null = null;
 
     const recompute = () => {
       const el = scroller ?? getScroller();
@@ -96,7 +97,7 @@ export function usePagination() {
       scroller = getScroller();
       if (!scroller) {
         if (tries++ < 30) {
-          window.setTimeout(attach, 100);
+          attachTimer = window.setTimeout(attach, 100);
         }
         return;
       }
@@ -112,6 +113,7 @@ export function usePagination() {
     window.addEventListener("resize", schedule);
     return () => {
       cancelAnimationFrame(raf);
+      if (attachTimer !== null) window.clearTimeout(attachTimer);
       window.removeEventListener("resize", schedule);
       scroller?.removeEventListener("scroll", schedule);
       resizeObs?.disconnect();

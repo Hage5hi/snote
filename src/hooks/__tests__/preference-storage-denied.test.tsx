@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { useEink } from "../use-eink";
 import { useFocusLine } from "../use-focus-line";
 import { usePagination } from "../use-pagination";
@@ -29,6 +29,10 @@ describe("preference hooks when localStorage is denied", () => {
       "paginated",
       "eink",
     );
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("keeps all note display preferences usable in memory", () => {
@@ -61,6 +65,17 @@ describe("preference hooks when localStorage is denied", () => {
     expect(scrollSync.result.current.enabled).toBe(false);
     expect(pagination.result.current.enabled).toBe(true);
     expect(eink.result.current.pref).toBe("on");
+  });
+
+  it("cancels the pagination scroller retry when unmounted", () => {
+    vi.useFakeTimers();
+    const pagination = renderHook(() => usePagination());
+
+    act(() => pagination.result.current.setEnabled(true));
+    expect(vi.getTimerCount()).toBe(1);
+
+    pagination.unmount();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("keeps recent-note removal actions non-throwing", () => {
