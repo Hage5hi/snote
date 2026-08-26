@@ -14,12 +14,18 @@ Standard commands live in `README.md` (Local development / Verification) and
   ships its own Node-compat that satisfies it. Always run scripts through
   `bun run ...` / `bunx ...`, never `npm`/`node` directly.
 
-### Running the app
+### Running the app safely
 - `bun run dev` serves the SPA on **http://localhost:8080** (port is fixed in
   `vite.config.ts`).
-- `.env` is committed with a *publishable* Supabase anon config pointing at a
-  hosted Supabase project. No local Supabase stack is needed for normal dev, and
-  created notes sync to that real hosted backend (the editor shows "Synced").
+- `.env` contains a *publishable* Supabase anon config for the production
+  backend. It is not a test environment. Never create, edit, delete, or share
+  notes; run write-capable smoke/E2E tests; or invoke mutable API/Edge operations
+  against it from local development or an agent session.
+- Use an isolated local or staging Supabase project with synthetic fixtures for
+  write-path testing. If one is unavailable, skip the write smoke test; never
+  fall back to production.
+- Keep production probes credential-free and read-only. Do not print or retain
+  note content, slugs, capability tokens, URL fragments, or raw IP addresses.
 
 ### Testing / checks
 - `bun run test` (Vitest) runs fully offline; the integration test spins up an
