@@ -24,18 +24,24 @@ Standard commands live in `README.md` (Local development / Verification) and
 - Use an isolated local or staging Supabase project with synthetic fixtures for
   write-path testing. If one is unavailable, skip the write smoke test; never
   fall back to production.
-- Keep production probes credential-free and read-only. Do not print or retain
-  note content, slugs, capability tokens, URL fragments, or raw IP addresses.
+- Keep production probes unauthenticated or publishable-key-only and read-only;
+  never use service-role, admin, session, or capability credentials. Do not
+  print or retain note content, slugs, capability tokens, URL fragments, or raw
+  IP addresses.
 
 ### Testing / checks
 - `bun run test` (Vitest) runs fully offline; the integration test spins up an
   in-process Postgres via `@electric-sql/pglite`.
 - `bun run typecheck:edge` runs `deno check` and downloads Supabase type deps
   from `esm.sh` on first run, so it needs network access the first time.
-- E2E: `bun run test:e2e` (wrapper `scripts/run-playwright.sh`). It tries
-  `bunx playwright install --with-deps chromium`; if that is unavailable set
-  `PLAYWRIGHT_FORCE_SYSTEM_CHROMIUM=1` (and optionally
-  `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`) to use a system Chromium.
+- E2E: do not run `bun run test:e2e` with the tracked `.env`; merely opening a
+  new `/<slug>` can persist a note. Run it only after overriding all three
+  `VITE_SUPABASE_*` variables to an isolated local/staging backend (or safe
+  invalid values for tests that mock the backend). The wrapper
+  `scripts/run-playwright.sh` tries `bunx playwright install --with-deps
+  chromium`; if that is unavailable set `PLAYWRIGHT_FORCE_SYSTEM_CHROMIUM=1`
+  (and optionally `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`) to use a system
+  Chromium.
 
 ### Git hooks
 - Hooks are opt-in: `bun run hooks:install` sets `core.hooksPath=.githooks`. The
