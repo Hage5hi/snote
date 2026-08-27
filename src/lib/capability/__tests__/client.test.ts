@@ -229,6 +229,21 @@ describe("capability API client", () => {
     await expect(api.openSession(TOKEN)).resolves.toEqual(value);
   });
 
+  it.each(["note", "Privacy", "S"])(
+    "rejects reserved session slug %s",
+    async (slug) => {
+      const { api } = apiWithSession(privateSession({ slug }));
+
+      await expect(api.openSession(TOKEN)).rejects.toThrow("invalid note session");
+    },
+  );
+
+  it("rejects a non-string session slug with the standard validation error", async () => {
+    const { api } = apiWithSession(privateSession({ slug: 123 as unknown as string }));
+
+    await expect(api.openSession(TOKEN)).rejects.toThrow("invalid note session");
+  });
+
   it.each([
     [
       "unknown transport",
