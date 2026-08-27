@@ -55,13 +55,17 @@ jobs:
       - run: bunx tsc --noEmit -p tsconfig.tools.json
       - run: bun run typecheck:edge
       - run: bun run test:coverage
-      - run: bun run build:check
+      - name: Verify ordinary build manifest
+        run: |
+          bun run build:check
+          bun -e 'const { deployedSha, capabilityRoutesEnabled } = await Bun.file("dist/version.json").json(); if (deployedSha !== null) throw new Error("ordinary version artifact must remain unattested"); if (capabilityRoutesEnabled !== false) throw new Error("ordinary version artifact must attest disabled capability routes");'
       - name: Verify source-attested release build
         env:
           SNOTE_RELEASE_SHA: ${{ github.sha }}
+          VITE_CAPABILITY_ROUTES_ENABLED: "true"
         run: |
           bun run build:release
-          bun -e 'const { deployedSha } = await Bun.file("dist/version.json").json(); if (deployedSha !== process.env.SNOTE_RELEASE_SHA) throw new Error("release version artifact must attest checked-out SHA");'
+          bun -e 'const { deployedSha, capabilityRoutesEnabled } = await Bun.file("dist/version.json").json(); if (deployedSha !== process.env.SNOTE_RELEASE_SHA) throw new Error("release version artifact must attest checked-out SHA"); if (capabilityRoutesEnabled !== true) throw new Error("release version artifact must attest enabled capability routes");'
 
   e2e-pr:
     name: e2e-pr

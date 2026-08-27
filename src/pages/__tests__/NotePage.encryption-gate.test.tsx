@@ -10,6 +10,10 @@ import {
   getEncryptionPinState,
   markNoteEncrypted,
 } from "@/lib/encryption-pin";
+import type {
+  PollingNoteSession,
+  PrivateRealtimeNoteSession,
+} from "@/lib/capability/client";
 
 const harness = vi.hoisted(() => ({
   editorRender: vi.fn(),
@@ -22,6 +26,11 @@ const harness = vi.hoisted(() => ({
   providerConstruct: vi.fn(),
   providerConnect: vi.fn(),
   providerDestroy: vi.fn(),
+  capabilityProviderConstruct: vi.fn(),
+  capabilityProviderConnect: vi.fn(),
+  capabilityProviderDestroy: vi.fn(),
+  maybeSaveSnapshot: vi.fn(),
+  recordOnSuddenDelete: vi.fn(),
   topbarProps: vi.fn(),
   capabilityOpenSession: vi.fn(),
   metaForSlug: vi.fn(),
@@ -144,6 +153,37 @@ vi.mock("@/lib/yjs/provider", () => ({
     }
   },
 }));
+vi.mock("@/lib/yjs/capability-provider", () => ({
+  CapabilityYjsProvider: class {
+    awareness = {};
+    private destroyed = false;
+
+    constructor(
+      private readonly access: unknown,
+      private readonly session: unknown,
+      private readonly doc: unknown,
+      private readonly dependencies: unknown,
+    ) {
+      harness.capabilityProviderConstruct(access, session, doc, dependencies);
+    }
+
+    setEncryption() {}
+    setExpectedEncrypted() {}
+    onAwareness() { return vi.fn(); }
+    onSyncEvent() { return vi.fn(); }
+    connect() {
+      if (this.destroyed) return Promise.resolve();
+      harness.capabilityProviderConnect(this.access, this.session, this.doc);
+      return Promise.resolve();
+    }
+    flushBeacon() {}
+    destroy() {
+      this.destroyed = true;
+      harness.capabilityProviderDestroy(this.access, this.session, this.doc);
+      return Promise.resolve();
+    }
+  },
+}));
 vi.mock("@/hooks/use-word-goal", () => ({ useWordGoal: () => ({ goal: null }), consumeGoalReached: () => false }));
 vi.mock("@/hooks/use-toast", () => ({ toast: vi.fn() }));
 vi.mock("@/hooks/use-zen-mode", () => ({ useZenMode: () => ({ zen: false, toggle: vi.fn() }) }));
@@ -170,7 +210,10 @@ vi.mock("@/lib/crypto", () => ({
 vi.mock("@/lib/yjs/base64", () => ({ base64ToBytes: () => new Uint8Array([1]) }));
 vi.mock("@/hooks/use-scene-theme", () => ({ useSceneTheme: () => ({ scene: "none" }) }));
 vi.mock("@/lib/recent-notes", () => ({ touchRecent: vi.fn() }));
-vi.mock("@/lib/snapshots", () => ({ maybeSaveSnapshot: vi.fn(), recordOnSuddenDelete: vi.fn() }));
+vi.mock("@/lib/snapshots", () => ({
+  maybeSaveSnapshot: harness.maybeSaveSnapshot,
+  recordOnSuddenDelete: harness.recordOnSuddenDelete,
+}));
 vi.mock("@/lib/yjs/identity", () => ({ getIdentity: () => ({ name: "Test", color: "#000" }) }));
 vi.mock("@/lib/wiki-link", () => ({ WIKI_NAV_EVENT: "wiki-nav" }));
 vi.mock("@/lib/ext-context", () => ({ isExtensionContext: false }));
@@ -202,6 +245,95 @@ function renderStandalone() {
       <Routes>
         <Route path="/:slug" element={<NotePage />} />
       </Routes>
+    </MemoryRouter>,
+  );
+}
+
+const CAPABILITY_TOKEN = "a".repeat(43);
+const CAPABILITY_TOKEN_B = "b".repeat(43);
+const NOTE_ID = "00000000-0000-4000-8000-000000000001";
+
+function pollingSession(
+  overrides: Partial<PollingNoteSession> = {},
+): PollingNoteSession {
+  return {
+    noteId: NOTE_ID,
+    slug: "secret",
+    scope: "owner",
+    realtimeTopic: `note:${NOTE_ID}`,
+    generation: 1,
+    syncStatus: "active",
+    currentSequence: 0,
+    payloadLimitBytes: 4_194_304,
+    checkpointSequence: 0,
+    checkpointVersion: null,
+    checkpointPayload: null,
+    checkpointEncryptionVersion: null,
+    missingUpdates: [],
+    encryption: {
+      enabled: false,
+      version: 0,
+      salt: null,
+      check: null,
+      iterations: 600_000,
+    },
+    syncTransport: "polling",
+    realtimeToken: null,
+    realtimeExpiresAt: null,
+    ...overrides,
+  };
+}
+
+function privateRealtimeSession(
+  overrides: Partial<PrivateRealtimeNoteSession> = {},
+): PrivateRealtimeNoteSession {
+  const polling = pollingSession();
+  return {
+    ...polling,
+    syncTransport: "private-realtime",
+    realtimeToken: "private-realtime-token",
+    realtimeExpiresAt: "2099-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function renderCapability(scope: "owner" | "edit") {
+  return render(
+    <MemoryRouter initialEntries={[`/secret#${scope}=${CAPABILITY_TOKEN}`]}>
+      <Routes>
+        <Route path="/:slug" element={<NotePage />} />
+      </Routes>
+    </MemoryRouter>,
+  );
+}
+
+function CapabilityNavigationHarness() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button type="button" onClick={() => navigate("/secret")}>
+        navigate-legacy
+      </button>
+      <button type="button" onClick={() => navigate(`/secret#owner=${CAPABILITY_TOKEN}`)}>
+        navigate-owner
+      </button>
+      <button
+        type="button"
+        onClick={() => navigate(`/secret#edit=${CAPABILITY_TOKEN_B}`)}
+      >
+        navigate-capability-b
+      </button>
+      <Routes>
+        <Route path="/:slug" element={<NotePage />} />
+      </Routes>
+    </>
+  );
+}
+
+function renderCapabilityNavigation(initialEntry = `/secret#owner=${CAPABILITY_TOKEN}`) {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <CapabilityNavigationHarness />
     </MemoryRouter>,
   );
 }
@@ -273,6 +405,11 @@ describe("NotePage encryption gate", () => {
     harness.providerConstruct.mockClear();
     harness.providerConnect.mockClear();
     harness.providerDestroy.mockClear();
+    harness.capabilityProviderConstruct.mockClear();
+    harness.capabilityProviderConnect.mockClear();
+    harness.capabilityProviderDestroy.mockClear();
+    harness.maybeSaveSnapshot.mockClear();
+    harness.recordOnSuddenDelete.mockClear();
     harness.topbarProps.mockClear();
     harness.capabilityOpenSession.mockReset();
     harness.capabilityOpenSession.mockResolvedValue(null);
@@ -327,6 +464,194 @@ describe("NotePage encryption gate", () => {
     await waitFor(() =>
       expect(harness.topbarProps).toHaveBeenLastCalledWith(
         expect.objectContaining({ allowEncryptionTransitions: false }),
+      ),
+    );
+  });
+
+  it.each(["owner", "edit"] as const)(
+    "admits a matching polling capability session for %s scope",
+    async (scope) => {
+      const session = pollingSession({ scope });
+      const access = { slug: "secret", scope, token: CAPABILITY_TOKEN };
+      harness.capabilityOpenSession.mockResolvedValue(session);
+
+      renderCapability(scope);
+
+      await waitFor(() => expect(harness.capabilityProviderConstruct).toHaveBeenCalledTimes(1));
+      expect(harness.capabilityOpenSession).toHaveBeenCalledWith(CAPABILITY_TOKEN);
+      expect(harness.metaForSlug).not.toHaveBeenCalled();
+      expect(harness.providerConstruct).not.toHaveBeenCalled();
+      expect(harness.idbConstruct).not.toHaveBeenCalled();
+      await waitFor(() => expect(harness.capabilityProviderConnect).toHaveBeenCalledTimes(1));
+      expect(harness.maybeSaveSnapshot).not.toHaveBeenCalled();
+      expect(harness.recordOnSuddenDelete).not.toHaveBeenCalled();
+      expect(harness.docAcquire).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:${scope}:1`,
+      );
+      const capabilityDoc = harness.capabilityProviderConstruct.mock.calls[0]?.[2];
+      expect(capabilityDoc).toEqual(
+        expect.objectContaining({ getText: expect.any(Function) }),
+      );
+      expect(harness.capabilityProviderConstruct).toHaveBeenCalledWith(
+        access,
+        session,
+        capabilityDoc,
+        { pollingOnly: true },
+      );
+      await waitFor(() =>
+        expect(harness.topbarProps).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            allowEncryptionTransitions: true,
+            currentShareUrl: undefined,
+            capabilityAccess: access,
+            doc: capabilityDoc,
+          }),
+        ),
+      );
+    },
+  );
+
+  it.each([
+    {
+      name: "polling slug mismatch",
+      scope: "owner" as const,
+      session: pollingSession({ slug: "different" }),
+    },
+    {
+      name: "polling scope mismatch",
+      scope: "owner" as const,
+      session: pollingSession({ scope: "edit" }),
+    },
+    {
+      name: "matching private-Realtime session",
+      scope: "owner" as const,
+      session: privateRealtimeSession(),
+    },
+  ])("fails closed for $name", async ({ scope, session }) => {
+    harness.capabilityOpenSession.mockResolvedValue(session);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const view = renderCapability(scope);
+
+      await waitFor(() =>
+        expect(warn).toHaveBeenCalledWith("Encryption metadata query failed"),
+      );
+      expect(harness.capabilityOpenSession).toHaveBeenCalledWith(CAPABILITY_TOKEN);
+      expect(harness.metaForSlug).not.toHaveBeenCalled();
+      expect(harness.docAcquire).not.toHaveBeenCalled();
+      expect(harness.providerConstruct).not.toHaveBeenCalled();
+      expect(harness.capabilityProviderConstruct).not.toHaveBeenCalled();
+      expect(view.queryByTestId("editor")).not.toBeInTheDocument();
+      expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+      expect(view.getByText("common.loading")).toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("does not reuse an admitted session across same-slug capability navigation", async () => {
+    const ownerSession = pollingSession();
+    const rejectedEditSession = privateRealtimeSession({ scope: "edit" });
+    let resolveEditSession!: (session: PrivateRealtimeNoteSession) => void;
+    const pendingEditSession = new Promise<PrivateRealtimeNoteSession>((resolve) => {
+      resolveEditSession = resolve;
+    });
+    harness.capabilityOpenSession.mockImplementation((token: string) => {
+      if (token === CAPABILITY_TOKEN) return Promise.resolve(ownerSession);
+      if (token === CAPABILITY_TOKEN_B) return pendingEditSession;
+      throw new Error("unexpected capability token");
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const view = renderCapabilityNavigation();
+      await waitFor(() => expect(harness.capabilityProviderConstruct).toHaveBeenCalledTimes(1));
+      expect(harness.docAcquire).toHaveBeenCalledTimes(1);
+
+      fireEvent.click(view.getByRole("button", { name: "navigate-capability-b" }));
+
+      await waitFor(() =>
+        expect(harness.capabilityOpenSession).toHaveBeenCalledWith(CAPABILITY_TOKEN_B),
+      );
+      expect(harness.docAcquire).toHaveBeenCalledTimes(1);
+      expect(harness.capabilityProviderConstruct).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        resolveEditSession(rejectedEditSession);
+        await pendingEditSession;
+      });
+
+      await waitFor(() =>
+        expect(warn).toHaveBeenCalledWith("Encryption metadata query failed"),
+      );
+      expect(harness.docAcquire).toHaveBeenCalledTimes(1);
+      expect(harness.capabilityProviderConstruct).toHaveBeenCalledTimes(1);
+      expect(view.queryByTestId("editor")).not.toBeInTheDocument();
+      expect(view.queryByTestId("preview")).not.toBeInTheDocument();
+      expect(view.getByText("common.loading")).toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("separates the capability document cache from the same-slug legacy note", async () => {
+    harness.capabilityOpenSession.mockResolvedValue(pollingSession());
+    harness.metaForSlug.mockResolvedValue({ data: { is_encrypted: false }, error: null });
+    const view = renderCapabilityNavigation();
+
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}:owner:1`),
+    );
+    fireEvent.click(view.getByRole("button", { name: "navigate-legacy" }));
+
+    await waitFor(() =>
+      expect(harness.docRelease).toHaveBeenCalledWith(`capability:${NOTE_ID}:owner:1`),
+    );
+    await waitFor(() => expect(harness.docAcquire).toHaveBeenCalledWith("secret"));
+  });
+
+  it("separates the same-slug legacy document cache from a capability note", async () => {
+    harness.metaForSlug.mockResolvedValue({ data: { is_encrypted: false }, error: null });
+    harness.capabilityOpenSession.mockResolvedValue(pollingSession());
+    const view = renderCapabilityNavigation("/secret");
+
+    await waitFor(() => expect(harness.docAcquire).toHaveBeenCalledWith("secret"));
+    fireEvent.click(view.getByRole("button", { name: "navigate-owner" }));
+
+    await waitFor(() => expect(harness.docRelease).toHaveBeenCalledWith("secret"));
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}:owner:1`),
+    );
+  });
+
+  it("separates capability document caches across scope and generation", async () => {
+    harness.capabilityOpenSession.mockImplementation((token: string) => {
+      if (token === CAPABILITY_TOKEN) {
+        return Promise.resolve(pollingSession({ scope: "owner", generation: 1 }));
+      }
+      if (token === CAPABILITY_TOKEN_B) {
+        return Promise.resolve(pollingSession({ scope: "edit", generation: 2 }));
+      }
+      throw new Error("unexpected capability token");
+    });
+    const view = renderCapabilityNavigation();
+
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:owner:1`,
+      ),
+    );
+    fireEvent.click(view.getByRole("button", { name: "navigate-capability-b" }));
+
+    await waitFor(() =>
+      expect(harness.docRelease).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:owner:1`,
+      ),
+    );
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:edit:2`,
       ),
     );
   });
@@ -419,6 +744,15 @@ describe("NotePage encryption gate", () => {
     expect(harness.docAcquire).toHaveBeenCalledWith("secret");
     expect(harness.providerConstruct).toHaveBeenCalledWith("secret");
     expect(harness.idbConstruct).toHaveBeenCalledWith("note:secret");
+    expect(harness.capabilityOpenSession).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(harness.topbarProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          allowEncryptionTransitions: false,
+          currentShareUrl: `${window.location.origin}/secret`,
+        }),
+      ),
+    );
   });
 
   it("immediately closes a live plaintext note when another local flow pins it", async () => {

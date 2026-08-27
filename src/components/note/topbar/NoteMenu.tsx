@@ -12,7 +12,7 @@ import { useI18n } from "@/i18n";
 
 interface NoteMenuProps {
   onOpenGoal: () => void;
-  onOpenHistory: () => void;
+  onOpenHistory?: () => void;
   onCopyAll: () => void;
 }
 
@@ -30,10 +30,14 @@ export function NoteMenu({ onOpenGoal, onOpenHistory, onCopyAll }: NoteMenuProps
         <DropdownMenuItem onClick={onOpenGoal}>
           <Target className="h-3.5 w-3.5" /> {t("note.goal")}
         </DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onOpenHistory}>
-          <History className="h-3.5 w-3.5" /> {t("note.history")}
-        </DropdownMenuItem>
+        {onOpenHistory && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={onOpenHistory}>
+              <History className="h-3.5 w-3.5" /> {t("note.history")}
+            </DropdownMenuItem>
+          </>
+        )}
         <DropdownMenuItem onClick={onCopyAll}>
           <ClipboardCopy className="h-3.5 w-3.5" /> {t("note.copy_all")}
           <span className="ml-auto text-[10px] text-muted-foreground">⌘⇧C</span>

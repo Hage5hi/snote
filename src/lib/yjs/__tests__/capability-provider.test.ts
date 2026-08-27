@@ -513,6 +513,73 @@ describe("CapabilityYjsProvider", () => {
     await provider.destroy();
   });
 
+  it("keeps a polling-only provider on polling when a durable poll returns managed auth", async () => {
+    const polling = pollingEventHarness();
+    const realtime = lifecycleRealtimeHarness([]);
+    const api = apiHarness();
+    api.openSession = vi.fn(async () => baseSession({
+      scope: "view",
+      realtimeToken: "platform.jwt.from-poll",
+      realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+    }));
+    const provider = new CapabilityYjsProvider(
+      { slug: null, scope: "view", token: TOKEN },
+      pollingSession({ scope: "view" }),
+      new Y.Doc(),
+      {
+        api,
+        outbox: testOutbox("snote-capability-polling-only-view-test"),
+        realtimeFactory: realtime.factory,
+        pollingOnly: true,
+        polling: {
+          isHidden: polling.isHidden,
+          random: () => 0.5,
+          eventTarget: polling.eventTarget,
+          documentTarget: polling.documentTarget,
+        },
+      },
+    );
+    try {
+      await provider.connect({ name: "Viewer", color: "#123456" });
+      polling.emitWindow("focus");
+      await vi.waitFor(() => expect(api.openSession).toHaveBeenCalledOnce());
+
+      expect(provider.getSession()).toMatchObject({
+        syncTransport: "polling",
+        realtimeToken: null,
+        realtimeExpiresAt: null,
+      });
+      expect(realtime.realtimeFactory).not.toHaveBeenCalled();
+    } finally {
+      await provider.destroy();
+    }
+  });
+
+  it("rejects locator drift from a refreshed polling-only session", async () => {
+    const realtimeFactory = vi.fn(async () => realtimeHandle()) as CapabilityRealtimeFactory;
+    const api = apiHarness();
+    api.openSession = vi.fn(async () => pollingSession({ slug: "renamed" }));
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      pollingSession(),
+      new Y.Doc(),
+      {
+        api,
+        outbox: testOutbox("snote-capability-polling-only-locator-test"),
+        realtimeFactory,
+        pollingOnly: true,
+      },
+    );
+
+    try {
+      await expect(provider.refreshNow()).rejects.toThrow("capability locator mismatch");
+      expect(provider.getSession().slug).toBe("daily");
+      expect(realtimeFactory).not.toHaveBeenCalled();
+    } finally {
+      await provider.destroy();
+    }
+  });
+
   it("keeps durable polling alive when private Realtime startup fails", async () => {
     const polling = pollingEventHarness();
     const api = apiHarness();
@@ -1787,6 +1854,45 @@ describe("CapabilityYjsProvider", () => {
       "subscribe",
     ]);
     expect(factoryCallsBeforeDestroy).toBe(1);
+  });
+
+  it("keeps a polling-only provider on polling when sync returns managed Auth", async () => {
+    const realtime = lifecycleRealtimeHarness([]);
+    const pendingSync = deferred<Awaited<ReturnType<CapabilityApi["sync"]>>>();
+    const api = apiHarness(async () => pendingSync.promise);
+    const outbox = new CapabilityOutbox("snote-capability-polling-only-sync-test");
+    const doc = new Y.Doc();
+    const provider = new CapabilityYjsProvider(
+      { slug: "daily", scope: "edit", token: TOKEN },
+      pollingSession(),
+      doc,
+      { api, outbox, realtimeFactory: realtime.factory, pollingOnly: true },
+    );
+    try {
+      await provider.connect({ name: "Tester", color: "#123456" });
+
+      doc.getText("content").insert(0, "sync stays polling");
+      await provider.whenLocalUpdatesPersisted();
+      const [pending] = await outbox.list(NOTE_ID, "edit", 1);
+      pendingSync.resolve({
+        acknowledgements: [{ updateId: pending.updateId, sequence: 1 }],
+        session: baseSession({
+          currentSequence: 1,
+          realtimeToken: "platform.jwt.from-sync",
+          realtimeExpiresAt: "2099-01-01T00:01:00.000Z",
+        }),
+      });
+      await provider.flushNow();
+
+      expect(provider.getSession()).toMatchObject({
+        syncTransport: "polling",
+        realtimeToken: null,
+        realtimeExpiresAt: null,
+      });
+      expect(realtime.realtimeFactory).not.toHaveBeenCalled();
+    } finally {
+      await provider.destroy();
+    }
   });
 
   it("refreshes active private Realtime with the token returned by sync", async () => {

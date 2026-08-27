@@ -1,4 +1,4 @@
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
@@ -25,7 +25,7 @@ import {
 const BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 const RELEASE_IDENTITY = resolveReleaseIdentity();
 
-function emitVersionJson(): Plugin {
+function emitVersionJson(capabilityRoutesEnabled: boolean): Plugin {
   return {
     name: "emit-version-json",
     apply: "build" as const,
@@ -38,13 +38,18 @@ function emitVersionJson(): Plugin {
           buildId: BUILD_ID,
           builtAt: new Date().toISOString(),
           deployedSha,
+          capabilityRoutesEnabled,
         }),
       });
     },
   };
 }
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "VITE_");
+  const capabilityRoutesEnabled = env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
+
+  return {
   define: {
     __BUILD_ID__: JSON.stringify(BUILD_ID),
   },
@@ -98,7 +103,7 @@ export default defineConfig(({ mode }) => ({
         cleanupOutdatedCaches: true,
       },
     }),
-    emitVersionJson(),
+    emitVersionJson(capabilityRoutesEnabled),
   ].filter(Boolean),
   resolve: {
     alias: {
@@ -264,4 +269,5 @@ export default defineConfig(({ mode }) => ({
       },
     },
   },
-}));
+  };
+});

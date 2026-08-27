@@ -106,6 +106,7 @@ export function Topbar({
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [goalOpen, setGoalOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const openHistory = capabilityAccess ? undefined : () => setHistoryOpen(true);
   const viewportNarrow = useNarrowViewport();
   const narrow = narrowOverride ?? viewportNarrow;
   const isMobile = useIsMobile();
@@ -168,7 +169,7 @@ export function Topbar({
               provider={provider}
               getContent={getContent}
               hideHome={compact}
-              onOpenHistory={() => setHistoryOpen(true)}
+              onOpenHistory={openHistory}
               outlineOpen={outlineOpen}
               onToggleOutline={onToggleOutline}
               outlineTriggerRef={outlineTriggerRef}
@@ -220,7 +221,7 @@ export function Topbar({
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
               <NoteMenu
                 onOpenGoal={() => setGoalOpen(true)}
-                onOpenHistory={() => setHistoryOpen(true)}
+                onOpenHistory={openHistory}
                 onCopyAll={copyAll}
               />
               {!compact && (
@@ -252,7 +253,7 @@ export function Topbar({
             provider={provider}
             getContent={getContent}
             hideHome={compact}
-            onOpenHistory={() => setHistoryOpen(true)}
+            onOpenHistory={openHistory}
             outlineOpen={outlineOpen}
             onToggleOutline={onToggleOutline}
             outlineTriggerRef={outlineTriggerRef}
@@ -301,7 +302,7 @@ export function Topbar({
 
             <NoteMenu
               onOpenGoal={() => setGoalOpen(true)}
-              onOpenHistory={() => setHistoryOpen(true)}
+              onOpenHistory={openHistory}
               onCopyAll={copyAll}
             />
 
@@ -338,14 +339,16 @@ export function Topbar({
         </header>
       )}
 
-      <HistoryDialog
-        slug={slug}
-        doc={doc}
-        snapshotProtection={encryption}
-        open={historyOpen}
-        onOpenChange={setHistoryOpen}
-        trigger={false}
-      />
+      {!capabilityAccess && (
+        <HistoryDialog
+          slug={slug}
+          doc={doc}
+          snapshotProtection={encryption}
+          open={historyOpen}
+          onOpenChange={setHistoryOpen}
+          trigger={false}
+        />
+      )}
       <ShortcutHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <WordGoalDialog
         open={goalOpen}
