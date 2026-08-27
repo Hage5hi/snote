@@ -15,11 +15,11 @@ import {
   duplicateLegacyNote,
   type LegacyNote,
 } from "@/lib/legacy/cutover";
+import { isUsableSlug } from "@/lib/slug";
 import { base64ToBytes } from "@/lib/yjs/base64";
 import type { Encryption } from "@/lib/yjs/provider";
 import { useI18n } from "@/i18n";
 
-const SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const PRIVATE_PAGE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
 type ReadyState = {
@@ -88,7 +88,7 @@ export default function LegacyNotePage({
   const [targetSlug, setTargetSlug] = useState(() => defaultDuplicateSlug(slug));
   const [duplicating, setDuplicating] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
-  const valid = SLUG_RE.test(slug);
+  const valid = isUsableSlug(slug);
   const legacyApi = useMemo(() => createLegacyNoteApi(), []);
 
   useEffect(() => {
@@ -224,12 +224,14 @@ export default function LegacyNotePage({
             pattern="[A-Za-z0-9_-]{1,64}"
             maxLength={64}
             className="h-8 w-36 font-mono text-xs sm:w-48"
-            aria-invalid={!!duplicateError}
+            aria-invalid={
+              !!duplicateError || (targetSlug.trim() !== "" && !isUsableSlug(targetSlug.trim()))
+            }
           />
           <Button
             type="submit"
             size="sm"
-            disabled={duplicating || !SLUG_RE.test(targetSlug.trim())}
+            disabled={duplicating || !isUsableSlug(targetSlug.trim())}
             aria-label={t("legacy.duplicate_securely")}
           >
             {duplicating ? <Loader2 className="h-4 w-4 motion-safe:animate-spin" /> : <CopyPlus className="h-4 w-4" />}
