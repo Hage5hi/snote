@@ -50,12 +50,13 @@ describe("release identity", () => {
     expect(
       resolveReleaseIdentity(
         { SNOTE_REQUIRE_RELEASE_SHA: "1", SNOTE_RELEASE_SHA: SHA_A },
-        sequence([`${SHA_A}\n`, ""], calls),
+        sequence([`${SHA_A}\n`, "", `${SHA_A}\n`], calls),
       ),
     ).toEqual({ strict: true, deployedSha: SHA_A });
     expect(calls).toEqual([
       ["rev-parse", "HEAD"],
       ["status", "--porcelain", "--untracked-files=all"],
+      ["rev-parse", "HEAD"],
     ]);
   });
 
@@ -86,16 +87,27 @@ describe("release identity", () => {
     expect(() =>
       resolveReleaseIdentity(
         { SNOTE_REQUIRE_RELEASE_SHA: "1", SNOTE_RELEASE_SHA: SHA_A },
-        sequence([`${SHA_A}\n`, " M vite.config.ts\n"]),
+        sequence([`${SHA_A}\n`, " M vite.config.ts\n", `${SHA_A}\n`]),
       ),
     ).toThrow(/clean Git checkout/);
+  });
+
+  it("rejects a checkout whose HEAD changes during the cleanliness check", () => {
+    const error = thrownError(() =>
+      resolveReleaseIdentity(
+        { SNOTE_REQUIRE_RELEASE_SHA: "1", SNOTE_RELEASE_SHA: SHA_A },
+        sequence([`${SHA_A}\n`, "", `${SHA_B}\n`]),
+      ),
+    );
+
+    expect(error.message).toBe("A strict release build requires a clean Git checkout.");
   });
 
   it("rejects a SHA that differs from HEAD", () => {
     expect(() =>
       resolveReleaseIdentity(
         { SNOTE_REQUIRE_RELEASE_SHA: "1", SNOTE_RELEASE_SHA: SHA_A },
-        sequence([`${SHA_B}\n`, ""]),
+        sequence([`${SHA_B}\n`, "", `${SHA_B}\n`]),
       ),
     ).toThrow(/does not match/);
   });
@@ -125,14 +137,29 @@ describe("release identity", () => {
 
   it("revalidates the identity immediately before bundle emission", () => {
     const identity = { strict: true as const, deployedSha: SHA_A };
+    const calls: string[][] = [];
     expect(
-      revalidateReleaseIdentity(identity, sequence([`${SHA_A}\n`, ""])),
+      revalidateReleaseIdentity(
+        identity,
+        sequence([`${SHA_A}\n`, "", `${SHA_A}\n`], calls),
+      ),
     ).toBe(SHA_A);
+    expect(calls).toEqual([
+      ["rev-parse", "HEAD"],
+      ["status", "--porcelain", "--untracked-files=all"],
+      ["rev-parse", "HEAD"],
+    ]);
     expect(() =>
-      revalidateReleaseIdentity(identity, sequence([`${SHA_B}\n`, ""])),
+      revalidateReleaseIdentity(
+        identity,
+        sequence([`${SHA_B}\n`, "", `${SHA_B}\n`]),
+      ),
     ).toThrow(/changed during the build/);
     expect(() =>
-      revalidateReleaseIdentity(identity, sequence([`${SHA_A}\n`, "?? drift\n"])),
+      revalidateReleaseIdentity(
+        identity,
+        sequence([`${SHA_A}\n`, "?? drift\n", `${SHA_A}\n`]),
+      ),
     ).toThrow(/changed during the build/);
     const error = thrownError(() =>
       revalidateReleaseIdentity(

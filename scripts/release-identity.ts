@@ -23,11 +23,16 @@ function runGit(args: readonly string[]): string {
 
 function resolveCleanHead(git: GitCommand): string | null {
   try {
-    const head = git(["rev-parse", "HEAD"]).trim();
-    if (!COMMIT_SHA.test(head)) return null;
-
+    const headBeforeStatus = git(["rev-parse", "HEAD"]).trim();
     const status = git(["status", "--porcelain", "--untracked-files=all"]);
-    return status === "" ? head : null;
+    const headAfterStatus = git(["rev-parse", "HEAD"]).trim();
+
+    return status === ""
+      && COMMIT_SHA.test(headBeforeStatus)
+      && COMMIT_SHA.test(headAfterStatus)
+      && headBeforeStatus === headAfterStatus
+      ? headBeforeStatus
+      : null;
   } catch {
     return null;
   }
