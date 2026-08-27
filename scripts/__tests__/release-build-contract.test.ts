@@ -33,4 +33,34 @@ describe("release build contract", () => {
       "release version artifact must attest checked-out SHA",
     );
   });
+
+  it("attests the exact capability route flag in the version manifest", () => {
+    expect(viteConfig).toContain('loadEnv(mode, process.cwd(), "VITE_")');
+    expect(viteConfig).toContain(
+      'env.VITE_CAPABILITY_ROUTES_ENABLED === "true"',
+    );
+    expect(viteConfig).toContain(
+      "function emitVersionJson(capabilityRoutesEnabled: boolean)",
+    );
+    expect(viteConfig).toMatch(
+      /JSON\.stringify\(\{[^}]*\bcapabilityRoutesEnabled\b/s,
+    );
+    expect(viteConfig).toContain("emitVersionJson(capabilityRoutesEnabled)");
+  });
+
+  it("checks disabled ordinary and enabled strict manifests in CI", () => {
+    expect(
+      ciWorkflow.match(
+        /ordinary version artifact must attest disabled capability routes/g,
+      ) ?? [],
+    ).toHaveLength(1);
+    expect(ciWorkflow.split(/\r?\n/)).toContain(
+      '          VITE_CAPABILITY_ROUTES_ENABLED: "true"',
+    );
+    expect(
+      ciWorkflow.match(
+        /release version artifact must attest enabled capability routes/g,
+      ) ?? [],
+    ).toHaveLength(1);
+  });
 });
