@@ -209,7 +209,7 @@ const pt: Dictionary = {
     "share.aria": "Partilha por QR",
     "share.tooltip": "Partilhar código QR",
     "share.dialog_title": "Partilhar nota",
-    "share.dialog_desc": "Leia o QR com o seu telemóvel para abrir a nota, ou crie um link de apenas leitura abaixo.",
+    "share.dialog_desc": "Leia o QR com o seu telemóvel para abrir a nota.",
     "share.warn_key_in_url": "O URL contém a chave de decifragem (#) — partilhe apenas com pessoas de confiança.",
     "share.no_key": "O URL não contém a chave — o destinatário precisa de saber a chave para o abrir.",
     "share.readonly_heading": "Link de apenas leitura",

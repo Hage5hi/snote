@@ -223,7 +223,7 @@ const en = {
     "share.aria": "Share QR",
     "share.tooltip": "Share QR code",
     "share.dialog_title": "Share note",
-    "share.dialog_desc": "Scan the QR with your phone to open the note, or create a read-only link below.",
+    "share.dialog_desc": "Scan the QR with your phone to open the note.",
     "share.warn_key_in_url": "URL contains the decryption key (#) \u2014 only share with people you trust.",
     "share.no_key": "URL does not contain the key \u2014 the recipient must know the key to open it.",
     "share.readonly_heading": "Read-only link",
