@@ -419,6 +419,15 @@ describe("NotePage encryption gate", () => {
     expect(harness.docAcquire).toHaveBeenCalledWith("secret");
     expect(harness.providerConstruct).toHaveBeenCalledWith("secret");
     expect(harness.idbConstruct).toHaveBeenCalledWith("note:secret");
+    expect(harness.capabilityOpenSession).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(harness.topbarProps).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          allowEncryptionTransitions: false,
+          currentShareUrl: `${window.location.origin}/secret`,
+        }),
+      ),
+    );
   });
 
   it("immediately closes a live plaintext note when another local flow pins it", async () => {

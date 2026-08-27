@@ -783,9 +783,10 @@ export default function NotePage({
   // The ready phase schedules resource acquisition in a layout effect. Keep
   // the workspace closed for that single commit until its owned pair exists.
   if (!doc || !provider) return null;
+  const legacyContainment = legacyOnly || !capabilityAccess;
   const getContent = () => doc.getText("content").toString();
-  const legacyEncryptionSecret = legacyOnly ? readEncryptionSecret(location.hash) : "";
-  const currentShareUrl = legacyOnly && typeof window !== "undefined"
+  const legacyEncryptionSecret = legacyContainment ? readEncryptionSecret(location.hash) : "";
+  const currentShareUrl = legacyContainment && typeof window !== "undefined"
     ? `${window.location.origin}/${slug}${
       legacyEncryptionSecret ? `#${encodeURIComponent(legacyEncryptionSecret)}` : ""
     }`
@@ -815,7 +816,7 @@ export default function NotePage({
           isEncrypted={encMeta.isEncrypted}
           encryption={encryption}
           capabilityAccess={capabilityAccess}
-          allowEncryptionTransitions={!legacyOnly}
+          allowEncryptionTransitions={!legacyContainment}
           currentShareUrl={currentShareUrl}
           paginated={paginated}
           onTogglePagination={togglePagination}
@@ -897,7 +898,7 @@ export default function NotePage({
         isEncrypted={encMeta.isEncrypted}
         encryption={encryption}
         capabilityAccess={capabilityAccess}
-        allowEncryptionTransitions={!legacyOnly}
+        allowEncryptionTransitions={!legacyContainment}
         currentShareUrl={currentShareUrl}
         paginated={paginated}
         onTogglePagination={togglePagination}
