@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { getShareToken, setShareToken, clearShareToken } from "@/lib/share-tokens";
+import { getShareToken, clearShareToken } from "@/lib/share-tokens";
 import { useI18n } from "@/i18n/index";
 import { createCapabilityApi } from "@/lib/capability/client";
 import {
@@ -118,32 +118,22 @@ export function ShareDialog({
   })();
 
   const createLink = async () => {
+    if (capabilityAccess?.scope !== "owner") return;
     setBusy("create");
     try {
-      if (capabilityAccess) {
-        if (capabilityAccess.scope !== "owner") throw new Error("owner capability required");
-        const data = await createCapabilityApi().manage(capabilityAccess.token, {
-          action: "rotate",
-          scope: "view",
-        });
-        const rotated = data.rotated as { scope?: unknown; capability?: unknown } | undefined;
-        if (
-          rotated?.scope !== "view"
-          || typeof rotated.capability !== "string"
-          || !CAPABILITY_TOKEN_RE.test(rotated.capability)
-        ) {
-          throw new Error("invalid rotated capability");
-        }
-        setToken(rotated.capability);
-        toast({ title: t("share.created_link") });
-        return;
-      }
-      const { data, error } = await supabase.functions.invoke<{ token: string }>("share-create", {
-        body: { slug },
+      const data = await createCapabilityApi().manage(capabilityAccess.token, {
+        action: "rotate",
+        scope: "view",
       });
-      if (error || !data?.token) throw error ?? new Error("no token");
-      setShareToken(slug, data.token);
-      setToken(data.token);
+      const rotated = data.rotated as { scope?: unknown; capability?: unknown } | undefined;
+      if (
+        rotated?.scope !== "view"
+        || typeof rotated.capability !== "string"
+        || !CAPABILITY_TOKEN_RE.test(rotated.capability)
+      ) {
+        throw new Error("invalid rotated capability");
+      }
+      setToken(rotated.capability);
       toast({ title: t("share.created_link") });
     } catch (e) {
       console.error(e);
@@ -346,7 +336,7 @@ export function ShareDialog({
           </div>
         )}
 
-        {(!capabilityAccess || capabilityAccess.scope === "owner") && (
+        {(capabilityAccess?.scope === "owner" || (!capabilityAccess && shareToken)) && (
         <div className="mt-2 min-w-0 border-t border-border pt-3">
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold">
             <Eye className="h-3.5 w-3.5" />

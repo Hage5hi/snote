@@ -44,7 +44,6 @@ vi.mock("@/hooks/use-toast", () => ({ toast: vi.fn() }));
 vi.mock("@/integrations/supabase/client", () => ({ supabase: { functions: { invoke: vi.fn() } } }));
 vi.mock("@/lib/share-tokens", () => ({
   getShareToken: () => harness.shareToken,
-  setShareToken: vi.fn(),
   clearShareToken: vi.fn(),
 }));
 vi.mock("@/lib/capability/client", () => ({ createCapabilityApi: () => ({ manage: vi.fn() }) }));
@@ -109,5 +108,47 @@ describe("ShareDialog legacy current URL containment", () => {
     const expected = `${window.location.origin}/s/readonly-token#safe%20key`;
     await waitFor(() => expect(harness.copy).toHaveBeenCalledWith(expected));
     expect(harness.copy.mock.calls.flat().join(" ")).not.toContain(ownerToken);
+  });
+});
+
+describe("ShareDialog share-create tombstone alignment", () => {
+  beforeEach(() => {
+    harness.qr.mockClear();
+    harness.copy.mockClear();
+    harness.shareToken = null;
+    harness.openDialog = null;
+  });
+
+  it("offers no legacy read-only link creation without a stored token", async () => {
+    window.history.replaceState(null, "", "/secret");
+    render(
+      <ShareDialog
+        slug="secret"
+        isEncrypted={false}
+        currentShareUrl={`${window.location.origin}/secret`}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "share.aria" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "share.create_btn" })).toBeNull(),
+    );
+    expect(screen.queryByText("share.readonly_heading")).toBeNull();
+  });
+
+  it("still offers read-only link creation to capability owners", async () => {
+    render(
+      <ShareDialog
+        slug="secret"
+        isEncrypted={false}
+        capabilityAccess={{ slug: "secret", scope: "owner", token: "a".repeat(43) }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "share.aria" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "share.create_btn" })).toBeDefined(),
+    );
+    expect(screen.getByText("share.readonly_heading")).toBeDefined();
   });
 });

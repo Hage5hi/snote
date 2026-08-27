@@ -209,7 +209,7 @@ const de: Dictionary = {
     "share.aria": "Share QR",
     "share.tooltip": "QR-Code teilen",
     "share.dialog_title": "Notiz teilen",
-    "share.dialog_desc": "Scanne den QR-Code mit deinem Handy, um die Notiz zu öffnen, oder erstelle unten einen Lese-Link.",
+    "share.dialog_desc": "Scanne den QR-Code mit deinem Handy, um die Notiz zu öffnen.",
     "share.warn_key_in_url": "URL enthält den Entschlüsselungsschlüssel (#) – nur mit vertrauenswürdigen Personen teilen.",
     "share.no_key": "URL enthält keinen Schlüssel – der Empfänger muss den Schlüssel kennen, um sie zu öffnen.",
     "share.readonly_heading": "Lese-Link",
