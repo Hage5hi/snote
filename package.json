@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:release": "bun run scripts/build-release.ts",
     "build:check": "vite build && bun run scripts/check-bundle-size.ts",
     "build:dev": "vite build --mode development",
     "lint": "eslint . --max-warnings 0",
