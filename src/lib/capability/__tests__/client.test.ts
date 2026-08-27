@@ -229,21 +229,6 @@ describe("capability API client", () => {
     await expect(api.openSession(TOKEN)).resolves.toEqual(value);
   });
 
-  it.each(["note", "Privacy", "S"])(
-    "rejects reserved session slug %s",
-    async (slug) => {
-      const { api } = apiWithSession(privateSession({ slug }));
-
-      await expect(api.openSession(TOKEN)).rejects.toThrow("invalid note session");
-    },
-  );
-
-  it("rejects a non-string session slug with the standard validation error", async () => {
-    const { api } = apiWithSession(privateSession({ slug: 123 as unknown as string }));
-
-    await expect(api.openSession(TOKEN)).rejects.toThrow("invalid note session");
-  });
-
   it.each([
     [
       "unknown transport",
@@ -328,6 +313,10 @@ describe("capability API client", () => {
   it.each([
     ["note UUID", { noteId: "not-a-uuid" }],
     ["slug", { slug: "not a slug" }],
+    ["reserved lowercase slug", { slug: "note" }],
+    ["reserved mixed-case privacy slug", { slug: "Privacy" }],
+    ["reserved uppercase share slug", { slug: "S" }],
+    ["non-string slug", { slug: 123 }],
     ["scope", { scope: "admin" }],
     ["exact realtime topic", { realtimeTopic: "note:someone-else" }],
     ["generation", { generation: 0 }],
