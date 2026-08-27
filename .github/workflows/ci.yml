@@ -56,6 +56,12 @@ jobs:
       - run: bun run typecheck:edge
       - run: bun run test:coverage
       - run: bun run build:check
+      - name: Verify source-attested release build
+        env:
+          SNOTE_RELEASE_SHA: ${{ github.sha }}
+        run: |
+          bun run build:release
+          bun -e 'const { deployedSha } = await Bun.file("dist/version.json").json(); if (deployedSha !== process.env.SNOTE_RELEASE_SHA) throw new Error("release version artifact must attest checked-out SHA");'
 
   e2e-pr:
     name: e2e-pr

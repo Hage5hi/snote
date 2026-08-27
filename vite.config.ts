@@ -3,6 +3,10 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 import { VitePWA } from "vite-plugin-pwa";
+import {
+  resolveReleaseIdentity,
+  revalidateReleaseIdentity,
+} from "./scripts/release-identity";
 
 // Editor-route chunks (NotePage, cm-vendor, yjs-vendor, md-vendor) are warmed
 // by the device-aware, intent-driven prefetch in src/pages/Home.tsx, which
@@ -19,16 +23,22 @@ import { VitePWA } from "vite-plugin-pwa";
 // and surface the Update toast — even when the SW machinery hasn't fired
 // onNeedRefresh yet (or the user has SW disabled entirely).
 const BUILD_ID = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+const RELEASE_IDENTITY = resolveReleaseIdentity();
 
 function emitVersionJson(): Plugin {
   return {
     name: "emit-version-json",
     apply: "build" as const,
     generateBundle() {
+      const deployedSha = revalidateReleaseIdentity(RELEASE_IDENTITY);
       this.emitFile({
         type: "asset",
         fileName: "version.json",
-        source: JSON.stringify({ buildId: BUILD_ID, builtAt: new Date().toISOString() }),
+        source: JSON.stringify({
+          buildId: BUILD_ID,
+          builtAt: new Date().toISOString(),
+          deployedSha,
+        }),
       });
     },
   };
