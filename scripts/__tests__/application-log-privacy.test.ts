@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -36,5 +36,16 @@ describe("application log privacy", () => {
     expect(notFound).not.toContain("location.pathname");
     expect(notFound).not.toMatch(/console\.(?:log|warn|error)/);
     expect(notFound).not.toContain("useLocation");
+  });
+
+  it("does not ship a panel that can log URL fragments", () => {
+    const app = source("src/App.tsx");
+
+    expect(app).not.toContain("UrlSanitizeDebugPanel");
+    expect(existsSync(resolve(
+      process.cwd(),
+      "src/components/dev/UrlSanitizeDebugPanel.tsx",
+    ))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), "src/lib/url-sanitize.ts"))).toBe(false);
   });
 });
