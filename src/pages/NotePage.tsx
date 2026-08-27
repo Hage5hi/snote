@@ -85,6 +85,11 @@ type NoteResources = EncGateTarget & {
   provider: YjsProviderLike;
 };
 
+type CapabilityAdmission = {
+  access: CapabilityAccess;
+  session: NoteSession;
+};
+
 export function CutoverNotePage(props: NotePageProps) {
   const params = useParams();
   const location = useLocation();
@@ -233,7 +238,14 @@ export default function NotePage({
     rowExists: false,
   });
   const [encryption, setEncryption] = useState<Encryption | null>(null);
-  const [capabilitySession, setCapabilitySession] = useState<NoteSession | null>(null);
+  const [capabilityAdmission, setCapabilityAdmission] = useState<CapabilityAdmission | null>(null);
+  const admittedCapabilitySession = capabilityAccess
+    && capabilityAdmission
+    && capabilityAdmission.access.token === capabilityAccess.token
+    && capabilityAdmission.access.scope === capabilityAccess.scope
+    && capabilityAdmission.access.slug === capabilityAccess.slug
+    ? capabilityAdmission.session
+    : null;
 
   // Bumped by the hashchange listener so the meta-fetch effect re-runs when
   // the encryption key in the URL fragment changes (lock/unlock flows).
@@ -286,11 +298,11 @@ export default function NotePage({
       !validSlug
       || encPhase !== "ready"
       || !encTargetIsCurrent
-      || (capabilityAccess && !capabilitySession)
+      || (capabilityAccess && !admittedCapabilitySession)
     ) return;
     const ownedDoc = acquireDoc(slug);
-    const ownedProvider: YjsProviderLike = capabilityAccess && capabilitySession
-      ? new CapabilityYjsProvider(capabilityAccess, capabilitySession, ownedDoc)
+    const ownedProvider: YjsProviderLike = capabilityAccess && admittedCapabilitySession
+      ? new CapabilityYjsProvider(capabilityAccess, admittedCapabilitySession, ownedDoc)
       : new SupabaseYjsProvider(slug, ownedDoc);
     setResources({
       slug,
@@ -312,7 +324,7 @@ export default function NotePage({
     encTargetIsCurrent,
     capabilityAccess,
     capabilityToken,
-    capabilitySession,
+    admittedCapabilitySession,
   ]);
 
   useLayoutEffect(() => {
@@ -370,10 +382,14 @@ export default function NotePage({
         if (capabilityAccess) {
           const session = await createCapabilityApi().openSession(capabilityAccess.token);
           if (!isCurrentRequest()) return;
-          if (session.slug !== slug || session.scope !== capabilityAccess.scope) {
-            throw new Error("capability locator mismatch");
+          if (
+            session.slug !== slug
+            || session.scope !== capabilityAccess.scope
+            || session.syncTransport !== "polling"
+          ) {
+            throw new Error("capability session unavailable");
           }
-          setCapabilitySession(session);
+          setCapabilityAdmission({ access: capabilityAccess, session });
           data = {
             is_encrypted: session.encryption.enabled,
             enc_salt: session.encryption.salt,
@@ -383,7 +399,7 @@ export default function NotePage({
           };
           rowExists = true;
         } else {
-          setCapabilitySession(null);
+          setCapabilityAdmission(null);
           const response = await supabase
             .from("notes")
             .select("is_encrypted, enc_salt, enc_check, enc_iterations, ydoc_state")
