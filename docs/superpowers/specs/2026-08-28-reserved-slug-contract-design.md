@@ -1,7 +1,7 @@
 # Reserved slug contract design
 
-**Date:** 2026-08-28  
-**Base:** `main@47c6cc0024e78c7bfa72734a527025f8df79b2b3`  
+**Date:** 2026-08-28
+**Base:** `main@47c6cc0024e78c7bfa72734a527025f8df79b2b3`
 **Scope:** frontend validation only; no database, Edge, Worker, deployment, or
 feature-flag change
 
@@ -84,4 +84,3 @@ existing build flag, and production remains unchanged until a separate reviewed
 release. This change does not modify router paths, migrate old notes, rename
 existing data, change the capability backend, reconcile the Cloudflare Worker,
 or deploy Lovable/Supabase/Cloudflare resources.
-
