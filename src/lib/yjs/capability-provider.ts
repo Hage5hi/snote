@@ -61,6 +61,7 @@ type ProviderDependencies = {
   api?: CapabilityApi;
   outbox?: CapabilityOutbox;
   realtimeFactory?: CapabilityRealtimeFactory;
+  pollingOnly?: boolean;
   polling?: ProviderPollingDependencies;
   timers?: Pick<CapabilityPollingControllerOptions, "setTimer" | "clearTimer">;
   now?: () => number;
@@ -95,6 +96,16 @@ const defaultClearTimer: ProviderTimerClearer = (timer) => {
     window.clearTimeout(timer);
   }
 };
+
+function withoutPrivateRealtime(session: NoteSession): NoteSession {
+  if (session.syncTransport === "polling") return session;
+  return {
+    ...session,
+    syncTransport: "polling",
+    realtimeToken: null,
+    realtimeExpiresAt: null,
+  };
+}
 
 function isSyncFencingCapabilityFailure(error: unknown) {
   if (!(error instanceof CapabilityApiError)) return false;
@@ -168,6 +179,7 @@ export class CapabilityYjsProvider implements YjsProviderLike {
   private readonly api: CapabilityApi;
   private readonly outbox: CapabilityOutbox;
   private readonly realtimeFactory: CapabilityRealtimeFactory;
+  private readonly pollingOnly: boolean;
   private readonly pollingOptions: ProviderPollingDependencies;
   private readonly now: () => number;
   private readonly setTimer: ProviderTimerSetter;
@@ -226,7 +238,8 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     if (access.scope !== session.scope) throw new Error("capability scope changed");
     if (access.slug !== null && access.slug !== session.slug) throw new Error("capability locator mismatch");
     this.slug = session.slug;
-    this.session = session;
+    this.pollingOnly = dependencies.pollingOnly ?? false;
+    this.session = this.pollingOnly ? withoutPrivateRealtime(session) : session;
     this.doc = doc;
     this.encryption = encryption ?? null;
     this.api = dependencies.api ?? createCapabilityApi();
@@ -592,6 +605,9 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     next: NoteSession,
     { allowWhileWriteFenced = false }: { allowWhileWriteFenced?: boolean } = {},
   ): Promise<boolean> {
+    if (this.access.slug !== null && next.slug !== this.access.slug) {
+      throw new Error("capability locator mismatch");
+    }
     if (
       next.noteId !== this.session.noteId
       || next.scope !== this.access.scope
@@ -623,8 +639,8 @@ export class CapabilityYjsProvider implements YjsProviderLike {
       Y.applyUpdate(this.doc, bytes, "capability-session");
     }
     if (!this.canApplyDurableSession(epoch, allowWhileWriteFenced)) return false;
-    this.session = next;
-    if (next.syncTransport === "polling") this.pollingFallback = false;
+    this.session = this.pollingOnly ? withoutPrivateRealtime(next) : next;
+    if (this.session.syncTransport === "polling") this.pollingFallback = false;
     if (next.syncStatus === "read_only_quarantine" && this.access.scope !== "view") {
       await this.fenceTerminalSync(new Error("note is read only"));
     }
@@ -883,6 +899,14 @@ export class CapabilityYjsProvider implements YjsProviderLike {
     if (this.writeFenced && !allowWhileWriteFenced) {
       this.stopPolling();
       this.stopPrivateRealtime();
+      return;
+    }
+
+    if (this.pollingOnly) {
+      this.pollingFallback = false;
+      this.clearRealtimePromotionBackoff();
+      this.stopPrivateRealtime();
+      this.startPolling();
       return;
     }
 

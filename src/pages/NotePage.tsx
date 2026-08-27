@@ -300,9 +300,17 @@ export default function NotePage({
       || !encTargetIsCurrent
       || (capabilityAccess && !admittedCapabilitySession)
     ) return;
-    const ownedDoc = acquireDoc(slug);
+    const docCacheKey = capabilityAccess && admittedCapabilitySession
+      ? `capability:${admittedCapabilitySession.noteId}`
+      : slug;
+    const ownedDoc = acquireDoc(docCacheKey);
     const ownedProvider: YjsProviderLike = capabilityAccess && admittedCapabilitySession
-      ? new CapabilityYjsProvider(capabilityAccess, admittedCapabilitySession, ownedDoc)
+      ? new CapabilityYjsProvider(
+          capabilityAccess,
+          admittedCapabilitySession,
+          ownedDoc,
+          { pollingOnly: true },
+        )
       : new SupabaseYjsProvider(slug, ownedDoc);
     setResources({
       slug,
@@ -313,7 +321,7 @@ export default function NotePage({
     });
     return () => {
       void ownedProvider.destroy();
-      releaseDoc(slug);
+      releaseDoc(docCacheKey);
     };
   }, [
     slug,
@@ -641,6 +649,7 @@ export default function NotePage({
 
     const ytext = doc.getText("content");
     const snapshotProtection = encMeta.isEncrypted ? encryption : null;
+    const snapshotsEnabled = !capabilityAccess;
     let prevContent = ytext.toString();
     let lastBigDeleteAt = 0;
 
@@ -655,6 +664,7 @@ export default function NotePage({
       const removed = prevContent.length - text.length;
       const now = Date.now();
       if (
+        snapshotsEnabled &&
         removed > SUDDEN_DELETE_THRESHOLD &&
         now - lastBigDeleteAt > SUDDEN_DELETE_WINDOW_MS &&
         prevContent.length >= SUDDEN_DELETE_THRESHOLD
@@ -681,17 +691,18 @@ export default function NotePage({
         .catch((e) => console.warn("Provider connect failed", e));
       prevContent = ytext.toString();
       updateCounts();
-      void maybeSaveSnapshot(slug, prevContent, snapshotProtection);
+      if (snapshotsEnabled) {
+        void maybeSaveSnapshot(slug, prevContent, snapshotProtection);
+      }
     });
 
     // Pause snapshot interval while tab hidden; flush when visible again.
-    let snapshotTimer = window.setInterval(() => {
-      void maybeSaveSnapshot(slug, ytext.toString(), snapshotProtection);
-    }, SNAPSHOT_INTERVAL_MS);
+    let snapshotTimer: number | null = null;
     const onVisibility = () => {
       if (disposed) return;
       if (document.visibilityState === "hidden") {
-        window.clearInterval(snapshotTimer);
+        if (snapshotTimer !== null) window.clearInterval(snapshotTimer);
+        snapshotTimer = null;
         // Best-effort flush before browser may freeze the tab.
         void maybeSaveSnapshot(slug, ytext.toString(), snapshotProtection);
       } else {
@@ -700,7 +711,12 @@ export default function NotePage({
         }, SNAPSHOT_INTERVAL_MS);
       }
     };
-    document.addEventListener("visibilitychange", onVisibility);
+    if (snapshotsEnabled) {
+      snapshotTimer = window.setInterval(() => {
+        void maybeSaveSnapshot(slug, ytext.toString(), snapshotProtection);
+      }, SNAPSHOT_INTERVAL_MS);
+      document.addEventListener("visibilitychange", onVisibility);
+    }
 
     const handleBeforeUnload = () => {
       if (disposed) return;
@@ -714,8 +730,8 @@ export default function NotePage({
       disposed = true;
       window.removeEventListener("beforeunload", handleBeforeUnload);
       window.removeEventListener("pagehide", handleBeforeUnload);
-      document.removeEventListener("visibilitychange", onVisibility);
-      window.clearInterval(snapshotTimer);
+      if (snapshotsEnabled) document.removeEventListener("visibilitychange", onVisibility);
+      if (snapshotTimer !== null) window.clearInterval(snapshotTimer);
       if (countTimer) window.clearTimeout(countTimer);
       ytext.unobserve(scheduleCounts);
       

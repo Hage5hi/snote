@@ -29,6 +29,8 @@ const harness = vi.hoisted(() => ({
   capabilityProviderConstruct: vi.fn(),
   capabilityProviderConnect: vi.fn(),
   capabilityProviderDestroy: vi.fn(),
+  maybeSaveSnapshot: vi.fn(),
+  recordOnSuddenDelete: vi.fn(),
   topbarProps: vi.fn(),
   capabilityOpenSession: vi.fn(),
   metaForSlug: vi.fn(),
@@ -160,8 +162,9 @@ vi.mock("@/lib/yjs/capability-provider", () => ({
       private readonly access: unknown,
       private readonly session: unknown,
       private readonly doc: unknown,
+      private readonly dependencies: unknown,
     ) {
-      harness.capabilityProviderConstruct(access, session, doc);
+      harness.capabilityProviderConstruct(access, session, doc, dependencies);
     }
 
     setEncryption() {}
@@ -207,7 +210,10 @@ vi.mock("@/lib/crypto", () => ({
 vi.mock("@/lib/yjs/base64", () => ({ base64ToBytes: () => new Uint8Array([1]) }));
 vi.mock("@/hooks/use-scene-theme", () => ({ useSceneTheme: () => ({ scene: "none" }) }));
 vi.mock("@/lib/recent-notes", () => ({ touchRecent: vi.fn() }));
-vi.mock("@/lib/snapshots", () => ({ maybeSaveSnapshot: vi.fn(), recordOnSuddenDelete: vi.fn() }));
+vi.mock("@/lib/snapshots", () => ({
+  maybeSaveSnapshot: harness.maybeSaveSnapshot,
+  recordOnSuddenDelete: harness.recordOnSuddenDelete,
+}));
 vi.mock("@/lib/yjs/identity", () => ({ getIdentity: () => ({ name: "Test", color: "#000" }) }));
 vi.mock("@/lib/wiki-link", () => ({ WIKI_NAV_EVENT: "wiki-nav" }));
 vi.mock("@/lib/ext-context", () => ({ isExtensionContext: false }));
@@ -305,6 +311,12 @@ function CapabilityNavigationHarness() {
   const navigate = useNavigate();
   return (
     <>
+      <button type="button" onClick={() => navigate("/secret")}>
+        navigate-legacy
+      </button>
+      <button type="button" onClick={() => navigate(`/secret#owner=${CAPABILITY_TOKEN}`)}>
+        navigate-owner
+      </button>
       <button
         type="button"
         onClick={() => navigate(`/secret#edit=${CAPABILITY_TOKEN_B}`)}
@@ -318,9 +330,9 @@ function CapabilityNavigationHarness() {
   );
 }
 
-function renderCapabilityNavigation() {
+function renderCapabilityNavigation(initialEntry = `/secret#owner=${CAPABILITY_TOKEN}`) {
   return render(
-    <MemoryRouter initialEntries={[`/secret#owner=${CAPABILITY_TOKEN}`]}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <CapabilityNavigationHarness />
     </MemoryRouter>,
   );
@@ -396,6 +408,8 @@ describe("NotePage encryption gate", () => {
     harness.capabilityProviderConstruct.mockClear();
     harness.capabilityProviderConnect.mockClear();
     harness.capabilityProviderDestroy.mockClear();
+    harness.maybeSaveSnapshot.mockClear();
+    harness.recordOnSuddenDelete.mockClear();
     harness.topbarProps.mockClear();
     harness.capabilityOpenSession.mockReset();
     harness.capabilityOpenSession.mockResolvedValue(null);
@@ -468,7 +482,10 @@ describe("NotePage encryption gate", () => {
       expect(harness.metaForSlug).not.toHaveBeenCalled();
       expect(harness.providerConstruct).not.toHaveBeenCalled();
       expect(harness.idbConstruct).not.toHaveBeenCalled();
-      expect(harness.docAcquire).toHaveBeenCalledWith("secret");
+      await waitFor(() => expect(harness.capabilityProviderConnect).toHaveBeenCalledTimes(1));
+      expect(harness.maybeSaveSnapshot).not.toHaveBeenCalled();
+      expect(harness.recordOnSuddenDelete).not.toHaveBeenCalled();
+      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}`);
       const capabilityDoc = harness.capabilityProviderConstruct.mock.calls[0]?.[2];
       expect(capabilityDoc).toEqual(
         expect.objectContaining({ getText: expect.any(Function) }),
@@ -477,6 +494,7 @@ describe("NotePage encryption gate", () => {
         access,
         session,
         capabilityDoc,
+        { pollingOnly: true },
       );
       await waitFor(() =>
         expect(harness.topbarProps).toHaveBeenLastCalledWith(
@@ -573,6 +591,34 @@ describe("NotePage encryption gate", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("separates the capability document cache from the same-slug legacy note", async () => {
+    harness.capabilityOpenSession.mockResolvedValue(pollingSession());
+    harness.metaForSlug.mockResolvedValue({ data: { is_encrypted: false }, error: null });
+    const view = renderCapabilityNavigation();
+
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}`),
+    );
+    fireEvent.click(view.getByRole("button", { name: "navigate-legacy" }));
+
+    await waitFor(() => expect(harness.docRelease).toHaveBeenCalledWith(`capability:${NOTE_ID}`));
+    await waitFor(() => expect(harness.docAcquire).toHaveBeenCalledWith("secret"));
+  });
+
+  it("separates the same-slug legacy document cache from a capability note", async () => {
+    harness.metaForSlug.mockResolvedValue({ data: { is_encrypted: false }, error: null });
+    harness.capabilityOpenSession.mockResolvedValue(pollingSession());
+    const view = renderCapabilityNavigation("/secret");
+
+    await waitFor(() => expect(harness.docAcquire).toHaveBeenCalledWith("secret"));
+    fireEvent.click(view.getByRole("button", { name: "navigate-owner" }));
+
+    await waitFor(() => expect(harness.docRelease).toHaveBeenCalledWith("secret"));
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}`),
+    );
   });
 
   it("fails closed when a previously encrypted note is reported as plaintext", async () => {
