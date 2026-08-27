@@ -85,6 +85,67 @@ describe("atomic capability cutover", () => {
     expect(url).toBe(`https://note.syrin.online/daily-secure#owner=${owner}`);
   });
 
+  it.each(["note", "Privacy", "S"])(
+    "rejects reserved duplicate target slug %s before recovery or import",
+    async (targetSlug) => {
+      const doc = new Y.Doc();
+      doc.getText("content").insert(0, "preserve me");
+      const recoveryStore = memoryRecoveryStore();
+      const api = {
+        importLegacyNote: vi.fn(async (_body: unknown, owner: string) => ({
+          capabilities: { owner },
+        })),
+      };
+
+      await expect(duplicateLegacyNote({
+        api,
+        source: {
+          slug: "daily",
+          content: "preserve me",
+          ydocState: "",
+          isEncrypted: false,
+          salt: null,
+          check: null,
+          iterations: null,
+        },
+        doc,
+        targetSlug,
+        recoveryStore,
+      })).rejects.toThrow("invalid slug");
+
+      expect(recoveryStore.load).not.toHaveBeenCalled();
+      expect(recoveryStore.save).not.toHaveBeenCalled();
+      expect(api.importLegacyNote).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a non-string duplicate target slug before recovery or import", async () => {
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "preserve me");
+    const recoveryStore = memoryRecoveryStore();
+    const api = { importLegacyNote: vi.fn() };
+
+    await expect(duplicateLegacyNote({
+      api,
+      source: {
+        slug: "daily",
+        content: "preserve me",
+        ydocState: "",
+        isEncrypted: false,
+        salt: null,
+        check: null,
+        iterations: null,
+      },
+      doc,
+      targetSlug: 42 as unknown as string,
+      recoveryStore,
+    })).rejects.toThrow("invalid slug");
+
+    expect(recoveryStore.load).not.toHaveBeenCalled();
+    expect(recoveryStore.save).not.toHaveBeenCalled();
+    expect(api.importLegacyNote).not.toHaveBeenCalled();
+  });
+
   it("duplicates encrypted notes as an encrypted checkpoint without uploading plaintext", async () => {
     const doc = new Y.Doc();
     doc.getText("content").insert(0, "secret");
@@ -242,6 +303,80 @@ describe("atomic capability cutover", () => {
     })).rejects.toThrow("secure duplicate recovery conflict");
 
     expect(api.importLegacyNote).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a persisted recovery with a reserved source slug", async () => {
+    const recoveryStore = memoryRecoveryStore();
+    recoveryStore.load.mockReturnValue({
+      sourceSlug: "privacy",
+      sourceFingerprint: "a".repeat(64),
+      owner: "o".repeat(43),
+      checkpointId: "b".repeat(64),
+      payload: "AQ",
+      isEncrypted: false,
+      salt: null,
+      check: null,
+      iterations: null,
+    });
+    const api = { importLegacyNote: vi.fn() };
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "preserve me");
+
+    await expect(duplicateLegacyNote({
+      api,
+      source: {
+        slug: "daily",
+        content: "preserve me",
+        ydocState: "",
+        isEncrypted: false,
+        salt: null,
+        check: null,
+        iterations: null,
+      },
+      doc,
+      targetSlug: "secure-copy",
+      recoveryStore,
+    })).rejects.toThrow("secure duplicate recovery invalid");
+
+    expect(recoveryStore.save).not.toHaveBeenCalled();
+    expect(api.importLegacyNote).not.toHaveBeenCalled();
+  });
+
+  it("rejects a persisted recovery with a non-string source slug", async () => {
+    const recoveryStore = memoryRecoveryStore();
+    recoveryStore.load.mockReturnValue({
+      sourceSlug: 42 as unknown as string,
+      sourceFingerprint: "a".repeat(64),
+      owner: "o".repeat(43),
+      checkpointId: "b".repeat(64),
+      payload: "AQ",
+      isEncrypted: false,
+      salt: null,
+      check: null,
+      iterations: null,
+    });
+    const api = { importLegacyNote: vi.fn() };
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "preserve me");
+
+    await expect(duplicateLegacyNote({
+      api,
+      source: {
+        slug: "daily",
+        content: "preserve me",
+        ydocState: "",
+        isEncrypted: false,
+        salt: null,
+        check: null,
+        iterations: null,
+      },
+      doc,
+      targetSlug: "secure-copy",
+      recoveryStore,
+    })).rejects.toThrow("secure duplicate recovery invalid");
+
+    expect(recoveryStore.save).not.toHaveBeenCalled();
+    expect(api.importLegacyNote).not.toHaveBeenCalled();
   });
 
   it("moves a legacy share token from the path into the fragment during the 30-day window", () => {

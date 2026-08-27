@@ -1,9 +1,9 @@
 import * as Y from "yjs";
 import { CAPABILITY_TOKEN_RE, buildCapabilityUrl } from "@/lib/capability/url";
 import { capabilityPayloadId, encodeCapabilityPayload } from "@/lib/capability/encoding";
+import { isUsableSlug } from "@/lib/slug";
 import type { Encryption } from "@/lib/yjs/provider";
 
-const SLUG_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const LEGACY_TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 const CONFIGURED_LEGACY_SHARE_CUTOFF = import.meta.env.VITE_LEGACY_SHARE_CUTOFF ?? "";
@@ -33,8 +33,8 @@ function endpoint(baseUrl: string) {
   return `${baseUrl.replace(/\/$/, "")}/functions/v1/legacy-note-open`;
 }
 
-function assertSlug(slug: string) {
-  if (!SLUG_RE.test(slug)) throw new Error("invalid slug");
+function assertSlug(slug: unknown) {
+  if (typeof slug !== "string" || !isUsableSlug(slug)) throw new Error("invalid slug");
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
@@ -134,7 +134,7 @@ const PAYLOAD_RE = /^[A-Za-z0-9_-]+$/;
 function isRecovery(value: unknown): value is LegacyImportRecovery {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<LegacyImportRecovery>;
-  return SLUG_RE.test(candidate.sourceSlug ?? "")
+  return typeof candidate.sourceSlug === "string" && isUsableSlug(candidate.sourceSlug)
     && HASH_RE.test(candidate.sourceFingerprint ?? "")
     && CAPABILITY_TOKEN_RE.test(candidate.owner ?? "")
     && HASH_RE.test(candidate.checkpointId ?? "")
@@ -231,10 +231,8 @@ export async function duplicateLegacyNote(input: {
   const sourceFingerprint = await legacySourceFingerprint(input.source);
   let recovery: LegacyImportRecovery;
   if (storedRecovery !== null && storedRecovery !== undefined) {
-    if (
-      !isRecovery(storedRecovery)
-      || !recoveryMatchesSource(storedRecovery, input.source, sourceFingerprint)
-    ) {
+    if (!isRecovery(storedRecovery)) throw new Error("secure duplicate recovery invalid");
+    if (!recoveryMatchesSource(storedRecovery, input.source, sourceFingerprint)) {
       throw new Error("secure duplicate recovery conflict");
     }
     recovery = storedRecovery;
