@@ -485,7 +485,9 @@ describe("NotePage encryption gate", () => {
       await waitFor(() => expect(harness.capabilityProviderConnect).toHaveBeenCalledTimes(1));
       expect(harness.maybeSaveSnapshot).not.toHaveBeenCalled();
       expect(harness.recordOnSuddenDelete).not.toHaveBeenCalled();
-      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}`);
+      expect(harness.docAcquire).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:${scope}:1`,
+      );
       const capabilityDoc = harness.capabilityProviderConstruct.mock.calls[0]?.[2];
       expect(capabilityDoc).toEqual(
         expect.objectContaining({ getText: expect.any(Function) }),
@@ -599,11 +601,13 @@ describe("NotePage encryption gate", () => {
     const view = renderCapabilityNavigation();
 
     await waitFor(() =>
-      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}`),
+      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}:owner:1`),
     );
     fireEvent.click(view.getByRole("button", { name: "navigate-legacy" }));
 
-    await waitFor(() => expect(harness.docRelease).toHaveBeenCalledWith(`capability:${NOTE_ID}`));
+    await waitFor(() =>
+      expect(harness.docRelease).toHaveBeenCalledWith(`capability:${NOTE_ID}:owner:1`),
+    );
     await waitFor(() => expect(harness.docAcquire).toHaveBeenCalledWith("secret"));
   });
 
@@ -617,7 +621,38 @@ describe("NotePage encryption gate", () => {
 
     await waitFor(() => expect(harness.docRelease).toHaveBeenCalledWith("secret"));
     await waitFor(() =>
-      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}`),
+      expect(harness.docAcquire).toHaveBeenCalledWith(`capability:${NOTE_ID}:owner:1`),
+    );
+  });
+
+  it("separates capability document caches across scope and generation", async () => {
+    harness.capabilityOpenSession.mockImplementation((token: string) => {
+      if (token === CAPABILITY_TOKEN) {
+        return Promise.resolve(pollingSession({ scope: "owner", generation: 1 }));
+      }
+      if (token === CAPABILITY_TOKEN_B) {
+        return Promise.resolve(pollingSession({ scope: "edit", generation: 2 }));
+      }
+      throw new Error("unexpected capability token");
+    });
+    const view = renderCapabilityNavigation();
+
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:owner:1`,
+      ),
+    );
+    fireEvent.click(view.getByRole("button", { name: "navigate-capability-b" }));
+
+    await waitFor(() =>
+      expect(harness.docRelease).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:owner:1`,
+      ),
+    );
+    await waitFor(() =>
+      expect(harness.docAcquire).toHaveBeenCalledWith(
+        `capability:${NOTE_ID}:edit:2`,
+      ),
     );
   });
 

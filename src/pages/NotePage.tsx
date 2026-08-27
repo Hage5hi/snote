@@ -301,7 +301,7 @@ export default function NotePage({
       || (capabilityAccess && !admittedCapabilitySession)
     ) return;
     const docCacheKey = capabilityAccess && admittedCapabilitySession
-      ? `capability:${admittedCapabilitySession.noteId}`
+      ? `capability:${admittedCapabilitySession.noteId}:${admittedCapabilitySession.scope}:${admittedCapabilitySession.generation}`
       : slug;
     const ownedDoc = acquireDoc(docCacheKey);
     const ownedProvider: YjsProviderLike = capabilityAccess && admittedCapabilitySession
