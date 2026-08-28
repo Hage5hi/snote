@@ -313,6 +313,10 @@ describe("capability API client", () => {
   it.each([
     ["note UUID", { noteId: "not-a-uuid" }],
     ["slug", { slug: "not a slug" }],
+    ["reserved lowercase slug", { slug: "note" }],
+    ["reserved mixed-case privacy slug", { slug: "Privacy" }],
+    ["reserved uppercase share slug", { slug: "S" }],
+    ["non-string slug", { slug: 123 }],
     ["scope", { scope: "admin" }],
     ["exact realtime topic", { realtimeTopic: "note:someone-else" }],
     ["generation", { generation: 0 }],

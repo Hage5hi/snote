@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/command";
 import { FileText, Home as HomeIcon, Keyboard, Pin, PinOff, Plus, Shuffle } from "lucide-react";
 import { getRecents, getPinned, togglePin } from "@/lib/recent-notes";
+import { isUsableSlug } from "@/lib/slug";
 import { useI18n } from "@/i18n/index";
 
 function prefetchSlug(s: string) {
@@ -23,8 +24,6 @@ function softNavigate(navigate: (p: string) => void, path: string) {
   if (w.startViewTransition) w.startViewTransition(() => navigate(path));
   else navigate(path);
 }
-
-const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 
 function randomSlug() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -65,7 +64,7 @@ export default function CommandPaletteBody({ open, onOpenChange, onOpenHelp }: P
   };
 
   const trimmed = query.trim();
-  const isValidNew = SLUG_RE.test(trimmed);
+  const isValidNew = isUsableSlug(trimmed);
   const pinnedSet = new Set(pinned);
   const pinnedItems = pinned
     .map((slug) => recents.find((r) => r.slug === slug) ?? { slug, lastOpenedAt: 0 })

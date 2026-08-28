@@ -146,6 +146,28 @@ describe("Home legacy note navigation", () => {
     expect(harness.softNavigate).toHaveBeenCalledWith(expect.any(Function), "/daily");
   });
 
+  it.each(["note", "Privacy", "S"])(
+    "rejects router-owned slug %s before lookup or navigation",
+    async (slug) => {
+      renderHome();
+
+      fireEvent.change(screen.getByLabelText("home.placeholder"), {
+        target: { value: slug },
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350);
+      });
+
+      expect(screen.getByText("home.status.invalid")).toBeInTheDocument();
+      expect(harness.from).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+
+      expect(screen.getByRole("alert")).toHaveTextContent("home.error.invalid_slug");
+      expect(harness.softNavigate).not.toHaveBeenCalled();
+    },
+  );
+
   it("does not fetch or cache plaintext snapshots when a recent note is hovered", async () => {
     harness.maybeSingle.mockResolvedValue({
       data: { ydoc_state: "plaintext-snapshot", is_encrypted: false },

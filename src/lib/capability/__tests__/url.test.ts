@@ -60,6 +60,14 @@ describe("capability URL contract", () => {
     );
   });
 
+  it.each(["note", "Privacy", "S"])(
+    "rejects reserved owner slug %s",
+    (slug) => {
+      expect(parseCapabilityLocation(new URL(`https://note.syrin.online/${slug}#owner=${TOKEN}`))).toBeNull();
+      expect(() => buildCapabilityUrl("owner", TOKEN, slug)).toThrow("invalid slug");
+    },
+  );
+
   it("never exposes an owner capability as the default share URL", () => {
     expect(buildCurrentEditShareUrl({ slug: "daily", scope: "owner", token: TOKEN }, "daily"))
       .toBeNull();

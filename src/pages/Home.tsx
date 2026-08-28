@@ -16,8 +16,8 @@ import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
 import { softNavigate } from "@/lib/soft-navigate";
+import { isUsableSlug } from "@/lib/slug";
 
-const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
 const loadSupabase = async () => (await import("@/integrations/supabase/client")).supabase;
@@ -117,7 +117,7 @@ export default function Home() {
       setSlugStatus("idle");
       return;
     }
-    if (!SLUG_RE.test(trimmed)) {
+    if (!isUsableSlug(trimmed)) {
       setSlugStatus("invalid");
       return;
     }
@@ -165,7 +165,7 @@ export default function Home() {
 
   const open = (s: string) => {
     const trimmed = s.trim();
-    if (!SLUG_RE.test(trimmed)) {
+    if (!isUsableSlug(trimmed)) {
       setError(t("home.error.invalid_slug"));
       return;
     }
