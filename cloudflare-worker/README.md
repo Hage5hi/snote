@@ -4,6 +4,10 @@ Worker này đang chạy ở chế độ containment tạm thời cho tới khi 
 backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy crawler
 không được nhận nội dung, slug, token hay canonical URL của một note.
 
+Source Worker và cấu hình non-secret trong thư mục này khớp với Worker đã được
+xác minh trong G4. Việc đối soát repository này không cho phép một deployment
+mới.
+
 ## Routing production bắt buộc
 
 Canonical origin là `https://note.syrin.online`. Worker phải phủ cả ba host:
@@ -12,8 +16,9 @@ Canonical origin là `https://note.syrin.online`. Worker phải phủ cả ba ho
 - `syrin.online/*`
 - `www.syrin.online/*`
 
-Direct origin `snote.lovable.app` phải non-public/disabled hoặc có containment
-tương đương. Không được cho alias nào đi vòng qua Worker.
+Origin Pages đã được review là `snote-g4-origin.pages.dev`;
+`snote.lovable.app` không phải origin hoặc rollback target. Không được cho alias
+nào đi vòng qua Worker.
 
 ## Hành vi
 
@@ -28,31 +33,45 @@ tương đương. Không được cho alias nào đi vòng qua Worker.
   token, nội dung hoặc IP thô.
 - `invocation_logs = false` phải giữ nguyên vì Cloudflare có thể ghi raw URL
   trước khi mã Worker thực thi.
+- Toàn bộ Worker observability, invocation logs, traces, `workers.dev` và
+  preview URLs phải tiếp tục bị tắt.
+- Các secret binding hiện do provider quản lý không được lưu trong repository.
 
 ## Triển khai
 
 Dùng duy nhất `cloudflare-worker/wrangler.toml` đã commit:
 
 ```toml
+name = "syrin-prerender"
+main = "worker.js"
+compatibility_date = "2024-11-01"
+workers_dev = false
+preview_urls = false
+
 routes = [
   { pattern = "note.syrin.online/*", zone_name = "syrin.online" },
   { pattern = "syrin.online/*", zone_name = "syrin.online" },
-  { pattern = "www.syrin.online/*", zone_name = "syrin.online" }
+  { pattern = "www.syrin.online/*", zone_name = "syrin.online" },
 ]
 
 [vars]
-ORIGIN_HOST = "snote.lovable.app"
+ORIGIN_HOST = "snote-g4-origin.pages.dev"
 SITE_URL = "https://note.syrin.online"
 
+[observability]
+enabled = false
+
 [observability.logs]
+enabled = false
 invocation_logs = false
 
 [observability.traces]
 enabled = false
 ```
 
-Trước deploy phải kiểm kê Workers Logs, Tail Workers, Workers Logpush, traces và
-zone-level HTTP request datasets. Giữ `[observability.traces] enabled = false`;
+Một deployment mới phải có checkpoint phê duyệt riêng. Trước bất kỳ deployment
+nào đã được phê duyệt, phải kiểm kê Workers Logs, Tail Workers, Workers Logpush,
+traces và zone-level HTTP request datasets. Giữ toàn bộ observability disabled;
 không tiếp tục nếu pipeline nào còn giữ raw note/share path.
 
 ## Thứ tự rollout

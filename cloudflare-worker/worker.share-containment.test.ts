@@ -17,7 +17,7 @@ const TOKEN_PATHS = [
   "nested/asset.css",
 ] as const;
 const PRIVATE_SLUG = "private-edit-slug";
-const ROBOTS = "noindex,nofollow,noarchive,nosnippet";
+const ROBOTS = "noindex, nofollow, noarchive, nosnippet";
 const ENCODED_SEPARATOR_PATHS = [
   `s%2F${TOKEN}`,
   `%73%2F${TOKEN}`,
@@ -92,7 +92,7 @@ async function expectContainedShare({
     }),
     {
       ORIGIN_HOST: "snote.lovable.app",
-      SITE_URL: "https://syrin.online",
+      SITE_URL: "https://note.syrin.online",
       SUPABASE_PROJECT: "example",
       SUPABASE_ANON_KEY: "anon",
       NOTE_META_SECRET: "secret",
@@ -109,7 +109,7 @@ async function expectContainedShare({
   ].join("\n");
 
   expect(response.status).toBe(200);
-  expect(response.headers.get("cache-control")).toBe("no-store");
+  expect(response.headers.get("cache-control")).toBe("private, no-store");
   expect(response.headers.get("cdn-cache-control")).toBe("no-store");
   expect(response.headers.get("x-robots-tag")).toBe(ROBOTS);
   expect(response.headers.get("referrer-policy")).toBe("no-referrer");
@@ -135,10 +135,9 @@ describe("share crawler containment", () => {
     "/version.json",
     "/workbox-9c191d2f.js",
     "/icon-192.png",
-    "/offline.html",
     "/sitemap.xml",
     "/sw-kill.js",
-  ])("passes public root artifact %s to origin unchanged", async (path) => {
+  ])("passes runtime artifact %s to origin without public caching", async (path) => {
     const doubles = installWorkerDoubles();
 
     const response = await worker.fetch(
@@ -150,10 +149,63 @@ describe("share crawler containment", () => {
     );
 
     expect(response.headers.get("x-robots-tag")).toBeNull();
-    expect(response.headers.get("cdn-cache-control")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe(
+      "no-cache, no-store, must-revalidate",
+    );
+    expect(response.headers.get("cdn-cache-control")).toBe("no-store");
     const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
     expect(new URL(originRequest.url).pathname).toBe(path);
   });
+
+  it.each([
+    { requestPath: "/index.html?__WB_REVISION__=root", originPath: "/" },
+    {
+      requestPath: "/offline.html?__WB_REVISION__=offline",
+      originPath: "/offline",
+    },
+  ])(
+    "uses the reviewed non-redirecting Pages path for $requestPath",
+    async ({ requestPath, originPath }) => {
+      const doubles = installWorkerDoubles();
+      doubles.metadataFetch.mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname.endsWith(".html")) {
+          return new Response(null, {
+            status: 308,
+            headers: { location: url.pathname.replace(/\.html$/, "") || "/" },
+          });
+        }
+        return new Response("reviewed html", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      });
+
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${requestPath}`, {
+          headers: { "user-agent": "Mozilla/5.0" },
+        }),
+        {
+          ORIGIN_HOST: "snote-g4-origin.pages.dev",
+          SITE_URL: "https://note.syrin.online",
+        },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("reviewed html");
+      expect(response.headers.get("cache-control")).toBe(
+        "no-cache, no-store, must-revalidate",
+      );
+      expect(response.headers.get("cdn-cache-control")).toBe("no-store");
+      expect(doubles.metadataFetch).toHaveBeenCalledOnce();
+      const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.pathname).toBe(originPath);
+      expect(originUrl.search).toBe("");
+      expect(originRequest.redirect).toBe("manual");
+    },
+  );
 
   it("contains a raw markdown note locator without forwarding it to origin", async () => {
     const doubles = installWorkerDoubles();
@@ -214,7 +266,7 @@ describe("share crawler containment", () => {
 
       expect(response.status).toBe(200);
       expect(response.headers.get("location")).toBeNull();
-      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
       expect(response.headers.get("cdn-cache-control")).toBe("no-store");
       expect(response.headers.get("referrer-policy")).toBe("no-referrer");
       expect(response.headers.get("x-robots-tag")).toBe(ROBOTS);
@@ -252,7 +304,7 @@ describe("share crawler containment", () => {
 
     const body = await response.text();
     expect(response.status).toBe(200);
-    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
     expect(response.headers.get("cdn-cache-control")).toBe("no-store");
     expect(response.headers.get("x-robots-tag")).toBe(ROBOTS);
     expect(body).not.toContain("public-note");
