@@ -1,5 +1,7 @@
 /** @vitest-environment node */
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   verifyLiveRelease,
@@ -169,5 +171,53 @@ describe("live release attestation", () => {
   ])("rejects stale or malformed fields: %o", async (body, message) => {
     const { fetchImpl } = recordingFetch(manifestResponse(body));
     await expect(verifyLiveRelease(validInput, fetchImpl)).rejects.toThrow(message);
+  });
+});
+
+describe("post-deploy workflow wiring", () => {
+  const workflow = readFileSync(
+    resolve(".github/workflows/pwa-update-smoke-post-deploy.yml"),
+    "utf8",
+  ).replace(/\r\n/g, "\n");
+
+  it("requires the expected deployed SHA for manual runs", () => {
+    expect(workflow).toMatch(
+      / {6}expected_sha:\n {8}description: Exact deployed commit SHA expected in \/version\.json\n {8}required: true\n {8}type: string/,
+    );
+  });
+
+  it("requires the expected capability route state for manual runs", () => {
+    expect(workflow).toMatch(
+      / {6}expected_capability_routes_enabled:\n {8}description: Expected capability route state in \/version\.json\n {8}required: true\n {8}type: choice\n {8}default: "false"\n {8}options:\n {10}- "false"\n {10}- "true"/,
+    );
+  });
+
+  it("passes the deployment identity expectations through job env", () => {
+    expect(workflow).toMatch(
+      / {6}EXPECTED_DEPLOYED_SHA: >-\n {8}\$\{\{\n {10}github\.event_name == 'deployment_status' &&\n {10}github\.event\.deployment\.sha \|\|\n {10}inputs\.expected_sha\n {8}\}\}/,
+    );
+    expect(workflow).toMatch(
+      / {6}EXPECTED_CAPABILITY_ROUTES_ENABLED: >-\n {8}\$\{\{\n {10}github\.event_name == 'deployment_status' &&\n {10}'false' \|\|\n {10}inputs\.expected_capability_routes_enabled\n {8}\}\}/,
+    );
+  });
+
+  it("attests the live release before install and smoke checks", () => {
+    expect(workflow).toMatch(
+      / {6}- uses: oven-sh\/setup-bun@v2\n {8}with:\n {10}bun-version: 1\.3\.14\n {6}- name: Verify live release identity\n {8}run: bun run scripts\/verify-live-release\.ts\n/,
+    );
+
+    const attestationIndex = workflow.indexOf(
+      "name: Verify live release identity",
+    );
+    expect(attestationIndex).toBeGreaterThan(-1);
+
+    for (const laterStep of [
+      "run: bun install --frozen-lockfile",
+      "scripts/verify-frame-ancestors.sh",
+      "run: bunx playwright install --with-deps chromium",
+      "name: Run post-deploy smoke",
+    ]) {
+      expect(workflow.indexOf(laterStep)).toBeGreaterThan(attestationIndex);
+    }
   });
 });
