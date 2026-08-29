@@ -36,9 +36,32 @@ function manifestUrl(baseUrl: string | undefined): URL {
 }
 
 function hasNoStore(value: string | null): boolean {
-  return value?.split(",").some(
+  if (value === null) return false;
+
+  const directives: string[] = [];
+  let directiveStart = 0;
+  let quoted = false;
+  let escaped = false;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (escaped) {
+      escaped = false;
+    } else if (quoted && character === "\\") {
+      escaped = true;
+    } else if (character === "\"") {
+      quoted = !quoted;
+    } else if (!quoted && character === ",") {
+      directives.push(value.slice(directiveStart, index));
+      directiveStart = index + 1;
+    }
+  }
+
+  if (quoted || escaped) return false;
+  directives.push(value.slice(directiveStart));
+  return directives.some(
     (directive) => directive.trim().toLowerCase() === "no-store",
-  ) ?? false;
+  );
 }
 
 export async function verifyLiveRelease(
@@ -60,7 +83,11 @@ export async function verifyLiveRelease(
     response = await fetchImpl(url, {
       cache: "no-store",
       redirect: "error",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-cache, no-store",
+        Pragma: "no-cache",
+      },
     });
   } catch {
     throw new Error("Unable to fetch live release manifest.");

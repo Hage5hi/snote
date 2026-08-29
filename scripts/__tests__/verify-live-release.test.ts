@@ -73,6 +73,11 @@ describe("live release attestation", () => {
     expect(calls[0]?.init).toMatchObject({
       cache: "no-store",
       redirect: "error",
+      headers: {
+        Accept: "application/json",
+        "Cache-Control": "no-cache, no-store",
+        Pragma: "no-cache",
+      },
     });
   });
 
@@ -141,6 +146,33 @@ describe("live release attestation", () => {
     await expect(verifyLiveRelease(validInput, fetchImpl)).rejects.toThrow(
       /must use Cache-Control: no-store/,
     );
+  });
+
+  it.each([
+    "x=\"foo,no-store,bar\"",
+    "x=\"foo\\\",no-store,bar\"",
+    "no-store, x=\"unterminated",
+  ])("rejects no-store hidden by malformed or quoted directives: %s", async (
+    cacheControl,
+  ) => {
+    const { fetchImpl } = recordingFetch(manifestResponse({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    }, { headers: { "Cache-Control": cacheControl } }));
+    await expect(verifyLiveRelease(validInput, fetchImpl)).rejects.toThrow(
+      /must use Cache-Control: no-store/,
+    );
+  });
+
+  it("accepts no-store outside a quoted directive", async () => {
+    const { fetchImpl } = recordingFetch(manifestResponse({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    }, { headers: { "Cache-Control": "x=\"foo,bar\", No-Store" } }));
+    await expect(verifyLiveRelease(validInput, fetchImpl)).resolves.toEqual({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    });
   });
 
   it.each([null, [], "\"text\"", 42])(
