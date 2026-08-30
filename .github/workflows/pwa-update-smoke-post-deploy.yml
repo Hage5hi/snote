@@ -8,6 +8,18 @@ on:
         description: Base URL to smoke-test
         required: false
         default: https://note.syrin.online
+      expected_sha:
+        description: Exact deployed commit SHA expected in /version.json
+        required: true
+        type: string
+      expected_capability_routes_enabled:
+        description: Expected capability route state in /version.json
+        required: true
+        type: choice
+        default: "false"
+        options:
+          - "false"
+          - "true"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.deployment.id || github.run_id }}
@@ -31,6 +43,18 @@ jobs:
           github.event.inputs.target_url ||
           'https://note.syrin.online'
         }}
+      EXPECTED_DEPLOYED_SHA: >-
+        ${{
+          github.event_name == 'deployment_status' &&
+          github.event.deployment.sha ||
+          inputs.expected_sha
+        }}
+      EXPECTED_CAPABILITY_ROUTES_ENABLED: >-
+        ${{
+          github.event_name == 'deployment_status' &&
+          'false' ||
+          inputs.expected_capability_routes_enabled
+        }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -38,6 +62,8 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+      - name: Verify live release identity
+        run: bun run scripts/verify-live-release.ts
       - run: bun install --frozen-lockfile
       - run: bash scripts/verify-frame-ancestors.sh "$SMOKE_BASE_URL"
       - run: bunx playwright install --with-deps chromium
