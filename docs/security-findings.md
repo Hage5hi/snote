@@ -11,11 +11,14 @@ authorization credentials. New notes use owner/edit/view capabilities, while
 legacy notes are exact-match read-only and may only be copied into a new
 capability-managed note.
 
-## 1. Legacy metadata and crawler previews — Worker verified; tombstone deploy unverified
+## 1. Legacy metadata and crawler previews — production verified
 
-`note-meta` is implemented as a generic `410 no-store` tombstone. It does not
-parse a token, initialize a database client, or return content or a locator. The
-`note-meta` production deployment has not been independently verified. The
+`note-meta` is deployed as a generic `410 no-store` tombstone. It does not parse
+a token, initialize a database client, or return content or a locator. The
+deployed `note-meta` endpoint is production-verified. Credential-free probes on
+2026-08-30 covered no-query, synthetic slug, synthetic token, and combined-query
+variants; each returned `{"found":false}`, `410`, `Cache-Control: no-store`, and
+`CDN-Cache-Control: no-store` without echoing a locator, token, or content. The
 Cloudflare Worker returns generic, non-indexable, `no-store` HTML for crawler
 requests to legacy note and share paths before consulting metadata or Cache
 API.
