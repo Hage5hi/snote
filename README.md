@@ -1,8 +1,12 @@
 # Snote
 
-Private, capability-secured realtime Markdown notes that work offline.
+Offline-first realtime Markdown notes with a separately gated capability model.
 
 Production: [note.syrin.online](https://note.syrin.online/)
+
+**Current status:** Production currently runs in legacy mode with capability
+routes disabled. The capability client and backend remain dormant pending a
+separately approved cutover.
 
 ## Product
 
@@ -11,7 +15,7 @@ Production: [note.syrin.online](https://note.syrin.online/)
 - Responsive editor, preview and split layouts.
 - Yjs CRDT updates with an acknowledged IndexedDB outbox.
 - Optional client-side encryption with an unlock-before-mount boundary.
-- Revocable owner, edit and view capabilities.
+- Dormant support for revocable owner, edit and view capabilities.
 - PWA offline support and safe service-worker updates.
 - Chrome side-panel extension.
 - Nine lazy-loaded locales: English, Vietnamese, Chinese, Japanese, Korean,
@@ -19,21 +23,24 @@ Production: [note.syrin.online](https://note.syrin.online/)
 
 ## Security model
 
-A slug locates a note; it never grants access. New notes use 32-byte random
-capabilities:
+The capability model below is the target post-cutover architecture, not the
+authorization model currently active in production.
+
+After cutover, a slug locates a note but never grants access. New notes use
+32-byte random capabilities:
 
 - Owner: `/<slug>#owner=<token>`
 - Editor: `/<slug>#edit=<token>`
 - Viewer: `/s#view=<token>`
 
-The SPA exchanges a fragment capability for a short-lived `NoteSession`.
+The SPA then exchanges a fragment capability for a short-lived `NoteSession`.
 Backend clients send capabilities in `Authorization`, never in a query or path.
-The database stores keyed hashes, not raw capabilities. Direct anonymous table
-access is revoked by the atomic cutover migration.
+The database stores keyed hashes, not raw capabilities. The atomic cutover is
+designed to revoke direct anonymous table access; it has not been applied.
 
-Legacy notes are exact-match read-only and can be copied into a new secure note.
-They never acquire an owner implicitly. Rollback keeps APIs read-only; it never
-restores public table policies.
+After cutover, legacy notes become exact-match read-only and can be copied into
+a new secure note. They never acquire an owner implicitly. The planned rollback
+keeps APIs read-only; it never restores public table policies.
 
 Do not log note content, slugs, capabilities, share tokens or raw IP addresses.
 See [security findings](docs/security-findings.md), the

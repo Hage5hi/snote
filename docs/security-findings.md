@@ -1,25 +1,29 @@
 # Security findings — repository and rollout status
 
-This document describes the state of the stacked implementation. It does not
-claim that staging or production has been migrated. Local tests prove the code
-contracts only; backup, deploy, cache purge, 48-hour soak, atomic cutover, and
-post-cutover probes remain mandatory operational gates.
+Production legacy mode is live and verified; capability routes remain disabled.
+The additive capability backend remains dormant and the atomic cutover has not
+been applied. Local tests prove capability code contracts only; backup, canary,
+soak, atomic cutover, and post-cutover probes remain mandatory gates for any
+future activation.
 
-Slugs are locators, never authorization credentials. New notes use
-owner/edit/view capabilities. Legacy notes are exact-match, read-only, and may
-only be copied into a new capability-managed note.
+In the target post-cutover architecture, slugs are locators rather than
+authorization credentials. New notes use owner/edit/view capabilities, while
+legacy notes are exact-match read-only and may only be copied into a new
+capability-managed note.
 
-## 1. Legacy metadata and crawler previews — implemented, deploy unverified
+## 1. Legacy metadata and crawler previews — Worker verified; tombstone deploy unverified
 
-`note-meta` is a generic `410 no-store` tombstone. It does not parse a token,
-initialize a database client, or return content or a locator. The Cloudflare
-Worker returns generic, non-indexable, `no-store` HTML for crawler requests to
-legacy note and share paths before consulting metadata or Cache API.
+`note-meta` is implemented as a generic `410 no-store` tombstone. It does not
+parse a token, initialize a database client, or return content or a locator. The
+`note-meta` production deployment has not been independently verified. The
+Cloudflare Worker returns generic, non-indexable, `no-store` HTML for crawler
+requests to legacy note and share paths before consulting metadata or Cache
+API.
 
-Production still requires the ordered rollout in
-`docs/security/immediate-containment-rollout.md`: deploy the generic Worker,
-purge old note/share HTML and metadata caches across every alias, verify cache
-misses, then deploy the tombstone. Rollback must retain generic containment.
+Worker crawler containment is live and verified in production. The ordered
+runbook in `docs/security/immediate-containment-rollout.md` remains authoritative
+for any future Worker, cache-purge, or tombstone change. Rollback must retain
+generic containment.
 
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
