@@ -23,4 +23,31 @@ describe("canonical production origin", () => {
       expect(source, path).not.toContain("https://www.note.syrin.online");
     }
   });
+
+  it("labels capability security as a deferred target instead of live production", () => {
+    const readme = readFileSync("README.md", "utf8");
+    const findings = readFileSync("docs/security-findings.md", "utf8");
+
+    expect(readme).toMatch(
+      /Production currently runs in legacy mode with capability\s+routes disabled\./,
+    );
+    expect(readme).toMatch(
+      /The capability model below is the target post-cutover architecture, not the\s+authorization model currently active in production\./,
+    );
+    expect(findings).toContain(
+      "Production legacy mode is live and verified; capability routes remain disabled.",
+    );
+    expect(findings).toContain(
+      "The additive capability backend remains dormant and the atomic cutover has not",
+    );
+    expect(findings).toContain(
+      "## 1. Legacy metadata and crawler previews — Worker verified; tombstone deploy unverified",
+    );
+    expect(findings).toMatch(
+      /The\s+`note-meta` production deployment has not been independently verified\./,
+    );
+    expect(findings).toContain(
+      "Worker crawler containment is live and verified in production.",
+    );
+  });
 });
