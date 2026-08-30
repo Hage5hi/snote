@@ -41,13 +41,17 @@ describe("canonical production origin", () => {
       "The additive capability backend remains dormant and the atomic cutover has not",
     );
     expect(findings).toContain(
-      "## 1. Legacy metadata and crawler previews — Worker verified; tombstone deploy unverified",
+      "## 1. Legacy metadata and crawler previews — production verified",
     );
     expect(findings).toMatch(
-      /The\s+`note-meta` production deployment has not been independently verified\./,
+      /The\s+deployed `note-meta` endpoint is production-verified\./,
     );
     expect(findings).toContain(
       "Worker crawler containment is live and verified in production.",
+    );
+    expect(findings).not.toContain("tombstone deploy unverified");
+    expect(findings).not.toContain(
+      "production deployment has not been independently verified",
     );
   });
 });
