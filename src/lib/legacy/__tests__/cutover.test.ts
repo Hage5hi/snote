@@ -3,10 +3,12 @@ import * as Y from "yjs";
 import {
   createLegacyNoteApi,
   duplicateLegacyNote,
+} from "../cutover";
+import {
   legacyShareCutoffMs,
   parseLegacyShareFragment,
   sanitizeLegacyShareLocation,
-} from "../cutover";
+} from "../share-url";
 
 const TEST_CUTOFF = Date.parse("2026-08-23T12:00:00.000Z");
 
