@@ -91,14 +91,15 @@ describe("production note access hotfix", () => {
     const home = source("src/pages/Home.tsx");
     const raw = source("src/pages/RawView.tsx");
 
+    const withoutTypeImports = (src: string) => src.replace(/typeof import\([^)]*\)/g, "");
     expect(notePage).not.toMatch(staticCreateApi);
     expect(sharePage).not.toMatch(staticCreateApi);
     expect(notePage).not.toMatch(staticCapabilityProvider);
     expect(sharePage).not.toMatch(staticCapabilityProvider);
-    expect(notePage).toContain('import("@/lib/capability/client")');
-    expect(sharePage).toContain('import("@/lib/capability/client")');
-    expect(notePage).toContain('import("@/lib/yjs/capability-provider")');
-    expect(sharePage).toContain('import("@/lib/yjs/capability-provider")');
+    expect(withoutTypeImports(notePage)).toContain('import("@/lib/capability/client")');
+    expect(withoutTypeImports(sharePage)).toContain('import("@/lib/capability/client")');
+    expect(withoutTypeImports(notePage)).toContain('import("@/lib/yjs/capability-provider")');
+    expect(withoutTypeImports(sharePage)).toContain('import("@/lib/yjs/capability-provider")');
     expect(notePage).toContain("export function CutoverNotePage");
     expect(app).not.toContain("CutoverNotePage");
     expect(split).not.toContain("CutoverNotePage");
