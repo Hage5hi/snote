@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Live status (2026-09-02):** Production Worker `syrin-prerender` is PR #52
+`9fcc58bc` / Cloudflare Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6`.
+This plan records the earlier G4 repository reconcile (`8382c5bb`). See
+`docs/security-findings.md` §1c.
+
 **Goal:** Make `main` reproduce the Cloudflare Worker source and non-secret configuration already verified and deployed during G4, without changing cloud state.
 
 **Architecture:** Reconstruct one Worker-only concern on a fresh worktree from the approved design branch. A small contract test pins the reviewed Worker source identity and current production-safe Wrangler settings; the existing behavioral suites from `8382c5bb` protect the runtime boundary. No historical PR #10 framework or unrelated file is imported.
