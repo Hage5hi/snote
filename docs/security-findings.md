@@ -230,17 +230,36 @@ is `9fcc58bc`. Git `main` includes Worker PR #52 and may be ahead for
 later docs-only PRs; that does not change canary status or origin SHA.
 Live Worker identity is §1c.
 
-Edge HTTP for `note-session`, `note-sync`, and `note-manage` on production
-and staging `dmfrydhubosecaatjjwf` matches git mapper
-`capabilityCorsHeaders` (includes `x-snote-auth`, `x-legacy-share`,
-`Retry-After`; OPTIONS 200 `ok`; GET 405 `{"error":"method not allowed"}`
-and POST `{}` 401 `{"error":"unauthorized"}` with no `code`; both cache
-headers `no-store`). Live 401 rather than 503 `unavailable` means HMAC and
-service-role env are present. Function source SHA cannot be confirmed (list
-403); git function bodies last `0e1ea254` (2026-08-25), mapper
-`_shared/capability-edge.ts` last `b0417482` (2026-07-27, 270 codes). This
-Edge record is not a deploy. Live Worker identity is §1c and is distinct
-from this SPA origin SHA.
+Production `note-session`, `note-sync`, and `note-manage` were SHA-pin
+redeployed 2026-09-02 ~05:22 ICT from git via Lovable Cloud (0.8 credits),
+those three names only. Independent credential-free probes after that
+deploy against production functions host `onfzjmfjldsbthchssfr`
+(unauthenticated, empty POST body, no locator) for each of those three
+names still match git mapper `capabilityCorsHeaders` (includes
+`x-snote-auth`, `x-legacy-share`, `Retry-After`): OPTIONS 200 `ok`; GET
+405 `{"error":"method not allowed"}` with `cache-control: no-store` and
+`cdn-cache-control: no-store`; POST `{}` 401 `{"error":"unauthorized"}`
+(no `code` field) with both no-store headers. Still 401 not 503
+`unavailable` (HMAC and service-role env present). Still not 410.
+`share-revoke` POST `{}` still 400 `invalid token`. `legacy-note-open`
+POST still 410. Origin still `fe18302f` / `capabilityRoutesEnabled`
+false. Worker still §1c (`9fcc58bc` / `b4d1a94e`). Canary off. Kill
+switch closed. SQL 240 not applied.
+
+Staging `dmfrydhubosecaatjjwf` was not redeployed this time. Earlier
+staging HTTP matched git mapper `capabilityCorsHeaders` (includes
+`x-snote-auth`, `x-legacy-share`, `Retry-After`; OPTIONS 200 `ok`; GET
+405 `{"error":"method not allowed"}` and POST `{}` 401
+`{"error":"unauthorized"}` with no `code`; both cache headers
+`no-store`). That is a historical HTTP match, not a 2026-09-02 staging
+SHA-pin.
+
+Git function bodies last `0e1ea254` (2026-08-25, PR #19). Mapper
+`_shared/capability-edge.ts` last `b0417482` (2026-07-27, 270 codes).
+`verify_jwt = false` remains required. Production was redeployed from
+git `0e1ea254`; hosted source bytes still cannot be listed (management
+list API 403). Do not invent a hosted blob SHA. Live Worker identity is
+§1c and is distinct from this SPA origin SHA.
 
 This is not a soak claim. This is not authorization to flip the canary or
 `writes_enabled`, or to apply 240.
