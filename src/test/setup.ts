@@ -1,5 +1,16 @@
 import "@testing-library/jest-dom";
 
+// Capability `import()` loaders sit behind a compile-time
+// `VITE_CAPABILITY_ROUTES_ENABLED === "true"` ternary so production DCE can
+// drop those chunks. Vitest evaluates that ternary at module load from the
+// live `import.meta.env` object. Default the canary on so tests that mock
+// `@/lib/capability/client` still reach the import(); fail-closed POST tests
+// keep mutating the flag inside `createCapabilityApi()`.
+const env = import.meta.env as Record<string, unknown>;
+if (env.VITE_CAPABILITY_ROUTES_ENABLED === undefined) {
+  env.VITE_CAPABILITY_ROUTES_ENABLED = "true";
+}
+
 if (typeof window !== "undefined") {
   Object.defineProperty(window, "matchMedia", {
     writable: true,

@@ -21,6 +21,12 @@ import { useI18n } from "@/i18n";
 
 const PRIVATE_PAGE_ROBOTS = "noindex,nofollow,noarchive,nosnippet";
 
+const loadCapabilityApi = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? async () => (await import("@/lib/capability/client")).createCapabilityApi()
+  : async () => {
+      throw new Error("capability API unavailable");
+    };
+
 type ReadyState = {
   kind: "ready";
   note: LegacyNote;
@@ -192,9 +198,8 @@ export default function LegacyNotePage({
     setDuplicateError(null);
     setDuplicating(true);
     try {
-      const { createCapabilityApi } = await import("@/lib/capability/client");
       const url = new URL(await duplicateLegacyNote({
-        api: createCapabilityApi(),
+        api: await loadCapabilityApi(),
         source: state.note,
         doc: state.doc,
         targetSlug: targetSlug.trim(),

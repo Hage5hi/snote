@@ -100,20 +100,24 @@ type CapabilityRuntime = {
 let capabilityRuntime: CapabilityRuntime | undefined;
 let capabilityRuntimePromise: Promise<CapabilityRuntime> | undefined;
 
-const loadCapabilityRuntime = () => {
-  capabilityRuntimePromise ??= Promise.all([
-    import("@/lib/capability/client"),
-    import("@/lib/yjs/capability-provider"),
-  ]).then(([client, provider]) => {
-    const runtime: CapabilityRuntime = {
-      createCapabilityApi: client.createCapabilityApi,
-      CapabilityYjsProvider: provider.CapabilityYjsProvider,
+const loadCapabilityRuntime = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? () => {
+      capabilityRuntimePromise ??= Promise.all([
+        import("@/lib/capability/client"),
+        import("@/lib/yjs/capability-provider"),
+      ]).then(([client, provider]) => {
+        const runtime: CapabilityRuntime = {
+          createCapabilityApi: client.createCapabilityApi,
+          CapabilityYjsProvider: provider.CapabilityYjsProvider,
+        };
+        capabilityRuntime = runtime;
+        return runtime;
+      });
+      return capabilityRuntimePromise;
+    }
+  : async (): Promise<CapabilityRuntime> => {
+      throw new Error("capability API unavailable");
     };
-    capabilityRuntime = runtime;
-    return runtime;
-  });
-  return capabilityRuntimePromise;
-};
 
 export function CutoverNotePage(props: NotePageProps) {
   const params = useParams();

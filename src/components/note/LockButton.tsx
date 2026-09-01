@@ -46,8 +46,11 @@ import {
   type SnapshotProtection,
 } from "@/lib/snapshots";
 
-const loadCapabilityApi = async () =>
-  (await import("@/lib/capability/client")).createCapabilityApi();
+const loadCapabilityApi = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? async () => (await import("@/lib/capability/client")).createCapabilityApi()
+  : async () => {
+      throw new Error("capability API unavailable");
+    };
 
 interface LockButtonProps {
   slug: string;
