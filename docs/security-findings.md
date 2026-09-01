@@ -28,18 +28,25 @@ runbook in `docs/security/immediate-containment-rollout.md` remains authoritativ
 for any future Worker, cache-purge, or tombstone change. Rollback must retain
 generic containment.
 
-## 1a. Legacy `raw` dump — committed 410 tombstone
+## 1a. Legacy `raw` dump — production verified
 
 The committed `raw` Edge function is a generic `410 no-store` tombstone matching
 `note-meta`. It does not parse a locator, initialize a database client, or
 return note bytes. Keep the name deployed as this handler; deleting it would
-404, which is weaker if something still calls the path.
+404, which is weaker if something still calls the path. The deployed `raw`
+endpoint is production-verified. Credential-free probes on 2026-09-01 covered
+`GET /functions/v1/raw/!`; that invalid extra path returned `{"found":false}`,
+`410`, `content-type: application/json`, `Cache-Control: no-store`, and
+`CDN-Cache-Control: no-store` without echoing a locator or content. `POST` to
+the same path returned `405` with the same JSON `no-store` body. `OPTIONS`
+returned `200`. This is not the old `400` `text/plain` dump handler. The
+tombstone was deployed ~2026-09-01 19:47 ICT via Lovable Cloud Edge function
+`raw` only. GitHub source tombstone was PR #32; the live SPA origin is
+`3244b08` with canary off.
 
-Credential-free probes on 2026-09-01 against the then-deployed functions host
-showed `raw` still gateway-enabled: `GET /raw/!` returned 400 on the
-invalid-locator branch, not 404. Do not `GET /functions/v1/raw` with no extra
-path; the last segment `raw` is a legal locator and would have dumped that row
-if it existed. Do not probe production `raw` with a real locator.
+Do not `GET /functions/v1/raw` with no extra path; the last segment `raw` is a
+legal locator. Do not probe production `raw` with a real locator. Probe only
+`GET /raw/!` (or another invalid extra path).
 
 The live SPA editor path does not need this endpoint (`RawView` reads
 `public.notes` directly). ExportMenu no longer copies `/functions/v1/raw/...`;
