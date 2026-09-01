@@ -36,16 +36,17 @@ describe("legacy-note-open dump containment", () => {
     expect(legacy).not.toContain("stale-while-revalidate");
   });
 
-  it("documents the committed git tombstone without claiming a production 410 deploy", () => {
+  it("documents the production-verified 410 tombstone", () => {
     const findings = source("docs/security-findings.md");
 
     expect(findings).toContain(
       "committed `legacy-note-open` Edge function is a generic `410 no-store` tombstone",
     );
-    expect(findings).toContain("production remains 404 not-deployed");
-    expect(findings).toContain("Do not POST a locator to it");
-    expect(findings).not.toContain(
+    expect(findings).toContain(
       "The deployed `legacy-note-open` endpoint is production-verified",
     );
+    expect(findings).toContain("Do not POST a locator to it");
+    expect(findings).not.toContain("production remains 404 not-deployed");
+    expect(findings).not.toContain("Do not claim a production 410 deploy");
   });
 });

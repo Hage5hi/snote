@@ -65,20 +65,24 @@ the remaining export action copies the canonical public RawView URL
 `https://note.syrin.online/{slug}.md` (`/:slug.md`). `share-revoke` remains live
 and is out of scope for this containment.
 
-## 1b. Legacy `legacy-note-open` dump — committed 410 tombstone, production not deployed
+## 1b. Legacy `legacy-note-open` dump — production verified
 
 The committed `legacy-note-open` Edge function is a generic `410 no-store` tombstone
 matching `raw`/`note-meta`. It does not parse a locator, initialize a database
-client, or return note bytes. Keep the name in git as this handler; deleting the
-folder would 404, which is weaker if something later calls the path.
-
-Git is now a 410 tombstone and production remains 404 not-deployed.
-Credential-free GET/HEAD/OPTIONS probes on 2026-09-01 ~22:15 ICT against the
-functions host returned gateway `NOT_FOUND`. Do not POST a locator to it. Do
-not claim a production 410 deploy. Accidental deploy from this git source now
-returns 410 instead of restoring the unauthenticated service-role dump. Default
-production SPA no longer contains quoted `legacy-note-open` (PR #41, live
-origin `fe18302f`, canary off).
+client, or return note bytes. Keep the name deployed as this handler; deleting it
+would 404, which is weaker if something still calls the path. The deployed `legacy-note-open` endpoint is production-verified.
+Credential-free probes on 2026-09-02 ~04:20 ICT against production functions host
+`onfzjmfjldsbthchssfr` covered unauthenticated calls with no locator in the body:
+`OPTIONS /functions/v1/legacy-note-open` returned `200` body `ok` (`Allow-Methods`
+POST, OPTIONS); `GET` returned `405` `{"found":false}`, `content-type:
+application/json`, `Cache-Control: no-store`, and `CDN-Cache-Control: no-store`;
+`POST {}` returned `410` with the same JSON `no-store` body. This is not gateway
+`NOT_FOUND` / 404. Do not POST a locator to it. The tombstone was deployed
+2026-09-02 via Lovable Cloud Edge function `legacy-note-open` only. GitHub source
+tombstone was PR #43. Default production SPA no longer contains quoted
+`legacy-note-open` (PR #41, live origin `fe18302f`, canary off). `share-revoke`
+remains live (POST `{}` still 400, not 410) and is out of scope for this
+containment.
 
 ## 1c. Production Worker identity — live 2026-09-02
 
@@ -249,9 +253,9 @@ still not applied.
 `20260724000000_atomic_capability_cutover.sql` dynamically drops every policy
 on `public.notes` and revokes all direct privileges from `PUBLIC`, `anon`, and
 `authenticated` in one transaction. Capability, update, checkpoint, and share
-tables remain default-deny. The SPA uses narrow Edge APIs. Git `legacy-note-open`
-is now a generic `410 no-store` tombstone rather than a notes dump, and
-production remains 404 not-deployed. Do not claim a production 410 deploy.
+tables remain default-deny. The SPA uses narrow Edge APIs. Git and production
+`legacy-note-open` are a generic `410 no-store` tombstone rather than a notes
+dump (see §1b).
 
 Do not apply this migration until the dual-mode client and capability APIs have
 completed the required 48-hour production soak. A local migration test is not
