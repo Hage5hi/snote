@@ -28,6 +28,23 @@ runbook in `docs/security/immediate-containment-rollout.md` remains authoritativ
 for any future Worker, cache-purge, or tombstone change. Rollback must retain
 generic containment.
 
+## 1a. Legacy `raw` dump — committed 410 tombstone
+
+The committed `raw` Edge function is a generic `410 no-store` tombstone matching
+`note-meta`. It does not parse a locator, initialize a database client, or
+return note bytes. Keep the name deployed as this handler; deleting it would
+404, which is weaker if something still calls the path.
+
+Credential-free probes on 2026-09-01 against the then-deployed functions host
+showed `raw` still gateway-enabled: `GET /raw/!` returned 400 on the
+invalid-locator branch, not 404. Do not `GET /functions/v1/raw` with no extra
+path; the last segment `raw` is a legal locator and would have dumped that row
+if it existed. Do not probe production `raw` with a real locator.
+
+The live SPA editor path does not need this endpoint (`RawView` reads
+`public.notes` directly). `share-revoke` remains live and is out of scope for
+this containment.
+
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
 Only `admin-session` accepts an admin passphrase. It reserves a serialized SQL

@@ -45,7 +45,9 @@ mode and never receive an owner capability automatically.
 ## Public HTTP contract
 
 All responses carry `Cache-Control: no-store` and `CDN-Cache-Control: no-store`.
-After the atomic cutover, legacy note content is available only through the
+The legacy credential-free `raw` Edge dump is a permanent `410` tombstone
+(`{"found":false}`, `no-store`) and must not select or echo note bytes. After
+the atomic cutover, legacy note content is available only through the
 exact-match `legacy-note-open` Edge Function. Browser roles have no direct
 table grants. See [the cutover runbook](security/atomic-capability-cutover.md)
 for the mandatory 48-hour soak, migration order, compatibility deadline, and
