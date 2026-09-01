@@ -122,7 +122,7 @@ describe("simplified delivery pipeline contract", () => {
     for (const name of EXPECTED_WORKFLOWS) {
       const workflow = readWorkflow(name);
       expect(
-        workflow.match(/actions\/upload-artifact@v6/g) ?? [],
+        workflow.match(/uses:\s*actions\/upload-artifact@[0-9a-f]{40}/g) ?? [],
         name,
       ).toHaveLength(name === "ci.yml" ? 2 : 1);
       expect(workflow.match(/if:\s*(?:\$\{\{\s*)?failure\(\)/g) ?? []).toHaveLength(
