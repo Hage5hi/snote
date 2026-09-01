@@ -53,7 +53,7 @@ the same path returned `405` with the same JSON `no-store` body. `OPTIONS`
 returned `200`. This is not the old `400` `text/plain` dump handler. The
 tombstone was deployed ~2026-09-01 19:47 ICT via Lovable Cloud Edge function
 `raw` only. GitHub source tombstone was PR #32; the live SPA origin is
-`6c4e0e6d` with canary off.
+`fe18302f` with canary off.
 
 Do not `GET /functions/v1/raw` with no extra path; the last segment `raw` is a
 legal locator. Do not probe production `raw` with a real locator. Probe only
@@ -78,7 +78,7 @@ functions host returned gateway `NOT_FOUND`. Do not POST a locator to it. Do
 not claim a production 410 deploy. Accidental deploy from this git source now
 returns 410 instead of restoring the unauthenticated service-role dump. Default
 production SPA no longer contains quoted `legacy-note-open` (PR #41, live
-origin `6c4e0e6d`, canary off).
+origin `fe18302f`, canary off).
 
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
@@ -158,12 +158,14 @@ a 230 soak claim. SQL 270 conflict-code verification is §3b.
 
 Live SPA `https://note.syrin.online/version.json` (fetched 2026-09-02;
 same fields on `https://snote-g4-origin.pages.dev/version.json`):
-`deployedSha` `6c4e0e6d915ac76e6b359b257ac96910448f64f5`,
-`capabilityRoutesEnabled` false, `builtAt` `2026-09-01T18:21:16.099Z`,
-`buildId` `1788286861745-sfowkz3a`.
-Canary off. Origin includes PR #47 PWA recovery (`clientsClaim` off).
-Git `main` may be ahead for docs/copy PRs (#48 toast); that is expected
-and does not change canary status.
+`deployedSha` `fe18302fb650b98eaee414e34e61db5cf06acc61`,
+`capabilityRoutesEnabled` false, `builtAt` `2026-09-01T19:55:38.557Z`,
+`buildId` `1788292524728-ej6uxgse`.
+Canary off. Origin includes PR #47 PWA recovery (`clientsClaim` off),
+PR #48 shortened Update toast (no `update.fallback_cleanup` / cookie
+paragraph), and PR #50 enc-meta error + Retry gate. Git may be ahead
+only for later docs-only PRs; that is expected and does not change
+canary status.
 
 ## 3b. Additive capability sync conflict codes SQL 270 — production verified
 
@@ -188,11 +190,12 @@ three Legacy policies remain.
 
 SPA canary still off: live `https://note.syrin.online/version.json`
 `capabilityRoutesEnabled` false, `deployedSha`
-`6c4e0e6d915ac76e6b359b257ac96910448f64f5`, `builtAt`
-`2026-09-01T18:21:16.099Z`, `buildId` `1788286861745-sfowkz3a`.
-Origin includes PR #47 PWA recovery (`clientsClaim` off). Git `main`
-may be ahead for docs/copy PRs (#48 toast); that does not change canary
-status.
+`fe18302fb650b98eaee414e34e61db5cf06acc61`, `builtAt`
+`2026-09-01T19:55:38.557Z`, `buildId` `1788292524728-ej6uxgse`.
+Origin includes PR #47 PWA recovery (`clientsClaim` off), PR #48
+shortened Update toast (no `update.fallback_cleanup` / cookie
+paragraph), and PR #50 enc-meta error + Retry gate. Git may be ahead
+only for later docs-only PRs; that does not change canary status.
 
 Edge HTTP for `note-session`, `note-sync`, and `note-manage` on production
 and staging `dmfrydhubosecaatjjwf` matches git mapper
