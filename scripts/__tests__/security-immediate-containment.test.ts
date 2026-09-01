@@ -163,6 +163,7 @@ describe("immediate containment contracts", () => {
 
     expect(cleanup).toMatch(/status:\s*410/);
     expect(cleanup).toContain('"Cache-Control": "no-store"');
+    expect(cleanup).toContain('"CDN-Cache-Control": "no-store"');
     expect(cleanup).toContain('error: "endpoint retired"');
     expect(cleanup).not.toContain("createClient");
     expect(cleanup).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
@@ -176,9 +177,11 @@ describe("immediate containment contracts", () => {
     const rename = source("supabase/functions/share-rename/index.ts");
     expect(rename).toMatch(/status:\s*410/);
     expect(rename).toContain('"Cache-Control": "no-store"');
+    expect(rename).toContain('"CDN-Cache-Control": "no-store"');
     expect(rename).toContain('error: "endpoint retired"');
     expect(rename).not.toContain("createClient");
     expect(rename).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(rename).not.toContain('.from("notes")');
     expect(rename).not.toContain('.from("note_shares")');
   });
 
@@ -188,6 +191,7 @@ describe("immediate containment contracts", () => {
     );
     expect(observer).toMatch(/status:\s*410/);
     expect(observer).toContain('"Cache-Control": "no-store"');
+    expect(observer).toContain('"CDN-Cache-Control": "no-store"');
     expect(observer).toContain('error: "endpoint retired"');
     expect(observer).not.toContain("createClient");
     expect(observer).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
