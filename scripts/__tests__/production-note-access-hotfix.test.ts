@@ -106,4 +106,48 @@ describe("production note access hotfix", () => {
     expect(home).not.toContain("CutoverNotePage");
     expect(raw).not.toContain("CutoverNotePage");
   });
+
+  it("fail-closes the admin SPA unless VITE_ADMIN_PANEL_ENABLED is true", () => {
+    const app = source("src/App.tsx");
+    const envTypes = source("src/vite-env.d.ts");
+    const envExample = source(".env.example");
+    const panel = source("src/pages/AdminPanel.tsx");
+
+    expect(app).toMatch(
+      /const adminPanelEnabled\s*=\s*import\.meta\.env\.VITE_ADMIN_PANEL_ENABLED === "true";/,
+    );
+
+    const dispatcher = app.slice(app.indexOf("function SlugDispatcher"));
+    const noteArmStart = dispatcher.indexOf('if (slug === "note")');
+    const nextArmStart = dispatcher.indexOf("/\\.md$/i.test(slug)");
+    expect(noteArmStart).toBeGreaterThanOrEqual(0);
+    expect(nextArmStart).toBeGreaterThan(noteArmStart);
+    const noteArm = dispatcher.slice(noteArmStart, nextArmStart);
+
+    expect(noteArm).toContain("adminPanelEnabled");
+    expect(noteArm.indexOf("adminPanelEnabled")).toBeLessThan(noteArm.indexOf("<AdminPanel"));
+    expect(noteArm).toContain("<NotFound");
+    expect(noteArm).not.toContain("NotePage");
+    expect(noteArm).not.toContain("capabilityRoutesEnabled");
+    expect(noteArm).not.toContain("VITE_CAPABILITY_ROUTES_ENABLED");
+
+    expect(envTypes).toContain("readonly VITE_ADMIN_PANEL_ENABLED?: string;");
+    expect(envExample).toMatch(/^VITE_ADMIN_PANEL_ENABLED=false$/m);
+
+    const defaultExportAt = panel.indexOf("export default function AdminPanel");
+    const flagCheckAt = panel.indexOf(
+      'import.meta.env.VITE_ADMIN_PANEL_ENABLED !== "true"',
+      defaultExportAt,
+    );
+    const notFoundAt = panel.indexOf("return <NotFound />", flagCheckAt);
+    const firstEffectAt = panel.indexOf("useEffect", defaultExportAt);
+    const firstInvokeAt = panel.indexOf("functions.invoke", defaultExportAt);
+    const hashLoginAt = panel.indexOf("window.location.hash", defaultExportAt);
+    expect(defaultExportAt).toBeGreaterThanOrEqual(0);
+    expect(flagCheckAt).toBeGreaterThan(defaultExportAt);
+    expect(notFoundAt).toBeGreaterThan(flagCheckAt);
+    expect(firstEffectAt).toBeGreaterThan(notFoundAt);
+    expect(firstInvokeAt).toBeGreaterThan(notFoundAt);
+    expect(hashLoginAt).toBeGreaterThan(notFoundAt);
+  });
 });

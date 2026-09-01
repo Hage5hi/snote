@@ -50,6 +50,8 @@ vi.mock("lucide-react", () => ({
   KeyRound: () => null,
 }));
 
+const env = import.meta.env as Record<string, unknown>;
+
 function resultFor(slug: string): InvokeResult {
   return {
     data: {
@@ -69,7 +71,11 @@ function resultFor(slug: string): InvokeResult {
 }
 
 describe("AdminPanel session request ownership", () => {
+  let previousFlag: unknown;
+
   beforeEach(() => {
+    previousFlag = env.VITE_ADMIN_PANEL_ENABLED;
+    env.VITE_ADMIN_PANEL_ENABLED = "true";
     harness.invoke.mockReset();
     harness.toast.mockReset();
     sessionStorage.clear();
@@ -81,6 +87,7 @@ describe("AdminPanel session request ownership", () => {
   });
 
   afterEach(() => {
+    env.VITE_ADMIN_PANEL_ENABLED = previousFlag;
     vi.useRealTimers();
   });
 
@@ -190,5 +197,42 @@ describe("AdminPanel session request ownership", () => {
     await act(async () => stale.resolve({ data: { error: "unauthorized" }, error: null }));
     expect(sessionStorage.getItem("__a_session")).toBe("session-b");
     expect(screen.getByText("Admin · 0 note")).toBeInTheDocument();
+  });
+});
+
+describe("AdminPanel fail-closed flag", () => {
+  let previousFlag: unknown;
+
+  beforeEach(() => {
+    previousFlag = env.VITE_ADMIN_PANEL_ENABLED;
+    harness.invoke.mockReset();
+    harness.toast.mockReset();
+    sessionStorage.clear();
+    sessionStorage.setItem("__a_session", "session-a");
+    sessionStorage.setItem(
+      "__a_session_expiry",
+      new Date(Date.now() + 20 * 60 * 1000).toISOString(),
+    );
+  });
+
+  afterEach(() => {
+    env.VITE_ADMIN_PANEL_ENABLED = previousFlag;
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["false", "false"],
+    ["TRUE", "TRUE"],
+    ["1", "1"],
+  ])("renders NotFound and does not invoke admin-session when the flag is %s", (_label, flag) => {
+    env.VITE_ADMIN_PANEL_ENABLED = flag;
+    render(
+      <MemoryRouter>
+        <AdminPanel />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("Access denied")).toBeInTheDocument();
+    expect(screen.queryByText(/Admin ·/)).not.toBeInTheDocument();
+    expect(harness.invoke).not.toHaveBeenCalled();
   });
 });

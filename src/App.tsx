@@ -25,6 +25,8 @@ const Privacy = lazy(() => import("./pages/Privacy"));
 const queryClient = new QueryClient();
 const capabilityRoutesEnabled =
   import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
+const adminPanelEnabled =
+  import.meta.env.VITE_ADMIN_PANEL_ENABLED === "true";
 // EditorSkeleton mimics the topbar + editor layout so there's no shift when
 // the lazy NotePage chunk lands.
 const EditorFallback = <EditorSkeleton />;
@@ -40,6 +42,9 @@ const PlainFallback = (
 function SlugDispatcher() {
   const { slug = "" } = useParams();
   if (slug === "note") {
+    if (!adminPanelEnabled) {
+      return <NotFound />;
+    }
     return (
       <Suspense fallback={PlainFallback}>
         <AdminPanel />
