@@ -21,8 +21,9 @@ import {
   type SplitScrollerRegistration,
 } from "@/hooks/use-split-scroll-sync";
 import { useI18n } from "@/i18n";
+import { loadNotePage } from "@/lib/note-page-import";
 
-const NotePage = lazy(() => import("./NotePage"));
+const NotePage = lazy(() => loadNotePage());
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const MIN_PANES = 2;

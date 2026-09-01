@@ -80,19 +80,43 @@ export default defineConfig(({ mode }) => {
       // SW only activates in production builds — preview iframes stay clean.
       devOptions: { enabled: false },
       workbox: {
-        clientsClaim: true,
+        clientsClaim: false,
         skipWaiting: false,
         globPatterns: ["**/*.{js,css,html,svg,png,webp,woff,woff2,json,ico}"],
-        // Exclude heavy lazy-loaded vendors + the markdown preview worker from
-        // precache so first install stays light. They still get cached via the
-        // browser HTTP cache on first use.
+        // Keep the Home app-shell precached. Exclude version.json and the lazy
+        // editor/crypto graph so the first SW install does not race NotePage
+        // import(). Those chunks use the first-use HTTP cache; offline note
+        // needs a prior online open.
         globIgnores: [
+          "**/version.json",
+          "**/NotePage-*",
+          "**/CutoverNotePage-*",
+          "**/LegacyNotePage-*",
+          "**/SplitView-*",
+          "**/RawView-*",
+          "**/Editor-*",
+          "**/Preview-*",
+          "**/UnlockForm-*",
+          "**/cm-vendor-*",
+          "**/yjs-vendor-*",
+          "**/md-vendor-*",
+          "**/supabase-vendor-*",
+          "**/katex-vendor-*",
+          "**/hljs-vendor-*",
+          "**/qrcode-vendor-*",
+          "**/markdown-fallback-*",
           "**/mermaid-vendor-*",
           "**/wardley-*",
           "**/preview-worker-*",
         ],
         navigateFallback: "/index.html",
-        navigateFallbackDenylist: [/^\/api\//, /^\/auth\//],
+        navigateFallbackDenylist: [
+          /^\/api\//,
+          /^\/auth\//,
+          /^\/assets\//,
+          /^\/sw\.js$/,
+          /^\/version\.json/,
+        ],
         // Bumped from 5 MB → 8 MB so a large vendor chunk (e.g. a future
         // mermaid/katex bump) can’t silently break precache install and
         // leave the new SW stuck in "redundant" state, which is one of the
