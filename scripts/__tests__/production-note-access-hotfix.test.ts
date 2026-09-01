@@ -19,7 +19,9 @@ describe("production note access hotfix", () => {
     expect(app.match(/<SharePage legacyOnly=\{!capabilityRoutesEnabled\} \/>/g)).toHaveLength(2);
     expect(app).not.toMatch(/<SharePage\s*\/>/);
     expect(envTypes).toContain("readonly VITE_CAPABILITY_ROUTES_ENABLED?: string;");
+    expect(envTypes).toContain("readonly VITE_CAPABILITY_AUTH_ENABLED?: string;");
     expect(envExample).toMatch(/^VITE_CAPABILITY_ROUTES_ENABLED=false$/m);
+    expect(envExample).toMatch(/^VITE_CAPABILITY_AUTH_ENABLED=false$/m);
 
     const client = source("src/lib/capability/client.ts");
     const postAt = client.indexOf("const post = async");
@@ -76,5 +78,31 @@ describe("production note access hotfix", () => {
     expect(revokeLink.slice(0, capabilityGuardAt)).not.toContain("loadCapabilityApi");
     expect(revokeLink.slice(capabilityGuardAt, shareRevokeAt)).toContain("loadCapabilityApi");
     expect(revokeLink.slice(shareRevokeAt)).not.toContain("loadCapabilityApi");
+  });
+
+  it("keeps canary-off NotePage and SharePage chunks off a static capability HTTP client import", () => {
+    const staticCreateApi = /import\s*\{[^}]*createCapabilityApi[^}]*\}\s*from\s*["']@\/lib\/capability\/client["']/;
+    const staticCapabilityProvider =
+      /import\s*\{[^}]*CapabilityYjsProvider[^}]*\}\s*from\s*["']@\/lib\/yjs\/capability-provider["']/;
+    const notePage = source("src/pages/NotePage.tsx");
+    const sharePage = source("src/pages/SharePage.tsx");
+    const app = source("src/App.tsx");
+    const split = source("src/pages/SplitView.tsx");
+    const home = source("src/pages/Home.tsx");
+    const raw = source("src/pages/RawView.tsx");
+
+    expect(notePage).not.toMatch(staticCreateApi);
+    expect(sharePage).not.toMatch(staticCreateApi);
+    expect(notePage).not.toMatch(staticCapabilityProvider);
+    expect(sharePage).not.toMatch(staticCapabilityProvider);
+    expect(notePage).toContain('import("@/lib/capability/client")');
+    expect(sharePage).toContain('import("@/lib/capability/client")');
+    expect(notePage).toContain('import("@/lib/yjs/capability-provider")');
+    expect(sharePage).toContain('import("@/lib/yjs/capability-provider")');
+    expect(notePage).toContain("export function CutoverNotePage");
+    expect(app).not.toContain("CutoverNotePage");
+    expect(split).not.toContain("CutoverNotePage");
+    expect(home).not.toContain("CutoverNotePage");
+    expect(raw).not.toContain("CutoverNotePage");
   });
 });

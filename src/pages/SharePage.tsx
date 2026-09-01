@@ -12,9 +12,8 @@ import { base64ToBytes } from "@/lib/yjs/base64";
 import { useI18n } from "@/i18n";
 import { AppShell } from "@/components/app/AppShell";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
-import { createCapabilityApi, type NoteSession } from "@/lib/capability/client";
+import type { NoteSession } from "@/lib/capability/client";
 import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } from "@/lib/capability/url";
-import { CapabilityYjsProvider } from "@/lib/yjs/capability-provider";
 import type { Encryption } from "@/lib/yjs/provider";
 import { parseLegacyShareFragment } from "@/lib/legacy/cutover";
 
@@ -62,6 +61,14 @@ function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
   return doc;
 }
 
+type CapabilityYjsProviderCtor = typeof import("@/lib/yjs/capability-provider").CapabilityYjsProvider;
+
+const loadCapabilityApi = async () =>
+  (await import("@/lib/capability/client")).createCapabilityApi();
+
+const loadCapabilityYjsProvider = async () =>
+  (await import("@/lib/yjs/capability-provider")).CapabilityYjsProvider;
+
 interface SharePageProps {
   /** Ignore capability-shaped fragments while the capability backend is offline. */
   legacyOnly?: boolean;
@@ -84,6 +91,7 @@ export default function SharePage({ legacyOnly = false }: SharePageProps) {
 function CapabilitySharePage({ access }: { access: CapabilityAccess }) {
   const { t } = useI18n();
   const tRef = useRef(t);
+  const capabilityYjsProviderRef = useRef<CapabilityYjsProviderCtor | null>(null);
   const [session, setSession] = useState<NoteSession | null>(null);
   const [encryption, setEncryption] = useState<Encryption | null>(null);
   const [doc, setDoc] = useState<Y.Doc | null>(null);
@@ -94,6 +102,7 @@ function CapabilitySharePage({ access }: { access: CapabilityAccess }) {
 
   useEffect(() => {
     let cancelled = false;
+    capabilityYjsProviderRef.current = null;
     setSession(null);
     setEncryption(null);
     setDoc(null);
@@ -101,9 +110,15 @@ function CapabilitySharePage({ access }: { access: CapabilityAccess }) {
     setUnlockRequired(false);
     void (async () => {
       try {
-        const opened = await createCapabilityApi().openSession(access.token);
+        const [api, CapabilityYjsProvider] = await Promise.all([
+          loadCapabilityApi(),
+          loadCapabilityYjsProvider(),
+        ]);
+        if (cancelled) return;
+        const opened = await api.openSession(access.token);
         if (cancelled) return;
         if (opened.scope !== "view") throw new Error("view capability required");
+        capabilityYjsProviderRef.current = CapabilityYjsProvider;
         setSession(opened);
         if (!opened.encryption.enabled) return;
         if (!opened.encryption.salt || !opened.encryption.check) {
@@ -133,7 +148,8 @@ function CapabilitySharePage({ access }: { access: CapabilityAccess }) {
   }, [access.token]);
 
   useEffect(() => {
-    if (!session || (session.encryption.enabled && !encryption)) return;
+    const CapabilityYjsProvider = capabilityYjsProviderRef.current;
+    if (!session || !CapabilityYjsProvider || (session.encryption.enabled && !encryption)) return;
     let disposed = false;
     const ownedDoc = new Y.Doc();
     const provider = new CapabilityYjsProvider(access, session, ownedDoc, {}, encryption);

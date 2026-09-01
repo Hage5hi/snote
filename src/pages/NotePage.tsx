@@ -15,8 +15,7 @@ import { useWordGoal, consumeGoalReached } from "@/hooks/use-word-goal";
 import { toast } from "@/hooks/use-toast";
 import { OutlineSidebar } from "@/components/note/OutlineSidebar";
 import { SupabaseYjsProvider, type Encryption, type YjsProviderLike } from "@/lib/yjs/provider";
-import { CapabilityYjsProvider } from "@/lib/yjs/capability-provider";
-import { createCapabilityApi, type NoteSession } from "@/lib/capability/client";
+import type { NoteSession } from "@/lib/capability/client";
 import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } from "@/lib/capability/url";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
@@ -88,6 +87,32 @@ type NoteResources = EncGateTarget & {
 type CapabilityAdmission = {
   access: CapabilityAccess;
   session: NoteSession;
+  YjsProvider: CapabilityYjsProviderCtor;
+};
+
+type CapabilityYjsProviderCtor = typeof import("@/lib/yjs/capability-provider").CapabilityYjsProvider;
+
+type CapabilityRuntime = {
+  createCapabilityApi: (typeof import("@/lib/capability/client"))["createCapabilityApi"];
+  CapabilityYjsProvider: CapabilityYjsProviderCtor;
+};
+
+let capabilityRuntime: CapabilityRuntime | undefined;
+let capabilityRuntimePromise: Promise<CapabilityRuntime> | undefined;
+
+const loadCapabilityRuntime = () => {
+  capabilityRuntimePromise ??= Promise.all([
+    import("@/lib/capability/client"),
+    import("@/lib/yjs/capability-provider"),
+  ]).then(([client, provider]) => {
+    const runtime: CapabilityRuntime = {
+      createCapabilityApi: client.createCapabilityApi,
+      CapabilityYjsProvider: provider.CapabilityYjsProvider,
+    };
+    capabilityRuntime = runtime;
+    return runtime;
+  });
+  return capabilityRuntimePromise;
 };
 
 export function CutoverNotePage(props: NotePageProps) {
@@ -239,12 +264,12 @@ export default function NotePage({
   });
   const [encryption, setEncryption] = useState<Encryption | null>(null);
   const [capabilityAdmission, setCapabilityAdmission] = useState<CapabilityAdmission | null>(null);
-  const admittedCapabilitySession = capabilityAccess
+  const admittedCapability = capabilityAccess
     && capabilityAdmission
     && capabilityAdmission.access.token === capabilityAccess.token
     && capabilityAdmission.access.scope === capabilityAccess.scope
     && capabilityAdmission.access.slug === capabilityAccess.slug
-    ? capabilityAdmission.session
+    ? capabilityAdmission
     : null;
 
   // Bumped by the hashchange listener so the meta-fetch effect re-runs when
@@ -298,16 +323,17 @@ export default function NotePage({
       !validSlug
       || encPhase !== "ready"
       || !encTargetIsCurrent
-      || (capabilityAccess && !admittedCapabilitySession)
+      || (capabilityAccess && !admittedCapability)
     ) return;
-    const docCacheKey = capabilityAccess && admittedCapabilitySession
-      ? `capability:${admittedCapabilitySession.noteId}:${admittedCapabilitySession.scope}:${admittedCapabilitySession.generation}`
+    const docCacheKey = admittedCapability
+      ? `capability:${admittedCapability.session.noteId}:${admittedCapability.session.scope}:${admittedCapability.session.generation}`
       : slug;
     const ownedDoc = acquireDoc(docCacheKey);
-    const ownedProvider: YjsProviderLike = capabilityAccess && admittedCapabilitySession
+    const CapabilityYjsProvider = admittedCapability?.YjsProvider;
+    const ownedProvider: YjsProviderLike = admittedCapability && CapabilityYjsProvider
       ? new CapabilityYjsProvider(
-          capabilityAccess,
-          admittedCapabilitySession,
+          admittedCapability.access,
+          admittedCapability.session,
           ownedDoc,
           { pollingOnly: true },
         )
@@ -332,7 +358,7 @@ export default function NotePage({
     encTargetIsCurrent,
     capabilityAccess,
     capabilityToken,
-    admittedCapabilitySession,
+    admittedCapability,
   ]);
 
   useLayoutEffect(() => {
@@ -388,7 +414,8 @@ export default function NotePage({
         } | null = null;
         let rowExists = false;
         if (capabilityAccess) {
-          const session = await createCapabilityApi().openSession(capabilityAccess.token);
+          const runtime = capabilityRuntime ?? await loadCapabilityRuntime();
+          const session = await runtime.createCapabilityApi().openSession(capabilityAccess.token);
           if (!isCurrentRequest()) return;
           if (
             session.slug !== slug
@@ -397,7 +424,11 @@ export default function NotePage({
           ) {
             throw new Error("capability session unavailable");
           }
-          setCapabilityAdmission({ access: capabilityAccess, session });
+          setCapabilityAdmission({
+            access: capabilityAccess,
+            session,
+            YjsProvider: runtime.CapabilityYjsProvider,
+          });
           data = {
             is_encrypted: session.encryption.enabled,
             enc_salt: session.encryption.salt,
