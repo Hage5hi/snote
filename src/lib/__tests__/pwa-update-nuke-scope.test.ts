@@ -66,7 +66,10 @@ describe("PWA production recovery contract", () => {
 
     Object.defineProperty(navigator, "serviceWorker", {
       configurable: true,
-      value: { getRegistrations: vi.fn().mockResolvedValue(regs) },
+      value: {
+        getRegistrations: vi.fn().mockResolvedValue(regs),
+        controller: null,
+      },
     });
 
     const allCacheNames = [
@@ -161,7 +164,23 @@ describe("PWA production recovery contract", () => {
     expectLocalAppStateIntact();
   });
 
-  it("lazy-import recovery is allowed once even without a pending build, and still keeps recents", async () => {
+  it("does not recover a lazy-import timeout on a clean first visit (no pending-build, no controlling SW)", async () => {
+    const { recoverMaroonedPwaUpdateOnce } = await fresh();
+    const recovered = recoverMaroonedPwaUpdateOnce("lazy-import");
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(recovered).toBe(false);
+    expect(unregisterCalls).toEqual([]);
+    expect(deletedCacheNames).toEqual([]);
+    expect(sessionStorage.getItem("pwa-update-recovery-attempt")).toBeNull();
+    expectLocalAppStateIntact();
+  });
+
+  it("recovers a lazy-import timeout when a controlling SW can wedge the import", async () => {
+    Object.defineProperty(navigator.serviceWorker, "controller", {
+      configurable: true,
+      value: { scriptURL: "https://note.syrin.online/sw.js" },
+    });
     const { recoverMaroonedPwaUpdateOnce } = await fresh();
     const first = recoverMaroonedPwaUpdateOnce("lazy-import");
     await new Promise((r) => setTimeout(r, 20));
@@ -176,6 +195,20 @@ describe("PWA production recovery contract", () => {
     expect(second).toBe(false);
     expect(unregisterCalls).toEqual([]);
     expect(deletedCacheNames).toEqual([]);
+    expectLocalAppStateIntact();
+  });
+
+  it("recovers a lazy-import timeout when pending-build is set even without a controlling SW", async () => {
+    sessionStorage.setItem("pwa-update-pending-build", "build-b");
+    const { recoverMaroonedPwaUpdateOnce } = await fresh();
+    const recovered = recoverMaroonedPwaUpdateOnce("lazy-import");
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(recovered).toBe(true);
+    expect(unregisterCalls).toEqual([
+      "https://note.syrin.online/sw.js",
+      "https://note.syrin.online/service-worker.js",
+    ]);
     expectLocalAppStateIntact();
   });
 });

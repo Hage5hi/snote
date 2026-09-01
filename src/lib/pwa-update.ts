@@ -163,6 +163,12 @@ export function recoverMaroonedPwaUpdateOnce(reason: PwaRecoveryReason): boolean
   if (reason === "boot-mismatch" && (!pending || pending === current)) {
     return false;
   }
+  if (reason === "lazy-import") {
+    const hasController = Boolean(
+      typeof navigator !== "undefined" && navigator.serviceWorker?.controller,
+    );
+    if (!pending && !hasController) return false;
+  }
 
   writeSessionItem(RECOVERY_ATTEMPT_KEY, pending ?? "1");
   const target = pending ?? "unknown";

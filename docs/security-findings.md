@@ -310,6 +310,7 @@ The fix is a three-line `bun.lock` resolution update with official registry
 integrity hashes. `package.json` ranges, overrides, and every other resolution
 are unchanged. All three bumps stay inside the dependents' existing semver
 ranges, so no new override or direct dependency was introduced.
+A 2026-09-01 lockfile bump of `browserslist` `4.28.2` → `4.28.7` (official registry integrity; `update-browserslist-db` unchanged) clears [GHSA-c83g-rgw3-j3cx](https://github.com/advisories/GHSA-c83g-rgw3-j3cx) and [GHSA-73wf-gq98-2v4g](https://github.com/advisories/GHSA-73wf-gq98-2v4g); still no override.
 
 ## Scan triage rule
 
