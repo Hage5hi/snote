@@ -9,6 +9,25 @@ function readSharePageSource() {
   );
 }
 
+describe("SharePage capability canary", () => {
+  it("skips capability parsing in legacyOnly mode the same way NotePage does", () => {
+    const shareSource = readSharePageSource();
+    const noteSource = readFileSync(
+      resolve(process.cwd(), "src/pages/NotePage.tsx"),
+      "utf8",
+    );
+    const defaultExportAt = shareSource.indexOf("export default function SharePage");
+    const capabilityPageAt = shareSource.indexOf("function CapabilitySharePage");
+    const defaultExport = shareSource.slice(defaultExportAt, capabilityPageAt);
+    const parseAt = defaultExport.indexOf("parseCapabilityLocation");
+
+    expect(noteSource).toContain("if (legacyOnly) return null;");
+    expect(defaultExport).toMatch(/legacyOnly\s*=\s*false/);
+    expect(parseAt).toBeGreaterThan(-1);
+    expect(defaultExport.slice(0, parseAt)).toMatch(/if \(legacyOnly\) return null;/);
+  });
+});
+
 describe("SharePage crawler metadata", () => {
   it("uses generic metadata that never includes the share token", () => {
     const source = readSharePageSource();

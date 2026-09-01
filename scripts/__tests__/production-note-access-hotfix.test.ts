@@ -16,6 +16,8 @@ describe("production note access hotfix", () => {
     );
     expect(app).toContain("<NotePage legacyOnly={!capabilityRoutesEnabled} />");
     expect(app).not.toContain("<NotePage legacyOnly />");
+    expect(app.match(/<SharePage legacyOnly=\{!capabilityRoutesEnabled\} \/>/g)).toHaveLength(2);
+    expect(app).not.toMatch(/<SharePage\s*\/>/);
     expect(envTypes).toContain("readonly VITE_CAPABILITY_ROUTES_ENABLED?: string;");
     expect(envExample).toMatch(/^VITE_CAPABILITY_ROUTES_ENABLED=false$/m);
   });

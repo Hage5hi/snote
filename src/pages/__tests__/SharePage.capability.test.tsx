@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SharePage from "../SharePage";
 
@@ -70,6 +70,14 @@ function noteSession(encrypted = false) {
   };
 }
 
+function renderSharePage(legacyOnly = false) {
+  return render(
+    <MemoryRouter initialEntries={[`/s#view=${TOKEN}`]}>
+      <SharePage legacyOnly={legacyOnly} />
+    </MemoryRouter>,
+  );
+}
+
 describe("SharePage capability route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -79,7 +87,7 @@ describe("SharePage capability route", () => {
   it("opens /s#view through Bearer capability mode without invoking the legacy token API", async () => {
     harness.openSession.mockResolvedValue(noteSession(false));
 
-    render(<MemoryRouter initialEntries={[`/s#view=${TOKEN}`]}><SharePage /></MemoryRouter>);
+    renderSharePage(false);
 
     await waitFor(() => expect(harness.preview).toHaveBeenCalled());
     expect(screen.getByRole("main")).toBeInTheDocument();
@@ -91,7 +99,7 @@ describe("SharePage capability route", () => {
   it("does not mount a document or provider for an encrypted note before unlock", async () => {
     harness.openSession.mockResolvedValue(noteSession(true));
 
-    render(<MemoryRouter initialEntries={[`/s#view=${TOKEN}`]}><SharePage /></MemoryRouter>);
+    renderSharePage(false);
 
     await waitFor(() => expect(harness.unlock).toHaveBeenCalled());
     expect(harness.providerConstruct).not.toHaveBeenCalled();
@@ -101,8 +109,51 @@ describe("SharePage capability route", () => {
   it("announces capability errors", async () => {
     harness.openSession.mockRejectedValue(new Error("revoked"));
 
-    render(<MemoryRouter initialEntries={[`/s#view=${TOKEN}`]}><SharePage /></MemoryRouter>);
+    renderSharePage(false);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("revoked");
+  });
+
+  it("does not parse or open a capability view session when legacyOnly", async () => {
+    harness.openSession.mockResolvedValue(noteSession(false));
+
+    renderSharePage(true);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("share.notfound");
+    expect(harness.openSession).not.toHaveBeenCalled();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
+    expect(harness.legacyInvoke).not.toHaveBeenCalled();
+    expect(harness.preview).not.toHaveBeenCalled();
+    expect(harness.unlock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the legacy /s/:token share-view path when capability routes are gated", async () => {
+    const token = "l".repeat(16);
+    window.history.replaceState(null, "", `/s/${token}`);
+    harness.legacyInvoke.mockResolvedValue({
+      data: {
+        content: "ok",
+        ydoc_state: "",
+        is_encrypted: false,
+        enc_salt: null,
+        enc_check: null,
+        enc_iterations: null,
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      error: null,
+    });
+
+    render(
+      <MemoryRouter initialEntries={[`/s/${token}`]}>
+        <Routes>
+          <Route path="/s/:token" element={<SharePage legacyOnly />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(harness.preview).toHaveBeenCalled());
+    expect(harness.openSession).not.toHaveBeenCalled();
+    expect(harness.legacyInvoke).toHaveBeenCalled();
+    expect(harness.providerConstruct).not.toHaveBeenCalled();
   });
 });

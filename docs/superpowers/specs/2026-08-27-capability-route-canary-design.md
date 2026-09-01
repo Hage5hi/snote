@@ -15,13 +15,15 @@ semantics.
 - Only the exact string `"true"` enables the canary path. Missing, empty, or
   any other value means disabled.
 - `App.tsx` passes `legacyOnly={!capabilityRoutesEnabled}` to the ordinary
-  `NotePage` route.
+  `NotePage` route and to both `/s` and `/s/:token` `SharePage` routes.
 - `SplitView` remains explicitly legacy-only.
 - When the flag is disabled, routing and note behavior remain identical to the
   current legacy-only route baseline.
 - When the flag is enabled, a valid `#owner=<token>` or `#edit=<token>`
   capability that matches the route locator may open a capability session and
   use the existing capability provider only when the server selects polling.
+  A valid `/s#view=<token>` fragment may open a view session through
+  `note-session` using the existing fail-closed slug/scope/view-on-`/s` rules.
 - A URL without a valid matching capability continues to use the legacy
   provider and legacy metadata path.
 
@@ -54,9 +56,12 @@ Realtime.
 
 ## Files in scope
 
-- `src/App.tsx`: parse the exact opt-in flag and wire the ordinary note route.
+- `src/App.tsx`: parse the exact opt-in flag and wire the ordinary note route
+  and both share routes.
 - `src/pages/NotePage.tsx`: key legacy containment to actual capability access,
   not only to the route-level compatibility switch.
+- `src/pages/SharePage.tsx`: skip `parseCapabilityLocation` and `note-session`
+  when `legacyOnly`, matching NotePage.
 - `src/vite-env.d.ts`: declare the flag.
 - `.env.example`: document a safe default of `false`.
 - `vite.config.ts`: attest the effective flag value in `version.json`.
@@ -66,8 +71,9 @@ Realtime.
 
 Implementation follows RED-GREEN TDD and must prove all of the following:
 
-1. With the flag absent or not exactly `"true"`, the ordinary note route stays
-   `legacyOnly`; `SplitView` also stays legacy-only.
+1. With the flag absent or not exactly `"true"`, the ordinary note route and
+   both share routes stay `legacyOnly`; `SplitView` also stays legacy-only.
+   SharePage must not parse `/s#view` fragments or call `note-session`.
 2. With the flag enabled but no valid matching capability, the page continues
    to read legacy metadata, constructs the legacy provider, sanitizes the share
    URL, and keeps encryption transitions disabled.
@@ -115,7 +121,9 @@ is introduced here.
 ## Non-goals
 
 - No Home-page create, recovery, import, or capability-minting flow.
-- No changes to `RawView`, `/s#view`, or legacy share compatibility.
+- No changes to `RawView`. Legacy `/s/:token` rewrite and expired-cutoff
+  behavior stay. `/s#view` is gated by the same canary as NotePage; it is not
+  dual-mode while the flag is off.
 - No Auth, Turnstile, Realtime, `share-view`, Edge Function, database, RLS, or
   migration changes.
 - No `20260724000000_atomic_capability_cutover.sql` execution.
