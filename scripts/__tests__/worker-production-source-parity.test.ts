@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const EXPECTED_WORKER_SHA256 = "ee1cec6d4dac7803c2ba4a1eeecc910c6473d236eca5f733156ae7c49d4c9b3b";
+const EXPECTED_WORKER_SHA256 = "78e344d7d838be57e94364e86b1ab0178f0434dd0ef18f28cbe7764f6f0fad3d";
 const EXPECTED_WRANGLER_TOML = `name = "syrin-prerender"
 main = "worker.js"
 compatibility_date = "2024-11-01"

@@ -212,51 +212,62 @@ describe("share crawler containment", () => {
     },
   );
 
-  it("forwards only a conservative Workbox revision from mixed HTML alias params", async () => {
-    const doubles = installWorkerDoubles();
-    const logs: string[] = [];
-    vi.spyOn(console, "log").mockImplementation((line) =>
-      logs.push(String(line)),
-    );
-    doubles.metadataFetch.mockImplementation(async (request: Request) => {
-      const url = new URL(request.url);
-      if (url.pathname.endsWith(".html")) {
-        return new Response(null, {
-          status: 308,
-          headers: { location: url.pathname.replace(/\.html$/, "") || "/" },
+  it.each([
+    {
+      requestPath: "/index.html?__WB_REVISION__=abc123&token=secret",
+      originPath: "/",
+    },
+    {
+      requestPath: "/offline.html?__WB_REVISION__=abc123&token=secret",
+      originPath: "/offline",
+    },
+  ])(
+    "forwards only a conservative Workbox revision from mixed HTML alias params for $requestPath",
+    async ({ requestPath, originPath }) => {
+      const doubles = installWorkerDoubles();
+      const logs: string[] = [];
+      vi.spyOn(console, "log").mockImplementation((line) =>
+        logs.push(String(line)),
+      );
+      doubles.metadataFetch.mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname.endsWith(".html")) {
+          return new Response(null, {
+            status: 308,
+            headers: { location: url.pathname.replace(/\.html$/, "") || "/" },
+          });
+        }
+        return new Response("reviewed html", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
         });
-      }
-      return new Response("reviewed html", {
-        status: 200,
-        headers: { "content-type": "text/html; charset=utf-8" },
       });
-    });
 
-    const response = await worker.fetch(
-      new Request(
-        "https://note.syrin.online/index.html?__WB_REVISION__=abc123&token=secret",
-        { headers: { "user-agent": "Mozilla/5.0" } },
-      ),
-      {
-        ORIGIN_HOST: "snote-g4-origin.pages.dev",
-        SITE_URL: "https://note.syrin.online",
-      },
-      { waitUntil: doubles.waitUntil },
-    );
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${requestPath}`, {
+          headers: { "user-agent": "Mozilla/5.0" },
+        }),
+        {
+          ORIGIN_HOST: "snote-g4-origin.pages.dev",
+          SITE_URL: "https://note.syrin.online",
+        },
+        { waitUntil: doubles.waitUntil },
+      );
 
-    expect(response.status).toBe(200);
-    expect(doubles.metadataFetch).toHaveBeenCalledOnce();
-    const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
-    const originUrl = new URL(originRequest.url);
-    expect(originUrl.pathname).toBe("/");
-    expect(originUrl.search).toBe("?__WB_REVISION__=abc123");
-    expect(originRequest.url).not.toContain("token");
-    expect(originRequest.url).not.toContain("secret");
-    expect(logs.join("\n")).not.toContain("token");
-    expect(logs.join("\n")).not.toContain("secret");
-    expect(logs.join("\n")).not.toContain("abc123");
-    expect(logs.join("\n")).not.toContain("__WB_REVISION__");
-  });
+      expect(response.status).toBe(200);
+      expect(doubles.metadataFetch).toHaveBeenCalledOnce();
+      const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.pathname).toBe(originPath);
+      expect(originUrl.search).toBe("?__WB_REVISION__=abc123");
+      expect(originRequest.url).not.toContain("token");
+      expect(originRequest.url).not.toContain("secret");
+      expect(logs.join("\n")).not.toContain("token");
+      expect(logs.join("\n")).not.toContain("secret");
+      expect(logs.join("\n")).not.toContain("abc123");
+      expect(logs.join("\n")).not.toContain("__WB_REVISION__");
+    },
+  );
 
   it.each([
     { label: "empty", requestPath: "/index.html?__WB_REVISION__=" },
