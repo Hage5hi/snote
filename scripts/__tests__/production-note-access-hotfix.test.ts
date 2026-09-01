@@ -125,11 +125,42 @@ describe("production note access hotfix", () => {
     expectValueImportBehindRoutesGuard(sharePage, "@/lib/capability/client");
     expectValueImportBehindRoutesGuard(notePage, "@/lib/yjs/capability-provider");
     expectValueImportBehindRoutesGuard(sharePage, "@/lib/yjs/capability-provider");
-    expect(notePage).toContain("export function CutoverNotePage");
+    expect(notePage).not.toContain("export function CutoverNotePage");
+    expect(notePage).not.toMatch(
+      /import\s+LegacyNotePage\s+from\s+["']@\/pages\/LegacyNotePage["']/,
+    );
+    expect(source("src/pages/CutoverNotePage.tsx")).toContain("export function CutoverNotePage");
     expect(app).not.toContain("CutoverNotePage");
     expect(split).not.toContain("CutoverNotePage");
     expect(home).not.toContain("CutoverNotePage");
     expect(raw).not.toContain("CutoverNotePage");
+  });
+
+  it("keeps live share sanitizers off the legacy-note-open HTTP module", () => {
+    const main = source("src/main.tsx");
+    const sharePage = source("src/pages/SharePage.tsx");
+    const sanitizer = source("src/lib/legacy/share-url.ts");
+    const cutover = source("src/lib/legacy/cutover.ts");
+    const notePage = source("src/pages/NotePage.tsx");
+    const cutoverNotePage = source("src/pages/CutoverNotePage.tsx");
+    const legacyNotePage = source("src/pages/LegacyNotePage.tsx");
+
+    expect(sanitizer).not.toContain("legacy-note-open");
+    expect(sanitizer).toContain("export function sanitizeLegacyShareUrl");
+    expect(sanitizer).toContain("export function parseLegacyShareFragment");
+    expect(sanitizer).toContain("export function legacyShareCutoffMs");
+    expect(sanitizer).toContain("export function sanitizeLegacyShareLocation");
+
+    expect(main).toContain('from "./lib/legacy/share-url"');
+    expect(main).not.toContain("lib/legacy/cutover");
+    expect(sharePage).toContain('from "@/lib/legacy/share-url"');
+    expect(sharePage).not.toContain("@/lib/legacy/cutover");
+
+    expect(cutover).toContain("legacy-note-open");
+    expect(notePage).not.toContain("@/lib/legacy/cutover");
+    expectValueImportBehindRoutesGuard(notePage, "./CutoverNotePage");
+    expectValueImportBehindRoutesGuard(cutoverNotePage, "./LegacyNotePage");
+    expectValueImportBehindRoutesGuard(legacyNotePage, "@/lib/legacy/cutover");
   });
 
   it("fail-closes the admin SPA unless VITE_ADMIN_PANEL_ENABLED is true", () => {
@@ -217,9 +248,11 @@ describe("production note access hotfix", () => {
     expect(gate).toContain('"note-session"');
     expect(gate).toContain('"note-sync"');
     expect(gate).toContain('"note-manage"');
+    expect(gate).toContain('"legacy-note-open"');
     expect(gate).toMatch(
       /VITE_CAPABILITY_ROUTES_ENABLED === ["']true["']/,
     );
     expect(gate).toContain("Capability HTTP client must not ship in default production JS");
+    expect(gate).toContain("legacy-note-open must not ship in default production JS");
   });
 });

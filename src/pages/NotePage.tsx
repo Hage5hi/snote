@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router";
@@ -38,8 +38,6 @@ import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } fro
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 import { AppShell } from "@/components/app/AppShell";
 import { isExtensionContext } from "@/lib/ext-context";
-import LegacyNotePage from "@/pages/LegacyNotePage";
-import { clearLegacyImportRecovery } from "@/lib/legacy/cutover";
 import {
   ENCRYPTION_PIN_CHANGE_EVENT,
   encryptionPinStorageKey,
@@ -119,37 +117,9 @@ const loadCapabilityRuntime = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED ===
       throw new Error("capability API unavailable");
     };
 
-export function CutoverNotePage(props: NotePageProps) {
-  const params = useParams();
-  const location = useLocation();
-  const slug = props.embedSlug ?? params.slug ?? "";
-  const capabilityAccess = useMemo(() => {
-    const parsed = typeof window === "undefined"
-      ? null
-      : parseCapabilityLocation(new URL(
-        `${location.pathname}${location.search}${location.hash}`,
-        window.location.origin,
-      ));
-    return parsed && parsed.scope !== "view" && parsed.slug === slug ? parsed : null;
-  }, [slug, location.pathname, location.search, location.hash]);
-
-  useEffect(() => {
-    if (capabilityAccess?.scope === "owner") {
-      clearLegacyImportRecovery(slug, capabilityAccess.token);
-    }
-  }, [capabilityAccess, slug]);
-
-  if (!capabilityAccess) {
-    return (
-      <LegacyNotePage
-        slug={slug}
-        embed={!!props.embedSlug}
-        onPrimaryScroller={props.onPrimaryScroller}
-      />
-    );
-  }
-  return <NotePage {...props} />;
-}
+export const CutoverNotePage = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? lazy(() => import("./CutoverNotePage"))
+  : null;
 
 export default function NotePage({
   legacyOnly = false,

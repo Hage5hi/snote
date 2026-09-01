@@ -60,12 +60,15 @@ const ADMIN_SPA_INVOKE_STRINGS = [
   "admin-rotate",
 ] as const;
 
-// Capability HTTP client invoke strings. Quoted so unquoted English copy
-// does not trip the default-build leak check. Flag-on builds may emit them.
+// Capability HTTP client invoke strings and the cutover open helper.
+// Quoted so unquoted English copy does not trip the default-build leak check.
+// Flag-on builds may emit them. Capability HTTP client must not ship in
+// default production JS. legacy-note-open must not ship in default production JS.
 const CAPABILITY_INVOKE_STRINGS = [
   "note-session",
   "note-sync",
   "note-manage",
+  "legacy-note-open",
 ] as const;
 
 // Phase 3.1 invariant: these libs are lazy-only and must NOT be in modulepreload.

@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { ArrowLeft, CopyPlus, Eye, Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { Link, Navigate, useNavigate } from "react-router";
@@ -9,11 +9,7 @@ import { UnlockForm } from "@/components/note/UnlockForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { deriveKey, decryptBytes, encryptBytes, iterationsFor, verifyCheck } from "@/lib/crypto";
-import {
-  createLegacyNoteApi,
-  duplicateLegacyNote,
-  type LegacyNote,
-} from "@/lib/legacy/cutover";
+import type { LegacyNote } from "@/lib/legacy/cutover";
 import { isUsableSlug } from "@/lib/slug";
 import { base64ToBytes } from "@/lib/yjs/base64";
 import type { Encryption } from "@/lib/yjs/provider";
@@ -25,6 +21,12 @@ const loadCapabilityApi = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "tr
   ? async () => (await import("@/lib/capability/client")).createCapabilityApi()
   : async () => {
       throw new Error("capability API unavailable");
+    };
+
+const loadLegacyCutover = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? () => import("@/lib/legacy/cutover")
+  : async () => {
+      throw new Error("legacy note API unavailable");
     };
 
 type ReadyState = {
@@ -94,7 +96,6 @@ export default function LegacyNotePage({
   const [duplicating, setDuplicating] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
   const valid = isUsableSlug(slug);
-  const legacyApi = useMemo(() => createLegacyNoteApi(), []);
 
   useEffect(() => {
     if (!valid) return;
@@ -103,7 +104,10 @@ export default function LegacyNotePage({
     setState({ kind: "loading" });
     setTargetSlug(defaultDuplicateSlug(slug));
     setDuplicateError(null);
-    void legacyApi.open(slug, controller.signal).then(async (note) => {
+    void loadLegacyCutover().then(({ createLegacyNoteApi }) => {
+      if (controller.signal.aborted) return;
+      return createLegacyNoteApi().open(slug, controller.signal);
+    }).then(async (note) => {
       if (controller.signal.aborted) return;
       if (!note) {
         setState({ kind: "notfound" });
@@ -139,15 +143,14 @@ export default function LegacyNotePage({
         if (!controller.signal.aborted) setState({ kind: "needs-key", note });
       }
     }).catch((cause) => {
-      if (!controller.signal.aborted) {
-        setState({ kind: "error", message: cause instanceof Error ? cause.message : String(cause) });
-      }
+      if (controller.signal.aborted) return;
+      setState({ kind: "error", message: cause instanceof Error ? cause.message : String(cause) });
     });
     return () => {
       controller.abort();
       ownedDoc?.destroy();
     };
-  }, [legacyApi, slug, valid]);
+  }, [slug, valid]);
 
   if (!valid) return <Navigate to="/" replace />;
 
@@ -198,6 +201,7 @@ export default function LegacyNotePage({
     setDuplicateError(null);
     setDuplicating(true);
     try {
+      const { duplicateLegacyNote } = await loadLegacyCutover();
       const url = new URL(await duplicateLegacyNote({
         api: await loadCapabilityApi(),
         source: state.note,

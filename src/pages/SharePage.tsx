@@ -15,7 +15,7 @@ import { useSceneTheme } from "@/hooks/use-scene-theme";
 import type { NoteSession } from "@/lib/capability/client";
 import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } from "@/lib/capability/url";
 import type { Encryption } from "@/lib/yjs/provider";
-import { parseLegacyShareFragment } from "@/lib/legacy/cutover";
+import { parseLegacyShareFragment } from "@/lib/legacy/share-url";
 
 const TOKEN_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const SHARE_CANONICAL_URL = "https://note.syrin.online/s";
