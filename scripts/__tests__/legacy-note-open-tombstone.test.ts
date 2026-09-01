@@ -53,5 +53,44 @@ describe("legacy-note-open dump containment", () => {
     expect(findings).not.toContain("GitHub source tombstone was PR #43");
     expect(findings).not.toContain("production remains 404 not-deployed");
     expect(findings).not.toContain("Do not claim a production 410 deploy");
+
+    const capability = source("docs/capability-backend.md");
+    expect(capability).not.toContain(
+      "legacy note content is available only through the",
+    );
+    expect(capability).not.toContain(
+      "exact-match `legacy-note-open` Edge Function",
+    );
+    expect(capability).toContain(
+      "leftover callers of that name get `410`, not note bytes",
+    );
+    expect(capability).toContain("security-findings.md");
+    expect(capability).toContain("§1b");
+    expect(capability).toContain("Live writes remain the legacy `NotePage` path");
+    expect(capability).toContain("SQL 240 is not applied");
+    expect(capability).toContain("Do not restore a dump");
+    expect(capability).toContain("browser roles still have no table grants");
+
+    const cutover = source("docs/security/atomic-capability-cutover.md");
+    expect(cutover).not.toContain(
+      "Deploy `legacy-note-open`, the capability functions",
+    );
+    expect(cutover).not.toContain(
+      "Keep `legacy-note-open` exact-match/read-only",
+    );
+    expect(cutover).toContain(
+      "already the generic `410 no-store` tombstone",
+    );
+    expect(cutover).toContain("Capability functions are SHA-pinned");
+    expect(cutover).toContain(
+      "Deploy share compatibility code and the Cloudflare Worker",
+    );
+    expect(cutover).toContain(
+      "Keep `legacy-note-open` as the generic `410 no-store` tombstone",
+    );
+    expect(cutover).toContain("Do not restore a dump");
+    expect(cutover).toContain(
+      "A legacy URL is exact-match, read-only, and `no-store`.",
+    );
   });
 });

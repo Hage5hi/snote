@@ -39,8 +39,10 @@ production operation, not a migration to apply automatically after merge.
    that canonical ISO timestamp as both Edge secret `LEGACY_SHARE_CUTOFF` and
    frontend build variable `VITE_LEGACY_SHARE_CUTOFF`. Missing or malformed
    values fail closed at runtime.
-3. Deploy `legacy-note-open`, the capability functions, share compatibility
-   code, and the Cloudflare Worker. Do not deploy the migration yet.
+3. Production `legacy-note-open` is already the generic `410 no-store` tombstone;
+   do not restore a dump. Capability functions are SHA-pinned.
+   Deploy share compatibility code and the Cloudflare Worker. Do not deploy
+   the migration yet.
 4. Run `bun run cutover:verify` from the exact production build artifact with
    `CAPABILITY_CUTOVER_AT`, both cutoff variables, and the credential-free
    `CAPABILITY_SHARE_VIEW_URL`. It checks cutover + 30 days, finds the value in
@@ -87,8 +89,8 @@ it never forwards them to origin even after compatibility expires. Capability
    and cannot broadcast; allow at most five minutes for older JWTs to expire.
 2. Keep the cutover migration applied. Never recreate a permissive policy or
    grant `notes` privileges to `PUBLIC`, `anon`, or `authenticated`.
-3. Keep `legacy-note-open` exact-match/read-only and keep all private routes
-   `no-store`.
+3. Keep `legacy-note-open` as the generic `410 no-store` tombstone.
+   Do not restore a dump. Keep all private routes `no-store`.
 4. Roll back the SPA/Worker/API bundle only to a revision that understands
    read-only legacy access. Do not roll back to a direct-table client.
 5. Diagnose and repair the capability API, then unset the write kill switch
