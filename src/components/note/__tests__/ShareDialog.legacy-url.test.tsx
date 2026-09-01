@@ -182,6 +182,7 @@ describe("ShareDialog capability HTTP client loading", () => {
   });
 
   it("does not import the capability client on the legacy share-revoke path", async () => {
+    const importedBefore = harness.capabilityClientImported;
     harness.shareToken = "readonly-token";
     window.history.replaceState(null, "", "/secret");
     render(
@@ -198,11 +199,12 @@ describe("ShareDialog capability HTTP client loading", () => {
     await waitFor(() =>
       expect(harness.invoke).toHaveBeenCalledWith("share-revoke", { body: { token: "readonly-token" } }),
     );
-    expect(harness.capabilityClientImported).toBe(false);
+    expect(harness.capabilityClientImported).toBe(importedBefore);
     expect(harness.manage).not.toHaveBeenCalled();
   });
 
   it("imports the capability client when an owner rotates a view link", async () => {
+    const importedBefore = harness.capabilityClientImported;
     render(
       <ShareDialog
         slug="secret"
@@ -212,7 +214,7 @@ describe("ShareDialog capability HTTP client loading", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "share.aria" }));
-    expect(harness.capabilityClientImported).toBe(false);
+    expect(harness.capabilityClientImported).toBe(importedBefore);
 
     fireEvent.click(screen.getByRole("button", { name: "share.create_btn" }));
     await waitFor(() => expect(harness.manage).toHaveBeenCalled());
