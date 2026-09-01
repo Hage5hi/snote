@@ -39,8 +39,14 @@ describe("CI toolchain contract", () => {
     for (const [path, workflow] of workflows) {
       const lines = workflow.split(/\r?\n/);
       lines.forEach((line, index) => {
-        if (!line.includes("oven-sh/setup-bun@v2")) return;
+        if (!/oven-sh\/setup-bun@/.test(line)) return;
         setupCount += 1;
+        expect(
+          line,
+          `${path} setup-bun uses must be a 40-hex SHA pin`,
+        ).toMatch(
+          /uses:\s*oven-sh\/setup-bun@[0-9a-f]{40}(?:\s+#\s+\S+)?\s*$/,
+        );
         expect(
           lines.slice(index, index + 4).join("\n"),
           `${path} setup-bun step must pin Bun ${EXPECTED_BUN_VERSION}`,
@@ -51,6 +57,30 @@ describe("CI toolchain contract", () => {
     expect(setupCount).toBeGreaterThan(0);
     expect(allWorkflows).not.toMatch(/bun-version:\s*latest\b/);
     expect(allWorkflows).not.toContain("bun.lockb");
+  });
+
+  it("SHA-pins leftover JS GitHub Actions", () => {
+    const leftover = [
+      "actions/checkout",
+      "oven-sh/setup-bun",
+      "actions/upload-artifact",
+    ] as const;
+
+    for (const action of leftover) {
+      const uses = [
+        ...allWorkflows.matchAll(
+          new RegExp(`^\\s*(?:-\\s+)?uses:\\s*${action}@\\S+`, "gm"),
+        ),
+      ].map((match) => match[0]);
+      expect(uses.length, `${action} must appear in workflows`).toBeGreaterThan(
+        0,
+      );
+      for (const use of uses) {
+        expect(use, `${action} must be SHA-pinned`).toMatch(
+          new RegExp(`${action}@[0-9a-f]{40}(?:\\s+#\\s+\\S+)?$`),
+        );
+      }
+    }
   });
 
   it("keeps patched Vitest and its coverage provider aligned", () => {

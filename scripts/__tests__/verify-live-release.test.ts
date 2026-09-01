@@ -235,7 +235,7 @@ describe("post-deploy workflow wiring", () => {
 
   it("attests the live release before install and smoke checks", () => {
     expect(workflow).toMatch(
-      / {6}- uses: oven-sh\/setup-bun@v2\n {8}with:\n {10}bun-version: 1\.3\.14\n {6}- name: Verify live release identity\n {8}run: bun run scripts\/verify-live-release\.ts\n/,
+      / {6}- uses: oven-sh\/setup-bun@[0-9a-f]{40}(?:\s+#\s+\S+)?\n {8}with:\n {10}bun-version: 1\.3\.14\n {6}- name: Verify live release identity\n {8}run: bun run scripts\/verify-live-release\.ts\n/,
     );
 
     const attestationIndex = workflow.indexOf(

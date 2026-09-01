@@ -56,10 +56,10 @@ jobs:
           inputs.expected_capability_routes_enabled
         }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.3.14
       - name: Verify live release identity
@@ -78,7 +78,7 @@ jobs:
           --retries=0
       - name: Upload failure evidence
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: pwa-update-smoke-failure-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
