@@ -48,8 +48,8 @@ const vi: Dictionary = {
     "export.pdf": "In ra PDF",
     "export.txt": "Tải .txt",
     "export.ai": "Copy cho AI",
-    "export.raw": "Copy raw URL (cURL)",
-    "export.raw_tooltip": "URL trỏ thẳng edge function — cURL/wget nhận text/plain ngay",
+    "export.raw": "Copy URL markdown thô",
+    "export.raw_tooltip": "Xem plaintext công khai tại /slug.md",
 
     "menu.help": "Trợ giúp",
     "preview.empty": "Note trống. Bắt đầu gõ để xem preview.",
@@ -102,8 +102,8 @@ const vi: Dictionary = {
     "toast.copied_chars": "{n} ký tự",
     "toast.copied_ai": "Đã copy cho AI",
     "toast.copied_ai_desc": "~{n} tokens",
-    "toast.copied_raw": "Đã copy raw URL",
-    "toast.copied_raw_desc": "Dùng cho cURL / wget / Python",
+    "toast.copied_raw": "Đã copy URL markdown thô",
+    "toast.copied_raw_desc": "Xem plaintext công khai",
 
     "sync.label.synced": "Đã đồng bộ",
     "sync.label.syncing": "Đang đồng bộ…",

@@ -1,4 +1,4 @@
-// Export dropdown: copy URL, download as .md/.html/.pdf/.txt, copy as AI context, copy raw URL.
+// Export dropdown: copy URL, download as .md/.html/.pdf/.txt, copy as AI context, copy raw markdown URL.
 import { ChevronDown, Copy, Download, FileCode, FileType, Sparkles, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,8 +12,7 @@ import { exportMarkdown, exportPlainText, exportHtml, exportPdf } from "@/lib/ex
 import { formatForAI, approxTokens } from "@/lib/ai-format";
 import { toast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n";
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+import { CANONICAL_ORIGIN } from "@/lib/capability/url";
 
 interface ExportMenuProps {
   slug: string;
@@ -44,7 +43,7 @@ export function ExportMenu({ slug, getContent, isEncrypted }: ExportMenuProps) {
   };
 
   const copyRawUrl = async () => {
-    const url = `${SUPABASE_URL}/functions/v1/raw/${slug}`;
+    const url = `${CANONICAL_ORIGIN}/${slug}.md`;
     await navigator.clipboard.writeText(url);
     toast({ title: t("toast.copied_raw"), description: t("toast.copied_raw_desc") });
   };
