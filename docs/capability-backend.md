@@ -46,10 +46,14 @@ mode and never receive an owner capability automatically.
 
 All responses carry `Cache-Control: no-store` and `CDN-Cache-Control: no-store`.
 The legacy credential-free `raw` Edge dump is a permanent `410` tombstone
-(`{"found":false}`, `no-store`) and must not select or echo note bytes. After
-the atomic cutover, legacy note content is available only through the
-exact-match `legacy-note-open` Edge Function. Browser roles have no direct
-table grants. See [the cutover runbook](security/atomic-capability-cutover.md)
+(`{"found":false}`, `no-store`) and must not select or echo note bytes.
+Production `legacy-note-open` is the same generic uncacheable `410` tombstone:
+leftover callers of that name get `410`, not note bytes. Do not restore a dump.
+See [security findings §1b](security-findings.md).
+Live writes remain the legacy `NotePage` path (canary off). SQL 240 is not applied.
+After the atomic cutover, browser roles still have no table grants; this
+document does not add a replacement content Edge path. See
+[the cutover runbook](security/atomic-capability-cutover.md)
 for the mandatory 48-hour soak, migration order, compatibility deadline, and
 read-only rollback procedure.
 Malformed credentials return a generic `401`; storage/configuration failures
