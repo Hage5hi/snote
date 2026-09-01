@@ -4,13 +4,18 @@ Production legacy write path is still live (`NotePage` `legacyOnly`,
 `public.notes`). Additive SQL `20260722000000_capability_backend.sql` is
 applied on production: columns, legacy-only RLS, capability tables, and a
 closed kill switch (`writes_enabled=false`, `private_realtime_enabled=false`).
+Additive SQL `20260727000000_capability_sync_conflict_codes.sql` is also
+applied: `capability_updates_append` returns `append_encryption_conflict` and
+`capability_checkpoint_append` returns `checkpoint_encryption_conflict` /
+`checkpoint_version_conflict`; `capability_note_manage` still uses generic
+`version_conflict`.
 Atomic SQL `20260724000000_atomic_capability_cutover.sql` has not been
 applied. Anon still has direct table grants; `notes` still has the three
 Legacy policies. Capability SPA canary remains off
 (`VITE_CAPABILITY_ROUTES_ENABLED` is not true; live `version.json`
 `capabilityRoutesEnabled` is false). Local tests prove capability code
 contracts only; 240, canary, soak, and post-cutover probes remain mandatory
-gates. Do not treat 220 as authorization to flip the canary or apply 240.
+gates. Do not treat 220 or 270 as authorization to flip the canary or apply 240.
 
 In the target post-cutover architecture, slugs are locators rather than
 authorization credentials. New notes use owner/edit/view capabilities, while
@@ -148,8 +153,8 @@ Tables present: `note_capabilities`, `note_updates`, `note_checkpoints`,
 `private_realtime_enabled=false`. Function `capability_note_import_legacy`
 is absent (SQL 240 not applied). Function `capability_checkpoint_append`
 exists (SQL 230 objects are present) but capability writes remain fail-closed
-via the kill switch. This attestation is 220 vs 240 vs canary; it is not a
-230 soak claim.
+via the kill switch. This §3a attestation is 220 vs 240 vs canary; it is not
+a 230 soak claim. SQL 270 conflict-code verification is §3b.
 
 Live SPA `https://note.syrin.online/version.json` (fetched 2026-09-01):
 `deployedSha` `3244b08cc1f9c178a0e99ef8fec63bdaeb3d7424`,
@@ -157,9 +162,50 @@ Live SPA `https://note.syrin.online/version.json` (fetched 2026-09-01):
 Canary off. Git `main` may be ahead of this origin SHA for docs/Edge-only
 PRs; that is expected and does not change canary status.
 
+## 3b. Additive capability sync conflict codes SQL 270 — production verified
+
+Verified 2026-09-01 ~23:59 ICT / 2026-09-02 ~00:03 ICT against production
+Supabase `onfzjmfjldsbthchssfr` (same project as §3a). Confirmed via
+`pg_get_functiondef`, not via `schema_migrations` — that relation still does
+not exist. Do not re-run `20260722000000_capability_backend.sql` or
+`20260727000000_capability_sync_conflict_codes.sql`. Function REPLACE is
+less dangerous than 220's singleton INSERT, but this record is attestation
+only.
+
+`capability_updates_append` returns `append_encryption_conflict` (not generic
+`version_conflict`) on encryption mismatch. `capability_checkpoint_append`
+returns `checkpoint_encryption_conflict` and `checkpoint_version_conflict`.
+`capability_note_manage` still uses generic `version_conflict`; that is
+expected — 270 does not rewrite manage.
+
+Kill switch still closed: `writes_enabled=false`,
+`private_realtime_enabled=false`. SQL 240 still not applied:
+`capability_note_import_legacy` is absent; anon still has notes grants; the
+three Legacy policies remain.
+
+SPA canary still off: live `https://note.syrin.online/version.json`
+`capabilityRoutesEnabled` false, `deployedSha`
+`3244b08cc1f9c178a0e99ef8fec63bdaeb3d7424`. Docs/Edge-only git may be ahead;
+that does not change canary status.
+
+Edge HTTP for `note-session`, `note-sync`, and `note-manage` on production
+and staging `dmfrydhubosecaatjjwf` matches git mapper
+`capabilityCorsHeaders` (includes `x-snote-auth`, `x-legacy-share`,
+`Retry-After`; OPTIONS 200 `ok`; GET 405 `{"error":"method not allowed"}`
+and POST `{}` 401 `{"error":"unauthorized"}` with no `code`; both cache
+headers `no-store`). Live 401 rather than 503 `unavailable` means HMAC and
+service-role env are present. Function source SHA cannot be confirmed (list
+403); git function bodies last `0e1ea254` (2026-08-25), mapper
+`_shared/capability-edge.ts` last `b0417482` (2026-07-27, 270 codes). HEAD
+is docs-only. This is not a deploy.
+
+This is not a soak claim. This is not authorization to flip the canary or
+`writes_enabled`, or to apply 240.
+
 ## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 
-Production SQL 220 (see §3a) does not change this: 240 is still not applied.
+Production SQL 220 (see §3a) and SQL 270 (see §3b) do not change this: 240 is
+still not applied.
 
 `20260724000000_atomic_capability_cutover.sql` dynamically drops every policy
 on `public.notes` and revokes all direct privileges from `PUBLIC`, `anon`, and

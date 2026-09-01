@@ -44,11 +44,20 @@ describe("canonical production origin", () => {
       "closed kill switch (`writes_enabled=false`, `private_realtime_enabled=false`).",
     );
     expect(findings).toMatch(
+      /Additive SQL `20260727000000_capability_sync_conflict_codes\.sql` is\s+(?:also\s+)?applied/,
+    );
+    expect(findings).toContain("append_encryption_conflict");
+    expect(findings).toContain("checkpoint_encryption_conflict");
+    expect(findings).toContain("checkpoint_version_conflict");
+    expect(findings).toMatch(
+      /Kill switch still closed: `writes_enabled=false`,\s+`private_realtime_enabled=false`/,
+    );
+    expect(findings).toMatch(
       /Atomic SQL `20260724000000_atomic_capability_cutover\.sql` has not been\s+applied\./,
     );
     expect(findings).toContain("Capability SPA canary remains off");
     expect(findings).toContain(
-      "Do not treat 220 as authorization to flip the canary or apply 240.",
+      "Do not treat 220 or 270 as authorization to flip the canary or apply 240.",
     );
     expect(findings).not.toContain(
       "Atomic SQL `20260724000000_atomic_capability_cutover.sql` is applied",
