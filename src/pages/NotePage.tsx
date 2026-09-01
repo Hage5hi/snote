@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 import { Navigate, useLocation, useNavigate, useParams } from "react-router";
@@ -117,9 +117,18 @@ const loadCapabilityRuntime = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED ===
       throw new Error("capability API unavailable");
     };
 
-export const CutoverNotePage = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+const LazyCutoverNotePage = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
   ? lazy(() => import("./CutoverNotePage"))
   : null;
+
+export function CutoverNotePage(props: NotePageProps) {
+  if (!LazyCutoverNotePage) return null;
+  return (
+    <Suspense fallback={null}>
+      <LazyCutoverNotePage {...props} />
+    </Suspense>
+  );
+}
 
 export default function NotePage({
   legacyOnly = false,

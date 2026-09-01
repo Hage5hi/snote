@@ -125,7 +125,7 @@ describe("production note access hotfix", () => {
     expectValueImportBehindRoutesGuard(sharePage, "@/lib/capability/client");
     expectValueImportBehindRoutesGuard(notePage, "@/lib/yjs/capability-provider");
     expectValueImportBehindRoutesGuard(sharePage, "@/lib/yjs/capability-provider");
-    expect(notePage).not.toContain("export function CutoverNotePage");
+    expect(notePage).toContain("export function CutoverNotePage");
     expect(notePage).not.toMatch(
       /import\s+LegacyNotePage\s+from\s+["']@\/pages\/LegacyNotePage["']/,
     );
