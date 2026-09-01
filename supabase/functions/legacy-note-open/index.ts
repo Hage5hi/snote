@@ -19,8 +19,8 @@ function jsonResponse(body: unknown, status: number) {
 
 // Retired: this name used to be an unauthenticated service-role dump of note
 // bytes. Keep the function name as a generic uncacheable 410 so leftover
-// callers cannot recover note bytes. Production is not deployed (gateway 404)
-// until a later explicit deploy, which is out of scope.
+// callers cannot recover note bytes. Production serves this 410 tombstone
+// (verified 2026-09-02). Do not restore a dump.
 Deno.serve((req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") {

@@ -20,6 +20,8 @@ describe("legacy-note-open dump containment", () => {
     expect(legacy).toContain('"cdn-cache-control": "no-store"');
     expect(legacy).not.toContain("createClient");
     expect(legacy).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(legacy).not.toContain("gateway 404");
+    expect(legacy).not.toContain("Production is not deployed");
   });
 
   it("contains no content, locator, or database lookup path", () => {
