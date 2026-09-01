@@ -98,7 +98,7 @@ const App = () => (
                   path="/s"
                   element={
                     <Suspense fallback={PlainFallback}>
-                      <SharePage />
+                      <SharePage legacyOnly={!capabilityRoutesEnabled} />
                     </Suspense>
                   }
                 />
@@ -106,7 +106,7 @@ const App = () => (
                   path="/s/:token"
                   element={
                     <Suspense fallback={PlainFallback}>
-                      <SharePage />
+                      <SharePage legacyOnly={!capabilityRoutesEnabled} />
                     </Suspense>
                   }
                 />

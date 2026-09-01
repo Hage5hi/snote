@@ -62,11 +62,19 @@ function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
   return doc;
 }
 
-export default function SharePage() {
+interface SharePageProps {
+  /** Ignore capability-shaped fragments while the capability backend is offline. */
+  legacyOnly?: boolean;
+}
+
+export default function SharePage({ legacyOnly = false }: SharePageProps) {
   const location = useLocation();
-  const access = typeof window === "undefined"
-    ? null
-    : parseCapabilityLocation(new URL(window.location.href));
+  const access = (() => {
+    if (legacyOnly) return null;
+    return typeof window === "undefined"
+      ? null
+      : parseCapabilityLocation(new URL(window.location.href));
+  })();
   if (access?.scope === "view") {
     return <CapabilitySharePage key={`${access.token}:${location.hash}`} access={access} />;
   }
