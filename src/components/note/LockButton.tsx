@@ -37,7 +37,7 @@ import { clearNoteEncryptionPin, markNoteEncrypted } from "@/lib/encryption-pin"
 import type { YjsProviderLike } from "@/lib/yjs/provider";
 import type { CapabilityAccess } from "@/lib/capability/url";
 import { buildCapabilityUrl, readEncryptionSecret } from "@/lib/capability/url";
-import { createCapabilityApi, type NoteSession } from "@/lib/capability/client";
+import type { NoteSession } from "@/lib/capability/client";
 import { capabilityPayloadId, encodeCapabilityPayload } from "@/lib/capability/encoding";
 import {
   clearSnapshots,
@@ -45,6 +45,9 @@ import {
   unprotectExistingSnapshots,
   type SnapshotProtection,
 } from "@/lib/snapshots";
+
+const loadCapabilityApi = async () =>
+  (await import("@/lib/capability/client")).createCapabilityApi();
 
 interface LockButtonProps {
   slug: string;
@@ -163,7 +166,7 @@ export function LockButton({
         const freshEncrypted = await encryptBytes(key, Y.encodeStateAsUpdate(doc));
         const checkpointId = await capabilityPayloadId(freshEncrypted);
         provider.assertEncryptionTransitionStable();
-        await createCapabilityApi().manage(capabilityAccess.token, {
+        await (await loadCapabilityApi()).manage(capabilityAccess.token, {
           action: "set-encryption",
           isEncrypted: true,
           expectedEncryptionVersion: session.encryption.version,
@@ -240,7 +243,7 @@ export function LockButton({
         const session = await provider.prepareEncryptionTransition();
         const freshState = Y.encodeStateAsUpdate(doc);
         provider.assertEncryptionTransitionStable();
-        await createCapabilityApi().manage(capabilityAccess.token, {
+        await (await loadCapabilityApi()).manage(capabilityAccess.token, {
           action: "set-encryption",
           isEncrypted: false,
           expectedEncryptionVersion: session.encryption.version,

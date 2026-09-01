@@ -8,7 +8,6 @@ import { Preview } from "@/components/note/Preview";
 import { UnlockForm } from "@/components/note/UnlockForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { createCapabilityApi } from "@/lib/capability/client";
 import { deriveKey, decryptBytes, encryptBytes, iterationsFor, verifyCheck } from "@/lib/crypto";
 import {
   createLegacyNoteApi,
@@ -193,6 +192,7 @@ export default function LegacyNotePage({
     setDuplicateError(null);
     setDuplicating(true);
     try {
+      const { createCapabilityApi } = await import("@/lib/capability/client");
       const url = new URL(await duplicateLegacyNote({
         api: createCapabilityApi(),
         source: state.note,

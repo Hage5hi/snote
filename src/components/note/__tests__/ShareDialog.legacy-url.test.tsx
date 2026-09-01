@@ -8,6 +8,9 @@ const harness = vi.hoisted(() => ({
   qr: vi.fn(),
   copy: vi.fn(),
   shareToken: null as string | null,
+  invoke: vi.fn(),
+  manage: vi.fn(),
+  capabilityClientImported: false,
 }));
 
 vi.mock("qrcode", () => ({
@@ -41,12 +44,19 @@ vi.mock("@/components/ui/tooltip", () => ({
   TooltipTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("@/hooks/use-toast", () => ({ toast: vi.fn() }));
-vi.mock("@/integrations/supabase/client", () => ({ supabase: { functions: { invoke: vi.fn() } } }));
+vi.mock("@/integrations/supabase/client", () => ({
+  supabase: { functions: { invoke: (...args: unknown[]) => harness.invoke(...args) } },
+}));
 vi.mock("@/lib/share-tokens", () => ({
   getShareToken: () => harness.shareToken,
   clearShareToken: vi.fn(),
 }));
-vi.mock("@/lib/capability/client", () => ({ createCapabilityApi: () => ({ manage: vi.fn() }) }));
+vi.mock("@/lib/capability/client", () => {
+  harness.capabilityClientImported = true;
+  return {
+    createCapabilityApi: () => ({ manage: (...args: unknown[]) => harness.manage(...args) }),
+  };
+});
 vi.mock("@/i18n/index", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("lucide-react", () => ({
   Share2: () => null, Copy: () => null, Lock: () => null, Eye: () => null,
@@ -57,6 +67,8 @@ describe("ShareDialog legacy current URL containment", () => {
   beforeEach(() => {
     harness.qr.mockClear();
     harness.copy.mockClear();
+    harness.invoke.mockReset();
+    harness.manage.mockReset();
     harness.shareToken = null;
     harness.openDialog = null;
     Object.defineProperty(navigator, "clipboard", {
@@ -115,6 +127,8 @@ describe("ShareDialog share-create tombstone alignment", () => {
   beforeEach(() => {
     harness.qr.mockClear();
     harness.copy.mockClear();
+    harness.invoke.mockReset();
+    harness.manage.mockReset();
     harness.shareToken = null;
     harness.openDialog = null;
   });
@@ -150,5 +164,63 @@ describe("ShareDialog share-create tombstone alignment", () => {
       expect(screen.getByRole("button", { name: "share.create_btn" })).toBeDefined(),
     );
     expect(screen.getByText("share.readonly_heading")).toBeDefined();
+  });
+});
+
+describe("ShareDialog capability HTTP client loading", () => {
+  beforeEach(() => {
+    harness.qr.mockClear();
+    harness.copy.mockClear();
+    harness.invoke.mockReset();
+    harness.manage.mockReset();
+    harness.shareToken = null;
+    harness.openDialog = null;
+    harness.invoke.mockResolvedValue({ error: null });
+    harness.manage.mockResolvedValue({
+      rotated: { scope: "view", capability: "b".repeat(43) },
+    });
+  });
+
+  it("does not import the capability client on the legacy share-revoke path", async () => {
+    harness.shareToken = "readonly-token";
+    window.history.replaceState(null, "", "/secret");
+    render(
+      <ShareDialog
+        slug="secret"
+        isEncrypted={false}
+        currentShareUrl={`${window.location.origin}/secret`}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "share.aria" }));
+    fireEvent.click(screen.getByRole("button", { name: "share.revoke_btn" }));
+
+    await waitFor(() =>
+      expect(harness.invoke).toHaveBeenCalledWith("share-revoke", { body: { token: "readonly-token" } }),
+    );
+    expect(harness.capabilityClientImported).toBe(false);
+    expect(harness.manage).not.toHaveBeenCalled();
+  });
+
+  it("imports the capability client when an owner rotates a view link", async () => {
+    render(
+      <ShareDialog
+        slug="secret"
+        isEncrypted={false}
+        capabilityAccess={{ slug: "secret", scope: "owner", token: "a".repeat(43) }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "share.aria" }));
+    expect(harness.capabilityClientImported).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "share.create_btn" }));
+    await waitFor(() => expect(harness.manage).toHaveBeenCalled());
+    expect(harness.capabilityClientImported).toBe(true);
+    expect(harness.invoke).not.toHaveBeenCalled();
+    expect(harness.manage.mock.calls[0]).toEqual([
+      "a".repeat(43),
+      { action: "rotate", scope: "view" },
+    ]);
   });
 });

@@ -15,7 +15,6 @@ import { toast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { getShareToken, clearShareToken } from "@/lib/share-tokens";
 import { useI18n } from "@/i18n/index";
-import { createCapabilityApi } from "@/lib/capability/client";
 import {
   buildCapabilityUrl,
   buildCurrentEditShareUrl,
@@ -23,6 +22,9 @@ import {
   readEncryptionSecret,
   type CapabilityAccess,
 } from "@/lib/capability/url";
+
+const loadCapabilityApi = async () =>
+  (await import("@/lib/capability/client")).createCapabilityApi();
 
 interface ShareDialogProps {
   slug: string;
@@ -121,7 +123,7 @@ export function ShareDialog({
     if (capabilityAccess?.scope !== "owner") return;
     setBusy("create");
     try {
-      const data = await createCapabilityApi().manage(capabilityAccess.token, {
+      const data = await (await loadCapabilityApi()).manage(capabilityAccess.token, {
         action: "rotate",
         scope: "view",
       });
@@ -147,7 +149,7 @@ export function ShareDialog({
     if (capabilityAccess?.scope !== "owner") return;
     setBusy("create-edit");
     try {
-      const data = await createCapabilityApi().manage(capabilityAccess.token, {
+      const data = await (await loadCapabilityApi()).manage(capabilityAccess.token, {
         action: "rotate",
         scope: "edit",
       });
@@ -173,7 +175,7 @@ export function ShareDialog({
     if (capabilityAccess?.scope !== "owner" || !editToken) return;
     setBusy("revoke-edit");
     try {
-      await createCapabilityApi().manage(capabilityAccess.token, {
+      await (await loadCapabilityApi()).manage(capabilityAccess.token, {
         action: "rotate",
         scope: "edit",
       });
@@ -197,7 +199,7 @@ export function ShareDialog({
         // Rotation revokes the displayed capability immediately. The newly
         // minted replacement is deliberately discarded until the user asks
         // to create a fresh link.
-        await createCapabilityApi().manage(capabilityAccess.token, {
+        await (await loadCapabilityApi()).manage(capabilityAccess.token, {
           action: "rotate",
           scope: "view",
         });

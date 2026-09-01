@@ -54,4 +54,24 @@ describe("production note access hotfix", () => {
     expect(raw).toContain('import { supabase } from "@/integrations/supabase/client";');
     expect(raw).not.toContain("createLegacyNoteApi");
   });
+
+  it("defers the capability HTTP client until a capability owner action", () => {
+    const staticCreateApi = /import\s*\{[^}]*createCapabilityApi[^}]*\}\s*from\s*["']@\/lib\/capability\/client["']/;
+    const shareDialog = source("src/components/note/ShareDialog.tsx");
+    const lockButton = source("src/components/note/LockButton.tsx");
+    const legacyNotePage = source("src/pages/LegacyNotePage.tsx");
+
+    expect(shareDialog).not.toMatch(staticCreateApi);
+    expect(lockButton).not.toMatch(staticCreateApi);
+    expect(legacyNotePage).not.toMatch(staticCreateApi);
+    expect(shareDialog).toContain('import("@/lib/capability/client")');
+    expect(lockButton).toContain('import("@/lib/capability/client")');
+    expect(legacyNotePage).toContain('import("@/lib/capability/client")');
+
+    const revokeLink = shareDialog.slice(shareDialog.indexOf("const revokeLink"));
+    const shareRevokeAt = revokeLink.indexOf('supabase.functions.invoke("share-revoke"');
+    expect(shareRevokeAt).toBeGreaterThan(0);
+    expect(revokeLink.slice(0, shareRevokeAt)).toContain("if (capabilityAccess)");
+    expect(revokeLink.slice(shareRevokeAt)).not.toContain('import("@/lib/capability/client")');
+  });
 });
