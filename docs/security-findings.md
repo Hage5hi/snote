@@ -1,10 +1,16 @@
 # Security findings — repository and rollout status
 
-Production legacy mode is live and verified; capability routes remain disabled.
-The additive capability backend remains dormant and the atomic cutover has not
-been applied. Local tests prove capability code contracts only; backup, canary,
-soak, atomic cutover, and post-cutover probes remain mandatory gates for any
-future activation.
+Production legacy write path is still live (`NotePage` `legacyOnly`,
+`public.notes`). Additive SQL `20260722000000_capability_backend.sql` is
+applied on production: columns, legacy-only RLS, capability tables, and a
+closed kill switch (`writes_enabled=false`, `private_realtime_enabled=false`).
+Atomic SQL `20260724000000_atomic_capability_cutover.sql` has not been
+applied. Anon still has direct table grants; `notes` still has the three
+Legacy policies. Capability SPA canary remains off
+(`VITE_CAPABILITY_ROUTES_ENABLED` is not true; live `version.json`
+`capabilityRoutesEnabled` is false). Local tests prove capability code
+contracts only; 240, canary, soak, and post-cutover probes remain mandatory
+gates. Do not treat 220 as authorization to flip the canary or apply 240.
 
 In the target post-cutover architecture, slugs are locators rather than
 authorization credentials. New notes use owner/edit/view capabilities, while
@@ -105,7 +111,55 @@ moves the token into the fragment, removes it from the visible path, and uses
 Worker never forwards the raw path token. Platform logs, traces, and cache
 keys still require deployment-time review and redaction.
 
+## 3a. Additive capability backend SQL 220 — production verified
+
+Verified 2026-09-01 ~23:31 ICT against production Lovable Cloud project
+`8f71f52d-c666-442f-bfb8-5f0a4e0ac1d5` / Supabase `onfzjmfjldsbthchssfr`.
+There is no `supabase_migrations.schema_migrations` relation on this database;
+do not claim a recorded migration version. Do not re-run
+`20260722000000_capability_backend.sql`: the singleton INSERT is not
+idempotent.
+
+`public.notes` already has the SQL 220 columns: `note_id` (uuid, default
+`gen_random_uuid()`), `capability_managed` boolean NOT NULL default false,
+`sync_status` `note_sync_status` NOT NULL default `'legacy'`, plus
+`encryption_version`, `payload_limit_bytes`, `storage_limit_bytes`,
+`update_limit_count`, `checkpoint_limit_count`, and `deleted_at`.
+
+Notes RLS policies are only these three: `Legacy notes remain readable`
+USING (`NOT capability_managed`); `Legacy notes remain creatable` WITH CHECK
+(`NOT capability_managed AND sync_status = 'legacy'`); `Legacy notes remain
+writable` USING (`NOT capability_managed`) WITH CHECK
+(`NOT capability_managed AND sync_status = 'legacy'`). The old
+`Anyone can * notes` policies are gone.
+
+Aggregate counts only: 61 notes, 0 `capability_managed`, 0 with
+`sync_status` other than `legacy`. The `anon` role still sees all 61 (RLS
+allows legacy rows).
+
+`anon` and `authenticated` still have SELECT, INSERT, UPDATE on
+`public.notes` (also REFERENCES, TRIGGER, TRUNCATE). SQL 240 would REVOKE
+these and drop every notes policy; that has not happened.
+
+Tables present: `note_capabilities`, `note_updates`, `note_checkpoints`,
+`note_realtime_memberships`, `capability_admission_windows`,
+`capability_runtime_settings`. Kill switch row:
+`capability_runtime_settings` `singleton=true`, `writes_enabled=false`,
+`private_realtime_enabled=false`. Function `capability_note_import_legacy`
+is absent (SQL 240 not applied). Function `capability_checkpoint_append`
+exists (SQL 230 objects are present) but capability writes remain fail-closed
+via the kill switch. This attestation is 220 vs 240 vs canary; it is not a
+230 soak claim.
+
+Live SPA `https://note.syrin.online/version.json` (fetched 2026-09-01):
+`deployedSha` `3244b08cc1f9c178a0e99ef8fec63bdaeb3d7424`,
+`capabilityRoutesEnabled` false, `builtAt` `2026-09-01T14:28:00.045Z`.
+Canary off. Git `main` may be ahead of this origin SHA for docs/Edge-only
+PRs; that is expected and does not change canary status.
+
 ## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
+
+Production SQL 220 (see §3a) does not change this: 240 is still not applied.
 
 `20260724000000_atomic_capability_cutover.sql` dynamically drops every policy
 on `public.notes` and revokes all direct privileges from `PUBLIC`, `anon`, and
