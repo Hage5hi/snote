@@ -49,8 +49,8 @@ const en = {
     "export.pdf": "Print to PDF",
     "export.txt": "Download .txt",
     "export.ai": "Copy as AI context",
-    "export.raw": "Copy raw URL (cURL)",
-    "export.raw_tooltip": "URL points directly to edge function — cURL/wget gets text/plain",
+    "export.raw": "Copy raw markdown URL",
+    "export.raw_tooltip": "Public plaintext view at /slug.md",
 
     // Help menu
     "menu.help": "Help",
@@ -106,8 +106,8 @@ const en = {
     "toast.copied_chars": "{n} characters",
     "toast.copied_ai": "Copied for AI",
     "toast.copied_ai_desc": "~{n} tokens",
-    "toast.copied_raw": "Raw URL copied",
-    "toast.copied_raw_desc": "Use with cURL / wget / Python",
+    "toast.copied_raw": "Raw markdown URL copied",
+    "toast.copied_raw_desc": "Public plaintext view",
 
     // Sync indicator
     "sync.label.synced": "Synced",

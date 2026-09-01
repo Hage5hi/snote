@@ -197,6 +197,26 @@ describe("Export menu — localized trigger + dict coverage", () => {
       expect(anyLocalized, `${lang} has no localized export.* strings`).toBe(true);
     }
   });
+
+  const RAW_COPY_KEYS = [
+    "export.raw",
+    "export.raw_tooltip",
+    "toast.copied_raw",
+    "toast.copied_raw_desc",
+  ] as const;
+  const DUMP_AD_RE = /cURL|wget|Python|edge function|Edge Function|text\/plain|functions\/v1\/raw/i;
+
+  it("raw export copy describes the public RawView, not the Edge dump", () => {
+    expect(dict.en["export.raw"].toLowerCase()).toMatch(/markdown/);
+    expect(dict.en["export.raw_tooltip"]).toMatch(/slug\.md/);
+    for (const lang of SUPPORTED_LANGS) {
+      for (const key of RAW_COPY_KEYS) {
+        const v = (dict[lang] as Record<string, string>)[key];
+        expect(v, `${lang}/${key}`).toBeTruthy();
+        expect(v, `${lang}/${key} advertises the dump`).not.toMatch(DUMP_AD_RE);
+      }
+    }
+  });
 });
 
 describe("Shortcuts trigger (HelpMenu) — localized aria-label", () => {

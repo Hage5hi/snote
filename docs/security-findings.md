@@ -42,8 +42,10 @@ path; the last segment `raw` is a legal locator and would have dumped that row
 if it existed. Do not probe production `raw` with a real locator.
 
 The live SPA editor path does not need this endpoint (`RawView` reads
-`public.notes` directly). `share-revoke` remains live and is out of scope for
-this containment.
+`public.notes` directly). ExportMenu no longer copies `/functions/v1/raw/...`;
+the remaining export action copies the canonical public RawView URL
+`https://note.syrin.online/{slug}.md` (`/:slug.md`). `share-revoke` remains live
+and is out of scope for this containment.
 
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 

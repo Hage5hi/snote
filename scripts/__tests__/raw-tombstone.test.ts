@@ -37,8 +37,17 @@ describe("raw legacy dump containment", () => {
 
     expect(findings).toContain("committed `raw` Edge function is a generic `410 no-store` tombstone");
     expect(findings).toContain("Do not probe production `raw` with a real locator");
+    expect(findings).toContain("ExportMenu no longer copies");
     expect(capability).toContain("legacy credential-free `raw` Edge dump is a permanent `410` tombstone");
     expect(agents).toContain("committed `raw` Edge function is a `410 no-store` tombstone");
     expect(agents).toMatch(/Do not probe\s+production `raw` with a real slug/);
+  });
+
+  it("does not advertise the dump URL from the SPA ExportMenu", () => {
+    const exportMenu = source("src/components/note/topbar/ExportMenu.tsx");
+    expect(exportMenu).not.toContain("functions/v1/raw");
+    expect(exportMenu).not.toContain("VITE_SUPABASE_URL");
+    expect(exportMenu).toContain("CANONICAL_ORIGIN");
+    expect(exportMenu).toMatch(/\$\{CANONICAL_ORIGIN\}\/\$\{slug\}\.md/);
   });
 });
