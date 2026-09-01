@@ -1,5 +1,6 @@
 const en = {
     "common.loading": "Loading…",
+    "common.retry": "Retry",
     "home.tagline": "Online notes, synced instantly.",
     "home.intro_prefix": "Open any note by URL — e.g. ",
     "home.intro_suffix": ". Autosaves, syncs in realtime across devices, and works offline.",
@@ -324,6 +325,8 @@ const en = {
     "unlock.hint_suffix": "to the URL to skip this step next time.",
     "unlock.metadata_conflict": "Encryption state could not be verified",
     "unlock.metadata_conflict_desc": "This note was previously encrypted, but the server now reports plaintext or missing metadata. Editing and local recovery data remain locked to protect your content.",
+    "unlock.metadata_unavailable": "Couldn’t load encryption state",
+    "unlock.metadata_unavailable_desc": "Check your connection and try again. Notes on this device are unchanged.",
     "pin.toast_pinned": "Note pinned",
     "pin.toast_unpinned": "Unpinned",
     "pin.desc_pinned": "This note will appear at the top of the Cmd+K palette.",

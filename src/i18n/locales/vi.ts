@@ -2,6 +2,7 @@ import type { Dictionary } from "../types";
 
 const vi: Dictionary = {
     "common.loading": "Đang tải…",
+    "common.retry": "Thử lại",
     "home.tagline": "Note online, đồng bộ tức thì.",
     "home.intro_prefix": "Mở bất kỳ note nào bằng URL — ví dụ ",
     "home.intro_suffix": ". Tự động lưu, đồng bộ realtime giữa các thiết bị, hoạt động cả khi offline.",
@@ -319,6 +320,8 @@ const vi: Dictionary = {
     "unlock.hint_suffix": "v\u00e0o cu\u1ed1i URL \u0111\u1ec3 b\u1ecf qua b\u01b0\u1edbc n\u00e0y l\u1ea7n sau.",
     "unlock.metadata_conflict": "Không thể xác minh trạng thái mã hóa",
     "unlock.metadata_conflict_desc": "Note này từng được mã hóa nhưng server hiện báo dữ liệu thuần hoặc thiếu metadata. Quyền chỉnh sửa và dữ liệu khôi phục cục bộ vẫn bị khóa để bảo vệ nội dung.",
+    "unlock.metadata_unavailable": "Không tải được trạng thái mã hóa",
+    "unlock.metadata_unavailable_desc": "Kiểm tra kết nối rồi thử lại. Note trên thiết bị này không bị mất.",
     "pin.toast_pinned": "\u0110\u00e3 pin note",
     "pin.toast_unpinned": "\u0110\u00e3 b\u1ecf pin",
     "pin.desc_pinned": "Note n\u00e0y s\u1ebd hi\u1ec7n \u1edf \u0111\u1ea7u Cmd+K palette.",

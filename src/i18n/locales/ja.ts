@@ -2,6 +2,7 @@ import type { Dictionary } from "../types";
 
 const ja: Dictionary = {
     "common.loading": "読み込み中…",
+    "common.retry": "再試行",
     "home.tagline": "オンラインメモ、即時同期。",
     "home.intro_prefix": "URL で任意のメモを開く — 例: ",
     "home.intro_suffix": "。自動保存、デバイス間リアルタイム同期、オフラインでも動作。",
@@ -314,6 +315,8 @@ const ja: Dictionary = {
     "unlock.hint_suffix": "to the URL to skip this step next time.",
     "unlock.metadata_conflict": "暗号化状態を確認できません",
     "unlock.metadata_conflict_desc": "このノートは以前暗号化されていましたが、サーバーは現在、平文またはメタデータなしと報告しています。内容を保護するため、編集とローカル復旧データはロックされたままです。",
+    "unlock.metadata_unavailable": "暗号化状態を読み込めませんでした",
+    "unlock.metadata_unavailable_desc": "接続を確認して再試行してください。この端末のノートは変わりません。",
     "pin.toast_pinned": "Note pinned",
     "pin.toast_unpinned": "Unpinned",
     "pin.desc_pinned": "This note will appear at the top of the Cmd+K palette.",
