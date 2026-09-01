@@ -63,11 +63,17 @@ function hydrateDoc(ydocB64: string, fallbackText: string): Y.Doc {
 
 type CapabilityYjsProviderCtor = typeof import("@/lib/yjs/capability-provider").CapabilityYjsProvider;
 
-const loadCapabilityApi = async () =>
-  (await import("@/lib/capability/client")).createCapabilityApi();
+const loadCapabilityApi = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? async () => (await import("@/lib/capability/client")).createCapabilityApi()
+  : async () => {
+      throw new Error("capability API unavailable");
+    };
 
-const loadCapabilityYjsProvider = async () =>
-  (await import("@/lib/yjs/capability-provider")).CapabilityYjsProvider;
+const loadCapabilityYjsProvider = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? async () => (await import("@/lib/yjs/capability-provider")).CapabilityYjsProvider
+  : async () => {
+      throw new Error("capability API unavailable");
+    };
 
 interface SharePageProps {
   /** Ignore capability-shaped fragments while the capability backend is offline. */

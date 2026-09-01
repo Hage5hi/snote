@@ -60,6 +60,14 @@ const ADMIN_SPA_INVOKE_STRINGS = [
   "admin-rotate",
 ] as const;
 
+// Capability HTTP client invoke strings. Quoted so unquoted English copy
+// does not trip the default-build leak check. Flag-on builds may emit them.
+const CAPABILITY_INVOKE_STRINGS = [
+  "note-session",
+  "note-sync",
+  "note-manage",
+] as const;
+
 // Phase 3.1 invariant: these libs are lazy-only and must NOT be in modulepreload.
 const FORBIDDEN_IN_PRELOAD = [
   "mermaid-vendor",
@@ -224,6 +232,35 @@ function main(): number {
       failed++;
     } else {
       console.log("  ✓ AdminPanel chunk (chunk-a8f3-*): not emitted");
+    }
+  }
+
+  // Check 6: default / flag-off production JS must not emit the capability
+  // HTTP client. Capability HTTP client must not ship in default production JS.
+  const capabilityRoutesEnabled =
+    loadEnv("production", process.cwd(), "VITE_").VITE_CAPABILITY_ROUTES_ENABLED === "true";
+  console.log("\nCapability HTTP client containment:");
+  if (capabilityRoutesEnabled) {
+    console.log("  ⊘ skipped (compile-time flag enabled)");
+  } else {
+    const distJs = [
+      ...assetFiles.map((name) => join(ASSETS, name)),
+      ...readdirSync(DIST)
+        .filter((name) => name.endsWith(".js"))
+        .map((name) => join(DIST, name)),
+    ];
+    const distSources = distJs.map((file) => ({
+      file,
+      source: readFileSync(file, "utf8"),
+    }));
+    for (const name of CAPABILITY_INVOKE_STRINGS) {
+      const hit = distSources.find(({ source }) => containsQuoted(source, name));
+      if (hit) {
+        console.log(`  ✗ ${name}: FOUND in ${hit.file}`);
+        failed++;
+      } else {
+        console.log(`  ✓ ${name}: absent from production JS`);
+      }
     }
   }
 

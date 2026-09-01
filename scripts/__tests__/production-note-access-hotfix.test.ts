@@ -4,6 +4,25 @@ import { describe, expect, it } from "vitest";
 
 const source = (path: string) => readFileSync(resolve(process.cwd(), path), "utf8");
 
+const ROUTES_TRUE =
+  'import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"';
+
+const withoutTypeImports = (src: string) => src.replace(/typeof import\([^)]*\)/g, "");
+
+function expectValueImportBehindRoutesGuard(src: string, specifier: string) {
+  const valueSrc = withoutTypeImports(src);
+  let from = 0;
+  let found = 0;
+  while (true) {
+    const importAt = valueSrc.indexOf(`import("${specifier}")`, from);
+    if (importAt < 0) break;
+    found += 1;
+    expect(valueSrc.lastIndexOf(ROUTES_TRUE, importAt)).toBeGreaterThanOrEqual(0);
+    from = importAt + 1;
+  }
+  expect(found).toBeGreaterThan(0);
+}
+
 describe("production note access hotfix", () => {
   it("keeps ordinary-note capability routing strictly opt-in", () => {
     const app = source("src/App.tsx");
@@ -69,6 +88,9 @@ describe("production note access hotfix", () => {
     expect(shareDialog).toContain('import("@/lib/capability/client")');
     expect(lockButton).toContain('import("@/lib/capability/client")');
     expect(legacyNotePage).toContain('import("@/lib/capability/client")');
+    expectValueImportBehindRoutesGuard(shareDialog, "@/lib/capability/client");
+    expectValueImportBehindRoutesGuard(lockButton, "@/lib/capability/client");
+    expectValueImportBehindRoutesGuard(legacyNotePage, "@/lib/capability/client");
 
     const revokeLink = shareDialog.slice(shareDialog.indexOf("const revokeLink"));
     const capabilityGuardAt = revokeLink.indexOf("if (capabilityAccess)");
@@ -91,7 +113,6 @@ describe("production note access hotfix", () => {
     const home = source("src/pages/Home.tsx");
     const raw = source("src/pages/RawView.tsx");
 
-    const withoutTypeImports = (src: string) => src.replace(/typeof import\([^)]*\)/g, "");
     expect(notePage).not.toMatch(staticCreateApi);
     expect(sharePage).not.toMatch(staticCreateApi);
     expect(notePage).not.toMatch(staticCapabilityProvider);
@@ -100,6 +121,10 @@ describe("production note access hotfix", () => {
     expect(withoutTypeImports(sharePage)).toContain('import("@/lib/capability/client")');
     expect(withoutTypeImports(notePage)).toContain('import("@/lib/yjs/capability-provider")');
     expect(withoutTypeImports(sharePage)).toContain('import("@/lib/yjs/capability-provider")');
+    expectValueImportBehindRoutesGuard(notePage, "@/lib/capability/client");
+    expectValueImportBehindRoutesGuard(sharePage, "@/lib/capability/client");
+    expectValueImportBehindRoutesGuard(notePage, "@/lib/yjs/capability-provider");
+    expectValueImportBehindRoutesGuard(sharePage, "@/lib/yjs/capability-provider");
     expect(notePage).toContain("export function CutoverNotePage");
     expect(app).not.toContain("CutoverNotePage");
     expect(split).not.toContain("CutoverNotePage");
@@ -181,5 +206,20 @@ describe("production note access hotfix", () => {
       /VITE_ADMIN_PANEL_ENABLED === ["']true["']/,
     );
     expect(gate).toContain("Admin SPA must not ship in default production JS");
+  });
+
+  it("locks the default production bundle off capability invoke strings", () => {
+    const gate = source("scripts/check-bundle-size.ts");
+    const pkg = source("package.json");
+
+    expect(pkg).toContain('"build:check": "vite build && bun run scripts/check-bundle-size.ts"');
+    expect(pkg).not.toMatch(/"build:check":\s*"vite build.*vite build/);
+    expect(gate).toContain('"note-session"');
+    expect(gate).toContain('"note-sync"');
+    expect(gate).toContain('"note-manage"');
+    expect(gate).toMatch(
+      /VITE_CAPABILITY_ROUTES_ENABLED === ["']true["']/,
+    );
+    expect(gate).toContain("Capability HTTP client must not ship in default production JS");
   });
 });
