@@ -18,7 +18,9 @@ import { I18nProvider } from "./i18n/provider";
 const NotePage = lazy(() => import("./pages/NotePage"));
 const RawView = lazy(() => import("./pages/RawView"));
 const SplitView = lazy(() => import("./pages/SplitView"));
-const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+const AdminPanel = import.meta.env.VITE_ADMIN_PANEL_ENABLED === "true"
+  ? lazy(() => import("./pages/AdminPanel"))
+  : null;
 const SharePage = lazy(() => import("./pages/SharePage"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 
@@ -42,7 +44,7 @@ const PlainFallback = (
 function SlugDispatcher() {
   const { slug = "" } = useParams();
   if (slug === "note") {
-    if (!adminPanelEnabled) {
+    if (!adminPanelEnabled || !AdminPanel) {
       return <NotFound />;
     }
     return (

@@ -116,6 +116,20 @@ describe("production note access hotfix", () => {
     expect(app).toMatch(
       /const adminPanelEnabled\s*=\s*import\.meta\.env\.VITE_ADMIN_PANEL_ENABLED === "true";/,
     );
+    expect(app).not.toContain(
+      'const AdminPanel = lazy(() => import("./pages/AdminPanel"));',
+    );
+    const adminImportAt = app.indexOf('import("./pages/AdminPanel")');
+    expect(adminImportAt).toBeGreaterThanOrEqual(0);
+    expect(
+      app.lastIndexOf(
+        'import.meta.env.VITE_ADMIN_PANEL_ENABLED === "true"',
+        adminImportAt,
+      ),
+    ).toBeGreaterThanOrEqual(0);
+    expect(app).toMatch(
+      /const AdminPanel\s*=\s*import\.meta\.env\.VITE_ADMIN_PANEL_ENABLED === "true"\s*\?\s*lazy\(\(\)\s*=>\s*import\("\.\/pages\/AdminPanel"\)\)\s*:\s*null;/,
+    );
 
     const dispatcher = app.slice(app.indexOf("function SlugDispatcher"));
     const noteArmStart = dispatcher.indexOf('if (slug === "note")');
@@ -149,5 +163,23 @@ describe("production note access hotfix", () => {
     expect(firstEffectAt).toBeGreaterThan(notFoundAt);
     expect(firstInvokeAt).toBeGreaterThan(notFoundAt);
     expect(hashLoginAt).toBeGreaterThan(notFoundAt);
+  });
+
+  it("locks the default production bundle off admin invoke strings and the AdminPanel chunk", () => {
+    const gate = source("scripts/check-bundle-size.ts");
+    const pkg = source("package.json");
+
+    expect(pkg).toContain('"build:check": "vite build && bun run scripts/check-bundle-size.ts"');
+    expect(pkg).not.toMatch(/"build:check":\s*"vite build.*vite build/);
+    expect(gate).toContain("ADMIN_SPA_INVOKE_STRINGS");
+    expect(gate).toContain('"admin-session"');
+    expect(gate).toContain('"admin-list"');
+    expect(gate).toContain('"admin-delete"');
+    expect(gate).toContain('"admin-rotate"');
+    expect(gate).toContain("chunk-a8f3-");
+    expect(gate).toMatch(
+      /VITE_ADMIN_PANEL_ENABLED === ["']true["']/,
+    );
+    expect(gate).toContain("Admin SPA must not ship in default production JS");
   });
 });

@@ -6,6 +6,7 @@
 import { readdirSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
+import { loadEnv } from "vite";
 import { dict } from "../src/i18n/catalog";
 
 const DIST = "dist";
@@ -50,6 +51,15 @@ const CHUNK_RULES: Rule[] = [
 const INIT_ROUTE_TOTAL_MAX_GZ = 250_000;
 const LAZY_LOCALES = ["vi", "zh", "ja", "ko", "fr", "es", "de", "pt"] as const;
 
+// AdminPanel invoke strings. Quoted so Privacy copy like "admin-session hashes"
+// does not trip the default-build leak check. Flag-on builds may emit them.
+const ADMIN_SPA_INVOKE_STRINGS = [
+  "admin-session",
+  "admin-list",
+  "admin-delete",
+  "admin-rotate",
+] as const;
+
 // Phase 3.1 invariant: these libs are lazy-only and must NOT be in modulepreload.
 const FORBIDDEN_IN_PRELOAD = [
   "mermaid-vendor",
@@ -72,6 +82,10 @@ function gzSize(filePath: string): number {
 
 function fmt(bytes: number): string {
   return `${(bytes / 1024).toFixed(2)} KB`;
+}
+
+function containsQuoted(source: string, value: string): boolean {
+  return source.includes(`"${value}"`) || source.includes(`'${value}'`);
 }
 
 function parsePreloadChunks(html: string): string[] {
@@ -175,6 +189,42 @@ function main(): number {
       `  ${pass ? "✓" : "✗"} ${lang}: ${chunks.length === 1 ? chunks[0] : `${chunks.length} chunks`} / initial sentinel ${initialSource.includes(sentinel) ? "FOUND" : "absent"}`,
     );
     if (!pass) failed++;
+  }
+
+  // Check 5: default / flag-off production JS must not emit the AdminPanel
+  // graph. Admin SPA must not ship in default production JS.
+  const adminPanelEnabled =
+    loadEnv("production", process.cwd(), "VITE_").VITE_ADMIN_PANEL_ENABLED === "true";
+  console.log("\nAdmin SPA containment:");
+  if (adminPanelEnabled) {
+    console.log("  ⊘ skipped (compile-time flag enabled)");
+  } else {
+    const distJs = [
+      ...assetFiles.map((name) => join(ASSETS, name)),
+      ...readdirSync(DIST)
+        .filter((name) => name.endsWith(".js"))
+        .map((name) => join(DIST, name)),
+    ];
+    const distSources = distJs.map((file) => ({
+      file,
+      source: readFileSync(file, "utf8"),
+    }));
+    for (const name of ADMIN_SPA_INVOKE_STRINGS) {
+      const hit = distSources.find(({ source }) => containsQuoted(source, name));
+      if (hit) {
+        console.log(`  ✗ ${name}: FOUND in ${hit.file}`);
+        failed++;
+      } else {
+        console.log(`  ✓ ${name}: absent from production JS`);
+      }
+    }
+    const adminChunks = assetFiles.filter((file) => file.startsWith("chunk-a8f3-"));
+    if (adminChunks.length > 0) {
+      console.log(`  ✗ AdminPanel chunk emitted (${adminChunks.join(", ")})`);
+      failed++;
+    } else {
+      console.log("  ✓ AdminPanel chunk (chunk-a8f3-*): not emitted");
+    }
   }
 
   console.log();
