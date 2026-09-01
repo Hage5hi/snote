@@ -54,6 +54,21 @@ the remaining export action copies the canonical public RawView URL
 `https://note.syrin.online/{slug}.md` (`/:slug.md`). `share-revoke` remains live
 and is out of scope for this containment.
 
+## 1b. Legacy `legacy-note-open` dump — committed 410 tombstone, production not deployed
+
+The committed `legacy-note-open` Edge function is a generic `410 no-store` tombstone
+matching `raw`/`note-meta`. It does not parse a locator, initialize a database
+client, or return note bytes. Keep the name in git as this handler; deleting the
+folder would 404, which is weaker if something later calls the path.
+
+Git is now a 410 tombstone and production remains 404 not-deployed.
+Credential-free GET/HEAD/OPTIONS probes on 2026-09-01 ~22:15 ICT against the
+functions host returned gateway `NOT_FOUND`. Do not POST a locator to it. Do
+not claim a production 410 deploy. Accidental deploy from this git source now
+returns 410 instead of restoring the unauthenticated service-role dump. Default
+production SPA no longer contains quoted `legacy-note-open` (PR #41, live
+origin `3244b08`, canary off).
+
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
 Only `admin-session` accepts an admin passphrase. It reserves a serialized SQL
@@ -95,8 +110,9 @@ keys still require deployment-time review and redaction.
 `20260724000000_atomic_capability_cutover.sql` dynamically drops every policy
 on `public.notes` and revokes all direct privileges from `PUBLIC`, `anon`, and
 `authenticated` in one transaction. Capability, update, checkpoint, and share
-tables remain default-deny. The SPA uses narrow Edge APIs; legacy content is
-available only through the exact-match read-only `legacy-note-open` function.
+tables remain default-deny. The SPA uses narrow Edge APIs. Git `legacy-note-open`
+is now a generic `410 no-store` tombstone rather than a notes dump, and
+production remains 404 not-deployed. Do not claim a production 410 deploy.
 
 Do not apply this migration until the dual-mode client and capability APIs have
 completed the required 48-hour production soak. A local migration test is not
