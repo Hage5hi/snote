@@ -4,9 +4,13 @@ Worker này đang chạy ở chế độ containment tạm thời cho tới khi 
 backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy crawler
 không được nhận nội dung, slug, token hay canonical URL của một note.
 
-Source Worker và cấu hình non-secret trong thư mục này khớp với Worker đã được
-xác minh trong G4. Việc đối soát repository này không cho phép một deployment
-mới.
+Source Worker và cấu hình non-secret trong thư mục này khớp với Worker
+production `syrin-prerender` đang chạy: git SHA `9fcc58bc`, Cloudflare
+Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6` (PR #52, 2026-09-02).
+Origin SPA vẫn là `fe18302f`; không được coi origin là `9fcc58bc`.
+Observability, logs, traces, và `workers_dev` vẫn tắt. Việc ghi nhận
+identity này không cho phép một deployment mới. Xem
+`docs/security-findings.md` §1c.
 
 ## Routing production bắt buộc
 
@@ -22,7 +26,9 @@ nào đi vòng qua Worker.
 
 ## Hành vi
 
-- Browser bình thường: pass-through tới `ORIGIN_HOST`.
+- Browser bình thường: pass-through tới `ORIGIN_HOST`. Runtime/immutable
+  asset chỉ forward query `__WB_REVISION__` hợp lệ; locator, token, home,
+  public, note và share query vẫn bị strip.
 - Crawler ở `/s/*`: generic HTML, `no-store`,
   `noindex,nofollow,noarchive,nosnippet`; không metadata/cache/redirect.
 - Crawler ở `/<legacy-note-locator>`: generic HTML với cùng giới hạn; không

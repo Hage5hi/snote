@@ -37,7 +37,7 @@ API.
 Worker crawler containment is live and verified in production. The ordered
 runbook in `docs/security/immediate-containment-rollout.md` remains authoritative
 for any future Worker, cache-purge, or tombstone change. Rollback must retain
-generic containment.
+generic containment. Live Worker identity is §1c; it is not the SPA origin SHA.
 
 ## 1a. Legacy `raw` dump — production verified
 
@@ -80,6 +80,29 @@ returns 410 instead of restoring the unauthenticated service-role dump. Default
 production SPA no longer contains quoted `legacy-note-open` (PR #41, live
 origin `fe18302f`, canary off).
 
+## 1c. Production Worker identity — live 2026-09-02
+
+Production Worker `syrin-prerender` was redeployed 2026-09-02 ~03:35 ICT from
+PR #52.
+
+- Git SHA: `9fcc58bc3690c1a2ffd74f465e219172d25376a3` (short `9fcc58bc`)
+- Cloudflare Version ID: `b4d1a94e-b391-4682-841a-10dca111b1d6`
+- Replaces previous Cloudflare Version ID `ba859faf…`
+- `wrangler.toml` still: observability, logs, and traces disabled;
+  `workers_dev` false; `ORIGIN_HOST` `snote-g4-origin.pages.dev`
+- Live origin-fetch behavior: runtime and immutable assets forward only a
+  conservative `__WB_REVISION__` query; locator, token, home, public, note,
+  and share queries remain stripped
+- Staging `syrin-prerender-staging` was not deployed
+
+This is not the live SPA origin. Origin remains `fe18302f` (see §3a / §3b).
+Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
+may be ahead for later docs-only PRs; that does not change canary status or
+origin SHA.
+
+Canary remains off. SQL 240 is not applied. Kill switch remains closed
+(`writes_enabled=false`, `private_realtime_enabled=false`).
+
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
 Only `admin-session` accepts an admin passphrase. It reserves a serialized SQL
@@ -113,8 +136,11 @@ request data. Rotating a view capability revokes the previous generation.
 Legacy `/s/:token` is a 30-day compatibility shell. Before React starts it
 moves the token into the fragment, removes it from the visible path, and uses
 `no-store`/`no-referrer`; after the configured deadline it fails closed. The
-Worker never forwards the raw path token. Platform logs, traces, and cache
-keys still require deployment-time review and redaction.
+Worker never forwards the raw path token. Origin fetch for runtime and
+immutable assets may forward only a conservative `__WB_REVISION__` query
+(PR #52, live); locator, token, home, public, note, and share queries are
+still stripped. Platform logs, traces, and cache keys still require
+deployment-time review and redaction. See §1c.
 
 ## 3a. Additive capability backend SQL 220 — production verified
 
@@ -163,9 +189,10 @@ same fields on `https://snote-g4-origin.pages.dev/version.json`):
 `buildId` `1788292524728-ej6uxgse`.
 Canary off. Origin includes PR #47 PWA recovery (`clientsClaim` off),
 PR #48 shortened Update toast (no `update.fallback_cleanup` / cookie
-paragraph), and PR #50 enc-meta error + Retry gate. Git may be ahead
-only for later docs-only PRs; that is expected and does not change
-canary status.
+paragraph), and PR #50 enc-meta error + Retry gate. Do not claim origin
+is `9fcc58bc`. Git `main` includes Worker PR #52 and may be ahead for
+later docs-only PRs; that does not change canary status or origin SHA.
+Live Worker identity is §1c.
 
 ## 3b. Additive capability sync conflict codes SQL 270 — production verified
 
@@ -194,8 +221,10 @@ SPA canary still off: live `https://note.syrin.online/version.json`
 `2026-09-01T19:55:38.557Z`, `buildId` `1788292524728-ej6uxgse`.
 Origin includes PR #47 PWA recovery (`clientsClaim` off), PR #48
 shortened Update toast (no `update.fallback_cleanup` / cookie
-paragraph), and PR #50 enc-meta error + Retry gate. Git may be ahead
-only for later docs-only PRs; that does not change canary status.
+paragraph), and PR #50 enc-meta error + Retry gate. Do not claim origin
+is `9fcc58bc`. Git `main` includes Worker PR #52 and may be ahead for
+later docs-only PRs; that does not change canary status or origin SHA.
+Live Worker identity is §1c.
 
 Edge HTTP for `note-session`, `note-sync`, and `note-manage` on production
 and staging `dmfrydhubosecaatjjwf` matches git mapper
@@ -205,8 +234,9 @@ and POST `{}` 401 `{"error":"unauthorized"}` with no `code`; both cache
 headers `no-store`). Live 401 rather than 503 `unavailable` means HMAC and
 service-role env are present. Function source SHA cannot be confirmed (list
 403); git function bodies last `0e1ea254` (2026-08-25), mapper
-`_shared/capability-edge.ts` last `b0417482` (2026-07-27, 270 codes). HEAD
-is docs-only. This is not a deploy.
+`_shared/capability-edge.ts` last `b0417482` (2026-07-27, 270 codes). This
+Edge record is not a deploy. Live Worker identity is §1c and is distinct
+from this SPA origin SHA.
 
 This is not a soak claim. This is not authorization to flip the canary or
 `writes_enabled`, or to apply 240.

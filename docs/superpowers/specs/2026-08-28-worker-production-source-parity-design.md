@@ -1,5 +1,10 @@
 # Worker production source parity design
 
+**Live status (2026-09-02):** Production Worker `syrin-prerender` is PR #52
+`9fcc58bc` / Cloudflare Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6`,
+not `8382c5bb`. This document records the G4 repository-reconciliation
+design. See `docs/security-findings.md` §1c.
+
 ## Goal
 
 Make the Cloudflare Worker source and non-secret production configuration in
@@ -9,10 +14,10 @@ DNS, mutate Supabase, publish the SPA, or use Lovable credits.
 
 ## Current drift
 
-Production runs the reviewed Worker source from commit `8382c5bb` with the
+At G4, production ran the reviewed Worker source from commit `8382c5bb` with the
 sanitized Pages origin `snote-g4-origin.pages.dev`, all three public host routes,
-and observability disabled. Current `main` contains an older Worker and a
-configuration that still names the Lovable origin and enables top-level
+and observability disabled. Then-current `main` contained an older Worker and a
+configuration that still named the Lovable origin and enabled top-level
 observability. A future deploy from `main` could therefore regress the proven
 containment boundary.
 
