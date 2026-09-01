@@ -101,6 +101,13 @@ function sessionHeaders(sessionToken: string): Record<string, string> {
 }
 
 export default function AdminPanel() {
+  if (import.meta.env.VITE_ADMIN_PANEL_ENABLED !== "true") {
+    return <NotFound />;
+  }
+  return <AdminPanelSession />;
+}
+
+function AdminPanelSession() {
   const [gate, setGate] = useState<GateStatus>("checking");
   const [sessionToken, setSessionToken] = useState("");
   const [loading, setLoading] = useState(false);
