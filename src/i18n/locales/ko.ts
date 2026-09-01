@@ -2,6 +2,7 @@ import type { Dictionary } from "../types";
 
 const ko: Dictionary = {
     "common.loading": "불러오는 중…",
+    "common.retry": "다시 시도",
     "home.tagline": "온라인 노트, 즉시 동기화.",
     "home.intro_prefix": "URL로 어떤 노트든 열기 — 예: ",
     "home.intro_suffix": ". 자동 저장, 기기 간 실시간 동기화, 오프라인에서도 동작.",
@@ -313,6 +314,8 @@ const ko: Dictionary = {
     "unlock.hint_suffix": "to the URL to skip this step next time.",
     "unlock.metadata_conflict": "암호화 상태를 확인할 수 없습니다",
     "unlock.metadata_conflict_desc": "이 노트는 이전에 암호화되었지만 서버가 현재 평문 또는 누락된 메타데이터로 보고합니다. 콘텐츠 보호를 위해 편집과 로컬 복구 데이터는 계속 잠겨 있습니다.",
+    "unlock.metadata_unavailable": "암호화 상태를 불러오지 못했습니다",
+    "unlock.metadata_unavailable_desc": "연결을 확인한 뒤 다시 시도하세요. 이 기기의 노트는 그대로입니다.",
     "pin.toast_pinned": "Note pinned",
     "pin.toast_unpinned": "Unpinned",
     "pin.desc_pinned": "This note will appear at the top of the Cmd+K palette.",

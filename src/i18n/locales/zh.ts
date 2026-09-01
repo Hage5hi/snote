@@ -2,6 +2,7 @@ import type { Dictionary } from "../types";
 
 const zh: Dictionary = {
     "common.loading": "加载中…",
+    "common.retry": "重试",
     "home.tagline": "在线笔记，即时同步。",
     "home.intro_prefix": "通过 URL 打开任何笔记 — 例如 ",
     "home.intro_suffix": "。自动保存，跨设备实时同步，离线也能用。",
@@ -314,6 +315,8 @@ const zh: Dictionary = {
     "unlock.hint_suffix": "to the URL to skip this step next time.",
     "unlock.metadata_conflict": "无法验证加密状态",
     "unlock.metadata_conflict_desc": "此笔记此前已加密，但服务器现在报告为明文或缺少元数据。为保护内容，编辑和本地恢复数据仍保持锁定。",
+    "unlock.metadata_unavailable": "无法加载加密状态",
+    "unlock.metadata_unavailable_desc": "请检查网络后重试。此设备上的笔记不会丢失。",
     "pin.toast_pinned": "Note pinned",
     "pin.toast_unpinned": "Unpinned",
     "pin.desc_pinned": "This note will appear at the top of the Cmd+K palette.",

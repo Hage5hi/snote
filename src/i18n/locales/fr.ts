@@ -2,6 +2,7 @@ import type { Dictionary } from "../types";
 
 const fr: Dictionary = {
     "common.loading": "Chargement…",
+    "common.retry": "Réessayer",
     "home.tagline": "Notes en ligne, synchronisées instantanément.",
     "home.intro_prefix": "Ouvrez une note par URL — ex. ",
     "home.intro_suffix": ". Sauvegarde automatique, sync temps réel multi-appareils, fonctionne hors-ligne.",
@@ -313,6 +314,8 @@ const fr: Dictionary = {
     "unlock.hint_suffix": "to the URL to skip this step next time.",
     "unlock.metadata_conflict": "Impossible de vérifier l’état du chiffrement",
     "unlock.metadata_conflict_desc": "Cette note était chiffrée, mais le serveur signale maintenant du texte en clair ou des métadonnées absentes. L’édition et les données de récupération locales restent verrouillées pour protéger le contenu.",
+    "unlock.metadata_unavailable": "Impossible de charger l’état de chiffrement",
+    "unlock.metadata_unavailable_desc": "Vérifiez la connexion et réessayez. Les notes sur cet appareil restent inchangées.",
     "pin.toast_pinned": "Note pinned",
     "pin.toast_unpinned": "Unpinned",
     "pin.desc_pinned": "This note will appear at the top of the Cmd+K palette.",

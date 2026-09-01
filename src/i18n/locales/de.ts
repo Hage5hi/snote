@@ -2,6 +2,7 @@ import type { Dictionary } from "../types";
 
 const de: Dictionary = {
     "common.loading": "Wird geladen…",
+    "common.retry": "Erneut versuchen",
     "home.tagline": "Online-Notizen, sofort synchronisiert.",
     "home.intro_prefix": "Öffne Notizen per URL – z. B. ",
     "home.intro_suffix": ". Speichert automatisch, synchronisiert in Echtzeit und funktioniert offline.",
@@ -310,6 +311,8 @@ const de: Dictionary = {
     "unlock.hint_suffix": " an die URL an, um diesen Schritt künftig zu überspringen.",
     "unlock.metadata_conflict": "Verschlüsselungsstatus konnte nicht überprüft werden",
     "unlock.metadata_conflict_desc": "Diese Notiz war zuvor verschlüsselt, aber der Server meldet jetzt Klartext oder fehlende Metadaten. Bearbeitung und lokale Wiederherstellungsdaten bleiben zum Schutz des Inhalts gesperrt.",
+    "unlock.metadata_unavailable": "Verschlüsselungsstatus konnte nicht geladen werden",
+    "unlock.metadata_unavailable_desc": "Prüfe die Verbindung und versuche es erneut. Notizen auf diesem Gerät bleiben erhalten.",
     "pin.toast_pinned": "Notiz gepinnt",
     "pin.toast_unpinned": "Pin entfernt",
     "pin.desc_pinned": "Diese Notiz erscheint oben in der Cmd+K-Palette.",

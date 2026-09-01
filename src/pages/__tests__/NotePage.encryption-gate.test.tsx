@@ -544,7 +544,9 @@ describe("NotePage encryption gate", () => {
       expect(harness.capabilityProviderConstruct).not.toHaveBeenCalled();
       expect(view.queryByTestId("editor")).not.toBeInTheDocument();
       expect(view.queryByTestId("preview")).not.toBeInTheDocument();
-      expect(view.getByText("common.loading")).toBeInTheDocument();
+      expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_unavailable");
+      expect(view.queryByText("unlock.metadata_conflict")).not.toBeInTheDocument();
+      expect(view.queryByText("common.loading")).not.toBeInTheDocument();
     } finally {
       warn.mockRestore();
     }
@@ -589,7 +591,9 @@ describe("NotePage encryption gate", () => {
       expect(harness.capabilityProviderConstruct).toHaveBeenCalledTimes(1);
       expect(view.queryByTestId("editor")).not.toBeInTheDocument();
       expect(view.queryByTestId("preview")).not.toBeInTheDocument();
-      expect(view.getByText("common.loading")).toBeInTheDocument();
+      expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_unavailable");
+      expect(view.queryByText("unlock.metadata_conflict")).not.toBeInTheDocument();
+      expect(view.queryByText("common.loading")).not.toBeInTheDocument();
     } finally {
       warn.mockRestore();
     }
@@ -668,6 +672,7 @@ describe("NotePage encryption gate", () => {
     await waitFor(() =>
       expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_conflict"),
     );
+    expect(view.queryByRole("button", { name: "common.retry" })).not.toBeInTheDocument();
     expect(harness.docAcquire).not.toHaveBeenCalled();
     expect(harness.providerConstruct).not.toHaveBeenCalled();
     expect(harness.providerConnect).not.toHaveBeenCalled();
@@ -685,6 +690,7 @@ describe("NotePage encryption gate", () => {
     await waitFor(() =>
       expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_conflict"),
     );
+    expect(view.queryByRole("button", { name: "common.retry" })).not.toBeInTheDocument();
     expect(harness.docAcquire).not.toHaveBeenCalled();
     expect(harness.providerConstruct).not.toHaveBeenCalled();
     expect(harness.providerConnect).not.toHaveBeenCalled();
@@ -840,18 +846,74 @@ describe("NotePage encryption gate", () => {
       resolveMeta = resolve;
     });
     harness.metaForSlug.mockReturnValue(failedMeta);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    renderEmbedded();
-    await waitFor(() => expect(harness.metaForSlug).toHaveBeenCalledWith("secret"));
-    await act(async () => {
-      resolveMeta({ data: null, error: { message: "metadata unavailable" } });
-      await failedMeta;
-    });
+    try {
+      const view = renderEmbedded();
+      await waitFor(() => expect(harness.metaForSlug).toHaveBeenCalledWith("secret"));
+      await act(async () => {
+        resolveMeta({ data: null, error: { message: "metadata unavailable" } });
+        await failedMeta;
+      });
 
-    expect(harness.editorRender).not.toHaveBeenCalled();
-    expect(harness.previewRender).not.toHaveBeenCalled();
-    expect(harness.idbConstruct).not.toHaveBeenCalled();
-    expect(harness.providerConnect).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_unavailable"),
+      );
+      expect(view.getByText("unlock.metadata_unavailable_desc")).toBeInTheDocument();
+      expect(view.getByRole("button", { name: "common.retry" })).toBeInTheDocument();
+      expect(view.queryByText("unlock.metadata_conflict")).not.toBeInTheDocument();
+      expect(view.queryByLabelText("Loading encryption metadata")).not.toBeInTheDocument();
+      expect(view.queryByText("common.loading")).not.toBeInTheDocument();
+      expect(warn).toHaveBeenCalledWith("Encryption metadata query failed");
+      expect(harness.editorRender).not.toHaveBeenCalled();
+      expect(harness.previewRender).not.toHaveBeenCalled();
+      expect(harness.idbConstruct).not.toHaveBeenCalled();
+      expect(harness.providerConnect).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("retries encryption metadata after a query throw and can recover", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    harness.metaForSlug.mockRejectedValue(new Error("network down"));
+
+    try {
+      const view = renderStandalone();
+
+      await waitFor(() =>
+        expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_unavailable"),
+      );
+      expect(view.getByRole("button", { name: "common.retry" })).toBeInTheDocument();
+      expect(view.queryByLabelText("Loading encryption metadata")).not.toBeInTheDocument();
+      expect(harness.editorRender).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith("Encryption metadata query failed");
+
+      let resolveRetry!: (value: { data: { is_encrypted: boolean }; error: null }) => void;
+      const retryMeta = new Promise<{ data: { is_encrypted: boolean }; error: null }>((resolve) => {
+        resolveRetry = resolve;
+      });
+      harness.metaForSlug.mockReset();
+      harness.metaForSlug.mockReturnValue(retryMeta);
+
+      fireEvent.click(view.getByRole("button", { name: "common.retry" }));
+
+      await waitFor(() =>
+        expect(view.getByLabelText("Loading encryption metadata")).toBeInTheDocument(),
+      );
+      expect(view.queryByRole("alert")).not.toBeInTheDocument();
+      expect(harness.metaForSlug).toHaveBeenCalled();
+
+      await act(async () => {
+        resolveRetry({ data: { is_encrypted: false }, error: null });
+        await retryMeta;
+      });
+
+      await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
+      expect(view.queryByRole("alert")).not.toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("closes the gate synchronously when an embedded note changes", async () => {

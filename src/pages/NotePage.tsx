@@ -37,6 +37,7 @@ import { useI18n } from "@/i18n";
 import { deriveKey, encryptBytes, decryptBytes, verifyCheck, iterationsFor } from "@/lib/crypto";
 import { acquireDoc, releaseDoc } from "@/lib/yjs/doc-cache";
 import { AppShell } from "@/components/app/AppShell";
+import { Button } from "@/components/ui/button";
 import { isExtensionContext } from "@/lib/ext-context";
 import {
   ENCRYPTION_PIN_CHANGE_EVENT,
@@ -233,10 +234,11 @@ export default function NotePage({
   useEink();
 
   // Encryption phases: "loading" (waiting on enc-meta), "needs-key", "blocked",
-  // "ready". A blocked note has violated the durable encrypted-state pin and
-  // must never mount local/network persistence as plaintext.
+  // "error" (enc-meta fetch failed; retryable), "ready". A blocked note has
+  // violated the durable encrypted-state pin and must never mount
+  // local/network persistence as plaintext.
   // Editor/Preview and network sync stay unmounted until the gate is ready.
-  const [encPhase, setEncPhase] = useState<"loading" | "needs-key" | "blocked" | "ready">("loading");
+  const [encPhase, setEncPhase] = useState<"loading" | "needs-key" | "blocked" | "error" | "ready">("loading");
   const [encMeta, setEncMeta] = useState<EncMeta>({
     isEncrypted: false,
     salt: null,
@@ -255,8 +257,8 @@ export default function NotePage({
     ? capabilityAdmission
     : null;
 
-  // Bumped by the hashchange listener so the meta-fetch effect re-runs when
-  // the encryption key in the URL fragment changes (lock/unlock flows).
+  // Bumped by the hashchange listener (lock/unlock) and by Retry on the
+  // enc-meta error gate so the meta-fetch effect re-runs.
   const [metaVersion, setMetaVersion] = useState(0);
   const [resolvedEncTarget, setResolvedEncTarget] = useState<EncGateTarget | null>(null);
   const [resources, setResources] = useState<NoteResources | null>(null);
@@ -497,10 +499,11 @@ export default function NotePage({
         setEncPhase("needs-key");
         setResolvedEncTarget(requestTarget);
       } catch {
-        // TODO(pwa-skeleton): this catch leaves encPhase === "loading" (Loader2
-        // hang, not EditorSkeleton). Add a small error/retry UI if this shows
-        // up in production.
-        if (isCurrentRequest()) console.warn("Encryption metadata query failed");
+        if (isCurrentRequest()) {
+          console.warn("Encryption metadata query failed");
+          setEncPhase("error");
+          setResolvedEncTarget(requestTarget);
+        }
       }
     })();
     return () => {
@@ -772,6 +775,17 @@ export default function NotePage({
       >
         <p className="font-medium text-destructive">{t("unlock.metadata_conflict")}</p>
         <p className="text-sm text-muted-foreground">{t("unlock.metadata_conflict_desc")}</p>
+      </div>
+    ) : visibleEncPhase === "error" ? (
+      <div
+        className="mx-auto max-w-md space-y-2 px-6 text-center"
+        role="alert"
+      >
+        <p className="font-medium text-destructive">{t("unlock.metadata_unavailable")}</p>
+        <p className="text-sm text-muted-foreground">{t("unlock.metadata_unavailable_desc")}</p>
+        <Button type="button" onClick={() => setMetaVersion((n) => n + 1)}>
+          {t("common.retry")}
+        </Button>
       </div>
     ) : visibleEncPhase === "needs-key" ? (
       <UnlockForm
