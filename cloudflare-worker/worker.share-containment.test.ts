@@ -158,14 +158,19 @@ describe("share crawler containment", () => {
   });
 
   it.each([
-    { requestPath: "/index.html?__WB_REVISION__=root", originPath: "/" },
+    {
+      requestPath: "/index.html?__WB_REVISION__=root",
+      originPath: "/",
+      originSearch: "?__WB_REVISION__=root",
+    },
     {
       requestPath: "/offline.html?__WB_REVISION__=offline",
       originPath: "/offline",
+      originSearch: "?__WB_REVISION__=offline",
     },
   ])(
     "uses the reviewed non-redirecting Pages path for $requestPath",
-    async ({ requestPath, originPath }) => {
+    async ({ requestPath, originPath, originSearch }) => {
       const doubles = installWorkerDoubles();
       doubles.metadataFetch.mockImplementation(async (request: Request) => {
         const url = new URL(request.url);
@@ -202,8 +207,159 @@ describe("share crawler containment", () => {
       const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
       const originUrl = new URL(originRequest.url);
       expect(originUrl.pathname).toBe(originPath);
-      expect(originUrl.search).toBe("");
+      expect(originUrl.search).toBe(originSearch);
       expect(originRequest.redirect).toBe("manual");
+    },
+  );
+
+  it.each([
+    {
+      requestPath: "/index.html?__WB_REVISION__=abc123&token=secret",
+      originPath: "/",
+    },
+    {
+      requestPath: "/offline.html?__WB_REVISION__=abc123&token=secret",
+      originPath: "/offline",
+    },
+  ])(
+    "forwards only a conservative Workbox revision from mixed HTML alias params for $requestPath",
+    async ({ requestPath, originPath }) => {
+      const doubles = installWorkerDoubles();
+      const logs: string[] = [];
+      vi.spyOn(console, "log").mockImplementation((line) =>
+        logs.push(String(line)),
+      );
+      doubles.metadataFetch.mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname.endsWith(".html")) {
+          return new Response(null, {
+            status: 308,
+            headers: { location: url.pathname.replace(/\.html$/, "") || "/" },
+          });
+        }
+        return new Response("reviewed html", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      });
+
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${requestPath}`, {
+          headers: { "user-agent": "Mozilla/5.0" },
+        }),
+        {
+          ORIGIN_HOST: "snote-g4-origin.pages.dev",
+          SITE_URL: "https://note.syrin.online",
+        },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(200);
+      expect(doubles.metadataFetch).toHaveBeenCalledOnce();
+      const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.pathname).toBe(originPath);
+      expect(originUrl.search).toBe("?__WB_REVISION__=abc123");
+      expect(originRequest.url).not.toContain("token");
+      expect(originRequest.url).not.toContain("secret");
+      expect(logs.join("\n")).not.toContain("token");
+      expect(logs.join("\n")).not.toContain("secret");
+      expect(logs.join("\n")).not.toContain("abc123");
+      expect(logs.join("\n")).not.toContain("__WB_REVISION__");
+    },
+  );
+
+  it.each([
+    { label: "empty", requestPath: "/index.html?__WB_REVISION__=" },
+    {
+      label: "too long",
+      requestPath: `/index.html?__WB_REVISION__=${"a".repeat(129)}`,
+    },
+    { label: "path traversal", requestPath: "/index.html?__WB_REVISION__=../" },
+    {
+      label: "token-like",
+      requestPath: "/index.html?__WB_REVISION__=tok=secret",
+    },
+  ])(
+    "drops an invalid Workbox revision ($label) before the origin fetch",
+    async ({ requestPath }) => {
+      const doubles = installWorkerDoubles();
+      doubles.metadataFetch.mockImplementation(async (request: Request) => {
+        const url = new URL(request.url);
+        if (url.pathname.endsWith(".html")) {
+          return new Response(null, {
+            status: 308,
+            headers: { location: url.pathname.replace(/\.html$/, "") || "/" },
+          });
+        }
+        return new Response("reviewed html", {
+          status: 200,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
+      });
+
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${requestPath}`, {
+          headers: { "user-agent": "Mozilla/5.0" },
+        }),
+        {
+          ORIGIN_HOST: "snote-g4-origin.pages.dev",
+          SITE_URL: "https://note.syrin.online",
+        },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(200);
+      const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.pathname).toBe("/");
+      expect(originUrl.search).toBe("");
+      expect(originRequest.url).not.toContain("token");
+      expect(originRequest.url).not.toContain("secret");
+      expect(originRequest.url).not.toContain("../");
+      expect(originRequest.url).not.toContain("a".repeat(129));
+    },
+  );
+
+  it.each([
+    {
+      requestPath: `/s/${TOKEN}?__WB_REVISION__=root&token=secret`,
+      originPath: "/s",
+    },
+    {
+      requestPath: `/${PRIVATE_SLUG}?__WB_REVISION__=root&token=secret`,
+      originPath: "/",
+    },
+    {
+      requestPath: "/unlock?__WB_REVISION__=root&token=secret",
+      originPath: "/",
+    },
+  ])(
+    "does not forward Workbox revision or locator query for $requestPath",
+    async ({ requestPath, originPath }) => {
+      const doubles = installWorkerDoubles();
+
+      const response = await worker.fetch(
+        new Request(`https://note.syrin.online${requestPath}`, {
+          headers: { "user-agent": "Mozilla/5.0" },
+        }),
+        {
+          ORIGIN_HOST: "snote.lovable.app",
+          SITE_URL: "https://note.syrin.online",
+        },
+        { waitUntil: doubles.waitUntil },
+      );
+
+      expect(response.status).toBe(200);
+      const originRequest = doubles.metadataFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.pathname).toBe(originPath);
+      expect(originUrl.search).toBe("");
+      expect(originRequest.url).not.toContain(TOKEN);
+      expect(originRequest.url).not.toContain(PRIVATE_SLUG);
+      expect(originRequest.url).not.toContain("__WB_REVISION__");
+      expect(originRequest.url).not.toContain("token");
+      expect(originRequest.url).not.toContain("secret");
     },
   );
 

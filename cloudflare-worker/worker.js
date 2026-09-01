@@ -27,6 +27,7 @@
 const CRAWLER_UA = /(facebookexternalhit|Facebot|meta-externalagent|meta-externalfetcher|Twitterbot|LinkedInBot|Slackbot|Slack-ImgProxy|Discordbot|WhatsApp|TelegramBot|Pinterest|pinterestbot|redditbot|Applebot|Googlebot|Google-Read-Aloud|Google-Site-Verification|Google-InspectionTool|bingbot|DuckDuckBot|YandexBot|Baiduspider|SkypeUriPreview|vkShare|W3C_Validator|Embedly|Iframely|nuzzel|outbrain|quora link preview|XING-contenttabreceiver|TikTokBot|Bytespider|Snapchat|SnapchatAds|Snapcrawler|Mastodon|Pleroma|Misskey|Threads|Bluesky|Notionbot|Trello|Asana|MicrosoftPreview|Teams|Outlook|Office|Zalo|LINE|Viber|KakaoTalk|iMessageLinkPreview|MetaInspector|Tumblr|Flipboard|PetalBot|Yeti|SeznamBot|Qwantify|MojeekBot|AhrefsBot|SemrushBot|archive\.org_bot|ia_archiver|YisouSpider|Sogou|360Spider|MJ12bot|DotBot|HeadlessChrome)/i;
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const WORKBOX_REVISION_RE = /^[A-Za-z0-9._-]{1,128}$/;
 const RAW_NOTE_RE = /^([a-zA-Z0-9_-]{1,64})\.md$/i;
 const SHARE_ROBOTS = "noindex, nofollow, noarchive, nosnippet";
 const PRODUCTION_SUPABASE_ORIGIN =
@@ -524,6 +525,12 @@ function resolveContainmentDotSegments(pathname) {
   return `/${segments.join("/")}`;
 }
 
+function originSearchFromRequestUrl(requestUrl) {
+  const revision = requestUrl.searchParams.get("__WB_REVISION__");
+  if (!revision || !WORKBOX_REVISION_RE.test(revision)) return "";
+  return `?__WB_REVISION__=${revision}`;
+}
+
 function isSharePrefix(value) {
   // Match s/S plus any number of standard re-encodings of %73/%53, e.g.
   // %73, %2573, %252573. This stays linear for hostile input.
@@ -586,9 +593,9 @@ async function passThrough(
     routeKind === "immutable-asset"
     || routeKind === "runtime-asset"
   ) {
-    // Only the normalized allowlisted asset path is sent upstream. Query
-    // strings are never needed for content-addressed or runtime artifacts and
-    // may contain capabilities that must not enter provider request logs.
+    // Only the normalized allowlisted asset path is sent upstream. Forward a
+    // conservative Workbox revision query so Pages can cache-bust HTML shells;
+    // drop every other param so locators/capabilities never enter origin logs.
     const runtimePath = resolveContainmentDotSegments(
       normalizeContainmentPath(url.pathname),
     );
@@ -596,7 +603,7 @@ async function passThrough(
     // Fetch their exact non-redirecting aliases so Workbox revision URLs remain
     // available while arbitrary origin redirects still fail closed below.
     url.pathname = PAGES_RUNTIME_ORIGIN_PATHS.get(runtimePath) ?? runtimePath;
-    url.search = "";
+    url.search = originSearchFromRequestUrl(url);
   }
   let originRequest;
   let response;

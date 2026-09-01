@@ -204,6 +204,30 @@ describe("edge privacy containment", () => {
     },
   );
 
+  it.each(["/", "/privacy"])(
+    "does not forward a Workbox revision query from the public document %s",
+    async (path) => {
+      const doubles = installOriginDouble();
+
+      await worker.fetch(
+        new Request(
+          `https://note.syrin.online${path}?__WB_REVISION__=root&token=secret`,
+          { headers: { "user-agent": "Mozilla/5.0" } },
+        ),
+        ENV,
+        { waitUntil: doubles.waitUntil },
+      );
+
+      const originRequest = doubles.originFetch.mock.calls[0]?.[0] as Request;
+      const originUrl = new URL(originRequest.url);
+      expect(originUrl.pathname).toBe(path);
+      expect(originUrl.search).toBe("");
+      expect(originRequest.url).not.toContain("__WB_REVISION__");
+      expect(originRequest.url).not.toContain("token");
+      expect(originRequest.url).not.toContain("secret");
+    },
+  );
+
   it("uses a query-free cache key for crawler home responses", async () => {
     const doubles = installOriginDouble();
     const syntheticQuery = "private-capability-must-not-enter-edge-cache";
