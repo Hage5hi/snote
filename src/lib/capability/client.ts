@@ -224,6 +224,9 @@ export function createCapabilityApi(options: ApiOptions = {}) {
   if (!baseUrl) throw new Error("capability API unavailable");
 
   const post = async (name: string, body: unknown, token?: string, keepalive = false) => {
+    if (import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED !== "true") {
+      throw new Error("capability API unavailable");
+    }
     if (token && !CAPABILITY_TOKEN_RE.test(token)) throw new Error("invalid capability");
     let authToken: string | null = null;
     if (token) {

@@ -9,8 +9,10 @@ This client is the dual-mode bridge between legacy slug notes and capability-man
 The SPA parses those fragments and opens `note-session` only when
 `VITE_CAPABILITY_ROUTES_ENABLED` is exactly `"true"`. That canary covers
 NotePage owner/edit routes and SharePage `/s#view`. Missing, empty, or any
-other value keeps both pages `legacyOnly`. Production builds attest
-`capabilityRoutesEnabled: false`.
+other value keeps both pages `legacyOnly`. The same flag fail-closes
+`createCapabilityApi()`: `note-session`, `note-sync`, and `note-manage`
+throw `capability API unavailable` without fetching, and default Auth
+minting stays off. Production builds attest `capabilityRoutesEnabled: false`.
 
 An optional encryption secret is a separate `key` fragment field. Capability tokens are exchanged for a short-lived `NoteSession` and are sent to Edge APIs only as an exact `Authorization: Bearer` header. They are never placed in a request path, query, JSON body, recent-note entry, telemetry event, or log.
 

@@ -323,7 +323,8 @@ export function createDefaultCapabilityAuthSource(): CapabilityAuthSource {
     defaultSource = createCapabilityAuthSource({
       supabaseUrl: import.meta.env.VITE_SUPABASE_URL ?? "",
       publishableKey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? "",
-      enabled: import.meta.env.VITE_CAPABILITY_AUTH_ENABLED === "true",
+      enabled: import.meta.env.VITE_CAPABILITY_AUTH_ENABLED === "true"
+        && import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true",
       turnstile: createTurnstileTokenSource({
         siteKey: import.meta.env.VITE_TURNSTILE_SITE_KEY ?? "",
       }),

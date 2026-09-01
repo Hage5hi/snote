@@ -7,6 +7,7 @@ import {
 import {
   capabilityAuthStorageKey,
   createCapabilityAuthSource,
+  createDefaultCapabilityAuthSource,
   type CapabilityAuthOptions,
 } from "../auth";
 
@@ -442,6 +443,26 @@ describe("createCapabilityAuthSource", () => {
     await expect(source.accessTokenFor(CAPABILITY_A)).resolves.toBeNull();
     expect(harness.signInAnonymously).not.toHaveBeenCalled();
     expect(harness.turnstileToken).not.toHaveBeenCalled();
+  });
+
+  it("does not mint anonymous Auth from the default source when routes are off", async () => {
+    const env = import.meta.env as Record<string, unknown>;
+    const previousAuth = env.VITE_CAPABILITY_AUTH_ENABLED;
+    const previousRoutes = env.VITE_CAPABILITY_ROUTES_ENABLED;
+    env.VITE_CAPABILITY_AUTH_ENABLED = "true";
+    env.VITE_CAPABILITY_ROUTES_ENABLED = "false";
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("offline"));
+    const getItem = vi.spyOn(Storage.prototype, "getItem");
+    const source = createDefaultCapabilityAuthSource();
+
+    try {
+      await expect(source.accessTokenFor(CAPABILITY_A)).resolves.toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(getItem).not.toHaveBeenCalled();
+    } finally {
+      env.VITE_CAPABILITY_AUTH_ENABLED = previousAuth;
+      env.VITE_CAPABILITY_ROUTES_ENABLED = previousRoutes;
+    }
   });
 
   it("converts Turnstile and Auth failures to null without logging identifiers", async () => {

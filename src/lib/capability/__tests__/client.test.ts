@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CapabilityAuthSource } from "../auth";
 import {
   CapabilityApiError,
@@ -7,6 +7,8 @@ import {
   type PollingNoteSession,
   type PrivateRealtimeNoteSession,
 } from "../client";
+
+const env = import.meta.env as Record<string, unknown>;
 
 const TOKEN = "b".repeat(43);
 const AUTH_TOKEN = "managed-auth-token";
@@ -86,7 +88,68 @@ function apiWithSession(
   };
 }
 
+const LEGACY_IMPORT = {
+  slug: "daily",
+  checkpointId: "a".repeat(64),
+  payload: "AQID",
+  isEncrypted: false,
+  salt: null,
+  check: null,
+  iterations: null,
+};
+
 describe("capability API client", () => {
+  let previousRoutesFlag: unknown;
+
+  beforeEach(() => {
+    previousRoutesFlag = env.VITE_CAPABILITY_ROUTES_ENABLED;
+    env.VITE_CAPABILITY_ROUTES_ENABLED = "true";
+  });
+
+  afterEach(() => {
+    env.VITE_CAPABILITY_ROUTES_ENABLED = previousRoutesFlag;
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["empty", ""],
+    ["false", "false"],
+    ["TRUE", "TRUE"],
+    ["1", "1"],
+  ])("fails closed without fetching gated Edge names when the routes canary is %s", async (
+    _label,
+    flag,
+  ) => {
+    env.VITE_CAPABILITY_ROUTES_ENABLED = flag;
+    const source = authSource("must-not-mint");
+    const fetcher = vi.fn<typeof fetch>(async () => {
+      throw new Error("capability Edge must not be fetched while canary is off");
+    });
+    const api = createCapabilityApi({
+      baseUrl: "https://project.supabase.co",
+      fetcher,
+      authSource: source,
+    });
+
+    await expect(api.createNote("daily", TOKEN)).rejects.toThrow("capability API unavailable");
+    await expect(api.importLegacyNote(LEGACY_IMPORT, TOKEN)).rejects.toThrow(
+      "capability API unavailable",
+    );
+    await expect(api.openSession(TOKEN)).rejects.toThrow("capability API unavailable");
+    await expect(api.sync(TOKEN, {
+      updates: [],
+      expectedEncryptionVersion: 0,
+      afterSequence: 0,
+    })).rejects.toThrow("capability API unavailable");
+    await expect(api.manage(TOKEN, { action: "rotate" })).rejects.toThrow(
+      "capability API unavailable",
+    );
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(source.accessTokenFor).not.toHaveBeenCalled();
+    expect(JSON.stringify(fetcher.mock.calls)).not.toMatch(/note-session|note-sync|note-manage/);
+  });
+
   it("keeps capability and managed Auth in separate headers only", async () => {
     const source = authSource(AUTH_TOKEN);
     const fetcher = vi.fn<typeof fetch>(async (input, init) => {
