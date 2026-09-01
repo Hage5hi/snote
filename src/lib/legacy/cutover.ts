@@ -19,8 +19,10 @@ type LegacyApiOptions = {
   fetcher?: typeof fetch;
 };
 
+const LEGACY_NOTE_OPEN = "legacy-note-open";
+
 function endpoint(baseUrl: string) {
-  return `${baseUrl.replace(/\/$/, "")}/functions/v1/legacy-note-open`;
+  return `${baseUrl.replace(/\/$/, "")}/functions/v1/${LEGACY_NOTE_OPEN}`;
 }
 
 function assertSlug(slug: unknown) {

@@ -156,6 +156,7 @@ describe("production note access hotfix", () => {
     expect(sharePage).toContain('from "@/lib/legacy/share-url"');
     expect(sharePage).not.toContain("@/lib/legacy/cutover");
 
+    expect(cutover).toContain('"legacy-note-open"');
     expect(cutover).toContain("legacy-note-open");
     expect(notePage).not.toContain("@/lib/legacy/cutover");
     expectValueImportBehindRoutesGuard(notePage, "./CutoverNotePage");
