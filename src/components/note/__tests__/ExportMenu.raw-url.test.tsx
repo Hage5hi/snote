@@ -55,7 +55,7 @@ describe("ExportMenu raw markdown URL", () => {
 
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText).toHaveBeenCalledWith(`${CANONICAL_ORIGIN}/demo.md`);
-    expect(writeText.mock.calls[0]?.[0]).not.toContain("functions/v1/raw");
+    expect(String(writeText.mock.calls.at(0)?.at(0))).not.toContain("functions/v1/raw");
     await waitFor(() => {
       expect(toastSpy).toHaveBeenCalledWith({
         title: dict.en["toast.copied_raw"],
