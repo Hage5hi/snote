@@ -48,6 +48,9 @@ describe("legacy-note-open dump containment", () => {
       "The deployed `legacy-note-open` endpoint is production-verified",
     );
     expect(findings).toContain("Do not POST a locator to it");
+    expect(findings).toContain("PR #56 (`eab48218`)");
+    expect(findings).toContain("re-pinned 2026-09-02 ~06:20 ICT");
+    expect(findings).not.toContain("GitHub source tombstone was PR #43");
     expect(findings).not.toContain("production remains 404 not-deployed");
     expect(findings).not.toContain("Do not claim a production 410 deploy");
   });

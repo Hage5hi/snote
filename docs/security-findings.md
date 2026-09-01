@@ -78,8 +78,11 @@ POST, OPTIONS); `GET` returned `405` `{"found":false}`, `content-type:
 application/json`, `Cache-Control: no-store`, and `CDN-Cache-Control: no-store`;
 `POST {}` returned `410` with the same JSON `no-store` body. This is not gateway
 `NOT_FOUND` / 404. Do not POST a locator to it. The tombstone was deployed
-2026-09-02 via Lovable Cloud Edge function `legacy-note-open` only. GitHub source
-tombstone was PR #43. Default production SPA no longer contains quoted
+2026-09-02 via Lovable Cloud Edge function `legacy-note-open` only. Git source
+of the live 410 tombstone includes PR #56 (`eab48218`); the comment no longer
+claims gateway 404. Hosted function was re-pinned 2026-09-02 ~06:20 ICT from
+that git; HTTP contract unchanged from the earlier 2026-09-02 ~04:20
+production-verified 410. Default production SPA no longer contains quoted
 `legacy-note-open` (PR #41, live origin `fe18302f`, canary off). `share-revoke`
 remains live (POST `{}` still 400, not 410) and is out of scope for this
 containment.
