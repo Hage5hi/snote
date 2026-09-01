@@ -35,11 +35,26 @@ describe("canonical production origin", () => {
       /The capability model below is the target post-cutover architecture, not the\s+authorization model currently active in production\./,
     );
     expect(findings).toContain(
-      "Production legacy mode is live and verified; capability routes remain disabled.",
+      "Production legacy write path is still live (`NotePage` `legacyOnly`,",
+    );
+    expect(findings).toMatch(
+      /Additive SQL `20260722000000_capability_backend\.sql` is\s+applied on production/,
     );
     expect(findings).toContain(
-      "The additive capability backend remains dormant and the atomic cutover has not",
+      "closed kill switch (`writes_enabled=false`, `private_realtime_enabled=false`).",
     );
+    expect(findings).toMatch(
+      /Atomic SQL `20260724000000_atomic_capability_cutover\.sql` has not been\s+applied\./,
+    );
+    expect(findings).toContain("Capability SPA canary remains off");
+    expect(findings).toContain(
+      "Do not treat 220 as authorization to flip the canary or apply 240.",
+    );
+    expect(findings).not.toContain(
+      "Atomic SQL `20260724000000_atomic_capability_cutover.sql` is applied",
+    );
+    expect(findings).not.toContain("capabilityRoutesEnabled` is true");
+    expect(findings).not.toContain("VITE_CAPABILITY_ROUTES_ENABLED` is true");
     expect(findings).toContain(
       "## 1. Legacy metadata and crawler previews — production verified",
     );
