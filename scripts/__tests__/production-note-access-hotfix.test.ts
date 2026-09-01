@@ -29,7 +29,7 @@ describe("production note access hotfix", () => {
     const envTypes = source("src/vite-env.d.ts");
     const envExample = source(".env.example");
 
-    expect(app).toContain('const NotePage = lazy(() => import("./pages/NotePage"));');
+    expect(app).toContain("const NotePage = lazy(() => loadNotePage());");
     expect(app).toMatch(
       /const capabilityRoutesEnabled\s*=\s*import\.meta\.env\.VITE_CAPABILITY_ROUTES_ENABLED === "true";/,
     );
@@ -65,7 +65,7 @@ describe("production note access hotfix", () => {
     const home = source("src/pages/Home.tsx");
     const raw = source("src/pages/RawView.tsx");
 
-    expect(split).toContain('const NotePage = lazy(() => import("./NotePage"));');
+    expect(split).toContain("const NotePage = lazy(() => loadNotePage());");
     expect(split).toContain("legacyOnly");
     expect(home).toContain('import("@/integrations/supabase/client")');
     expect(home).not.toContain('import { supabase } from "@/integrations/supabase/client";');

@@ -497,6 +497,9 @@ export default function NotePage({
         setEncPhase("needs-key");
         setResolvedEncTarget(requestTarget);
       } catch {
+        // TODO(pwa-skeleton): this catch leaves encPhase === "loading" (Loader2
+        // hang, not EditorSkeleton). Add a small error/retry UI if this shows
+        // up in production.
         if (isCurrentRequest()) console.warn("Encryption metadata query failed");
       }
     })();

@@ -31,7 +31,10 @@ const SW_UPDATE_POLL_INTERVAL_MS = envNum("VITE_PWA_SW_POLL_MS", 60 * 1000);
 const RELOAD_FALLBACK_MS = envNum("VITE_PWA_RELOAD_FALLBACK_MS", 2500);
 const TOAST_ID = "pwa-update-toast";
 const PENDING_BUILD_KEY = "pwa-update-pending-build";
+const RECOVERY_ATTEMPT_KEY = "pwa-update-recovery-attempt";
 const LEGACY_VERSION_PARAM = "v";
+
+export type PwaRecoveryReason = "boot-mismatch" | "lazy-import";
 
 // Single source of truth: extend the shared readiness type so UI/E2E and
 // runtime writer never drift. `lastRemoteBuildId`/`lastAcceptedAt` are
@@ -95,9 +98,9 @@ function writeDebugState(next: Partial<PwaUpdateDebugState>): void {
 }
 
 export async function nukeServiceWorkersAndCaches(): Promise<void> {
-  // Destructive cleanup is only valid in Lovable's disposable preview host.
-  // On the real app, the active worker and caches are the offline rollback.
-  if (!isLovablePreviewHost()) return;
+  // Unregisters the same-origin app worker and drops Workbox caches only.
+  // Preview hosts call this on every boot. Production calls it only from
+  // recoverMaroonedPwaUpdateOnce (one-shot). Never clears localStorage.
   try {
     if ("serviceWorker" in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
@@ -127,6 +130,52 @@ export async function nukeServiceWorkersAndCaches(): Promise<void> {
   } catch {
     /* ignore */
   }
+}
+
+function readSessionItem(key: string): string | null {
+  try {
+    return sessionStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionItem(key: string, value: string): void {
+  try {
+    sessionStorage.setItem(key, value);
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * One-shot production recovery after a marooned Update (or a stuck NotePage
+ * import). Unregisters `/sw.js` (+ `/service-worker.js`), deletes Workbox
+ * caches, and reloads once. Guarded by sessionStorage so it cannot loop.
+ */
+export function recoverMaroonedPwaUpdateOnce(reason: PwaRecoveryReason): boolean {
+  if (typeof window === "undefined") return false;
+  if (isLovablePreviewHost()) return false;
+  if (readSessionItem(RECOVERY_ATTEMPT_KEY)) return false;
+
+  const pending = readSessionItem(PENDING_BUILD_KEY);
+  const current = getCurrentBuildId();
+  if (reason === "boot-mismatch" && (!pending || pending === current)) {
+    return false;
+  }
+  if (reason === "lazy-import") {
+    const hasController = Boolean(
+      typeof navigator !== "undefined" && navigator.serviceWorker?.controller,
+    );
+    if (!pending && !hasController) return false;
+  }
+
+  writeSessionItem(RECOVERY_ATTEMPT_KEY, pending ?? "1");
+  const target = pending ?? "unknown";
+  void nukeServiceWorkersAndCaches().finally(() => {
+    recoverAndReloadCleanUrl(target);
+  });
+  return true;
 }
 
 function cleanCurrentAppUrl(): string {
@@ -302,6 +351,10 @@ export function registerAppUpdater(): void {
     }
     pendingBuildFromPreviousLoad = null;
     sonnerToast.dismiss(TOAST_ID);
+  }
+
+  if (recoverMaroonedPwaUpdateOnce("boot-mismatch")) {
+    return;
   }
 
   let updateAvailable = false;
