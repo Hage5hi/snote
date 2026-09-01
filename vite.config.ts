@@ -97,6 +97,7 @@ export default defineConfig(({ mode }) => {
           "**/Editor-*",
           "**/Preview-*",
           "**/UnlockForm-*",
+          "**/crypto-*",
           "**/cm-vendor-*",
           "**/yjs-vendor-*",
           "**/md-vendor-*",

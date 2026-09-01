@@ -26,6 +26,7 @@ describe("PWA workbox + lazy NotePage contract", () => {
       '"**/yjs-vendor-*"',
       '"**/md-vendor-*"',
       '"**/supabase-vendor-*"',
+      '"**/crypto-*"',
       '"**/mermaid-vendor-*"',
       '"**/wardley-*"',
       '"**/preview-worker-*"',
