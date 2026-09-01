@@ -596,11 +596,14 @@ describe("Edge capability endpoints", () => {
     expect(rejectMixedRequest).toBeLessThan(admission);
   });
 
-  it("keeps service-role legacy readers away from capability-managed rows", () => {
+  it("tombstones the service-role raw dump and keeps remaining legacy readers off capability rows", () => {
     const raw = source("supabase/functions/raw/index.ts");
     const shareView = source("supabase/functions/share-view/index.ts");
     const shareCreate = source("supabase/functions/share-create/index.ts");
-    expect(raw).toContain('.eq("capability_managed", false)');
+    expect(raw).toMatch(/return jsonResponse\(\s*\{ found: false \},\s*410,?\s*\)/);
+    expect(raw).not.toContain("createClient");
+    expect(raw).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(raw).not.toContain('.from("notes")');
     expect(shareView).toContain('.eq("capability_managed", false)');
     expect(shareCreate).toContain('status: 410');
     expect(shareCreate).not.toContain("legacy_share_rotate");

@@ -28,6 +28,10 @@ Standard commands live in `README.md` (Local development / Verification) and
   never use service-role, admin, session, or capability credentials. Do not
   print or retain note content, slugs, capability tokens, URL fragments, or raw
   IP addresses.
+- The committed `raw` Edge function is a `410 no-store` tombstone. Do not probe
+  production `raw` with a real slug. Do not `GET /functions/v1/raw` with no extra
+  path: the last segment `raw` is a legal slug. Invalid-locator checks such as
+  `GET /raw/!` are the only safe credential-free probe for that name.
 
 ### Testing / checks
 - `bun run test` (Vitest) runs fully offline; the integration test spins up an
