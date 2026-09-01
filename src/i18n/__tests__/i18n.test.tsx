@@ -41,69 +41,69 @@ describe("i18n dict", () => {
     }
   });
 
-    it("encryption metadata unavailable copy exists in every locale", () => {
-      const expected: Record<(typeof SUPPORTED_LANGS)[number], {
-        title: string;
-        desc: string;
-        retry: string;
-      }> = {
-        en: {
-          title: "Couldn’t load encryption state",
-          desc: "Check your connection and try again. Notes on this device are unchanged.",
-          retry: "Retry",
-        },
-        vi: {
-          title: "Không tải được trạng thái mã hóa",
-          desc: "Kiểm tra kết nối rồi thử lại. Note trên thiết bị này không bị mất.",
-          retry: "Thử lại",
-        },
-        de: {
-          title: "Verschlüsselungsstatus konnte nicht geladen werden",
-          desc: "Prüfe die Verbindung und versuche es erneut. Notizen auf diesem Gerät bleiben erhalten.",
-          retry: "Erneut versuchen",
-        },
-        es: {
-          title: "No se pudo cargar el estado de cifrado",
-          desc: "Comprueba la conexión e inténtalo de nuevo. Las notas en este dispositivo no cambian.",
-          retry: "Reintentar",
-        },
-        fr: {
-          title: "Impossible de charger l’état de chiffrement",
-          desc: "Vérifiez la connexion et réessayez. Les notes sur cet appareil restent inchangées.",
-          retry: "Réessayer",
-        },
-        pt: {
-          title: "Não foi possível carregar o estado de encriptação",
-          desc: "Verifique a ligação e tente novamente. As notas neste dispositivo não são alteradas.",
-          retry: "Tentar novamente",
-        },
-        ja: {
-          title: "暗号化状態を読み込めませんでした",
-          desc: "接続を確認して再試行してください。この端末のノートは変わりません。",
-          retry: "再試行",
-        },
-        ko: {
-          title: "암호화 상태를 불러오지 못했습니다",
-          desc: "연결을 확인한 뒤 다시 시도하세요. 이 기기의 노트는 그대로입니다.",
-          retry: "다시 시도",
-        },
-        zh: {
-          title: "无法加载加密状态",
-          desc: "请检查网络后重试。此设备上的笔记不会丢失。",
-          retry: "重试",
-        },
-      };
-      for (const lang of SUPPORTED_LANGS) {
-        const d = dict[lang] as Record<string, string>;
-        expect(d["unlock.metadata_unavailable"], lang).toBe(expected[lang].title);
-        expect(d["unlock.metadata_unavailable_desc"], lang).toBe(expected[lang].desc);
-        expect(d["common.retry"], lang).toBe(expected[lang].retry);
-        expect(d["unlock.metadata_conflict"], lang).toBeTruthy();
-        expect(d["unlock.metadata_conflict_desc"], lang).toBeTruthy();
-      }
-    });
+  it("encryption metadata unavailable copy exists in every locale", () => {
+    const expected: Record<(typeof SUPPORTED_LANGS)[number], {
+      title: string;
+      desc: string;
+      retry: string;
+    }> = {
+      en: {
+        title: "Couldn’t load encryption state",
+        desc: "Check your connection and try again. Notes on this device are unchanged.",
+        retry: "Retry",
+      },
+      vi: {
+        title: "Không tải được trạng thái mã hóa",
+        desc: "Kiểm tra kết nối rồi thử lại. Note trên thiết bị này không bị mất.",
+        retry: "Thử lại",
+      },
+      de: {
+        title: "Verschlüsselungsstatus konnte nicht geladen werden",
+        desc: "Prüfe die Verbindung und versuche es erneut. Notizen auf diesem Gerät bleiben erhalten.",
+        retry: "Erneut versuchen",
+      },
+      es: {
+        title: "No se pudo cargar el estado de cifrado",
+        desc: "Comprueba la conexión e inténtalo de nuevo. Las notas en este dispositivo no cambian.",
+        retry: "Reintentar",
+      },
+      fr: {
+        title: "Impossible de charger l’état de chiffrement",
+        desc: "Vérifiez la connexion et réessayez. Les notes sur cet appareil restent inchangées.",
+        retry: "Réessayer",
+      },
+      pt: {
+        title: "Não foi possível carregar o estado de encriptação",
+        desc: "Verifique a ligação e tente novamente. As notas neste dispositivo não são alteradas.",
+        retry: "Tentar novamente",
+      },
+      ja: {
+        title: "暗号化状態を読み込めませんでした",
+        desc: "接続を確認して再試行してください。この端末のノートは変わりません。",
+        retry: "再試行",
+      },
+      ko: {
+        title: "암호화 상태를 불러오지 못했습니다",
+        desc: "연결을 확인한 뒤 다시 시도하세요. 이 기기의 노트는 그대로입니다.",
+        retry: "다시 시도",
+      },
+      zh: {
+        title: "无法加载加密状态",
+        desc: "请检查网络后重试。此设备上的笔记不会丢失。",
+        retry: "重试",
+      },
+    };
+    for (const lang of SUPPORTED_LANGS) {
+      const d = dict[lang] as Record<string, string>;
+      expect(d["unlock.metadata_unavailable"], lang).toBe(expected[lang].title);
+      expect(d["unlock.metadata_unavailable_desc"], lang).toBe(expected[lang].desc);
+      expect(d["common.retry"], lang).toBe(expected[lang].retry);
+      expect(d["unlock.metadata_conflict"], lang).toBeTruthy();
+      expect(d["unlock.metadata_conflict_desc"], lang).toBeTruthy();
+    }
+  });
 
-    it("PWA update toast copy is one keep-notes line with no site-data cleanup key", () => {
+  it("PWA update toast copy is one keep-notes line with no site-data cleanup key", () => {
     const expected: Record<(typeof SUPPORTED_LANGS)[number], string> = {
       en: "Reload to get the latest version. Your notes and history will be kept.",
       vi: "Tải lại để dùng bản mới. Note và lịch sử vẫn được giữ.",

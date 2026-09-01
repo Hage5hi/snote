@@ -672,6 +672,7 @@ describe("NotePage encryption gate", () => {
     await waitFor(() =>
       expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_conflict"),
     );
+    expect(view.queryByRole("button", { name: "common.retry" })).not.toBeInTheDocument();
     expect(harness.docAcquire).not.toHaveBeenCalled();
     expect(harness.providerConstruct).not.toHaveBeenCalled();
     expect(harness.providerConnect).not.toHaveBeenCalled();
@@ -689,6 +690,7 @@ describe("NotePage encryption gate", () => {
     await waitFor(() =>
       expect(view.getByRole("alert")).toHaveTextContent("unlock.metadata_conflict"),
     );
+    expect(view.queryByRole("button", { name: "common.retry" })).not.toBeInTheDocument();
     expect(harness.docAcquire).not.toHaveBeenCalled();
     expect(harness.providerConstruct).not.toHaveBeenCalled();
     expect(harness.providerConnect).not.toHaveBeenCalled();

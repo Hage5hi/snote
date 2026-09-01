@@ -257,8 +257,8 @@ export default function NotePage({
     ? capabilityAdmission
     : null;
 
-  // Bumped by the hashchange listener so the meta-fetch effect re-runs when
-  // the encryption key in the URL fragment changes (lock/unlock flows).
+  // Bumped by the hashchange listener (lock/unlock) and by Retry on the
+  // enc-meta error gate so the meta-fetch effect re-runs.
   const [metaVersion, setMetaVersion] = useState(0);
   const [resolvedEncTarget, setResolvedEncTarget] = useState<EncGateTarget | null>(null);
   const [resources, setResources] = useState<NoteResources | null>(null);
