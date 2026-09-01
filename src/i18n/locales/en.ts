@@ -313,7 +313,6 @@ const en = {
     "update.pending_title": "Update pending",
     "update.pending_desc": "Applying the update. This will close when the newest version is ready.",
     "update.description": "Reload to get the latest version. Your notes and history will be kept.",
-    "update.fallback_cleanup": "If Update still fails, clear this site's data/cookies to force the newest version. This removes local web data on this device.",
     "update.btn_reload": "Update",
     "unlock.wrong_key": "Wrong key. Try again.",
     "unlock.decrypt_error": "Decryption error.",

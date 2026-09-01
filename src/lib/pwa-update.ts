@@ -255,7 +255,6 @@ function updateDescription(updateInProgress: boolean): ReactNode {
     "div",
     { "data-pwa-update-state": updateInProgress ? "pending" : "available" },
     createElement("div", null, tr(lang, bodyKey)),
-    createElement("div", { style: { marginTop: 6, fontSize: 12, lineHeight: 1.35, opacity: 0.82 } }, tr(lang, "update.fallback_cleanup")),
   );
 }
 

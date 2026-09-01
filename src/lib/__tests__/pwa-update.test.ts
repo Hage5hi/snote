@@ -29,7 +29,6 @@ vi.mock("@/i18n", () => ({
       "update.pending_title": "Update pending",
       "update.pending_desc": "Applying the update.",
       "update.description": "Reload for the latest version.",
-      "update.fallback_cleanup": "If this still fails, clear this site's data/cookies.",
       "update.btn_reload": "Update",
     })[key] ?? key,
 }));
@@ -284,7 +283,7 @@ describe("registerAppUpdater", () => {
     expect(lastOpts.id).toBe("pwa-update-toast");
   });
 
-  it("keeps build ids out of the user-facing toast and shows cleanup fallback guidance", async () => {
+  it("keeps build ids out of the user-facing toast and shows a single-line body", async () => {
     respondVersion("build-b");
     const mod = await fresh();
     mod.registerAppUpdater();
@@ -292,11 +291,29 @@ describe("registerAppUpdater", () => {
 
     const lastOpts = toastMock.mock.calls.at(-1)![1] as { description: unknown };
     const serialized = JSON.stringify(lastOpts.description);
-    expect(serialized).toContain("clear this site's data/cookies");
+    expect(serialized).toContain("Reload for the latest version.");
+    expect(serialized).not.toContain("clear this site's data/cookies");
+    expect(serialized).not.toContain("update.fallback_cleanup");
     expect(serialized).not.toContain("Current:");
     expect(serialized).not.toContain("Pending:");
     expect(serialized).not.toContain("Transition:");
     expect(serialized).not.toContain("build-a");
     expect(serialized).not.toContain("build-b");
+  });
+
+  it("does not append site-data cleanup copy while the update is pending", async () => {
+    respondVersion("build-b");
+    const mod = await fresh();
+    mod.registerAppUpdater();
+    await flush(80);
+
+    const opts = toastMock.mock.calls.at(-1)![1] as { action: { props: { onClick: (e: Event) => void } } };
+    opts.action.props.onClick({ preventDefault: () => {} } as unknown as Event);
+
+    const lastOpts = toastMock.mock.calls.at(-1)![1] as { description: unknown };
+    const serialized = JSON.stringify(lastOpts.description);
+    expect(serialized).toContain("Applying the update.");
+    expect(serialized).not.toContain("clear this site's data/cookies");
+    expect(serialized).not.toContain("update.fallback_cleanup");
   });
 });
