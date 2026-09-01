@@ -33,8 +33,30 @@ describe("i18n dict", () => {
     const enKeys = Object.keys(dict.en);
     for (const lang of SUPPORTED_LANGS) {
       if (lang === "en") continue;
+      const localeKeys = Object.keys(dict[lang] as Record<string, string>);
       const missing = enKeys.filter((k) => !(k in (dict[lang] as Record<string, string>)));
+      const extra = localeKeys.filter((k) => !(k in dict.en));
       expect(missing, `${lang} missing keys`).toEqual([]);
+      expect(extra, `${lang} extra keys`).toEqual([]);
+    }
+  });
+
+  it("PWA update toast copy is one keep-notes line with no site-data cleanup key", () => {
+    const expected: Record<(typeof SUPPORTED_LANGS)[number], string> = {
+      en: "Reload to get the latest version. Your notes and history will be kept.",
+      vi: "Tải lại để dùng bản mới. Note và lịch sử vẫn được giữ.",
+      de: "Neu laden, um die neueste Version zu erhalten. Deine Notizen und dein Verlauf bleiben erhalten.",
+      es: "Recarga para obtener la versión más reciente. Tus notas e historial se conservarán.",
+      fr: "Rechargez pour obtenir la dernière version. Vos notes et votre historique seront conservés.",
+      pt: "Recarregue para obter a versão mais recente. As suas notas e histórico serão mantidos.",
+      ja: "最新版を使うには再読み込みしてください。ノートと履歴は保持されます。",
+      ko: "최신 버전을 쓰려면 다시 로드하세요. 노트와 기록은 유지됩니다.",
+      zh: "重新加载以使用最新版本。您的笔记和历史记录将保留。",
+    };
+    for (const lang of SUPPORTED_LANGS) {
+      const d = dict[lang] as Record<string, string>;
+      expect(d["update.description"], lang).toBe(expected[lang]);
+      expect(d, lang).not.toHaveProperty("update.fallback_cleanup");
     }
   });
 
