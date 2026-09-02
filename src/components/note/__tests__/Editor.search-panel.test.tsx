@@ -81,6 +81,29 @@ describe("Editor find/replace wiring", () => {
     });
   });
 
+  it("closes on a second Ctrl+F when the editor content is focused", async () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const { container } = render(<Editor doc={doc} awareness={awareness} />);
+    const content = await waitFor(() => {
+      const el = container.querySelector(".cm-content");
+      expect(el).toBeTruthy();
+      return el as HTMLElement;
+    });
+
+    content.focus();
+    fireEvent.keyDown(content, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    });
+
+    content.focus();
+    fireEvent.keyDown(content, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
+    });
+  });
+
   it("does not close on Ctrl+H, and does not steal Ctrl+F from an unrelated INPUT while open", async () => {
     const doc = new Y.Doc();
     const awareness = new Awareness(doc);
@@ -93,6 +116,13 @@ describe("Editor find/replace wiring", () => {
     });
 
     fireEvent.keyDown(window, { key: "h", ctrlKey: true });
+    expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    expect(container.querySelector("[data-testid='note-search-panel']")).toHaveAttribute(
+      "data-replace-open",
+      "true",
+    );
+
+    fireEvent.keyDown(window, { key: "f", metaKey: true, altKey: true });
     expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
     expect(container.querySelector("[data-testid='note-search-panel']")).toHaveAttribute(
       "data-replace-open",

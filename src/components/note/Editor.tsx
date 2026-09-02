@@ -134,7 +134,13 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         tableNav(),
         pasteMarkdown(),
         typewriterMode(),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, ...completionKeymap]),
+        keymap.of([
+          ...defaultKeymap,
+          ...historyKeymap,
+          // editorSearch owns Mod-f (toggle). Keep Escape / F3 / Mod-g.
+          ...searchKeymap.filter((binding) => binding.key !== "Mod-f"),
+          ...completionKeymap,
+        ]),
         EditorView.lineWrapping,
         EditorView.contentAttributes.of({ "aria-label": "Markdown note editor" }),
         yCollab(ytext, awareness),

@@ -11,36 +11,44 @@ function overlayCss(): string {
   return css.slice(start);
 }
 
-function ruleBodies(css: string, selector: string): string[] {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, "g");
-  return [...css.matchAll(re)].map((match) => match[1]);
+/** Collect rule bodies whose selector list includes `needle` (grouped selectors OK). */
+function declarationsFor(css: string, needle: string): string[] {
+  const bodies: string[] = [];
+  const re = /([^{}@][^{]*)\{([^}]*)\}/g;
+  for (const match of css.matchAll(re)) {
+    const selectors = match[1].split(",").map((part) => part.trim().replace(/\s+/g, " "));
+    if (selectors.some((selector) => selector === needle || selector.endsWith(" " + needle))) {
+      bodies.push(match[2]);
+    }
+  }
+  return bodies;
 }
 
 describe("search panel focus chrome", () => {
   it("does not paint a saturated primary/accent bottom bar on focused Find/Replace inputs", () => {
     const css = overlayCss();
+    expect(css).not.toContain("border-bottom-color: hsl(var(--primary))");
+    expect(css).not.toMatch(/input:focus[^{]*\{[^}]*border-bottom(?:-color)?:\s*[^;]*(?:--primary|accent)/);
+
     const focusBodies = [
-      ...ruleBodies(css, ".snote-search-panel input:focus"),
-      ...ruleBodies(css, ".snote-search-panel input:focus-visible"),
-      ...ruleBodies(css, ".snote-search-field:focus"),
-      ...ruleBodies(css, ".snote-search-field:focus-visible"),
+      ...declarationsFor(css, ".snote-search-panel input:focus"),
+      ...declarationsFor(css, ".snote-search-panel input:focus-visible"),
     ];
     expect(focusBodies.length).toBeGreaterThan(0);
     const joined = focusBodies.join("\n");
-    expect(joined).not.toMatch(/border-bottom(?:-color)?:\s*[^;]*--primary/);
-    expect(joined).not.toMatch(/border-bottom(?:-color)?:\s*[^;]*accent/);
-    expect(css).not.toMatch(/input:focus\s*\{\s*border-bottom(?:-color)?:\s*[^}]*--primary/);
+    expect(joined).not.toMatch(/border-bottom(?:-color)?:/);
+    expect(joined).not.toMatch(/--primary/);
   });
 
   it("keeps a low-contrast token focus (border or ring), not a 2px bottom accent", () => {
     const css = overlayCss();
-    const inputBody = ruleBodies(css, ".snote-search-panel input").join("\n");
+    const inputBody = declarationsFor(css, ".snote-search-panel input").join("\n");
     expect(inputBody).not.toMatch(/border-bottom:\s*2px/);
     const focusBodies = [
-      ...ruleBodies(css, ".snote-search-panel input:focus"),
-      ...ruleBodies(css, ".snote-search-panel input:focus-visible"),
+      ...declarationsFor(css, ".snote-search-panel input:focus"),
+      ...declarationsFor(css, ".snote-search-panel input:focus-visible"),
     ].join("\n");
+    expect(focusBodies.length).toBeGreaterThan(0);
     expect(focusBodies).toMatch(/border-color:\s*hsl\(var\(--(?:border|input)\)|box-shadow:/);
     expect(focusBodies).not.toMatch(/border-bottom-color:/);
   });
