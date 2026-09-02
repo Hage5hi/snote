@@ -29,12 +29,19 @@ production operation, not a migration to apply automatically after merge.
    encrypted payload is rejected, or the privacy/log review finds a raw
    locator, token, content value, or IP.
 5. Record the start/end timestamps, dashboards, staging migration evidence,
-   backup/PITR checkpoint, reviewer, and go/no-go decision in the tracking
-   issue. A passing local test run does not satisfy this production gate.
+   Lovable Cloud daily snapshot verification (findings §3c; PITR is not
+   available on this Tiny project), reviewer, and go/no-go decision in the
+   tracking issue. A passing local test run does not satisfy this production
+   gate.
 
 ## Atomic cutover order
 
-1. Take and verify a recoverable backup/PITR checkpoint.
+1. Verify the Lovable Cloud daily snapshot panel (see
+   `docs/security-findings.md` §3c). PITR is not available on this Tiny project.
+   Daily snapshot verify is done as of 2026-09-02; re-check the
+   latest snapshot timestamp immediately before any later `writes_enabled`
+   go. Do not treat snapshot verify as `capability_runtime_set`,
+   `writes_enabled`, canary, or 240 authorization.
 2. Record the actual planned cutover timestamp, add exactly 30 days, and set
    that canonical ISO timestamp as both Edge secret `LEGACY_SHARE_CUTOFF` and
    frontend build variable `VITE_LEGACY_SHARE_CUTOFF`. Missing or malformed
