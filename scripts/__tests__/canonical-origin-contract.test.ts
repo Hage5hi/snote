@@ -32,7 +32,7 @@ describe("canonical production origin", () => {
       /Production currently runs dual-mode `NotePage`\s+\(`legacyOnly=\{!canary\}`\)/,
     );
     expect(readme).toContain("`capabilityRoutesEnabled` true");
-    expect(readme).toContain("1f21777e");
+    expect(readme).toContain("d15aee5d");
     expect(readme).toContain("findings §3e");
     expect(readme).not.toMatch(/live origin `c5914c8e`/);
     expect(readme).not.toMatch(/live origin `386421e8`/);
@@ -42,6 +42,7 @@ describe("canonical production origin", () => {
     expect(readme).not.toMatch(/live origin `e39caacd`/);
     expect(readme).not.toMatch(/live origin `4c791861`/);
     expect(readme).not.toMatch(/live origin `92aa4e0d`/);
+    expect(readme).not.toMatch(/live origin `1f21777e`/);
     expect(readme).not.toMatch(/capability\s+routes disabled/);
     expect(readme).not.toMatch(/SPA canary remain off/);
     expect(readme).toMatch(/SQL 240 is not applied/);
@@ -87,7 +88,8 @@ describe("canonical production origin", () => {
     expect(findings).not.toContain("Origin is `e39caacd`");
     expect(findings).not.toContain("Origin is `4c791861`");
     expect(findings).not.toContain("Origin is `92aa4e0d`");
-    expect(findings).toContain("Origin is `1f21777e`");
+    expect(findings).not.toContain("Origin is `1f21777e`");
+    expect(findings).toContain("Origin is `d15aee5d`");
     expect(findings).toContain("capabilityRoutesEnabled` is true");
     expect(findings).toContain("VITE_CAPABILITY_ROUTES_ENABLED` is true");
     expect(findings).toMatch(
@@ -295,6 +297,18 @@ describe("canonical production origin", () => {
     expect(findings).toContain("templates");
     expect(findings).toContain("HomeLibraryPanel");
     expect(findings).toContain("HomeTemplatePicker");
+    expect(findings).toContain("2026-09-03 ~05:07 ICT");
+    expect(findings).toContain(
+      "d15aee5d243630abc7f143225b2ca9cdb44dd7b2",
+    );
+    expect(findings).toContain("2026-09-02T22:06:29.822Z");
+    expect(findings).toContain("1788386776564-qtmwh3o1");
+    expect(findings).toContain("2870a660");
+    expect(findings).toContain("#81");
+    expect(findings).toContain("firefox");
+    expect(findings).toContain("install dialog");
+    expect(findings).toContain("mousedown");
+    expect(findings).toContain("DialogTrigger");
     expect(findings).toContain("Kill switch unchanged");
     expect(findings).toMatch(
       /POST `\/functions\/v1\/legacy-note-open` `\{\}` still 410 `\{"found":false\}`/,
@@ -320,14 +334,14 @@ describe("canonical production origin", () => {
     expect(findings).not.toContain("PITR checkpoint is available");
   });
 
-  it("pins leftover client/Worker present-tense surfaces to live origin canary 1f21777e", () => {
+  it("pins leftover client/Worker present-tense surfaces to live origin canary d15aee5d", () => {
     const client = readFileSync("docs/capability-client.md", "utf8");
     const backend = readFileSync("docs/capability-backend.md", "utf8");
     const worker = readFileSync("cloudflare-worker/README.md", "utf8");
 
     expect(client).toContain("`capabilityRoutesEnabled: true`");
     expect(client).toContain("findings §3e");
-    expect(client).toContain("1f21777e");
+    expect(client).toContain("d15aee5d");
     expect(client).not.toContain("live origin `386421e8`");
     expect(client).not.toContain("live origin `4baa8966`");
     expect(client).not.toContain("live origin `7335fadc`");
@@ -335,6 +349,7 @@ describe("canonical production origin", () => {
     expect(client).not.toContain("live origin `e39caacd`");
     expect(client).not.toContain("live origin `4c791861`");
     expect(client).not.toContain("live origin `92aa4e0d`");
+    expect(client).not.toContain("live origin `1f21777e`");
     expect(client).not.toContain(
       "Production builds attest `capabilityRoutesEnabled: false`.",
     );
@@ -355,7 +370,7 @@ describe("canonical production origin", () => {
     expect(backend).not.toContain("(canary off)");
     expect(backend).toContain("dual-mode canary on");
 
-    expect(worker).toContain("`1f21777e`");
+    expect(worker).toContain("`d15aee5d`");
     expect(worker).toContain("`9fcc58bc`");
     expect(worker).toContain("b4d1a94e");
     expect(worker).not.toContain("Origin SPA hiện là `c5914c8e`");
@@ -366,6 +381,7 @@ describe("canonical production origin", () => {
     expect(worker).not.toContain("Origin SPA hiện là `e39caacd`");
     expect(worker).not.toContain("Origin SPA hiện là `4c791861`");
     expect(worker).not.toContain("Origin SPA hiện là `92aa4e0d`");
+    expect(worker).not.toContain("Origin SPA hiện là `1f21777e`");
     expect(worker).not.toContain("Origin SPA vẫn là `fe18302f`");
     expect(worker).toContain("không cho phép một deployment mới");
   });
@@ -428,6 +444,10 @@ describe("canonical production origin", () => {
     expect(cutover).toContain(
       "1f21777e7d562b4ae5f71bc7d72d7df44dd50557",
     );
+    expect(cutover).toContain("2026-09-03 ~05:07 ICT");
+    expect(cutover).toContain(
+      "d15aee5d243630abc7f143225b2ca9cdb44dd7b2",
+    );
     expect(cutover).not.toMatch(
       /live `deployedSha` `386421e87f7eac2864f1a40655a2b0255b4332d6`/,
     );
@@ -449,8 +469,11 @@ describe("canonical production origin", () => {
     expect(cutover).not.toMatch(
       /live `deployedSha` `92aa4e0db313f2abec12cc233175e5f86dd4b24a`/,
     );
-    expect(cutover).toMatch(
+    expect(cutover).not.toMatch(
       /live `deployedSha` `1f21777e7d562b4ae5f71bc7d72d7df44dd50557`/,
+    );
+    expect(cutover).toMatch(
+      /live `deployedSha` `d15aee5d243630abc7f143225b2ca9cdb44dd7b2`/,
     );
     expect(cutover).toContain("`capabilityRoutesEnabled` true");
     expect(cutover).toMatch(/Soak ≥48h started from\s+that first canary/);

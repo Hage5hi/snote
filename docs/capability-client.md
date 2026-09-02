@@ -15,7 +15,7 @@ throw `capability API unavailable` without fetching, and default Auth
 minting stays off. Ordinary Vite builds follow `.env.example`
 (`VITE_CAPABILITY_ROUTES_ENABLED=false`) and attest
 `capabilityRoutesEnabled: false`. Live production `build:release` attests
-`capabilityRoutesEnabled: true` (findings §3e; live origin `1f21777e`).
+`capabilityRoutesEnabled: true` (findings §3e; live origin `d15aee5d`).
 
 An optional encryption secret is a separate `key` fragment field. Capability tokens are exchanged for a short-lived `NoteSession` and are sent to Edge APIs only as an exact `Authorization: Bearer` header. They are never placed in a request path, query, JSON body, recent-note entry, telemetry event, or log.
 
