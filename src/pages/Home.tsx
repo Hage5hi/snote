@@ -15,8 +15,27 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
+import { HomeTagFilter } from "@/components/home/HomeTagFilter";
+import { HomeCollections } from "@/components/home/HomeCollections";
+import { HomeTemplatePicker } from "@/components/home/HomeTemplatePicker";
 import { softNavigate } from "@/lib/soft-navigate";
 import { isUsableSlug } from "@/lib/slug";
+import {
+  deleteCollection,
+  filterByIndexTags,
+  filterPinnedByIndexTags,
+  getCollections,
+  indexTagsBySlug,
+  parseHomeTagFilter,
+  upsertCollection,
+  type VirtualCollection,
+} from "@/lib/home-library";
+import {
+  getNoteIndexSnapshot,
+  hydrateNoteIndex,
+  subscribeNoteIndex,
+} from "@/lib/note-index";
+import { queueTemplateSeed, resolveTemplateMarkdown } from "@/lib/note-templates";
 
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
@@ -85,6 +104,11 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentNote[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
+  const [tagQuery, setTagQuery] = useState("");
+  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
+  const [collections, setCollections] = useState(() => getCollections());
+  const [templateId, setTemplateId] = useState("blank");
+  const [, setIndexTick] = useState(0);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
   const isMobile = useIsMobile();
   const { scene, committedScene, setScene } = useSceneTheme();
@@ -99,12 +123,16 @@ export default function Home() {
   useEffect(() => {
     setRecents(getRecents());
     setPinned(getPinned());
+    const unsub = subscribeNoteIndex(() => setIndexTick((n) => n + 1));
+    void hydrateNoteIndex();
+    return unsub;
   }, []);
 
   // Stay in sync with pins toggled elsewhere (NotePage's PinButton, Cmd+K).
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "note.pinned") setPinned(getPinned());
+      if (e.key === "note.collections") setCollections(getCollections());
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -163,6 +191,11 @@ export default function Home() {
     return () => window.clearTimeout(id);
   }, [isMobile]);
 
+  const seedAndOpen = (s: string) => {
+    queueTemplateSeed(s, resolveTemplateMarkdown(templateId, t));
+    softNavigate(navigate, `/${s}`);
+  };
+
   const open = (s: string) => {
     const trimmed = s.trim();
     if (!isUsableSlug(trimmed)) {
@@ -170,7 +203,35 @@ export default function Home() {
       return;
     }
     setError(null);
-    softNavigate(navigate, `/${trimmed}`);
+    seedAndOpen(trimmed);
+  };
+
+  const filter = parseHomeTagFilter(tagQuery);
+  const tagsBySlug = indexTagsBySlug(getNoteIndexSnapshot());
+  const visiblePinned = filterPinnedByIndexTags(pinned, tagsBySlug, filter);
+  const visibleRecents = filterByIndexTags(recents, tagsBySlug, filter).slice(0, 12);
+  const knownTags = [...new Set(
+    [...pinned, ...recents.map((row) => row.slug)].flatMap((s) => tagsBySlug.get(s) ?? []),
+  )].sort();
+  const hasLibrary = recents.length > 0 || pinned.length > 0;
+  const filterMiss = hasLibrary && filter.active && visiblePinned.length === 0 && visibleRecents.length === 0;
+
+  const onFilterChange = (value: string) => {
+    setTagQuery(value);
+    const next = parseHomeTagFilter(value);
+    const current = collections.find((row) => row.id === activeCollectionId);
+    if (current && current.tags.join("\0") !== next.tags.join("\0")) {
+      setActiveCollectionId(null);
+    }
+  };
+
+  const applyCollection = (collection: VirtualCollection | null) => {
+    if (!collection) {
+      setActiveCollectionId(null);
+      return;
+    }
+    setActiveCollectionId(collection.id);
+    setTagQuery(collection.tags.map((tag) => `#${tag}`).join(" "));
   };
 
   // Warm editor code on explicit hover/touch intent. Note content is not read
@@ -333,11 +394,12 @@ export default function Home() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => softNavigate(navigate, `/${randomSlug()}`)}
+            onClick={() => seedAndOpen(randomSlug())}
           >
             <Shuffle className="h-3.5 w-3.5" />
             {t("home.btn.random")}
           </Button>
+          <HomeTemplatePicker value={templateId} onChange={setTemplateId} />
           <span className="text-[11px] text-muted-foreground">
             {t("home.cmdk_hint_prefix")}<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">⌘K</kbd>
             {" / "}
@@ -347,7 +409,42 @@ export default function Home() {
 
         {!isExtensionContext && <InstallPrompt />}
 
-        {pinned.length > 0 && (
+        {hasLibrary && (
+          <div className="mt-10 space-y-4">
+            <HomeTagFilter value={tagQuery} onChange={onFilterChange} knownTags={knownTags} />
+            <HomeCollections
+              collections={collections}
+              activeId={activeCollectionId}
+              canSave={filter.tags.length > 0}
+              draftTags={filter.tags}
+              onSelect={applyCollection}
+              onSave={(name) => {
+                const saved = upsertCollection({ name, tags: filter.tags });
+                if (!saved) return;
+                setCollections(getCollections());
+                setActiveCollectionId(saved.id);
+              }}
+              onRename={(id, name) => {
+                const current = collections.find((row) => row.id === id);
+                if (!current) return;
+                const saved = upsertCollection({ id, name, tags: current.tags });
+                if (!saved) return;
+                setCollections(getCollections());
+              }}
+              onDelete={(id) => {
+                setCollections(deleteCollection(id));
+                if (activeCollectionId === id) {
+                  setActiveCollectionId(null);
+                }
+              }}
+            />
+            {filterMiss && (
+              <p className="text-sm text-muted-foreground">{t("home.filter.empty")}</p>
+            )}
+          </div>
+        )}
+
+        {visiblePinned.length > 0 && (
           <section
             className="sticky top-0 z-10 mt-10 -mx-4 bg-background/95 px-4 pb-3 pt-3 supports-[backdrop-filter]:bg-background/80 motion-safe:backdrop-blur"
             aria-label={t("home.pinned.aria")}
@@ -357,7 +454,7 @@ export default function Home() {
               {t("home.pinned.title")}
             </h2>
             <ul className="flex flex-wrap gap-1.5">
-              {pinned.map((s) => (
+              {visiblePinned.map((s) => (
                 <li
                   key={s}
                   className="group flex items-stretch overflow-hidden rounded-md border border-border bg-background motion-safe:transition motion-safe:duration-150 motion-safe:hover:-translate-y-px motion-safe:hover:border-foreground/20 motion-safe:hover:shadow-sm"
@@ -385,7 +482,7 @@ export default function Home() {
           </section>
         )}
 
-        {recents.length > 0 ? (
+        {visibleRecents.length > 0 ? (
           <section className="mt-12">
             <h2
               className="mb-3 text-xs font-medium uppercase tracking-wider"
@@ -414,7 +511,7 @@ export default function Home() {
                   : undefined
               }
             >
-              {recents.slice(0, 12).map((r) => (
+              {visibleRecents.map((r) => (
                 <li
                   key={r.slug}
                   className={cn(
@@ -481,7 +578,7 @@ export default function Home() {
               {t("home.recent.local_only")}
             </p>
           </section>
-        ) : (
+        ) : recents.length === 0 ? (
           <section className="mt-12 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-8 text-center">
             <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-background ring-1 ring-border">
               {/* Custom hand-drawn notebook+pen mark — gentler than the
@@ -519,7 +616,7 @@ export default function Home() {
               ))}
             </div>
           </section>
-        )}
+        ) : null}
       </main>
     </div>
   );

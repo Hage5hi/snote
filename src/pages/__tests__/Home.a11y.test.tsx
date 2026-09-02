@@ -64,5 +64,11 @@ describe("Home accessibility", () => {
       "focus-visible:opacity-100",
       "group-focus-within:opacity-100",
     );
+    expect(screen.getByLabelText("home.filter.aria")).toBeInTheDocument();
+    expect(screen.getByLabelText("home.templates.aria")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "home.collections.aria" })).toHaveAttribute(
+      "aria-label",
+      "home.collections.aria",
+    );
   });
 });

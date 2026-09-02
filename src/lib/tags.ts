@@ -29,6 +29,18 @@ export function extractTags(content: string): string[] {
   return [...set].sort();
 }
 
+/**
+ * Parse a user tag query (`#work meeting` or `work #meeting`) through the
+ * same extractor as note bodies. Tokens without `#` are hashed first so we
+ * never invent a second tag grammar.
+ */
+export function parseTagQuery(raw: string): string[] {
+  const tokens = raw.trim().split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return [];
+  const padded = tokens.map((tok) => (tok.startsWith("#") ? tok : `#${tok}`)).join(" ");
+  return extractTags(padded);
+}
+
 export function tagsEqual(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
