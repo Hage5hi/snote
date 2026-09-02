@@ -202,6 +202,40 @@ describe("canonical production origin", () => {
     expect(findings).not.toContain("PITR checkpoint is available");
   });
 
+  it("pins leftover client/Worker present-tense surfaces to live origin canary c5914c8e", () => {
+    const client = readFileSync("docs/capability-client.md", "utf8");
+    const backend = readFileSync("docs/capability-backend.md", "utf8");
+    const worker = readFileSync("cloudflare-worker/README.md", "utf8");
+
+    expect(client).toContain("`capabilityRoutesEnabled: true`");
+    expect(client).toContain("findings §3e");
+    expect(client).not.toContain(
+      "Production builds attest `capabilityRoutesEnabled: false`.",
+    );
+    expect(client).toContain(".env.example");
+    expect(client).toContain("`VITE_CAPABILITY_ROUTES_ENABLED=false`");
+    expect(client).toContain("`build:release`");
+    expect(client).toMatch(
+      /Missing, empty, or any\s+other value keeps both pages `legacyOnly`/,
+    );
+
+    expect(backend).toContain(
+      "Live writes remain the legacy `NotePage` path",
+    );
+    expect(backend).toContain("SQL 240 is not applied");
+    expect(backend).not.toMatch(
+      /Live writes remain the legacy `NotePage` path \(canary off\)/,
+    );
+    expect(backend).not.toContain("(canary off)");
+    expect(backend).toContain("dual-mode canary on");
+
+    expect(worker).toContain("`c5914c8e`");
+    expect(worker).toContain("`9fcc58bc`");
+    expect(worker).toContain("b4d1a94e");
+    expect(worker).not.toContain("Origin SPA vẫn là `fe18302f`");
+    expect(worker).toContain("không cho phép một deployment mới");
+  });
+
   it("pins the cutover backup gate to daily snapshots, not a PITR checkpoint", () => {
     const cutover = readFileSync(
       "docs/security/atomic-capability-cutover.md",
