@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import {
   CommandDialog,
@@ -65,6 +65,8 @@ export default function CommandPaletteBody({
   const [, setIndexTick] = useState(0);
   const navigate = useNavigate();
 
+  const appliedSeedNonce = useRef(0);
+
   useEffect(() => {
     if (!open) return;
     setRecents(getRecents());
@@ -83,8 +85,11 @@ export default function CommandPaletteBody({
   }, [open]);
 
   useEffect(() => {
-    if (open && seedNonce > 0 && seedQuery) setQuery(seedQuery);
-  }, [open, seedQuery, seedNonce]);
+    if (seedNonce <= 0 || !seedQuery) return;
+    if (appliedSeedNonce.current === seedNonce) return;
+    appliedSeedNonce.current = seedNonce;
+    setQuery(seedQuery);
+  }, [seedNonce, seedQuery]);
 
   const go = (slug: string) => {
     onOpenChange(false);
@@ -106,8 +111,10 @@ export default function CommandPaletteBody({
   const searching = trimmed.length > 0;
   const parsed = parseKnowledgeQuery(query);
   const hits = searching ? rankKnowledgeSearch(parsed, collectKnowledgeSearchDocs()) : [];
-  const hitSlugs = new Set(hits.map((hit) => hit.slug));
-  const isValidNew = isUsableSlug(trimmed) && parsed.tag === null && !hitSlugs.has(trimmed);
+  const isValidNew = searching
+    && hits.length === 0
+    && isUsableSlug(trimmed)
+    && parsed.tag === null;
   const pinnedSet = new Set(pinned);
   const pinnedItems = pinned
     .map((slug) => recents.find((r) => r.slug === slug) ?? { slug, lastOpenedAt: 0 })
@@ -142,7 +149,7 @@ export default function CommandPaletteBody({
         )}
         {indexReady && <CommandEmpty>{emptyCopy}</CommandEmpty>}
 
-        {searching && hits.length === 0 && createGroup}
+        {createGroup}
 
         {searching ? (
           hits.length > 0 && (
@@ -278,7 +285,6 @@ export default function CommandPaletteBody({
             </CommandGroup>
           </>
         )}
-        {searching && hits.length > 0 && createGroup}
       </CommandList>
     </CommandDialog>
   );

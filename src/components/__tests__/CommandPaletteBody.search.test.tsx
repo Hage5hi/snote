@@ -1,6 +1,6 @@
 import "fake-indexeddb/auto";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CommandPaletteBody from "../CommandPaletteBody";
@@ -8,8 +8,23 @@ import { hydrateNoteIndex, resetNoteIndexForTests, upsertPlaintextNote } from "@
 import { touchRecent } from "@/lib/recent-notes";
 
 vi.mock("@/components/ui/command", () => ({
-  CommandDialog: ({ open, children }: { open: boolean; children: ReactNode }) =>
-    open ? <div>{children}</div> : null,
+  CommandDialog: ({
+    open,
+    onOpenChange,
+    children,
+  }: {
+    open: boolean;
+    onOpenChange?: (open: boolean) => void;
+    children: ReactNode;
+  }) =>
+    open ? (
+      <div>
+        <button type="button" onClick={() => onOpenChange?.(false)}>
+          close-palette
+        </button>
+        {children}
+      </div>
+    ) : null,
   CommandInput: ({
     placeholder,
     value,
@@ -80,12 +95,7 @@ describe("CommandPaletteBody corpus search", () => {
     });
     expect(screen.getByText("Pasta night")).toBeInTheDocument();
     expect(screen.getByText(/\/recipes/)).toBeInTheDocument();
-    const title = screen.getByText("Pasta night");
-    const create = screen.queryByText("/pasta");
-    expect(create).toBeInTheDocument();
-    expect(
-      title.compareDocumentPosition(create as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(screen.queryByText("/pasta")).not.toBeInTheDocument();
   });
 
   it("filters to notes whose plaintext contains #tag and does not offer admin", () => {
@@ -133,5 +143,35 @@ describe("CommandPaletteBody corpus search", () => {
       </MemoryRouter>,
     );
     expect(screen.getByPlaceholderText("cmdk.placeholder")).toHaveValue("#work");
+  });
+
+  it("does not re-apply a TagChips seed when Cmd-K reopens the palette", () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <>
+          <button type="button" onClick={() => setOpen(true)}>
+            reopen
+          </button>
+          <CommandPaletteBody
+            open={open}
+            onOpenChange={setOpen}
+            onOpenHelp={vi.fn()}
+            seedQuery="#work"
+            seedNonce={1}
+          />
+        </>
+      );
+    }
+    render(
+      <MemoryRouter>
+        <Harness />
+      </MemoryRouter>,
+    );
+    expect(screen.getByPlaceholderText("cmdk.placeholder")).toHaveValue("#work");
+    fireEvent.click(screen.getByRole("button", { name: "close-palette" }));
+    expect(screen.queryByPlaceholderText("cmdk.placeholder")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "reopen" }));
+    expect(screen.getByPlaceholderText("cmdk.placeholder")).toHaveValue("");
   });
 });

@@ -38,17 +38,18 @@ export type KnowledgeSearchHit = {
   match: KnowledgeMatchKind;
 };
 
-const TAG_LEAD =
-  /^#([a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]{1,32})(?:\s+|$)(.*)$/;
+const TAG_TOKEN = "([a-zA-Z0-9_\\u00C0-\\u024F\\u1E00-\\u1EFF-]{1,32})";
+const TAG_HASH = new RegExp(`^#${TAG_TOKEN}(?:\\s+|$)(.*)$`);
+const TAG_PREFIX = new RegExp(`^tag:${TAG_TOKEN}(?:\\s+|$)(.*)$`, "i");
 
 const LIMIT = 50;
 
 export function parseKnowledgeQuery(raw: string): KnowledgeQuery {
   const trimmed = raw.trim();
-  if (trimmed === "#") {
+  if (trimmed === "#" || /^tag:$/i.test(trimmed)) {
     return { raw, text: "", tag: "" };
   }
-  const lead = trimmed.match(TAG_LEAD);
+  const lead = trimmed.match(TAG_HASH) ?? trimmed.match(TAG_PREFIX);
   if (lead) {
     return {
       raw,

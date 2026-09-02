@@ -49,6 +49,19 @@ describe("parseKnowledgeQuery", () => {
     });
   });
 
+  it("parses a leading tag:foo filter and leftover text the same way as #", () => {
+    expect(parseKnowledgeQuery("tag:foo")).toEqual({
+      raw: "tag:foo",
+      text: "",
+      tag: "foo",
+    });
+    expect(parseKnowledgeQuery("tag:Work leftover")).toEqual({
+      raw: "tag:Work leftover",
+      text: "leftover",
+      tag: "work",
+    });
+  });
+
   it("treats a lone # as an incomplete tag filter, not plain text", () => {
     expect(parseKnowledgeQuery("#")).toEqual({
       raw: "#",
@@ -62,12 +75,7 @@ describe("parseKnowledgeQuery", () => {
     });
   });
 
-  it("does not treat tag:foo or a mid-query hash as the filter syntax", () => {
-    expect(parseKnowledgeQuery("tag:foo")).toEqual({
-      raw: "tag:foo",
-      text: "tag:foo",
-      tag: null,
-    });
+  it("does not treat a mid-query hash as the filter syntax", () => {
     expect(parseKnowledgeQuery("see #work")).toEqual({
       raw: "see #work",
       text: "see #work",
@@ -137,6 +145,15 @@ describe("rankKnowledgeSearch", () => {
     expect(hits.map((hit) => hit.slug)).toEqual(["both"]);
   });
 
+  it("ANDs leftover text after tag:foo the same way as #", () => {
+    const hits = rankKnowledgeSearch(parseKnowledgeQuery("tag:Work leftover"), [
+      doc({ slug: "both", tags: ["work"], title: "Leftover notes" }),
+      doc({ slug: "tag-only", tags: ["work"], title: "Other" }),
+      doc({ slug: "text-only", title: "Leftover notes" }),
+    ]);
+    expect(hits.map((hit) => hit.slug)).toEqual(["both"]);
+  });
+
   it("matches slug, title, heading, and preview/snippet", () => {
     const docs = [
       doc({ slug: "meeting-notes", title: "Ignore" }),
@@ -156,6 +173,7 @@ describe("rankKnowledgeSearch", () => {
 
   it("returns nothing while a tag name is still incomplete", () => {
     expect(rankKnowledgeSearch(parseKnowledgeQuery("#"), corpus)).toEqual([]);
+    expect(rankKnowledgeSearch(parseKnowledgeQuery("tag:"), corpus)).toEqual([]);
   });
 });
 
