@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { handlePreviewChromeClick, labelPreviewChrome } from "../preview-chrome";
+import { handlePreviewChromeClick, labelPreviewChrome, previewNoteSlugFromHref } from "../preview-chrome";
 
 describe("preview chrome", () => {
   afterEach(() => {
@@ -59,5 +59,36 @@ describe("preview chrome", () => {
     await handlePreviewChromeClick(event, host, { copy: "Copy", copied: "Copied" });
     expect(heading.scrollIntoView).toHaveBeenCalled();
     expect(window.location.hash).toBe(originalHash);
+  });
+
+  it("maps expanded wiki hrefs to note slugs", () => {
+    expect(previewNoteSlugFromHref("/hop-team", "https://note.syrin.online")).toBe("hop-team");
+    expect(previewNoteSlugFromHref("/hello%20world", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("/privacy", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("/s", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("/note", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("https://example.com/x", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("/foo.md", "https://note.syrin.online")).toBeNull();
+  });
+
+  it("dispatches in-app wiki navigation for same-origin preview links", async () => {
+    const seen: string[] = [];
+    const onNav = (event: Event) => {
+      seen.push((event as CustomEvent<{ slug: string }>).detail.slug);
+    };
+    window.addEventListener("snotes:wiki-nav", onNav);
+    document.body.innerHTML = `
+      <div id="host">
+        <p><a href="/hop-team">Họp team</a></p>
+      </div>
+    `;
+    const host = document.getElementById("host")!;
+    const link = host.querySelector("a") as HTMLAnchorElement;
+    const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+    Object.defineProperty(event, "target", { value: link });
+    await handlePreviewChromeClick(event, host, { copy: "Copy", copied: "Copied" });
+    window.removeEventListener("snotes:wiki-nav", onNav);
+    expect(event.defaultPrevented).toBe(true);
+    expect(seen).toEqual(["hop-team"]);
   });
 });

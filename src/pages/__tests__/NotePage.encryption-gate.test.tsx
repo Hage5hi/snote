@@ -21,6 +21,7 @@ const harness = vi.hoisted(() => ({
   unlockRender: vi.fn(),
   unlockProps: vi.fn(),
   idbConstruct: vi.fn(),
+  upsertPlaintextNote: vi.fn(),
   docAcquire: vi.fn(),
   docRelease: vi.fn(),
   providerConstruct: vi.fn(),
@@ -216,6 +217,11 @@ vi.mock("@/lib/snapshots", () => ({
 }));
 vi.mock("@/lib/yjs/identity", () => ({ getIdentity: () => ({ name: "Test", color: "#000" }) }));
 vi.mock("@/lib/wiki-link", () => ({ WIKI_NAV_EVENT: "wiki-nav" }));
+vi.mock("@/lib/note-index", () => ({
+  hydrateNoteIndex: () => Promise.resolve(),
+  rememberMetadata: () => {},
+  upsertPlaintextNote: (...args: unknown[]) => harness.upsertPlaintextNote(...args),
+}));
 vi.mock("@/lib/ext-context", () => ({ isExtensionContext: false }));
 vi.mock("y-indexeddb", () => ({
   IndexeddbPersistence: class {
@@ -400,6 +406,7 @@ describe("NotePage encryption gate", () => {
     harness.unlockRender.mockClear();
     harness.unlockProps.mockClear();
     harness.idbConstruct.mockClear();
+    harness.upsertPlaintextNote.mockClear();
     harness.docAcquire.mockClear();
     harness.docRelease.mockClear();
     harness.providerConstruct.mockClear();
@@ -483,6 +490,12 @@ describe("NotePage encryption gate", () => {
       expect(harness.providerConstruct).not.toHaveBeenCalled();
       expect(harness.idbConstruct).not.toHaveBeenCalled();
       await waitFor(() => expect(harness.capabilityProviderConnect).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(harness.upsertPlaintextNote).toHaveBeenCalled());
+      expect(
+        harness.upsertPlaintextNote.mock.calls.every(
+          (call) => (call[2] as { durable?: boolean } | undefined)?.durable === false,
+        ),
+      ).toBe(true);
       expect(harness.maybeSaveSnapshot).not.toHaveBeenCalled();
       expect(harness.recordOnSuddenDelete).not.toHaveBeenCalled();
       expect(harness.docAcquire).toHaveBeenCalledWith(
@@ -736,6 +749,8 @@ describe("NotePage encryption gate", () => {
       expect(view.getByRole("dialog", { name: "Unlock encrypted note secret" })).toBeInTheDocument(),
     );
     expect(getEncryptionPinState("secret")).toBe("pinned");
+    expect(harness.idbConstruct).not.toHaveBeenCalled();
+    expect(harness.upsertPlaintextNote).not.toHaveBeenCalled();
   });
 
   it("still mounts a fresh unpinned plaintext note", async () => {
@@ -750,6 +765,12 @@ describe("NotePage encryption gate", () => {
     expect(harness.docAcquire).toHaveBeenCalledWith("secret");
     expect(harness.providerConstruct).toHaveBeenCalledWith("secret");
     expect(harness.idbConstruct).toHaveBeenCalledWith("note:secret");
+    await waitFor(() => expect(harness.upsertPlaintextNote).toHaveBeenCalled());
+    expect(
+      harness.upsertPlaintextNote.mock.calls.every(
+        (call) => (call[2] as { durable?: boolean } | undefined)?.durable === true,
+      ),
+    ).toBe(true);
     expect(harness.capabilityOpenSession).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(harness.topbarProps).toHaveBeenLastCalledWith(
@@ -1167,6 +1188,13 @@ describe("NotePage encryption gate", () => {
     const view = renderEmbedded();
     await waitFor(() => expect(view.getByTestId("editor")).toBeInTheDocument());
     await waitFor(() => expect(harness.providerConnect).toHaveBeenCalledTimes(1));
+    expect(harness.idbConstruct).not.toHaveBeenCalled();
+    await waitFor(() => expect(harness.upsertPlaintextNote).toHaveBeenCalled());
+    expect(
+      harness.upsertPlaintextNote.mock.calls.every(
+        (call) => (call[2] as { durable?: boolean } | undefined)?.durable === false,
+      ),
+    ).toBe(true);
     const constructsBeforeRelock = harness.providerConstruct.mock.calls.length;
     const acquiresBeforeRelock = harness.docAcquire.mock.calls.length;
     const releasesBeforeRelock = harness.docRelease.mock.calls.length;

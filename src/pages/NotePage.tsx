@@ -19,6 +19,7 @@ import type { NoteSession } from "@/lib/capability/client";
 import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } from "@/lib/capability/url";
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
+import { hydrateNoteIndex, rememberMetadata, upsertPlaintextNote } from "@/lib/note-index";
 import type { PresenceUser } from "@/components/note/PresenceDots";
 import { maybeSaveSnapshot, recordOnSuddenDelete } from "@/lib/snapshots";
 import { useZenMode } from "@/hooks/use-zen-mode";
@@ -637,12 +638,18 @@ export default function NotePage({
 
     const identity = getIdentity();
     if (!embedSlug && !capabilityAccess) touchRecent(slug);
+    rememberMetadata(slug);
+    void hydrateNoteIndex();
 
     // y-indexeddb stores Yjs structs as plaintext. Capability outbox replaces
     // it for secure notes, and encrypted legacy notes must not mount it.
     const idb = !capabilityAccess && !encMeta.isEncrypted
       ? new IndexeddbPersistence(`note:${slug}`, doc)
       : null;
+    // Knowledge index: live Y.Text after this gate only. Never scan y-indexeddb
+    // (`note:${slug}`) for encrypted notes. Persist derived graphs only when
+    // this note is already plaintext on device.
+    const indexDurable = !encMeta.isEncrypted && !capabilityAccess;
     let disposed = false;
 
     
@@ -675,6 +682,7 @@ export default function NotePage({
 
     // Debounced counts: avoid string scan + setState on every keystroke.
     let countTimer: number | null = null;
+    let indexTimer: number | null = null;
     const updateCounts = () => {
       const text = ytext.toString();
       const chars = text.length;
@@ -697,8 +705,13 @@ export default function NotePage({
     const scheduleCounts = () => {
       if (countTimer) window.clearTimeout(countTimer);
       countTimer = window.setTimeout(updateCounts, COUNT_DEBOUNCE_MS);
+      if (indexTimer) window.clearTimeout(indexTimer);
+      indexTimer = window.setTimeout(() => {
+        upsertPlaintextNote(slug, ytext.toString(), { durable: indexDurable });
+      }, 200);
     };
     updateCounts();
+    upsertPlaintextNote(slug, ytext.toString(), { durable: indexDurable });
     ytext.observe(scheduleCounts);
 
     (idb?.whenSynced ?? Promise.resolve()).then(() => {
@@ -711,6 +724,7 @@ export default function NotePage({
         .catch((e) => console.warn("Provider connect failed", e));
       prevContent = ytext.toString();
       updateCounts();
+      upsertPlaintextNote(slug, prevContent, { durable: indexDurable });
       if (snapshotsEnabled) {
         void maybeSaveSnapshot(slug, prevContent, snapshotProtection);
       }
@@ -753,6 +767,7 @@ export default function NotePage({
       if (snapshotsEnabled) document.removeEventListener("visibilitychange", onVisibility);
       if (snapshotTimer !== null) window.clearInterval(snapshotTimer);
       if (countTimer) window.clearTimeout(countTimer);
+      if (indexTimer) window.clearTimeout(indexTimer);
       ytext.unobserve(scheduleCounts);
       
       unsubAwareness();
@@ -1003,10 +1018,12 @@ export default function NotePage({
 
       <OutlineSidebar
         id="note-outline"
+        slug={slug}
         doc={doc}
         open={outlineOpen}
         onOpenChange={setOutlineOpen}
         onJump={(line) => editorRef.current?.jumpToLine(line)}
+        onOpenNote={(target) => navigate("/" + target)}
         triggerRef={outlineTriggerRef}
       />
 

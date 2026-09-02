@@ -127,4 +127,43 @@ describe("SplitView responsive behavior", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("replaces the active pane when a wiki target is not already open", async () => {
+    renderSplit();
+    await screen.findByText("note:alpha");
+    act(() => {
+      window.dispatchEvent(new CustomEvent("snotes:wiki-nav", { detail: { slug: "recipes" } }));
+    });
+    expect(await screen.findByText("note:recipes")).toBeInTheDocument();
+    expect(screen.getByText("note:beta")).toBeInTheDocument();
+    expect(screen.queryByText("note:alpha")).not.toBeInTheDocument();
+    expect(screen.queryByText("home")).not.toBeInTheDocument();
+  });
+
+  it("focuses an already-open pane instead of leaving the split", async () => {
+    const { container } = renderSplit();
+    await screen.findByText("note:alpha");
+    act(() => {
+      window.dispatchEvent(new CustomEvent("snotes:wiki-nav", { detail: { slug: "beta" } }));
+    });
+    expect(screen.getByText("note:alpha")).toBeInTheDocument();
+    expect(screen.getByText("note:beta")).toBeInTheDocument();
+    expect(screen.queryByText("home")).not.toBeInTheDocument();
+    expect(container.querySelector("[data-split-view-slug='beta']")).toHaveAttribute(
+      "data-split-active",
+      "true",
+    );
+  });
+
+  it("replaces the pane the user last activated, not always the first", async () => {
+    const { container } = renderSplit();
+    await screen.findByText("note:alpha");
+    fireEvent.pointerDown(container.querySelector("[data-split-view-slug='beta']")!);
+    act(() => {
+      window.dispatchEvent(new CustomEvent("snotes:wiki-nav", { detail: { slug: "recipes" } }));
+    });
+    expect(await screen.findByText("note:recipes")).toBeInTheDocument();
+    expect(screen.getByText("note:alpha")).toBeInTheDocument();
+    expect(screen.queryByText("note:beta")).not.toBeInTheDocument();
+  });
 });

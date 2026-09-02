@@ -41,6 +41,26 @@ describe("i18n dict", () => {
     }
   });
 
+  it("knowledge panel copy is present and Vietnamese is not a copy of English", () => {
+    const keys = [
+      "knowledge.backlinks",
+      "knowledge.backlinks_empty",
+      "knowledge.dead_count",
+      "knowledge.orphan_hint",
+      "knowledge.open_note",
+    ] as const;
+    for (const key of keys) {
+      expect(dict.en[key]).toBeTruthy();
+      expect(dict.vi[key]).toBeTruthy();
+      expect(dict.vi[key]).not.toBe(dict.en[key]);
+    }
+    expect(dict.en["knowledge.dead_count"]).toContain("{n}");
+    expect(dict.vi["knowledge.dead_count"]).toContain("{n}");
+    expect(dict.en["knowledge.open_note"]).toContain("{slug}");
+    expect(dict.vi["knowledge.open_note"]).toContain("{slug}");
+    expect(dict.vi["knowledge.backlinks_empty"]).toMatch(/trỏ tới đây/i);
+  });
+
   it("encryption metadata unavailable copy exists in every locale", () => {
     const expected: Record<(typeof SUPPORTED_LANGS)[number], {
       title: string;
