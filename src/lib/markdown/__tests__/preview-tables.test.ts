@@ -87,7 +87,7 @@ describe("preview markdown tables", () => {
     expect(html).toContain('href="/daily"');
     expect(html).toContain('data-mermaid="graph%20TD"');
     expect(html).toContain("data-katex=");
-    const checkboxes = html.match(/<input\b[^>]*type="checkbox"[^>]*>/g) ?? [];
+    const checkboxes: string[] = html.match(/<input\b[^>]*type="checkbox"[^>]*>/g) ?? [];
     expect(checkboxes.length).toBe(2);
     expect(checkboxes.every((tag) => tag.includes("disabled"))).toBe(true);
   });
