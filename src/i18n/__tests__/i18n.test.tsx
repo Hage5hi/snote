@@ -61,6 +61,33 @@ describe("i18n dict", () => {
     expect(dict.vi["knowledge.backlinks_empty"]).toMatch(/trỏ tới đây/i);
   });
 
+  it("command palette search copy is present and Vietnamese is not a copy of English", () => {
+    const keys = [
+      "cmdk.placeholder",
+      "cmdk.indexing",
+      "cmdk.empty",
+      "cmdk.empty_tag",
+      "cmdk.empty_tag_hint",
+      "cmdk.group_notes",
+      "cmdk.group_tag",
+      "tag.open_filter",
+    ] as const;
+    for (const key of keys) {
+      expect(dict.en[key]).toBeTruthy();
+      expect(dict.vi[key]).toBeTruthy();
+      expect(dict.vi[key]).not.toBe(dict.en[key]);
+    }
+    expect(dict.en["cmdk.placeholder"]).toMatch(/#tag/);
+    expect(dict.vi["cmdk.placeholder"]).toMatch(/#tag/);
+    expect(dict.en["cmdk.empty_tag"]).toContain("{tag}");
+    expect(dict.vi["cmdk.empty_tag"]).toContain("{tag}");
+    expect(dict.en["cmdk.group_tag"]).toContain("{tag}");
+    expect(dict.vi["cmdk.group_tag"]).toContain("{tag}");
+    expect(dict.vi["cmdk.indexing"]).toMatch(/chỉ mục/i);
+    expect(dict.en["tag.open_filter"]).not.toMatch(/admin/i);
+    expect(dict.vi["tag.open_filter"]).not.toMatch(/admin/i);
+  });
+
   it("encryption metadata unavailable copy exists in every locale", () => {
     const expected: Record<(typeof SUPPORTED_LANGS)[number], {
       title: string;

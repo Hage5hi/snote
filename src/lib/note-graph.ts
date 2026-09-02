@@ -1,4 +1,5 @@
 import { parseOutline } from "@/lib/outline";
+import { extractTags } from "@/lib/tags";
 import { extractWikiLinks } from "@/lib/wiki-link";
 
 export type NoteGraphRecord = {
@@ -6,6 +7,7 @@ export type NoteGraphRecord = {
   title?: string;
   headings: string[];
   outgoingLinks: string[];
+  tags: string[];
 };
 
 const MAX_HEADINGS = 40;
@@ -24,7 +26,7 @@ export function buildNoteGraphRecord(slug: string, content: string): NoteGraphRe
     outgoing.push(link.slug);
     if (outgoing.length >= MAX_OUTGOING) break;
   }
-  return { slug, title, headings, outgoingLinks: outgoing };
+  return { slug, title, headings, outgoingLinks: outgoing, tags: extractTags(content) };
 }
 
 export function backlinksTo(

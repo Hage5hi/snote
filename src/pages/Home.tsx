@@ -339,7 +339,9 @@ export default function Home() {
             {t("home.btn.random")}
           </Button>
           <span className="text-[11px] text-muted-foreground">
-            {t("home.cmdk_hint_prefix")}<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">⌘K</kbd>{t("home.cmdk_hint_suffix")}
+            {t("home.cmdk_hint_prefix")}<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">⌘K</kbd>
+            {" / "}
+            <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">⌘P</kbd>{t("home.cmdk_hint_suffix")}
           </span>
         </div>
 

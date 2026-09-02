@@ -18,6 +18,7 @@ describe("buildNoteGraphRecord", () => {
       title: "Daily notes",
       headings: ["Daily notes", "Setup"],
       outgoingLinks: ["alpha", "beta"],
+      tags: [],
     });
   });
 

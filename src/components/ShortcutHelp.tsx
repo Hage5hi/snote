@@ -32,6 +32,7 @@ export function ShortcutHelp({ open, onOpenChange }: ShortcutHelpProps) {
       title: t("shortcuts.section.nav"),
       items: [
         { keys: [Mod, "K"], label: t("shortcuts.label.cmdk") },
+        { keys: [Mod, "P"], label: t("shortcuts.label.cmdk") },
         { keys: ["?"], label: t("shortcuts.label.help") },
         { keys: [Mod, "\\"], label: t("shortcuts.label.outline_toggle") },
         { keys: ["F11"], label: t("shortcuts.label.zen_toggle") },
@@ -83,7 +84,7 @@ export function ShortcutHelp({ open, onOpenChange }: ShortcutHelpProps) {
               </h3>
               <ul className="space-y-1.5">
                 {section.items.map((item) => (
-                  <li key={item.label} className="flex items-center justify-between gap-3 text-sm">
+                  <li key={`${item.label}-${item.keys.join("-")}`} className="flex items-center justify-between gap-3 text-sm">
                     <span className="text-foreground">{item.label}</span>
                     <span className="flex items-center gap-1">
                       {item.keys.map((k, i) => (

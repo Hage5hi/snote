@@ -29,6 +29,14 @@ vi.mock("@/components/ui/command", () => ({
   CommandSeparator: () => null,
 }));
 
+vi.mock("@/lib/note-index", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/note-index")>();
+  return {
+    ...actual,
+    hydrateNoteIndex: () => Promise.resolve(),
+    isNoteIndexHydrated: () => true,
+  };
+});
 vi.mock("@/lib/recent-notes", () => ({
   getPinned: () => [],
   getRecents: () => [],

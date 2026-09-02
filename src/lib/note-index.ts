@@ -28,6 +28,12 @@ import { emitWikiKnownChange, setWikiLinkDeadLookup } from "@/lib/wiki-link";
 export type NoteIndexEntry = NoteGraphRecord & {
   updatedAt: number;
   source: "plaintext" | "metadata";
+  /**
+   * Short body excerpt from live Y.Text this session. Never written to the
+   * knowledge IDB store. Recents preview stays in localStorage and is attached
+   * only at search time.
+   */
+  snippet?: string;
 };
 
 const DB_NAME = "snote-knowledge-index";
@@ -67,6 +73,10 @@ export function getNoteIndexSnapshot(): NoteIndexEntry[] {
   return [...memory.values()];
 }
 
+export function isNoteIndexHydrated(): boolean {
+  return hydrated;
+}
+
 export function getKnownSlugs(): Set<string> {
   return new Set(memory.keys());
 }
@@ -90,7 +100,8 @@ function graphUnchanged(prev: NoteIndexEntry | undefined, next: NoteIndexEntry):
   return prev.source === next.source
     && prev.title === next.title
     && prev.headings.join("\0") === next.headings.join("\0")
-    && prev.outgoingLinks.join("\0") === next.outgoingLinks.join("\0");
+    && prev.outgoingLinks.join("\0") === next.outgoingLinks.join("\0")
+    && (prev.tags ?? []).join("\0") === (next.tags ?? []).join("\0");
 }
 
 /** Remember a slug (recents/pins / current note) without storing body or title. */
@@ -104,6 +115,7 @@ export function rememberMetadata(slug: string) {
     title: prev?.title,
     headings: prev?.headings ?? [],
     outgoingLinks: prev?.outgoingLinks ?? [],
+    tags: prev?.tags ?? [],
     updatedAt: Date.now(),
     source: "metadata",
   };
@@ -139,16 +151,30 @@ export function upsertPlaintextNote(
   }
   if (trimmed) seenNonEmpty.add(trimmedSlug);
   const graph = buildNoteGraphRecord(trimmedSlug, content);
+  const prev = memory.get(trimmedSlug);
   const next: NoteIndexEntry = {
     ...graph,
     updatedAt: Date.now(),
     source: "plaintext",
+    snippet: sessionSnippet(content),
   };
-  if (graphUnchanged(memory.get(trimmedSlug), next)) return;
+  if (graphUnchanged(prev, next) && prev?.snippet === next.snippet) return;
   memory.set(trimmedSlug, next);
+  if (graphUnchanged(prev, next)) {
+    notify();
+    return;
+  }
   trimMemory();
   notify();
   if (opts?.durable) queuePersist(next);
+}
+
+const MAX_SNIPPET = 180;
+
+function sessionSnippet(content: string): string | undefined {
+  const text = content.replace(/\s+/g, " ").trim();
+  if (!text) return undefined;
+  return text.length > MAX_SNIPPET ? `${text.slice(0, MAX_SNIPPET).trimEnd()}…` : text;
 }
 
 function trimMemory() {
@@ -173,6 +199,7 @@ function mergeHomeMetadata() {
       slug: recent.slug,
       headings: [],
       outgoingLinks: [],
+      tags: [],
       updatedAt: recent.lastOpenedAt,
       source: "metadata",
     });
@@ -183,6 +210,7 @@ function mergeHomeMetadata() {
       slug,
       headings: [],
       outgoingLinks: [],
+      tags: [],
       updatedAt: Date.now(),
       source: "metadata",
     });
@@ -205,7 +233,11 @@ export async function hydrateNoteIndex(): Promise<void> {
         const prev = memory.get(row.slug);
         if (prev?.source === "plaintext" && row.source !== "plaintext") continue;
         if (prev && prev.updatedAt > row.updatedAt) continue;
-        memory.set(row.slug, row);
+        memory.set(row.slug, {
+          ...row,
+          tags: row.tags ?? [],
+          snippet: prev?.snippet,
+        });
         changed = true;
       }
     } catch {
@@ -293,7 +325,7 @@ async function persist(entry: NoteIndexEntry) {
       const tx = db.transaction(STORE, "readwrite");
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
-      tx.objectStore(STORE).put(entry);
+      tx.objectStore(STORE).put(persistableRow(entry));
     });
   } catch {
     /* private-mode / blocked IDB — memory still holds the graph */
@@ -325,6 +357,11 @@ async function loadAll(): Promise<NoteIndexEntry[]> {
     };
     request.onerror = () => reject(request.error);
   });
+}
+
+function persistableRow(entry: NoteIndexEntry): Omit<NoteIndexEntry, "snippet"> {
+  const { snippet: _snippet, ...row } = entry;
+  return row;
 }
 
 function isIndexEntry(value: unknown): value is NoteIndexEntry {
