@@ -165,4 +165,17 @@ describe("preview-worker-client", () => {
     expect(html).not.toContain("<title>");
     expect(html).toContain('data-mermaid="graph%20TD"');
   });
+
+  it("keeps table wrappers, copy buttons, and heading anchors through sanitization", async () => {
+    const { renderOnMainThread } = await loadClient();
+    const html = await renderOnMainThread(
+      "# Owner\n\n| a | b |\n| --- | --- |\n| 42.661 | `ok` |\n\n```js\nconst x = 1;\n```\n",
+    );
+    expect(html).toContain('class="md-table-wrap"');
+    expect(html).toContain('id="preview-h-owner"');
+    expect(html).not.toContain('id="owner"');
+    expect(html).toContain("data-md-copy");
+    expect(html).toContain("data-preview-heading");
+    expect(html).toContain("42.661");
+  });
 });

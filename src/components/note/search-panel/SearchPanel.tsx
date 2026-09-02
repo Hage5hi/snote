@@ -34,6 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { countSearchMatches, selectAllSearchMatches } from "./match-count";
 import { replaceOpenField, setReplaceOpen } from "./replace-open";
+import { saveSearchFlags } from "./search-flags";
 
 const SEARCH_PANEL_TEST_ID = "note-search-panel";
 
@@ -174,6 +175,17 @@ export function SearchPanel({ view }: { view: EditorView }) {
       regexp: patch.regexp ?? current.regexp,
       wholeWord: patch.wholeWord ?? current.wholeWord,
     });
+    if (
+      next.caseSensitive !== current.caseSensitive
+      || next.regexp !== current.regexp
+      || next.wholeWord !== current.wholeWord
+    ) {
+      saveSearchFlags({
+        caseSensitive: next.caseSensitive,
+        regexp: next.regexp,
+        wholeWord: next.wholeWord,
+      });
+    }
     if (!next.eq(current)) view.dispatch({ effects: setSearchQuery.of(next) });
   };
 
@@ -237,7 +249,7 @@ export function SearchPanel({ view }: { view: EditorView }) {
         data-replace-open={replaceOpen ? "true" : "false"}
         aria-label={t("shortcuts.label.find")}
         onKeyDown={onPanelKeyDown}
-        className="snote-search-panel relative mx-auto flex w-[min(40rem,calc(100%-1.5rem))] flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 text-card-foreground shadow-lg backdrop-blur-sm"
+        className="snote-search-panel relative ml-auto flex min-w-0 w-[min(26rem,100%)] max-w-full flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 text-card-foreground shadow-lg backdrop-blur-sm"
       >
         <div className="flex items-center gap-1">
           <IconButton
@@ -384,9 +396,6 @@ export function SearchPanel({ view }: { view: EditorView }) {
               onToggle={() => commit({ wholeWord: !query.wholeWord })}
             >
               {t("editor.search.by_word")}
-            </OptionItem>
-            <OptionItem checked disabled onToggle={() => {}}>
-              {t("editor.search.wrap")}
             </OptionItem>
             <div className="my-1 h-px bg-muted" role="separator" />
             <button

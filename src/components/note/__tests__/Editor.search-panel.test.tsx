@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { EditorView } from "@codemirror/view";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { afterEach, describe, expect, it } from "vitest";
@@ -134,5 +135,33 @@ describe("Editor find/replace wiring", () => {
     fireEvent.keyDown(foreign, { key: "f", ctrlKey: true });
     expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
     foreign.remove();
+  });
+
+  it("finds the next match with F3 after the panel is closed", async () => {
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "alpha beta alpha");
+    const awareness = new Awareness(doc);
+    const { container } = render(<Editor doc={doc} awareness={awareness} />);
+    await waitFor(() => expect(container.querySelector(".cm-content")).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    const find = await waitFor(() => {
+      const el = container.querySelector("[data-testid='note-search-find']") as HTMLInputElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.input(find, { target: { value: "alpha" } });
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
+    });
+
+    const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement);
+    expect(view).toBeTruthy();
+    view!.dispatch({ selection: { anchor: 0 } });
+    fireEvent.keyDown(window, { key: "F3" });
+    expect(view!.state.selection.main.from).toBe(0);
+    fireEvent.keyDown(window, { key: "F3" });
+    expect(view!.state.selection.main.from).toBe(11);
   });
 });

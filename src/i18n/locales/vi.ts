@@ -54,6 +54,9 @@ const vi: Dictionary = {
 
     "menu.help": "Trợ giúp",
     "preview.empty": "Note trống. Bắt đầu gõ để xem preview.",
+    "preview.copy_code": "Sao chép",
+    "preview.copied_code": "Đã sao chép",
+    "preview.heading_anchor": "Tới heading",
     "note.goal_reached": "🎯 Đạt mục tiêu!",
     "toast.synced_remote": "Đã đồng bộ từ thiết bị khác",
     "toast.synced_remote_desc": "Hợp nhất {bytes} byte mới từ cloud.",

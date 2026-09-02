@@ -22,7 +22,7 @@ import { EditorView, keymap, highlightActiveLine, drawSelection } from "@codemir
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
-import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { findNext, findPrevious, searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { editorSearch, openReplacePanel, toggleFindPanel } from "@/components/note/search-panel";
 import { completionKeymap } from "@codemirror/autocomplete";
 import { yCollab } from "y-codemirror.next";
@@ -157,7 +157,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
           },
           ".cm-scroller": {
             fontFamily: "inherit",
-            padding: "24px max(24px, calc((100% - 760px) / 2))",
+            paddingTop: "calc(24px + var(--snote-search-gutter, 0px))",
+            paddingRight: "max(24px, calc((100% - 760px) / 2))",
+            paddingBottom: "24px",
+            paddingLeft: "max(24px, calc((100% - 760px) / 2))",
             lineHeight: "1.7",
           },
           ".cm-content": { caretColor: "hsl(var(--foreground))" },
@@ -187,7 +190,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       const openReplaceCtrlH = e.ctrlKey && !e.metaKey && key === "h" && !e.shiftKey && !e.altKey;
       // Cmd+Option+F — CodeMirror's macOS replace chord.
       const openReplaceMac = e.metaKey && e.altKey && key === "f" && !e.shiftKey;
-      if (!findChord && !openReplaceCtrlH && !openReplaceMac) return;
+      const findNextChord = e.key === "F3" && !e.metaKey && !e.ctrlKey && !e.altKey;
+      if (!findChord && !openReplaceCtrlH && !openReplaceMac && !findNextChord) return;
 
       const inThisSearchPanel = Boolean(
         el && view.dom.contains(el) && el.closest(".snote-search-panel"),
@@ -198,6 +202,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
       e.preventDefault();
       if (findChord) {
         toggleFindPanel(view);
+        return;
+      }
+      if (findNextChord) {
+        if (e.shiftKey) findPrevious(view);
+        else findNext(view);
         return;
       }
       view.focus();
