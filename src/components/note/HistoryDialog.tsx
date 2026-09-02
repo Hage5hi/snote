@@ -21,7 +21,7 @@ import {
   type SnapshotKind,
   type SnapshotProtection,
 } from "@/lib/snapshots";
-import { applySelectedHunksToYText, clusterSnapshots, diffHunks } from "@/lib/snapshot-history";
+import { applySelectedHunksToYText, clusterSnapshots, diffHunks, LIVE_TEXT_MISMATCH } from "@/lib/snapshot-history";
 import { Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { SnapshotDiff } from "./SnapshotDiff";
@@ -83,7 +83,15 @@ export function HistoryDialog({
     month: 30 * 24 * 3600_000,
   };
   const filteredItems = filterSnapshots(items, { rangeMs: rangeMs[range], kind });
-  const bursts = useMemo(() => clusterSnapshots(filteredItems), [filteredItems]);
+  const liveText = doc.getText("content").toString();
+  const bursts = useMemo(
+    () =>
+      clusterSnapshots(filteredItems, {
+        current: { ts: Date.now(), content: liveText },
+        includeDistantCurrent: false,
+      }),
+    [filteredItems, liveText],
+  );
 
   const handleClear = async () => {
     const ok = window.confirm(t("history.confirm_clear", { n: items.length }));
@@ -149,9 +157,12 @@ export function HistoryDialog({
         hunks,
         selectedIds,
       });
-    } catch {
-      toast({ title: t("history.hunk.stale") });
-      return;
+    } catch (err) {
+      if (err instanceof Error && err.message === LIVE_TEXT_MISMATCH) {
+        toast({ title: t("history.hunk.stale") });
+        return;
+      }
+      throw err;
     }
     toast({
       title: t("history.toast_hunks_restored"),
@@ -345,6 +356,7 @@ export function HistoryDialog({
                     onChange={(e) => setDiffB(e.target.value)}
                     className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
                     data-history-diff-new
+                    data-testid="history-diff-new"
                   >
                     <option value="__current__">{t("history.option_current")}</option>
                     {items.map((s) => (
@@ -360,7 +372,7 @@ export function HistoryDialog({
                 newText={b.text}
                 oldLabel={a.label}
                 newLabel={b.label}
-                selectable
+                selectable={canRestoreHunks}
                 selectedIds={selectedIds}
                 onToggleHunk={(id, selected) => {
                   setSelectedIds((prev) => {

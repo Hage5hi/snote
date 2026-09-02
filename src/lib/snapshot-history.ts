@@ -9,8 +9,8 @@ import type { SnapshotKind } from "@/lib/snapshots";
 
 /** Nearby snapshots within 15 minutes share a burst (1.5× the 10-minute periodic cadence). */
 export const BURST_GAP_MS = 15 * 60_000;
-
 export const HUNK_CONTEXT_LINES = 3;
+export const LIVE_TEXT_MISMATCH = "live text mismatch";
 
 export type BurstSnapshot = {
   ts: number;
@@ -68,7 +68,12 @@ function toBurst<T extends BurstSnapshot>(snapshots: T[]): SnapshotBurst<T> {
  */
 export function clusterSnapshots<T extends BurstSnapshot>(
   items: T[],
-  opts: { current?: { ts: number; content: string } | null; gapMs?: number } = {},
+  opts: {
+    current?: { ts: number; content: string } | null;
+    gapMs?: number;
+    /** When false, skip a duplicate row-group for a distant live doc. Default true. */
+    includeDistantCurrent?: boolean;
+  } = {},
 ): SnapshotBurst<T>[] {
   const gapMs = opts.gapMs ?? BURST_GAP_MS;
   const sorted = [...items].sort((a, b) => a.ts - b.ts || (a.id ?? 0) - (b.id ?? 0));
@@ -80,6 +85,7 @@ export function clusterSnapshots<T extends BurstSnapshot>(
   }
   const bursts = groups.map((group) => toBurst(group));
   const current = opts.current;
+  const includeDistantCurrent = opts.includeDistantCurrent !== false;
   if (current && bursts.length > 0) {
     const last = bursts[bursts.length - 1];
     const latest = last.snapshots[last.snapshots.length - 1];
@@ -87,7 +93,7 @@ export function clusterSnapshots<T extends BurstSnapshot>(
       last.toContent = current.content;
       last.endTs = current.ts;
       last.vsCurrent = true;
-    } else {
+    } else if (includeDistantCurrent) {
       bursts.push({
         id: `current-${latest.id ?? latest.ts}`,
         startTs: latest.ts,
@@ -199,7 +205,7 @@ export function applySelectedHunksToYText(
 ): void {
   const ytext = doc.getText("content");
   if (ytext.toString() !== args.newText) {
-    throw new Error("live text mismatch");
+    throw new Error(LIVE_TEXT_MISMATCH);
   }
   const selected = new Set(args.selectedIds);
   const chosen = args.hunks

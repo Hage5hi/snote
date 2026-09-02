@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 import {
   BURST_GAP_MS,
+  LIVE_TEXT_MISMATCH,
   applySelectedHunks,
   applySelectedHunksToYText,
   clusterSnapshots,
@@ -79,6 +80,17 @@ describe("clusterSnapshots", () => {
     expect(bursts[1].vsCurrent).toBe(false);
     expect(bursts[1].toContent).toBe("old");
   });
+
+  it("does not duplicate snapshot rows when distant current is omitted", () => {
+    const items = [snap(NOW - 40 * MIN, "old", { id: 1 })];
+    const bursts = clusterSnapshots(items, {
+      current: { ts: NOW, content: "live" },
+      includeDistantCurrent: false,
+    });
+    expect(bursts).toHaveLength(1);
+    expect(bursts[0].vsCurrent).toBe(false);
+    expect(bursts[0].snapshots).toHaveLength(1);
+  });
 });
 
 const CONTEXT_PAD = ["c1", "c2", "c3", "c4", "c5", "c6", "c7"];
@@ -127,6 +139,24 @@ describe("diffHunks + applySelectedHunks", () => {
 
     expect(transactions).toBe(1);
     expect(ytext.toString()).toBe(oldText);
+  });
+
+  it("refuses to apply hunks when live Y.Text no longer matches the diffed new text", () => {
+    const oldText = "alpha\nbeta";
+    const newText = "alpha\ngamma";
+    const hunks = diffHunks(oldText, newText);
+    const doc = new Y.Doc();
+    const ytext = doc.getText("content");
+    ytext.insert(0, "drifted");
+    expect(() =>
+      applySelectedHunksToYText(doc, {
+        oldText,
+        newText,
+        hunks,
+        selectedIds: hunks.map((h) => h.id),
+      }),
+    ).toThrow(LIVE_TEXT_MISMATCH);
+    expect(ytext.toString()).toBe("drifted");
   });
 
   it("is a no-op when nothing is selected", () => {

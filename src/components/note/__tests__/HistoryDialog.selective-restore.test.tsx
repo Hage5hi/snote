@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as Y from "yjs";
@@ -75,7 +75,7 @@ describe("HistoryDialog selective restore", () => {
     expect(await screen.findByText(dict.en["history.burst.heading"])).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: dict.en["history.burst.compare"] }));
 
-    const boxes = await screen.findAllByRole("checkbox", { name: dict.en["history.hunk.aria"] });
+    const boxes = await screen.findAllByRole("checkbox", { name: new RegExp(dict.en["history.hunk.aria"]) });
     expect(boxes).toHaveLength(2);
     fireEvent.click(boxes[0]);
 
@@ -101,5 +101,35 @@ describe("HistoryDialog selective restore", () => {
     expect(await screen.findByText(dict.en["history.empty"])).toBeInTheDocument();
     expect(screen.queryByText("live secret must stay in the editor")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: dict.en["history.tab.diff"] })).not.toBeInTheDocument();
+  });
+
+  it("does not restore hunks when the new side is not the live note", async () => {
+    const now = Date.now();
+    harness.listSnapshots.mockResolvedValue([
+      snapshot({ id: 1, ts: now - 60_000, content: OLD_TEXT }),
+      snapshot({ id: 2, ts: now - 120_000, content: "older\n" + CONTEXT_PAD.join("\n") }),
+    ]);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, NEW_TEXT);
+
+    render(
+      <Wrap>
+        <HistoryDialog slug="demo" doc={doc} open trigger={false} />
+      </Wrap>,
+    );
+
+    expect(await screen.findByText(dict.en["history.burst.heading"])).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: dict.en["history.burst.compare"] }));
+    expect((await screen.findAllByRole("checkbox")).length).toBeGreaterThan(0);
+
+    fireEvent.change(screen.getByTestId("history-diff-new"), { target: { value: "1" } });
+
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    const restore = screen.getByRole("button", { name: dict.en["history.hunk.restore"] });
+    expect(restore).toBeDisabled();
+    fireEvent.click(restore);
+    expect(confirm).not.toHaveBeenCalled();
+    expect(doc.getText("content").toString()).toBe(NEW_TEXT);
   });
 });

@@ -75,13 +75,13 @@ export function SnapshotDiff({
           <p className="p-3 text-xs text-muted-foreground">{t("history.hunk.empty")}</p>
         ) : (
           <pre className="font-mono text-xs leading-relaxed">
-            {hunks.map((hunk) => (
+            {hunks.map((hunk, index) => (
               <HunkBlock
                 key={hunk.id}
                 hunk={hunk}
                 selectable={selectable}
                 checked={selected.has(hunk.id)}
-                ariaLabel={t("history.hunk.aria")}
+                ariaLabel={`${t("history.hunk.aria")} ${index + 1}`}
                 onToggle={onToggleHunk}
               />
             ))}
