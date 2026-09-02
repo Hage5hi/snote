@@ -101,4 +101,29 @@ describe("canonical production origin", () => {
     );
     expect(findings).not.toContain("PITR checkpoint is available");
   });
+
+  it("pins the cutover backup gate to daily snapshots, not a PITR checkpoint", () => {
+    const cutover = readFileSync(
+      "docs/security/atomic-capability-cutover.md",
+      "utf8",
+    );
+
+    expect(cutover).not.toContain("backup/PITR checkpoint");
+    expect(cutover).not.toContain(
+      "Take and verify a recoverable backup/PITR checkpoint",
+    );
+    expect(cutover).not.toContain("PITR checkpoint is available");
+    expect(cutover).toMatch(
+      /Verify the Lovable Cloud daily snapshot panel \(see\s+`docs\/security-findings\.md` §3c\)/,
+    );
+    expect(cutover).toContain("PITR is not available on this Tiny project");
+    expect(cutover).toContain("Daily snapshot verify is done as of 2026-09-02");
+    expect(cutover).toMatch(
+      /re-check the\s+latest snapshot timestamp immediately before any later `writes_enabled`\s+go/,
+    );
+    expect(cutover).toMatch(
+      /Do not treat snapshot verify as `capability_runtime_set`/,
+    );
+    expect(cutover).toContain("`writes_enabled`, canary, or 240 authorization");
+  });
 });
