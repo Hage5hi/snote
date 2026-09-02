@@ -9,7 +9,7 @@ import {
 const SYNTHETIC_URL =
   "https://example.com/subscription/new/AQCpiIF97V3_ueoQ3Rm5Q_foo==";
 const SYNTHETIC_TOKEN = "tok_AQCpiIF97V3_ueoQ3Rm5Q_foo==";
-const SYNTHETIC_PLAIN = `${SYNTHETIC_TOKEN}\n9395675303 |\n${SYNTHETIC_URL}`;
+const SYNTHETIC_PLAIN = `${SYNTHETIC_TOKEN}\n1234567890 |\n${SYNTHETIC_URL}`;
 
 describe("fixTurndownLinks", () => {
   it("inserts a space between URL and title when missing", () => {
@@ -85,7 +85,7 @@ describe("isPureHttpUrl", () => {
 
 describe("markdownFromHtmlPaste", () => {
   it("keeps underscores when a copy-button <a> wraps a token and URL", async () => {
-    const html = `<html><body><!--StartFragment--><div><a href="#">copy</a><div>${SYNTHETIC_TOKEN}<br>9395675303 |<br>${SYNTHETIC_URL}</div></div><!--EndFragment--></body></html>`;
+    const html = `<html><body><!--StartFragment--><div><a href="#">copy</a><div>${SYNTHETIC_TOKEN}<br>1234567890 |<br>${SYNTHETIC_URL}</div></div><!--EndFragment--></body></html>`;
     const md = await markdownFromHtmlPaste(html, SYNTHETIC_PLAIN);
     expect(md).toBe(SYNTHETIC_PLAIN);
     expect(md).not.toMatch(/\\_/);
@@ -154,5 +154,29 @@ describe("markdownFromHtmlPaste", () => {
     expect(md).toMatch(/^- {1,3}See /);
     expect(md).toContain(SYNTHETIC_URL);
     expect(md).not.toMatch(/\\_/);
+  });
+
+  it("keeps a fenced code block of markdown-looking source", async () => {
+    const source = "# heading\nfoo_bar = 1\n*not italic*";
+    const html = `<pre><code>${source}</code></pre>`;
+    const md = await markdownFromHtmlPaste(html, source);
+    expect(md).toMatch(/^```/);
+    expect(md).toContain(source);
+    expect(md).not.toBe(source);
+  });
+
+  it("keeps a ChatGPT-style copy button plus a list as markdown", async () => {
+    const html = `<div><a href="#">Copy code</a><ul><li>one</li><li><strong>two</strong></li></ul></div>`;
+    const md = await markdownFromHtmlPaste(html, "Copy code\none\ntwo");
+    expect(md).toMatch(/^- {1,3}one/m);
+    expect(md).toMatch(/\*\*two\*\*/);
+  });
+
+  it("does not turn a bare <pre> of markdown source into live markup", async () => {
+    const source = "# heading\nfoo_bar";
+    const html = `<pre>${source}</pre>`;
+    const md = await markdownFromHtmlPaste(html, source);
+    expect(md).not.toBe(source);
+    expect(md.startsWith("# ")).toBe(false);
   });
 });

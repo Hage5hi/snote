@@ -8,8 +8,9 @@
 // payload is a plain token or http(s) URL. Turndown's default escape then
 // turns `_` into `\_`, which breaks those URLs. After convert we prefer
 // text/plain when the markdown is just that plain text plus backslash
-// escapes, a wrapping code fence, or copy-button chrome. We do not disable
-// Turndown's escape globally — that would leave `foo_bar` as italics.
+// escapes, copy-button chrome, a self-href URL, or a wrapping code span
+// whose clipboard is a single http(s) URL. We do not disable Turndown's
+// escape globally, and we do not unwrap real fenced code pastes.
 //
 // Turndown (+ GFM plugin for tables/strikethrough/task lists) is loaded
 // lazily on first structured-HTML paste so the editor bundle doesn't grow
@@ -135,7 +136,7 @@ function unwrapSelfUrlLink(md: string): string {
   return text === href ? href : md;
 }
 
-const COPY_LINK_TEXT_RE = /^(?:copy(?:\s+to\s+clipboard)?)$/i;
+const COPY_LINK_TEXT_RE = /^(?:copy(?:\s+(?:to\s+clipboard|code))?)$/i;
 // `[text](href)` allowing Turndown's `\)` inside the destination.
 const MD_LINK_RE = /\[([^\]]{0,64})\]\(((?:\\.|[^)\\])*)\)/;
 const MD_LINK_AT_START = new RegExp("^" + MD_LINK_RE.source + "\\s*");
@@ -160,12 +161,20 @@ function stripCopyButtonMarkdown(md: string): string {
 }
 
 function stripCopyLabelPrefix(s: string): string {
-  return s.replace(/^(?:copy(?:\s+to\s+clipboard)?)(?:\s+|\n+)/i, "");
+  return s.replace(
+    /^(?:copy(?:\s+(?:to\s+clipboard|code))?)(?:\s+|\n+)/i,
+    "",
+  );
+}
+
+function looksLikeStructuredMarkdown(s: string): boolean {
+  return /^(?:#{1,6} |>|[-*] |\d+\. |```|\|)/m.test(s);
 }
 
 function prefersPlainClipboard(converted: string, plain: string): boolean {
   const want = normalizeForCompare(plain);
   if (!want) return false;
+  const plainIsUrl = isPureHttpUrl(want);
 
   const variants: string[] = [];
   const seen = new Set<string>();
@@ -178,22 +187,25 @@ function prefersPlainClipboard(converted: string, plain: string): boolean {
   add(converted);
   add(stripCopyButtonMarkdown(converted));
   for (const v of [...variants]) {
-    add(unwrapSingleWrappingCode(v));
     add(unwrapSelfUrlLink(v));
-    add(unwrapSelfUrlLink(unwrapSingleWrappingCode(v)));
-    add(unwrapSingleWrappingCode(unwrapSelfUrlLink(v)));
+    // Only unwrap a wrapping fence/`span` when the clipboard is a pure URL.
+    // ChatGPT/GitHub `<pre><code>` pastes must stay fenced.
+    if (plainIsUrl) add(unwrapSingleWrappingCode(v));
   }
 
   for (const v of variants) {
     const got = normalizeForCompare(stripMarkdownBackslashEscapes(v));
-    if (got === want) return true;
-    if (normalizeForCompare(stripCopyLabelPrefix(got)) === want) return true;
+    if (got === want && !looksLikeStructuredMarkdown(got)) return true;
+    const noLabel = normalizeForCompare(stripCopyLabelPrefix(got));
+    if (noLabel === want && !looksLikeStructuredMarkdown(noLabel)) return true;
   }
   return false;
 }
 
 function unescapeUnderscoresInHttpUrls(md: string): string {
-  return md.replace(/https?:\/\/[^\s<]+/g, (url) => url.replace(/\\_/g, "_"));
+  return md.replace(/https?:\/\/[^\s<>[\]{}]+/gi, (url) =>
+    url.replace(/\\_/g, "_"),
+  );
 }
 
 // Selection text that's already a markdown link — skip wrapping to avoid
