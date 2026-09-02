@@ -1,7 +1,10 @@
-// Autocomplete source for `[[slug` and `[[display|slug`. Suggests from the
-// client-only knowledge index (plaintext already on this device) plus recents
-// and pins. Registered via `slashCommands()` alongside slash-command and tag
-// sources (a single `autocompletion()` extension is required).
+// Autocomplete source for `[[slug` and `[[display|slug`.
+// Candidates: in-memory knowledge index (titles/headings from plaintext the
+// user unlocked this session) plus Home recents/pins. Recents/pins enter the
+// index as slug-only rows; recents `preview` in the completion UI is the
+// existing `snote-recents` localStorage field, never copied into knowledge IDB.
+// Registered via `slashCommands()` alongside slash-command and tag sources
+// (a single `autocompletion()` extension is required).
 import type { CompletionContext, CompletionSource, Completion } from "@codemirror/autocomplete";
 import { getPinned, getRecents } from "@/lib/recent-notes";
 import {

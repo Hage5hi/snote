@@ -646,6 +646,10 @@ export default function NotePage({
     const idb = !capabilityAccess && !encMeta.isEncrypted
       ? new IndexeddbPersistence(`note:${slug}`, doc)
       : null;
+    // Knowledge index: live Y.Text after this gate only. Never scan y-indexeddb
+    // (`note:${slug}`) for encrypted notes. Persist derived graphs only when
+    // this note is already plaintext on device.
+    const indexDurable = !encMeta.isEncrypted && !capabilityAccess;
     let disposed = false;
 
     
@@ -703,11 +707,11 @@ export default function NotePage({
       countTimer = window.setTimeout(updateCounts, COUNT_DEBOUNCE_MS);
       if (indexTimer) window.clearTimeout(indexTimer);
       indexTimer = window.setTimeout(() => {
-        upsertPlaintextNote(slug, ytext.toString());
+        upsertPlaintextNote(slug, ytext.toString(), { durable: indexDurable });
       }, 200);
     };
     updateCounts();
-    upsertPlaintextNote(slug, ytext.toString());
+    upsertPlaintextNote(slug, ytext.toString(), { durable: indexDurable });
     ytext.observe(scheduleCounts);
 
     (idb?.whenSynced ?? Promise.resolve()).then(() => {
@@ -720,7 +724,7 @@ export default function NotePage({
         .catch((e) => console.warn("Provider connect failed", e));
       prevContent = ytext.toString();
       updateCounts();
-      upsertPlaintextNote(slug, prevContent);
+      upsertPlaintextNote(slug, prevContent, { durable: indexDurable });
       if (snapshotsEnabled) {
         void maybeSaveSnapshot(slug, prevContent, snapshotProtection);
       }

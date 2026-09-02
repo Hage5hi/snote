@@ -80,6 +80,11 @@ describe("expandWikiLinks", () => {
     );
   });
 
+  it("does not emit raw HTML from alias display text", () => {
+    expect(expandWikiLinks("[[<img src=x>|safe]]")).toBe("[img src=x](/safe)");
+    expect(expandWikiLinks("[[<script>alert(1)</script>|safe]]")).not.toMatch(/<script>/i);
+  });
+
   it("expands multiple wiki links in one call", () => {
     expect(expandWikiLinks("[[a]] and [[b]]")).toBe("[a](/a) and [b](/b)");
   });

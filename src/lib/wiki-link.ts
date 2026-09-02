@@ -211,6 +211,9 @@ export function expandWikiLinks(src: string): string {
     if (inner === undefined) return match; // code fence / inline code
     const parsed = parseWikiLinkInner(inner);
     if (!parsed) return match;
-    return `[${parsed.display}](/${encodeURIComponent(parsed.slug)})`;
+    // Link labels go through marked + DOMPurify. Strip markup characters so
+    // an alias cannot inject HTML into the preview.
+    const label = parsed.display.replace(/[<>[\]]/g, "") || parsed.slug;
+    return `[${label}](/${encodeURIComponent(parsed.slug)})`;
   });
 }

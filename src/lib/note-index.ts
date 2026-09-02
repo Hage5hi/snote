@@ -1,12 +1,19 @@
 /**
  * Client-only note knowledge index.
  *
- * Privacy boundary: titles, headings, and outgoing wiki-link slugs are derived
- * only from plaintext this browser has already decrypted or typed, plus Home
- * recents/pins metadata (slug and optional preview). The graph lives in memory
- * and IndexedDB on this device. Never upload plaintext, titles, headings, or
- * link graphs to the server. Encrypted notes are indexed only after a
- * successful unlock in this session.
+ * Privacy boundary — sources, and only these:
+ *   1. Live Y.Text after the encryption gate has unlocked this session
+ *      (NotePage never mounts plaintext y-indexeddb for encrypted or
+ *      capability notes; this module never opens `note:${slug}` / Yjs IDB).
+ *   2. Home recents/pins: slug only, never preview/body.
+ *
+ * Derived `{ title, headings, outgoingLinks }` may be persisted to this
+ * module's own IDB store only for unencrypted legacy notes (already
+ * plaintext on device). Encrypted/capability graphs stay in session memory
+ * so a later visit without unlock cannot reload titles or link graphs.
+ *
+ * Never upload plaintext, titles, headings, or link graphs to the server.
+ * Never invent a server-side note list. Home has no vault listing.
  */
 import { getPinned, getRecents } from "@/lib/recent-notes";
 import {
@@ -24,7 +31,8 @@ export type NoteIndexEntry = NoteGraphRecord & {
 };
 
 const DB_NAME = "snote-knowledge-index";
-const DB_VERSION = 1;
+/** v2 clears v1 rows that may have persisted encrypted-session graphs. */
+const DB_VERSION = 2;
 const STORE = "notes";
 const MAX_ENTRIES = 400;
 
@@ -85,14 +93,15 @@ function graphUnchanged(prev: NoteIndexEntry | undefined, next: NoteIndexEntry):
     && prev.outgoingLinks.join("\0") === next.outgoingLinks.join("\0");
 }
 
-export function rememberMetadata(slug: string, title?: string) {
+/** Remember a slug (recents/pins / current note) without storing body or title. */
+export function rememberMetadata(slug: string) {
   const trimmed = slug.trim();
   if (!trimmed) return;
   const prev = memory.get(trimmed);
   if (prev?.source === "plaintext") return;
   const next: NoteIndexEntry = {
     slug: trimmed,
-    title: title?.trim() || prev?.title,
+    title: prev?.title,
     headings: prev?.headings ?? [],
     outgoingLinks: prev?.outgoingLinks ?? [],
     updatedAt: Date.now(),
@@ -104,7 +113,19 @@ export function rememberMetadata(slug: string, title?: string) {
   notify();
 }
 
-export function upsertPlaintextNote(slug: string, content: string) {
+export type UpsertPlaintextOptions = {
+  /**
+   * Persist the derived graph to the knowledge IDB store. Pass true only for
+   * unencrypted legacy notes. Encrypted/capability notes must stay session-only.
+   */
+  durable?: boolean;
+};
+
+export function upsertPlaintextNote(
+  slug: string,
+  content: string,
+  opts?: UpsertPlaintextOptions,
+) {
   const trimmedSlug = slug.trim();
   if (!trimmedSlug) return;
   const trimmed = content.trim();
@@ -127,7 +148,7 @@ export function upsertPlaintextNote(slug: string, content: string) {
   memory.set(trimmedSlug, next);
   trimMemory();
   notify();
-  queuePersist(next);
+  if (opts?.durable) queuePersist(next);
 }
 
 function trimMemory() {
@@ -150,7 +171,6 @@ function mergeHomeMetadata() {
     if (prev) continue;
     memory.set(recent.slug, {
       slug: recent.slug,
-      title: recent.preview?.slice(0, 200) || undefined,
       headings: [],
       outgoingLinks: [],
       updatedAt: recent.lastOpenedAt,
@@ -235,6 +255,7 @@ export async function resetNoteIndexForTests(opts?: { dropDatabase?: boolean }) 
 }
 
 function queuePersist(entry: NoteIndexEntry) {
+  if (entry.source !== "plaintext") return;
   persistQueue = persistQueue.then(() => persist(entry)).catch(() => {});
 }
 
@@ -245,10 +266,15 @@ function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: "slug" });
+      }
+      // Drop v1: the first Phase 1 commit persisted every plaintext upsert,
+      // including encrypted notes unlocked in that session.
+      if (event.oldVersion > 0 && event.oldVersion < 2) {
+        request.transaction?.objectStore(STORE).clear();
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -295,7 +321,7 @@ async function loadAll(): Promise<NoteIndexEntry[]> {
     const request = tx.objectStore(STORE).getAll();
     request.onsuccess = () => {
       const rows = Array.isArray(request.result) ? request.result : [];
-      resolve(rows.filter(isIndexEntry));
+      resolve(rows.filter((row) => isIndexEntry(row) && row.source === "plaintext"));
     };
     request.onerror = () => reject(request.error);
   });
