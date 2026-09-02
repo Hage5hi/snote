@@ -127,4 +127,13 @@ describe("SplitView responsive behavior", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-pressed", "false");
   });
+
+  it("opens a wiki target as a full note instead of keeping split panes", async () => {
+    renderSplit();
+    await screen.findByText("note:alpha");
+    act(() => {
+      window.dispatchEvent(new CustomEvent("snotes:wiki-nav", { detail: { slug: "recipes" } }));
+    });
+    expect(await screen.findByText("home")).toBeInTheDocument();
+  });
 });

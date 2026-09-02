@@ -8,7 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Link, Navigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 import { Helmet } from "react-helmet-async";
 import { ArrowLeft, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import {
 } from "@/hooks/use-split-scroll-sync";
 import { useI18n } from "@/i18n";
 import { loadNotePage } from "@/lib/note-page-import";
+import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 
 const NotePage = lazy(() => loadNotePage());
 
@@ -89,6 +90,7 @@ function SplitViewBody({
 }) {
   const { scene } = useSceneTheme();
   const { t } = useI18n();
+  const navigate = useNavigate();
   const hasScene = scene !== "none";
   const joined = slugs.join("+");
   const label = slugs.map((s) => `/${s}`).join(" + ");
@@ -105,6 +107,15 @@ function SplitViewBody({
   useEffect(() => {
     saveLastSplitView(slugs);
   }, [joined]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onNav = (event: Event) => {
+      const target = (event as CustomEvent<{ slug: string }>).detail?.slug;
+      if (target) navigate("/" + target);
+    };
+    window.addEventListener(WIKI_NAV_EVENT, onNav);
+    return () => window.removeEventListener(WIKI_NAV_EVENT, onNav);
+  }, [navigate]);
 
   useEffect(() => {
     setActivePane((index) => Math.min(index, slugs.length - 1));

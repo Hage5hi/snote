@@ -1,7 +1,9 @@
 /**
- * Preview-only DOM chrome: copy buttons and in-pane heading jumps.
- * Click handlers must not write location.hash (capability/encryption fragments).
+ * Preview-only DOM chrome: copy buttons, in-pane heading jumps, and in-app
+ * wiki-link navigation. Click handlers must not write location.hash
+ * (capability/encryption fragments).
  */
+import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 export function labelPreviewChrome(
   host: HTMLElement,
   copyLabel: string,
@@ -48,12 +50,51 @@ export async function handlePreviewChromeClick(
     return;
   }
 
-  const anchor = target.closest("[data-preview-heading]");
-  if (!(anchor instanceof HTMLElement)) return;
+  const headingBtn = target.closest("[data-preview-heading]");
+  if (headingBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    const id = headingBtn.getAttribute("data-preview-heading");
+    if (!id) return;
+    const heading = host.querySelector(`#${CSS.escape(id)}`);
+    heading?.scrollIntoView({ block: "start", behavior: "smooth" });
+    return;
+  }
+
+  navigatePreviewNoteLink(event, host);
+}
+
+/** Same-origin `/slug` preview links (from `[[slug]]` / `[[display|slug]]`) stay in-app. */
+export function previewNoteSlugFromHref(href: string, origin = window.location.origin): string | null {
+  if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) {
+    return null;
+  }
+  let url: URL;
+  try {
+    url = new URL(href, origin);
+  } catch {
+    return null;
+  }
+  if (url.origin !== origin) return null;
+  if (url.search) return null;
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (parts.length !== 1) return null;
+  if (/\.md$/i.test(parts[0])) return null;
+  try {
+    return decodeURIComponent(parts[0]);
+  } catch {
+    return parts[0];
+  }
+}
+
+function navigatePreviewNoteLink(event: MouseEvent, host: HTMLElement): void {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const anchor = target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement) || !host.contains(anchor)) return;
+  const slug = previewNoteSlugFromHref(anchor.getAttribute("href") ?? "");
+  if (!slug) return;
   event.preventDefault();
-  event.stopPropagation();
-  const id = anchor.getAttribute("data-preview-heading");
-  if (!id) return;
-  const heading = host.querySelector(`#${CSS.escape(id)}`);
-  heading?.scrollIntoView({ block: "start", behavior: "smooth" });
+  window.dispatchEvent(new CustomEvent(WIKI_NAV_EVENT, { detail: { slug } }));
 }

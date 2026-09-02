@@ -216,6 +216,11 @@ vi.mock("@/lib/snapshots", () => ({
 }));
 vi.mock("@/lib/yjs/identity", () => ({ getIdentity: () => ({ name: "Test", color: "#000" }) }));
 vi.mock("@/lib/wiki-link", () => ({ WIKI_NAV_EVENT: "wiki-nav" }));
+vi.mock("@/lib/note-index", () => ({
+  hydrateNoteIndex: () => Promise.resolve(),
+  rememberMetadata: () => {},
+  upsertPlaintextNote: () => {},
+}));
 vi.mock("@/lib/ext-context", () => ({ isExtensionContext: false }));
 vi.mock("y-indexeddb", () => ({
   IndexeddbPersistence: class {
