@@ -389,6 +389,23 @@ const zh: Dictionary = {
     "scene.preview.committed": "已应用 {name}",
     "scene.preview.reverted": "已取消预览",
     "scene.preview.hint": "悬停预览，点击应用",
+
+    "editor.search.find": "查找",
+    "editor.search.replace": "替换",
+    "editor.search.replace_all": "全部替换",
+    "editor.search.next": "下一个",
+    "editor.search.previous": "上一个",
+    "editor.search.close": "关闭",
+    "editor.search.open_replace": "打开替换选项",
+    "editor.search.close_replace": "关闭替换选项",
+    "editor.search.settings": "搜索选项",
+    "editor.search.match_case": "区分大小写",
+    "editor.search.regexp": "正则表达式",
+    "editor.search.by_word": "全词匹配",
+    "editor.search.wrap": "循环查找",
+    "editor.search.select_all": "选择全部匹配",
+    "editor.search.match_count": "{current}/{total}",
+    "editor.search.no_results": "无结果",
   };
 
 export default zh;

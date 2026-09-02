@@ -389,6 +389,23 @@ const ja: Dictionary = {
     "scene.preview.committed": "{name} を適用しました",
     "scene.preview.reverted": "プレビューを取り消しました",
     "scene.preview.hint": "ホバーでプレビュー、クリックで適用",
+
+    "editor.search.find": "検索",
+    "editor.search.replace": "置換",
+    "editor.search.replace_all": "すべて置換",
+    "editor.search.next": "次へ",
+    "editor.search.previous": "前へ",
+    "editor.search.close": "閉じる",
+    "editor.search.open_replace": "置換オプションを開く",
+    "editor.search.close_replace": "置換オプションを閉じる",
+    "editor.search.settings": "検索オプション",
+    "editor.search.match_case": "大文字と小文字を区別",
+    "editor.search.regexp": "正規表現",
+    "editor.search.by_word": "単語単位",
+    "editor.search.wrap": "折り返し検索",
+    "editor.search.select_all": "すべての一致を選択",
+    "editor.search.match_count": "{current}/{total}",
+    "editor.search.no_results": "該当なし",
   };
 
 export default ja;

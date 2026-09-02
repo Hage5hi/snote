@@ -22,7 +22,8 @@ import { EditorView, keymap, highlightActiveLine, drawSelection } from "@codemir
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
-import { search, searchKeymap, highlightSelectionMatches, openSearchPanel } from "@codemirror/search";
+import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { editorSearch, openFindPanel, openReplacePanel } from "@/components/note/search-panel";
 import { completionKeymap } from "@codemirror/autocomplete";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
@@ -125,7 +126,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
         bracketMatching(),
         markdown(),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
-        search({ top: true }),
+        editorSearch,
         highlightSelectionMatches(),
         slashCommands(),
         tagHighlight(),
@@ -168,16 +169,23 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     viewRef.current = view;
     onScrollEl?.(view.scrollDOM);
 
-    // Global Cmd/Ctrl+F → open the CodeMirror search panel even if focus is outside.
+    // Global find/replace even if focus is outside the editor.
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F") && !e.shiftKey && !e.altKey) {
-        // Allow native find inside form inputs.
-        const target = e.target as HTMLElement | null;
-        if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-        e.preventDefault();
-        view.focus();
-        openSearchPanel(view);
-      }
+      const target = e.target as HTMLElement | null;
+      // Allow native find/replace inside form inputs (including our search fields).
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      const key = e.key.toLowerCase();
+      const openFind =
+        (e.metaKey || e.ctrlKey) && key === "f" && !e.shiftKey && !e.altKey;
+      // Ctrl+H on Win/Linux. Skip Meta+H so macOS "Hide Window" still works.
+      const openReplaceCtrlH = e.ctrlKey && !e.metaKey && key === "h" && !e.shiftKey && !e.altKey;
+      // Cmd+Option+F — CodeMirror's macOS replace chord.
+      const openReplaceMac = e.metaKey && e.altKey && key === "f" && !e.shiftKey;
+      if (!openFind && !openReplaceCtrlH && !openReplaceMac) return;
+      e.preventDefault();
+      view.focus();
+      if (openFind) openFindPanel(view);
+      else openReplacePanel(view);
     };
     window.addEventListener("keydown", onKey);
 

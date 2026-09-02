@@ -625,3 +625,77 @@
   }
   .hydrate-fade-in { animation: hydrate-fade 220ms ease-out; }
 }
+
+/* ================== In-note find/replace overlay ==================
+   CodeMirror's default search panel is a sticky gray strip that pushes
+   the editor down. Overlay a compact themed bar instead. */
+.cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) {
+  position: absolute;
+  top: 0.5rem;
+  left: 0;
+  right: 0;
+  height: 0;
+  overflow: visible;
+  border: none;
+  background: transparent !important;
+  color: inherit;
+  pointer-events: none;
+  z-index: 20;
+}
+.cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) .cm-panel {
+  background: transparent !important;
+  border: none;
+  padding: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+.snote-search-host {
+  pointer-events: none;
+  overflow: visible;
+}
+.snote-search-panel {
+  pointer-events: auto;
+  color-scheme: inherit;
+  overflow: visible;
+}
+html.dark .snote-search-panel {
+  color-scheme: dark;
+}
+.snote-search-panel input {
+  color-scheme: inherit;
+  background-color: hsl(var(--muted) / 0.85);
+  color: hsl(var(--foreground));
+  caret-color: hsl(var(--foreground));
+  border: none;
+  border-bottom: 2px solid transparent;
+  box-shadow: none;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.snote-search-panel input::placeholder {
+  color: hsl(var(--muted-foreground));
+  opacity: 1;
+}
+.snote-search-panel input:focus {
+  border-bottom-color: hsl(var(--primary));
+}
+.snote-search-replace {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 150ms ease-out, opacity 120ms ease-out;
+}
+.snote-search-replace[data-open="true"] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.snote-search-replace > .snote-search-replace-inner {
+  overflow: hidden;
+  min-height: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .snote-search-replace {
+    transition: none;
+  }
+}
