@@ -95,6 +95,7 @@
   "overrides": {
     "@babel/core": "7.29.7",
     "dompurify": "3.4.13",
+    "fast-uri": "^3.1.6",
     "filelist": "2.0.2",
     "flatted": "^3.4.0",
     "form-data": "4.0.6",
