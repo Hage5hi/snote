@@ -925,7 +925,7 @@ export default function NotePage({
               ref={setPreviewScrollEl}
               className="flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30"
             >
-              <Preview doc={doc} />
+              <Preview doc={doc} slug={slug} />
             </div>
           )}
         </div>
@@ -1010,7 +1010,7 @@ export default function NotePage({
             ref={setPreviewScrollEl}
             className={`flex-1 min-h-0 min-w-0 overflow-auto bg-muted/30 ${zen ? "zen-hide" : ""}`}
           >
-            <Preview doc={doc} />
+            <Preview doc={doc} slug={slug} />
           </div>
         )}
 

@@ -29,6 +29,12 @@ describe("buildNoteGraphRecord", () => {
     );
     expect(record.outgoingLinks).toEqual(["other"]);
   });
+
+  it("counts ![[slug]] transcludes as outgoing links", () => {
+    const record = buildNoteGraphRecord("home", "See ![[alpha]] and [[beta|Label]] and ![[alpha]]");
+    expect(new Set(record.outgoingLinks)).toEqual(new Set(["alpha", "beta"]));
+    expect(record.outgoingLinks).toHaveLength(2);
+  });
 });
 
 describe("backlinksTo", () => {

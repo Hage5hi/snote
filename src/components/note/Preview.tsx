@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "next-themes";
 import * as Y from "yjs";
 import { expandWikiLinks } from "@/lib/wiki-link";
+import { expandTranscludes } from "@/lib/wiki-transclude";
+import { getSessionPlaintext, subscribeNoteIndex } from "@/lib/note-index";
 import { renderMermaid } from "@/lib/markdown/renderers/mermaid";
 import { renderKatex } from "@/lib/markdown/renderers/katex";
 import { highlightCode } from "@/lib/markdown/renderers/highlight";
@@ -29,7 +31,15 @@ function detectLang(text: string): string {
   return "en";
 }
 
-export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) {
+export function Preview({
+  doc,
+  className,
+  slug,
+}: {
+  doc: Y.Doc;
+  className?: string;
+  slug?: string;
+}) {
   const [html, setHtml] = useState("");
   const [lang, setLang] = useState("en");
   const lastTextLenRef = useRef(0);
@@ -71,7 +81,16 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
         setLang(detectLang(text));
         lastTextLenRef.current = text.length;
       }
-      const expanded = expandWikiLinks(text);
+      // Transclude only when this preview belongs to a note slug. Share (and
+      // any slug-less host) must not splice this tab's unlocked vault into a
+      // foreign document. Failed tokens still become dead wiki links.
+      const expanded = expandWikiLinks(
+        expandTranscludes(
+          text,
+          { getPlaintext: slug ? getSessionPlaintext : () => null },
+          { currentSlug: slug },
+        ),
+      );
       // Cache key is post-`expandWikiLinks` text (pre-hydration HTML).
       // Hydration (mermaid/katex/hljs + theme) re-runs in the next effect
       // regardless of cache hit, so theme toggles still apply.
@@ -115,12 +134,14 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
 
     void doRender();
     ytext.observe(schedule);
+    const unsubIndex = subscribeNoteIndex(schedule);
     return () => {
       cancelled = true;
       cancel();
       ytext.unobserve(schedule);
+      unsubIndex();
     };
-  }, [doc]);
+  }, [doc, slug]);
 
   // Hydrate placeholders left by the custom code renderer. Each effect run
   // tags itself with a token; async work checks the token before writing
@@ -208,7 +229,13 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
         });
     });
 
-    labelPreviewChrome(host, t("preview.copy_code"), t("preview.heading_anchor"));
+    labelPreviewChrome(host, t("preview.copy_code"), t("preview.heading_anchor"), {
+      note: t("preview.alert.note"),
+      tip: t("preview.alert.tip"),
+      important: t("preview.alert.important"),
+      warning: t("preview.alert.warning"),
+      caution: t("preview.alert.caution"),
+    });
   }, [html, isDark, t]);
 
   useEffect(() => {
