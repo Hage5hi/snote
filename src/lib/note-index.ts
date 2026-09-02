@@ -43,6 +43,8 @@ const STORE = "notes";
 const MAX_ENTRIES = 400;
 
 const memory = new Map<string, NoteIndexEntry>();
+/** Full bodies for this session only. Never written to knowledge IDB. */
+const sessionBodies = new Map<string, string>();
 const seenNonEmpty = new Set<string>();
 const listeners = new Set<() => void>();
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -79,6 +81,14 @@ export function isNoteIndexHydrated(): boolean {
 
 export function getKnownSlugs(): Set<string> {
   return new Set(memory.keys());
+}
+
+/**
+ * Full markdown for a slug unlocked as plaintext this session.
+ * Metadata-only recents/pins and IDB graph rows return null (fail closed).
+ */
+export function getSessionPlaintext(slug: string): string | null {
+  return sessionBodies.get(slug) ?? null;
 }
 
 export function getBacklinks(slug: string): NoteIndexEntry[] {
@@ -149,6 +159,8 @@ export function upsertPlaintextNote(
     // First paint can be empty while Yjs hydrates. Keep the previous graph.
     return;
   }
+  const prevBody = sessionBodies.get(trimmedSlug);
+  sessionBodies.set(trimmedSlug, content);
   if (trimmed) seenNonEmpty.add(trimmedSlug);
   const graph = buildNoteGraphRecord(trimmedSlug, content);
   const prev = memory.get(trimmedSlug);
@@ -158,7 +170,10 @@ export function upsertPlaintextNote(
     source: "plaintext",
     snippet: sessionSnippet(content),
   };
-  if (graphUnchanged(prev, next) && prev?.snippet === next.snippet) return;
+  if (graphUnchanged(prev, next) && prev?.snippet === next.snippet) {
+    if (prevBody !== content) notify();
+    return;
+  }
   memory.set(trimmedSlug, next);
   if (graphUnchanged(prev, next)) {
     notify();
@@ -260,6 +275,7 @@ export function whenNoteIndexIdle(): Promise<void> {
 export async function resetNoteIndexForTests(opts?: { dropDatabase?: boolean }) {
   await persistQueue.catch(() => {});
   memory.clear();
+  sessionBodies.clear();
   seenNonEmpty.clear();
   hydrated = false;
   hydrateInFlight = null;

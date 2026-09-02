@@ -22,7 +22,10 @@ export type WikiLinkHit = ParsedWikiLink & {
 
 // Matches `[[anything not containing [ ] or newline]]`, including aliases
 // `[[slug|display]]` (destination first, optional label after `|`).
-export const WIKI_LINK_RE = /\[\[([^[\]\n]+)\]\]/g;
+// Negative lookbehind keeps `![[slug]]` transcludes out of wiki expansion
+// so they cannot become markdown images.
+export const WIKI_LINK_RE = /(?<!!)\[\[([^[\]\n]+)\]\]/g;
+const TRANSCLUDE_RE = /!\[\[([^[\]\n]+)\]\]/g;
 
 const wikiMark = Decoration.mark({ class: "cm-wiki-link" });
 
@@ -57,10 +60,14 @@ export function parseWikiLinkInner(inner: string): ParsedWikiLink | null {
   return { display, slug, aliased: true };
 }
 
-export function wikiLinkAt(lineText: string, column: number): WikiLinkHit | null {
-  WIKI_LINK_RE.lastIndex = 0;
+function hitFromRegex(
+  lineText: string,
+  column: number,
+  regex: RegExp,
+): WikiLinkHit | null {
+  regex.lastIndex = 0;
   let hit: RegExpExecArray | null;
-  while ((hit = WIKI_LINK_RE.exec(lineText)) !== null) {
+  while ((hit = regex.exec(lineText)) !== null) {
     const from = hit.index;
     const to = from + hit[0].length;
     if (column >= from && column <= to) {
@@ -70,6 +77,10 @@ export function wikiLinkAt(lineText: string, column: number): WikiLinkHit | null
     }
   }
   return null;
+}
+
+export function wikiLinkAt(lineText: string, column: number): WikiLinkHit | null {
+  return hitFromRegex(lineText, column, TRANSCLUDE_RE) ?? hitFromRegex(lineText, column, WIKI_LINK_RE);
 }
 
 function markFor(parsed: ParsedWikiLink): Decoration {
@@ -86,13 +97,22 @@ function buildDecorations(view: EditorView): DecorationSet {
   for (const { from, to } of view.visibleRanges) {
     const text = view.state.doc.sliceString(from, to);
     WIKI_LINK_RE.lastIndex = 0;
+    TRANSCLUDE_RE.lastIndex = 0;
+    const hits: { start: number; end: number; parsed: ParsedWikiLink }[] = [];
     let m: RegExpExecArray | null;
+    while ((m = TRANSCLUDE_RE.exec(text)) !== null) {
+      const parsed = parseWikiLinkInner(m[1]);
+      if (!parsed) continue;
+      hits.push({ start: from + m.index, end: from + m.index + m[0].length, parsed });
+    }
     while ((m = WIKI_LINK_RE.exec(text)) !== null) {
       const parsed = parseWikiLinkInner(m[1]);
       if (!parsed) continue;
-      const start = from + m.index;
-      const end = start + m[0].length;
-      builder.add(start, end, markFor(parsed));
+      hits.push({ start: from + m.index, end: from + m.index + m[0].length, parsed });
+    }
+    hits.sort((a, b) => a.start - b.start || a.end - b.end);
+    for (const hit of hits) {
+      builder.add(hit.start, hit.end, markFor(hit.parsed));
     }
   }
   return builder.finish();
@@ -145,7 +165,7 @@ export function wikiLink() {
         let hit: WikiLinkHit | null = null;
         if (span) {
           const text = span.textContent ?? "";
-          const wrapped = text.match(/^\[\[([^[\]\n]+)\]\]$/);
+          const wrapped = text.match(/^!?\[\[([^[\]\n]+)\]\]$/);
           if (wrapped) {
             const parsed = parseWikiLinkInner(wrapped[1]);
             if (parsed) hit = { ...parsed, raw: text, from: 0, to: text.length };
@@ -181,7 +201,7 @@ export function wikiLink() {
 // Combined matcher: fenced code block (``` or ~~~) | inline code span |
 // wiki link. Code alternatives are preserved verbatim; only the wiki-link
 // branch is expanded, so `[[slug]]` inside fences or `backticks` stays raw.
-const WIKI_EXPAND_RE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`|\[\[([^[\]\n]+)\]\])/g;
+const WIKI_EXPAND_RE = /(```[\s\S]*?```|~~~[\s\S]*?~~~|`[^`\n]+`|(?<!!)\[\[([^[\]\n]+)\]\])/g;
 
 export type ExtractedWikiLink = ParsedWikiLink & { raw: string };
 

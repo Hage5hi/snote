@@ -5,10 +5,13 @@
  */
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 import { isUsableSlug } from "@/lib/slug";
+export type PreviewAlertKind = "note" | "tip" | "important" | "warning" | "caution";
+
 export function labelPreviewChrome(
   host: HTMLElement,
   copyLabel: string,
   headingLabel: string,
+  alertLabels?: Readonly<Partial<Record<PreviewAlertKind, string>>>,
 ): void {
   for (const btn of host.querySelectorAll<HTMLButtonElement>("[data-md-copy]")) {
     if (btn.dataset.copied === "true") continue;
@@ -17,6 +20,14 @@ export function labelPreviewChrome(
   }
   for (const btn of host.querySelectorAll("[data-preview-heading]")) {
     btn.setAttribute("aria-label", headingLabel);
+  }
+  if (!alertLabels) return;
+  for (const title of host.querySelectorAll<HTMLElement>("[data-md-alert-title]")) {
+    const kind = title.getAttribute("data-md-alert-title");
+    if (!kind || !(kind in alertLabels)) continue;
+    const label = alertLabels[kind as PreviewAlertKind];
+    if (!label) continue;
+    title.textContent = label;
   }
 }
 

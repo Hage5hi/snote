@@ -41,6 +41,11 @@ describe("WIKI_LINK_RE", () => {
   it("does not cross newlines", () => {
     expect("[[foo\nbar]]".match(WIKI_LINK_RE)).toBeNull();
   });
+
+  it("does not match ![[transclude]] tokens", () => {
+    expect("see ![[world]] there".match(WIKI_LINK_RE)).toBeNull();
+    expect("see ![[world]] and [[other]]".match(WIKI_LINK_RE)).toEqual(["[[other]]"]);
+  });
 });
 
 describe("parseWikiLinkInner / wikiLinkAt", () => {
@@ -125,6 +130,13 @@ describe("expandWikiLinks", () => {
     const input = "before\n~~~\nsee [[x]]\n~~~\nafter [[y]]";
     const output = "before\n~~~\nsee [[x]]\n~~~\nafter [y](/y)";
     expect(expandWikiLinks(input)).toBe(output);
+  });
+
+  it("does not rewrite ![[slug]] into a markdown image", () => {
+    expect(expandWikiLinks("![[recipes]]")).toBe("![[recipes]]");
+    expect(expandWikiLinks("see ![[hop-team|Label]] and [[keep]]")).toBe(
+      "see ![[hop-team|Label]] and [keep](/keep)",
+    );
   });
 });
 

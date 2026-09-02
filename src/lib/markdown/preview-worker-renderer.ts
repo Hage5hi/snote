@@ -1,4 +1,5 @@
 import { Marked, type Tokens } from "marked";
+import { gfmAlertExtension } from "./gfm-alerts";
 import { createPreviewHeadingIds } from "./preview-heading-id";
 
 function escapeHtml(value: string): string {
@@ -22,6 +23,7 @@ markdown.use({
     html() { return undefined; },
   },
   extensions: [
+    gfmAlertExtension,
     {
       name: "inlineHtml",
       level: "inline",

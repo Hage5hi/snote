@@ -61,6 +61,28 @@ describe("i18n dict", () => {
     expect(dict.vi["knowledge.backlinks_empty"]).toMatch(/trỏ tới đây/i);
   });
 
+  it("preview alert and slash-command details are translated", () => {
+    const keys = [
+      "preview.alert.note",
+      "preview.alert.tip",
+      "preview.alert.important",
+      "preview.alert.warning",
+      "preview.alert.caution",
+      "slash.detail.mermaid",
+      "slash.detail.math",
+      "slash.detail.note",
+      "slash.detail.tip",
+      "slash.detail.important",
+      "slash.detail.warning",
+      "slash.detail.caution",
+    ] as const;
+    for (const key of keys) {
+      expect(dict.en[key]).toBeTruthy();
+      expect(dict.vi[key]).toBeTruthy();
+      expect(dict.vi[key]).not.toBe(dict.en[key]);
+    }
+  });
+
   it("command palette search copy is present and Vietnamese is not a copy of English", () => {
     const keys = [
       "cmdk.placeholder",

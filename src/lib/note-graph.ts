@@ -1,6 +1,7 @@
 import { parseOutline } from "@/lib/outline";
 import { extractTags } from "@/lib/tags";
 import { extractWikiLinks } from "@/lib/wiki-link";
+import { extractTranscludes } from "@/lib/wiki-transclude";
 
 export type NoteGraphRecord = {
   slug: string;
@@ -20,7 +21,7 @@ export function buildNoteGraphRecord(slug: string, content: string): NoteGraphRe
   const title = headings[0]?.slice(0, MAX_TITLE) || undefined;
   const outgoing: string[] = [];
   const seen = new Set<string>();
-  for (const link of extractWikiLinks(content)) {
+  for (const link of [...extractWikiLinks(content), ...extractTranscludes(content)]) {
     if (link.slug === slug || seen.has(link.slug)) continue;
     seen.add(link.slug);
     outgoing.push(link.slug);

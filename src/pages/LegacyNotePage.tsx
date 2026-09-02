@@ -253,7 +253,7 @@ export default function LegacyNotePage({
         ref={onPrimaryScroller}
         className="min-h-0 flex-1 overflow-auto bg-muted/30"
       >
-        <Preview doc={state.doc} />
+        <Preview doc={state.doc} slug={slug} />
       </main>
     </>
   );

@@ -10,6 +10,7 @@ import {
 describe("wikiLinkQueryAt", () => {
   it("captures the slug query after [[ and ignores typing after |", () => {
     expect(wikiLinkQueryAt("see [[mee")).toBe("mee");
+    expect(wikiLinkQueryAt("see ![[mee")).toBe("mee");
     expect(wikiLinkQueryAt("see [[hop-team|")).toBeNull();
     expect(wikiLinkQueryAt("see [[hop-team|Họp")).toBeNull();
     expect(wikiLinkQueryAt("see [[closed]] more")).toBeNull();

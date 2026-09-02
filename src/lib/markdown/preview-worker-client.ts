@@ -17,6 +17,8 @@ const ADD_ATTR = [
   "data-hljs-code",
   "data-md-copy",
   "data-preview-heading",
+  "data-md-alert",
+  "data-md-alert-title",
 ];
 
 let worker: Worker | null = null;

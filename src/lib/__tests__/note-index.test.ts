@@ -5,6 +5,7 @@ import {
   getBacklinks,
   getKnownSlugs,
   getNoteIndexSnapshot,
+  getSessionPlaintext,
   hydrateNoteIndex,
   listDeadOutgoing,
   noteIsOrphan,
@@ -85,6 +86,21 @@ describe("note-index", () => {
     await resetNoteIndexForTests({ dropDatabase: false });
     await hydrateNoteIndex();
     expect(getKnownSlugs().has("from-home")).toBe(false);
+  });
+
+  it("exposes full session plaintext for transclude and never reloads it from IDB", async () => {
+    rememberMetadata("from-home");
+    expect(getSessionPlaintext("from-home")).toBeNull();
+    upsertPlaintextNote("recipes", "# Pasta\nGarlic");
+    expect(getSessionPlaintext("recipes")).toBe("# Pasta\nGarlic");
+    upsertPlaintextNote("secret", "# Secret body", { durable: false });
+    expect(getSessionPlaintext("secret")).toBe("# Secret body");
+    await whenNoteIndexIdle();
+    await resetNoteIndexForTests({ dropDatabase: false });
+    await hydrateNoteIndex();
+    expect(getSessionPlaintext("recipes")).toBeNull();
+    expect(getSessionPlaintext("secret")).toBeNull();
+    expect(JSON.stringify(getNoteIndexSnapshot())).not.toContain("Secret body");
   });
 
   it("opens only the knowledge-index database, never note:${slug} Yjs IDB", async () => {
