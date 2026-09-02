@@ -121,6 +121,7 @@ vi.mock("@/lib/yjs/doc-cache", () => ({
     return {
       getText: () => ({
         toString: () => "",
+        insert: vi.fn(),
         observe: vi.fn(),
         unobserve: vi.fn(),
       }),

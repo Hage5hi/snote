@@ -20,6 +20,7 @@ import { parseCapabilityLocation, readEncryptionSecret, type CapabilityAccess } 
 import { getIdentity } from "@/lib/yjs/identity";
 import { touchRecent } from "@/lib/recent-notes";
 import { hydrateNoteIndex, rememberMetadata, upsertPlaintextNote } from "@/lib/note-index";
+import { applyTemplateSeedIfEmpty, consumeTemplateSeed } from "@/lib/note-templates";
 import type { PresenceUser } from "@/components/note/PresenceDots";
 import { maybeSaveSnapshot, recordOnSuddenDelete } from "@/lib/snapshots";
 import { useZenMode } from "@/hooks/use-zen-mode";
@@ -716,12 +717,16 @@ export default function NotePage({
 
     (idb?.whenSynced ?? Promise.resolve()).then(() => {
       if (disposed) return;
-      provider
+      return provider
         .connect(identity, {
           prefetchedYdocState: encMeta.ydocState,
           rowExists: encMeta.rowExists,
         })
         .catch((e) => console.warn("Provider connect failed", e));
+    }).then(() => {
+      if (disposed) return;
+      if (!capabilityAccess) applyTemplateSeedIfEmpty(ytext, slug);
+      else consumeTemplateSeed(slug);
       prevContent = ytext.toString();
       updateCounts();
       upsertPlaintextNote(slug, prevContent, { durable: indexDurable });
