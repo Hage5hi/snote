@@ -53,7 +53,10 @@ production operation, not a migration to apply automatically after merge.
    `deployedSha` `4baa89665ee1d75dcafb238d62fbed9b18f8a7c7`, still
    `capabilityRoutesEnabled` true. Same-canary origin SHA bump
    2026-09-02 ~19:22 ICT:
-   live `deployedSha` `7335fadce1dc96ee5548deb2e7e75b2bbff57c40`, still
+   `deployedSha` `7335fadce1dc96ee5548deb2e7e75b2bbff57c40`, still
+   `capabilityRoutesEnabled` true. Same-canary origin SHA bump
+   2026-09-02 ~20:41 ICT:
+   live `deployedSha` `8d9ce025d05c65664afaba78b9b145bf137edb83`, still
    `capabilityRoutesEnabled` true. This is not soak-complete.
    Do not treat snapshot verify as `capability_runtime_set`.
    This is not `LEGACY_SHARE_CUTOFF`, soak-complete,
