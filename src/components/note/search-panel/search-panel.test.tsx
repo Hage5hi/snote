@@ -1,4 +1,5 @@
 import {
+  closeSearchPanel,
   findNext,
   getSearchQuery,
   openSearchPanel,
@@ -290,8 +291,8 @@ describe("custom editor search panel", () => {
       wholeWord: false,
     });
 
-    fireEvent.keyDown(screen.getByTestId("note-search-panel"), { key: "Escape" });
-    await waitFor(() => expect(searchPanelOpen(env!.view.state)).toBe(false));
+    closeSearchPanel(env.view);
+    await waitFor(() => expect(searchPanelOpen(env.view.state)).toBe(false));
 
     env.destroy();
     env = mountEditor();
