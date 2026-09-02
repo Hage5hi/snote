@@ -95,6 +95,11 @@ describe("production note access hotfix", () => {
     expect(home).toContain('lazy(() => import("@/components/home/HomeLibraryPanel"))');
     expect(home).toContain('lazy(() => import("@/components/home/HomeTemplatePicker"))');
     expect(home).toContain('import("@/lib/note-templates")');
+    // fallback={null} lets the picker pop in above InstallPrompt and swallow the
+    // first click (firefox BIP e2e). Keep a sized desktop slot so the trigger stays put.
+    expect(home).not.toMatch(/<Suspense fallback=\{null\}>\s*<HomeTemplatePicker/);
+    expect(home).toContain("sm:min-w-[22rem]");
+    expect(source("src/components/home/HomeTemplatePicker.tsx")).toContain("sm:min-w-[22rem]");
   });
 
   it("keeps ShareDialog, LockButton, and LegacyNotePage off a static capability HTTP client import", () => {

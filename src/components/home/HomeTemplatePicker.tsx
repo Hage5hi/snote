@@ -31,7 +31,7 @@ export function HomeTemplatePicker({
   const selectedCustom = custom.find((row) => row.id === value);
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex min-h-8 min-w-0 sm:min-w-[22rem] flex-wrap items-center gap-2">
       <label htmlFor="home-template" className="text-[11px] text-muted-foreground">
         {t("home.templates.label")}
       </label>

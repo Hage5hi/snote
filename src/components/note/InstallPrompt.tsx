@@ -249,10 +249,20 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
     >
       {/* Install as an app */}
       <Dialog open={appOpen} onOpenChange={setAppOpen}>
+        {/* Open on mouse down, not click: Home's lazy template picker can
+            commit mid-click and swallow the mouseup (firefox BIP e2e).
+            preventDefault on click so DialogTrigger does not toggle closed. */}
         <DialogTrigger asChild>
           <button
             type="button"
             className="flex min-w-0 items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent"
+            onMouseDown={(e) => {
+              if (e.button === 0) setAppOpen(true);
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              setAppOpen(true);
+            }}
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
               {appInstalled ? <Check className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
@@ -309,6 +319,13 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
           <button
             type="button"
             className="flex min-w-0 items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent"
+            onMouseDown={(e) => {
+              if (e.button === 0) setExtOpen(true);
+            }}
+            onClick={(e) => {
+              e.preventDefault();
+              setExtOpen(true);
+            }}
           >
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
               <Puzzle className="h-4 w-4" />
