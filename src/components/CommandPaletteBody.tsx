@@ -58,7 +58,7 @@ export default function CommandPaletteBody({
   seedNonce = 0,
 }: Props) {
   const { t } = useI18n();
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(seedQuery);
   const [recents, setRecents] = useState(() => getRecents());
   const [pinned, setPinned] = useState<string[]>(() => getPinned());
   const [indexReady, setIndexReady] = useState(isNoteIndexHydrated);
@@ -124,7 +124,7 @@ export default function CommandPaletteBody({
       />
       <CommandList>
         {!indexReady && (
-          <p className="px-3 py-1.5 text-xs text-muted-foreground">{t("cmdk.indexing")}</p>
+          <p role="status" className="px-3 py-1.5 text-xs text-muted-foreground">{t("cmdk.indexing")}</p>
         )}
         {indexReady && <CommandEmpty>{emptyCopy}</CommandEmpty>}
 

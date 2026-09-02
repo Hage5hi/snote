@@ -113,4 +113,19 @@ describe("CommandPaletteBody corpus search", () => {
     });
     expect(screen.getByText("/from-home")).toBeInTheDocument();
   });
+
+  it("seeds #tag from a tag chip without a flash of empty query", () => {
+    render(
+      <MemoryRouter>
+        <CommandPaletteBody
+          open
+          onOpenChange={vi.fn()}
+          onOpenHelp={vi.fn()}
+          seedQuery="#work"
+          seedNonce={1}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByPlaceholderText("cmdk.placeholder")).toHaveValue("#work");
+  });
 });
