@@ -18,8 +18,8 @@ Legacy policies. Capability SPA canary is on
 open capability polling. Home still does not mint capabilities.
 `VITE_CAPABILITY_AUTH_ENABLED` and `VITE_ADMIN_PANEL_ENABLED` stayed
 false. Local tests prove capability code contracts only; 240, soak, and
-post-cutover probes remain mandatory gates. Soak ≥48h starts from this
-live origin canary. Do not treat 220, 270, `writes_enabled`, or this
+post-cutover probes remain mandatory gates. Soak ≥48h started from the
+first §3e origin canary. Do not treat 220, 270, `writes_enabled`, or this
 origin canary as authorization to apply 240 or flip
 `private_realtime_enabled`.
 
@@ -109,13 +109,13 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `c5914c8e` (see §3e).
+This is not the live SPA origin. Origin is `386421e8` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
 Canary is on (`capabilityRoutesEnabled` true; see §3e). SQL 240 is not
 applied. `writes_enabled=true`, `private_realtime_enabled=false` (see §3d).
-Soak ≥48h starts from the §3e origin canary.
+Soak ≥48h started from the first §3e origin canary.
 
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
@@ -346,7 +346,8 @@ via `wrangler pages deploy` of a strict `build:release`. Build flags:
 
 Canonical origin remains `https://note.syrin.online/` (do not advertise `snote.lovable.app`).
 
-Live `version.json` (browser UA; `no-store`) on both
+First canary origin (not current live) `version.json` at that go
+(browser UA; `no-store`) on both
 `https://note.syrin.online/version.json` and
 `https://snote-g4-origin.pages.dev/version.json`:
 `deployedSha` `c5914c8e8f953d5e8ed877d8c892b6e0941095e7`,
@@ -354,7 +355,15 @@ Live `version.json` (browser UA; `no-store`) on both
 `buildId` `1788325246305-qzfta8za`.
 
 Pages production deployment id `6277a076-c0d3-4464-b5b5-5b0432011029`
-replaces previous production `fe18302f` / `32ccfc35`.
+replaced previous production `fe18302f` / `32ccfc35`.
+
+Same-canary origin SHA bump 2026-09-02 ~16:03 ICT: Pages `snote-g4-origin`
+redeployed find/replace UI (#64+#65). Live `version.json` (browser UA;
+`no-store`) on both canonical and Pages hosts:
+`deployedSha` `386421e87f7eac2864f1a40655a2b0255b4332d6`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-02T09:02:48.606Z`,
+`buildId` `1788339753769-8ld1rqzh`.
+Replaces previous live origin `c5914c8e` / Pages `6277a076`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
@@ -367,7 +376,8 @@ Worker `syrin-prerender` still `9fcc58bc` / `b4d1a94e` — not redeployed.
 This is dual-mode `NotePage` (`legacyOnly={!canary}`): plain slug still
 legacy; `#owner`/`#edit` may open capability polling. Home still does not mint capabilities.
 This is not SQL 240, not Realtime, not soak-complete.
-Soak ≥48h starts from this live canary.
+Soak ≥48h started ~12:01 ICT from the first canary origin `c5914c8e`;
+this is a same-canary origin SHA bump, not soak-complete, not 240.
 
 ## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 
