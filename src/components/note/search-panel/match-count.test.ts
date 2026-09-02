@@ -31,17 +31,23 @@ describe("countSearchMatches", () => {
     ).toEqual({ current: 2, total: 2 });
   });
 
-  it("reports zero current when the caret is not on a match", () => {
+  it("reports the next match after the caret when not on a match, wrapping", () => {
     expect(
       countSearchMatches(stateWith("hello hello", 5), new SearchQuery({ search: "hello" })),
-    ).toEqual({ current: 0, total: 2 });
+    ).toEqual({ current: 2, total: 2 });
+    expect(
+      countSearchMatches(stateWith("xx hello hello", 0), new SearchQuery({ search: "hello" })),
+    ).toEqual({ current: 1, total: 2 });
+    expect(
+      countSearchMatches(stateWith("hello hello xx", 14), new SearchQuery({ search: "hello" })),
+    ).toEqual({ current: 1, total: 2 });
   });
 
   it("honors match-case and whole-word flags", () => {
     const mixed = stateWith("Hello hello", 0);
     expect(
       countSearchMatches(mixed, new SearchQuery({ search: "hello", caseSensitive: true })),
-    ).toEqual({ current: 0, total: 1 });
+    ).toEqual({ current: 1, total: 1 });
     expect(
       countSearchMatches(stateWith("hellohead hello", 10), new SearchQuery({ search: "hello", wholeWord: true })),
     ).toEqual({ current: 1, total: 1 });

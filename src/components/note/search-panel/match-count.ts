@@ -16,24 +16,37 @@ function eachMatch(state: EditorState, query: SearchQuery, onMatch: (from: numbe
   }
 }
 
-/** 1-based index of the match that contains the main selection, or 0. */
+/**
+ * 1-based index of the match that contains the main selection.
+ * If the caret is not on a match, reports the next match after the caret
+ * (wrapping), so the Find field never shows 0/N while matches exist.
+ */
 export function countSearchMatches(
   state: EditorState,
   query: SearchQuery,
 ): SearchMatchCount | null {
   if (!query.valid) return null;
   const sel = state.selection.main;
-  let total = 0;
-  let current = 0;
+  const ranges: { from: number; to: number }[] = [];
   eachMatch(state, query, (from, to) => {
-    total++;
-    if (sel.empty) {
-      if (from <= sel.head && sel.head < to) current = total;
-    } else if (from <= sel.from && to >= sel.to) {
-      current = total;
-    }
+    ranges.push({ from, to });
   });
-  return { current, total };
+  const total = ranges.length;
+  if (total === 0) return { current: 0, total: 0 };
+
+  for (let i = 0; i < ranges.length; i++) {
+    const { from, to } = ranges[i];
+    const onMatch = sel.empty
+      ? from <= sel.head && sel.head < to
+      : from <= sel.from && sel.to <= to;
+    if (onMatch) return { current: i + 1, total };
+  }
+
+  const after = sel.empty ? sel.head : sel.to;
+  for (let i = 0; i < ranges.length; i++) {
+    if (ranges[i].from >= after) return { current: i + 1, total };
+  }
+  return { current: 1, total };
 }
 
 const SELECT_ALL_CAP = 1000;

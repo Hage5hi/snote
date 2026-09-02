@@ -126,9 +126,11 @@ export function SearchPanel({ view }: { view: EditorView }) {
   const findRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const settingsRef = useRef<HTMLDivElement>(null);
+  const settingsBtnRef = useRef<HTMLDivElement>(null);
+  const settingsMenuRef = useRef<HTMLDivElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const replaceRowId = useId();
+  const settingsMenuId = useId();
 
   const setFindNode = (el: HTMLInputElement | null) => {
     findRef.current = el;
@@ -149,9 +151,9 @@ export function SearchPanel({ view }: { view: EditorView }) {
     if (!settingsOpen) return;
     const onDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (settingsRef.current && target && !settingsRef.current.contains(target)) {
-        setSettingsOpen(false);
-      }
+      if (!target) return;
+      if (settingsBtnRef.current?.contains(target) || settingsMenuRef.current?.contains(target)) return;
+      setSettingsOpen(false);
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
@@ -234,7 +236,7 @@ export function SearchPanel({ view }: { view: EditorView }) {
         data-replace-open={replaceOpen ? "true" : "false"}
         aria-label={t("shortcuts.label.find")}
         onKeyDown={onPanelKeyDown}
-        className="snote-search-panel mx-auto flex w-[min(40rem,calc(100%-1.5rem))] flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 text-card-foreground shadow-lg backdrop-blur-sm"
+        className="snote-search-panel relative mx-auto flex w-[min(40rem,calc(100%-1.5rem))] flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 text-card-foreground shadow-lg backdrop-blur-sm"
       >
         <div className="flex items-center gap-1">
           <IconButton
@@ -294,56 +296,16 @@ export function SearchPanel({ view }: { view: EditorView }) {
             <ArrowUp className="size-4" strokeWidth={1.75} />
           </IconButton>
 
-          <div ref={settingsRef} className="relative">
+          <div ref={settingsBtnRef}>
             <IconButton
               label={t("editor.search.settings")}
               expanded={settingsOpen}
               popup="menu"
+              controls={settingsOpen ? settingsMenuId : undefined}
               onClick={() => setSettingsOpen((open) => !open)}
             >
               <SlidersHorizontal className="size-4" strokeWidth={1.75} />
             </IconButton>
-            {settingsOpen ? (
-              <div
-                role="menu"
-                aria-label={t("editor.search.settings")}
-                className="absolute right-0 z-50 mt-1 min-w-[13.5rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
-              >
-                <OptionItem
-                  checked={query.caseSensitive}
-                  onToggle={() => commit({ caseSensitive: !query.caseSensitive })}
-                >
-                  {t("editor.search.match_case")}
-                </OptionItem>
-                <OptionItem
-                  checked={query.regexp}
-                  onToggle={() => commit({ regexp: !query.regexp })}
-                >
-                  {t("editor.search.regexp")}
-                </OptionItem>
-                <OptionItem
-                  checked={query.wholeWord}
-                  onToggle={() => commit({ wholeWord: !query.wholeWord })}
-                >
-                  {t("editor.search.by_word")}
-                </OptionItem>
-                <OptionItem checked disabled onToggle={() => {}}>
-                  {t("editor.search.wrap")}
-                </OptionItem>
-                <div className="my-1 h-px bg-muted" role="separator" />
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="flex w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:bg-accent"
-                  onClick={() => {
-                    selectAllSearchMatches(view);
-                    setSettingsOpen(false);
-                  }}
-                >
-                  {t("editor.search.select_all")}
-                </button>
-              </div>
-            ) : null}
           </div>
 
           <IconButton label={t("editor.search.close")} onClick={() => closeSearchPanel(view)}>
@@ -381,14 +343,14 @@ export function SearchPanel({ view }: { view: EditorView }) {
               </label>
               <button
                 type="button"
-                className="h-8 shrink-0 rounded-md bg-secondary px-2.5 text-xs font-medium text-secondary-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-8 shrink-0 whitespace-nowrap rounded-md bg-secondary px-2.5 text-xs font-medium text-secondary-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => replaceNext(view)}
               >
                 {t("editor.search.replace")}
               </button>
               <button
                 type="button"
-                className="h-8 shrink-0 rounded-md bg-secondary px-2.5 text-xs font-medium text-secondary-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-8 shrink-0 whitespace-nowrap rounded-md bg-secondary px-2.5 text-xs font-medium text-secondary-foreground hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 onClick={() => replaceAll(view)}
               >
                 {t("editor.search.replace_all")}
@@ -396,6 +358,49 @@ export function SearchPanel({ view }: { view: EditorView }) {
             </div>
           </div>
         </div>
+        {settingsOpen ? (
+          <div
+            ref={settingsMenuRef}
+            id={settingsMenuId}
+            role="menu"
+            aria-label={t("editor.search.settings")}
+            className="absolute right-1.5 top-full z-50 mt-1 min-w-[13.5rem] rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md"
+          >
+            <OptionItem
+              checked={query.caseSensitive}
+              onToggle={() => commit({ caseSensitive: !query.caseSensitive })}
+            >
+              {t("editor.search.match_case")}
+            </OptionItem>
+            <OptionItem
+              checked={query.regexp}
+              onToggle={() => commit({ regexp: !query.regexp })}
+            >
+              {t("editor.search.regexp")}
+            </OptionItem>
+            <OptionItem
+              checked={query.wholeWord}
+              onToggle={() => commit({ wholeWord: !query.wholeWord })}
+            >
+              {t("editor.search.by_word")}
+            </OptionItem>
+            <OptionItem checked disabled onToggle={() => {}}>
+              {t("editor.search.wrap")}
+            </OptionItem>
+            <div className="my-1 h-px bg-muted" role="separator" />
+            <button
+              type="button"
+              role="menuitem"
+              className="flex w-full rounded-sm px-2 py-1.5 text-left text-sm hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:bg-accent"
+              onClick={() => {
+                selectAllSearchMatches(view);
+                setSettingsOpen(false);
+              }}
+            >
+              {t("editor.search.select_all")}
+            </button>
+          </div>
+        ) : null}
       </div>
     </TooltipProvider>
   );

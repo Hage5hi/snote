@@ -145,6 +145,16 @@ describe("custom editor search panel", () => {
     });
   });
 
+  it("shows the next match index when the caret is not on a match", async () => {
+    env = mountEditor();
+    env.view.dispatch({ selection: { anchor: 5 } });
+    await openFind(env.view);
+    fireEvent.input(screen.getByTestId("note-search-find"), { target: { value: "alpha" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("note-search-count")).toHaveTextContent("2/2");
+    });
+  });
+
   it("renders English and Vietnamese copy", async () => {
     env = mountEditor();
     await openFind(env.view);

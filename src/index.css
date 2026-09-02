@@ -651,10 +651,12 @@
 }
 .snote-search-host {
   pointer-events: none;
+  overflow: visible;
 }
 .snote-search-panel {
   pointer-events: auto;
   color-scheme: inherit;
+  overflow: visible;
 }
 html.dark .snote-search-panel {
   color-scheme: dark;
