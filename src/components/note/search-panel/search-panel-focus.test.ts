@@ -70,6 +70,9 @@ describe("search panel focus chrome", () => {
     const host = declarationsFor(css, ".snote-search-host").join("\n");
     expect(host).toMatch(/justify-content:\s*flex-end/);
     expect(host).toMatch(/padding:/);
+    const panel = declarationsFor(css, ".snote-search-panel").join("\n");
+    expect(panel).toMatch(/width:\s*min\(26rem,\s*100%\)/);
+    expect(panel).toMatch(/margin-left:\s*auto/);
   });
 
   it("exposes a scroll-gutter that grows when replace is open", () => {

@@ -671,6 +671,9 @@
   pointer-events: auto;
   color-scheme: inherit;
   overflow: visible;
+  width: min(26rem, 100%);
+  max-width: 100%;
+  margin-left: auto;
 }
 html.dark .snote-search-panel {
   color-scheme: dark;
