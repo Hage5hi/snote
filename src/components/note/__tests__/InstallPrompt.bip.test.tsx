@@ -68,6 +68,30 @@ describe("InstallPrompt BIP dialog", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("opens on mouse down after beforeinstallprompt and shows the in-dialog Install button", () => {
+    render(
+      <Wrap>
+        <InstallPrompt />
+      </Wrap>,
+    );
+
+    act(() => {
+      const ev = new Event("beforeinstallprompt") as Event & {
+        prompt: () => Promise<void>;
+        userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+      };
+      ev.prompt = async () => {};
+      ev.userChoice = Promise.resolve({ outcome: "accepted" as const });
+      window.dispatchEvent(ev);
+    });
+
+    fireEvent.mouseDown(appTrigger());
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: new RegExp(`^${dict.en["install.btn"]}$`) }),
+    ).toBeVisible();
+  });
+
   it("returns focus to the trigger when Escape closes the dialog", async () => {
     const user = userEvent.setup();
     render(
