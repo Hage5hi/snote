@@ -1,4 +1,5 @@
 import {
+  findNext,
   getSearchQuery,
   openSearchPanel,
   searchKeymap,
@@ -12,6 +13,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { dict } from "@/i18n/catalog";
 import { loadDictionary, STORAGE_KEY } from "@/i18n";
 import { editorSearch, openFindPanel, openReplacePanel } from "./index";
+import { SEARCH_SCROLL_MARGIN_FIND, SEARCH_SCROLL_MARGIN_REPLACE } from "./extension";
+import { SEARCH_FLAGS_KEY } from "./search-flags";
 
 function mountEditor(doc = "alpha beta alpha") {
   const parent = document.createElement("div");
@@ -116,9 +119,7 @@ describe("custom editor search panel", () => {
     expect(query.regexp).toBe(true);
     expect(query.wholeWord).toBe(true);
 
-    const wrap = screen.getByRole("menuitemcheckbox", { name: dict.en["editor.search.wrap"] });
-    expect(wrap).toHaveAttribute("aria-checked", "true");
-    expect(wrap).toBeDisabled();
+    expect(screen.queryByRole("menuitemcheckbox", { name: dict.en["editor.search.wrap"] })).toBeNull();
   });
 
   it("selects all matches from the settings menu", async () => {
@@ -226,5 +227,82 @@ describe("custom editor search panel", () => {
     fireEvent.keyDown(find, { key: "f", metaKey: true, altKey: true });
     expect(searchPanelOpen(env.view.state)).toBe(true);
     expect(screen.getByTestId("note-search-panel")).toBeTruthy();
+  });
+
+  it("docks the overlay to the top-right instead of a centered 40rem bar", async () => {
+    env = mountEditor();
+    const panel = await openFind(env.view);
+    expect(panel.className).toMatch(/\bml-auto\b/);
+    expect(panel.className).not.toMatch(/\bmx-auto\b/);
+    expect(panel.className).not.toMatch(/40rem/);
+    expect(panel.className).toMatch(/26rem|max-w-full/);
+  });
+
+  it("adds a scroll-margin class while the overlay is open and grows it for replace", async () => {
+    env = mountEditor();
+    await openFind(env.view);
+    expect(env.view.dom.className).toMatch(/\bsnote-search-open\b/);
+    expect(env.view.dom.className).not.toMatch(/snote-search-replace-open/);
+
+    const findMargins = env.view.state.facet(EditorView.scrollMargins)
+      .map((fn) => fn(env!.view))
+      .filter((margin): margin is NonNullable<typeof margin> => margin != null);
+    expect(findMargins.some((margin) => margin.top === SEARCH_SCROLL_MARGIN_FIND)).toBe(true);
+
+    openReplacePanel(env.view);
+    await waitFor(() => {
+      expect(env!.view.dom.className).toMatch(/snote-search-replace-open/);
+    });
+    const replaceMargins = env.view.state.facet(EditorView.scrollMargins)
+      .map((fn) => fn(env!.view))
+      .filter((margin): margin is NonNullable<typeof margin> => margin != null);
+    expect(replaceMargins.some((margin) => margin.top === SEARCH_SCROLL_MARGIN_REPLACE)).toBe(true);
+  });
+
+  it("keeps F3 in the editor search keymap and finds the next match after the panel closes", async () => {
+    expect(searchKeymap.some((binding) => binding.key === "F3")).toBe(true);
+    env = mountEditor();
+    await openFind(env.view);
+    fireEvent.input(screen.getByTestId("note-search-find"), { target: { value: "alpha" } });
+    await waitFor(() => {
+      expect(getSearchQuery(env!.view.state).search).toBe("alpha");
+    });
+    fireEvent.keyDown(screen.getByTestId("note-search-panel"), { key: "Escape" });
+    await waitFor(() => expect(searchPanelOpen(env!.view.state)).toBe(false));
+
+    env.view.dispatch({ selection: { anchor: 0 } });
+    expect(findNext(env.view)).toBe(true);
+    expect(env.view.state.selection.main.from).toBe(0);
+    expect(findNext(env.view)).toBe(true);
+    expect(env.view.state.selection.main.from).toBe(11);
+  });
+
+  it("persists case/regex/whole-word across panel close and a new editor, but not the query", async () => {
+    env = mountEditor();
+    const user = userEvent.setup();
+    await openFind(env.view);
+    fireEvent.input(screen.getByTestId("note-search-find"), { target: { value: "alpha" } });
+    await user.click(screen.getByRole("button", { name: dict.en["editor.search.settings"] }));
+    await user.click(screen.getByRole("menuitemcheckbox", { name: dict.en["editor.search.match_case"] }));
+    expect(JSON.parse(localStorage.getItem(SEARCH_FLAGS_KEY) ?? "{}")).toMatchObject({
+      caseSensitive: true,
+      regexp: false,
+      wholeWord: false,
+    });
+
+    fireEvent.keyDown(screen.getByTestId("note-search-panel"), { key: "Escape" });
+    await waitFor(() => expect(searchPanelOpen(env!.view.state)).toBe(false));
+
+    env.destroy();
+    env = mountEditor();
+    expect(getSearchQuery(env.view.state).caseSensitive).toBe(true);
+    expect(getSearchQuery(env.view.state).search).toBe("");
+    await openFind(env.view);
+    expect(screen.getByTestId("note-search-find")).toHaveValue("");
+    await user.click(screen.getByRole("button", { name: dict.en["editor.search.settings"] }));
+    expect(screen.getByRole("menuitemcheckbox", { name: dict.en["editor.search.match_case"] })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
   });
 });

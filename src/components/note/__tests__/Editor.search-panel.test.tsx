@@ -135,4 +135,28 @@ describe("Editor find/replace wiring", () => {
     expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
     foreign.remove();
   });
+
+  it("finds the next match with F3 after the panel is closed", async () => {
+    const doc = new Y.Doc();
+    doc.getText("content").insert(0, "alpha beta alpha");
+    const awareness = new Awareness(doc);
+    const { container } = render(<Editor doc={doc} awareness={awareness} />);
+    await waitFor(() => expect(container.querySelector(".cm-content")).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    const find = await waitFor(() => {
+      const el = container.querySelector("[data-testid='note-search-find']") as HTMLInputElement | null;
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.input(find, { target: { value: "alpha" } });
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
+    });
+
+    fireEvent.keyDown(window, { key: "F3" });
+    const cm = container.querySelector(".cm-content");
+    expect(cm?.textContent).toContain("alpha");
+  });
 });

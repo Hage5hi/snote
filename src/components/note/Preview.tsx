@@ -7,6 +7,7 @@ import { renderKatex } from "@/lib/markdown/renderers/katex";
 import { highlightCode } from "@/lib/markdown/renderers/highlight";
 import { getCachedHtml, setCachedHtml } from "@/lib/markdown/render-cache";
 import { renderInWorker, renderOnMainThread } from "@/lib/markdown/preview-worker-client";
+import { handlePreviewChromeClick, labelPreviewChrome } from "@/lib/markdown/preview-chrome";
 import { useI18n } from "@/i18n";
 
 function escapeHtml(s: string) {
@@ -206,7 +207,22 @@ export function Preview({ doc, className }: { doc: Y.Doc; className?: string }) 
           /* keep escaped text */
         });
     });
-  }, [html, isDark]);
+
+    labelPreviewChrome(host, t("preview.copy_code"), t("preview.heading_anchor"));
+  }, [html, isDark, t]);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const onClick = (event: MouseEvent) => {
+      void handlePreviewChromeClick(event, host, {
+        copy: t("preview.copy_code"),
+        copied: t("preview.copied_code"),
+      });
+    };
+    host.addEventListener("click", onClick);
+    return () => host.removeEventListener("click", onClick);
+  }, [t]);
 
   return (
     <div

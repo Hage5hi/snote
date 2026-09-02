@@ -32,12 +32,12 @@ describe("search panel i18n keys", () => {
         "editor.search.match_case",
         "editor.search.regexp",
         "editor.search.by_word",
-        "editor.search.wrap",
         "editor.search.select_all",
         "editor.search.match_count",
         "editor.search.no_results",
       ]),
     );
+    expect(keys).not.toContain("editor.search.wrap");
   });
 
   for (const lang of SUPPORTED_LANGS) {

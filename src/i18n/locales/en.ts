@@ -56,6 +56,9 @@ const en = {
     // Help menu
     "menu.help": "Help",
     "preview.empty": "Empty note. Start typing to see a preview.",
+    "preview.copy_code": "Copy",
+    "preview.copied_code": "Copied",
+    "preview.heading_anchor": "Jump to heading",
     "note.goal_reached": "🎯 Goal reached!",
     "toast.synced_remote": "Synced from another device",
     "toast.synced_remote_desc": "Merged {bytes} new bytes from cloud.",

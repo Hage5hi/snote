@@ -52,4 +52,35 @@ describe("search panel focus chrome", () => {
     expect(focusBodies).toMatch(/border-color:\s*hsl\(var\(--(?:border|input)\)|box-shadow:/);
     expect(focusBodies).not.toMatch(/border-bottom-color:/);
   });
+
+  it("keeps the panel as a flush top overlay, not CodeMirror's pushing strip", () => {
+    const css = overlayCss();
+    const panel = declarationsFor(
+      css,
+      ".cm-editor .cm-panels.cm-panels-top:has(.snote-search-host)",
+    ).join("\n");
+    expect(panel).toMatch(/position:\s*absolute/);
+    expect(panel).toMatch(/top:\s*(0|1px|2px)/);
+    expect(panel).not.toMatch(/top:\s*0\.5rem/);
+    expect(panel).toMatch(/height:\s*0/);
+  });
+
+  it("docks the host to the editor's top-right with an edge gap", () => {
+    const css = overlayCss();
+    const host = declarationsFor(css, ".snote-search-host").join("\n");
+    expect(host).toMatch(/justify-content:\s*flex-end/);
+    expect(host).toMatch(/padding:/);
+  });
+
+  it("exposes a scroll-gutter that grows when replace is open", () => {
+    const css = overlayCss();
+    const find = declarationsFor(css, ".cm-editor.snote-search-open").join("\n");
+    const replace = declarationsFor(
+      css,
+      ".cm-editor.snote-search-open.snote-search-replace-open",
+    ).join("\n");
+    expect(find).toMatch(/--snote-search-gutter:\s*52px/);
+    expect(replace).toMatch(/--snote-search-gutter:\s*92px/);
+    expect(css).toMatch(/scroll-padding-top:\s*var\(--snote-search-gutter\)/);
+  });
 });

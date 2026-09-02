@@ -10,7 +10,14 @@ interface PendingRequest {
   reject: (reason: Error) => void;
 }
 
-const ADD_ATTR = ["data-mermaid", "data-katex", "data-hljs-lang", "data-hljs-code"];
+const ADD_ATTR = [
+  "data-mermaid",
+  "data-katex",
+  "data-hljs-lang",
+  "data-hljs-code",
+  "data-md-copy",
+  "data-preview-heading",
+];
 
 let worker: Worker | null = null;
 let nextId = 0;

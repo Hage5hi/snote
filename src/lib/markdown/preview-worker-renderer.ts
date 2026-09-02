@@ -1,4 +1,5 @@
-import { Marked } from "marked";
+import { Marked, type Tokens } from "marked";
+import { createPreviewHeadingIds } from "./preview-heading-id";
 
 function escapeHtml(value: string): string {
   return value.replace(/[<>&]/g, (character) => (
@@ -10,6 +11,8 @@ function escapeHtml(value: string): string {
 // An instance avoids mutating marked's process-wide defaults when this module
 // is loaded on the main thread for the fallback path.
 const markdown = new Marked({ gfm: true, breaks: true });
+
+let allocateHeadingId = createPreviewHeadingIds();
 
 // Disable raw HTML parsing so stray tags in prose like `<title>` (mentioned
 // as text, not as real markup) don't swallow following content. DOMPurify
@@ -37,7 +40,23 @@ markdown.use({
 });
 
 markdown.use({
+  hooks: {
+    preprocess(src: string) {
+      allocateHeadingId = createPreviewHeadingIds();
+      return src;
+    },
+    postprocess(html: string) {
+      return html
+        .replaceAll("<table>", '<div class="md-table-wrap"><table>')
+        .replaceAll("</table>", "</table></div>");
+    },
+  },
   renderer: {
+    heading({ tokens, depth, text }: Tokens.Heading) {
+      const id = allocateHeadingId(text);
+      const inner = this.parser.parseInline(tokens);
+      return `<h${depth} id="${id}" class="md-heading"><button type="button" class="md-heading-anchor" data-preview-heading="${id}"></button>${inner}</h${depth}>\n`;
+    },
     code({ lang, text }: { lang?: string; text: string }) {
       const encoded = encodeURIComponent(text);
       const language = (lang || "").trim().toLowerCase();
@@ -48,7 +67,7 @@ markdown.use({
         return `<div class="katex-block my-3" data-katex="${encoded}"><div class="text-muted-foreground text-sm">Đang tải công thức…</div></div>`;
       }
       const safeLanguage = /^[a-z0-9+#-]{1,20}$/.test(language) ? language : "";
-      return `<pre><code class="hljs language-${safeLanguage}" data-hljs-lang="${safeLanguage}" data-hljs-code="${encoded}">${escapeHtml(text)}</code></pre>`;
+      return `<pre class="md-code-block"><button type="button" class="md-code-copy" data-md-copy></button><code class="hljs language-${safeLanguage}" data-hljs-lang="${safeLanguage}" data-hljs-code="${encoded}">${escapeHtml(text)}</code></pre>`;
     },
   },
 });
