@@ -388,6 +388,23 @@ const es: Dictionary = {
     "scene.preview.committed": "{name} aplicada",
     "scene.preview.reverted": "Vista previa cancelada",
     "scene.preview.hint": "Pasa el cursor para previsualizar, haz clic para aplicar",
+
+    "editor.search.find": "Buscar",
+    "editor.search.replace": "Reemplazar",
+    "editor.search.replace_all": "Reemplazar todo",
+    "editor.search.next": "Siguiente",
+    "editor.search.previous": "Anterior",
+    "editor.search.close": "Cerrar",
+    "editor.search.open_replace": "Abrir opciones de reemplazo",
+    "editor.search.close_replace": "Cerrar opciones de reemplazo",
+    "editor.search.settings": "Opciones de búsqueda",
+    "editor.search.match_case": "Distinguir mayúsculas",
+    "editor.search.regexp": "Expresión regular",
+    "editor.search.by_word": "Palabra completa",
+    "editor.search.wrap": "Recorrer el documento",
+    "editor.search.select_all": "Seleccionar todas las coincidencias",
+    "editor.search.match_count": "{current}/{total}",
+    "editor.search.no_results": "Sin resultados",
   };
 
 export default es;

@@ -394,6 +394,23 @@ const vi: Dictionary = {
     "scene.preview.committed": "Đã áp dụng {name}",
     "scene.preview.reverted": "Đã hủy xem trước",
     "scene.preview.hint": "Di chuột để xem trước, bấm để áp dụng",
+
+    "editor.search.find": "Tìm",
+    "editor.search.replace": "Thay thế",
+    "editor.search.replace_all": "Thay thế tất cả",
+    "editor.search.next": "Tiếp theo",
+    "editor.search.previous": "Trước",
+    "editor.search.close": "Đóng",
+    "editor.search.open_replace": "Mở tùy chọn thay thế",
+    "editor.search.close_replace": "Đóng tùy chọn thay thế",
+    "editor.search.settings": "Tùy chọn tìm kiếm",
+    "editor.search.match_case": "Phân biệt hoa thường",
+    "editor.search.regexp": "Biểu thức chính quy",
+    "editor.search.by_word": "Khớp cả từ",
+    "editor.search.wrap": "Lặp lại từ đầu",
+    "editor.search.select_all": "Chọn tất cả kết quả",
+    "editor.search.match_count": "{current}/{total}",
+    "editor.search.no_results": "Không có kết quả",
   };
 
 export default vi;

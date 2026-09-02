@@ -399,6 +399,24 @@ const en = {
     "scene.preview.committed": "Applied {name}",
     "scene.preview.reverted": "Preview cancelled",
     "scene.preview.hint": "Hover to preview, click to apply",
+
+    // In-note find/replace panel
+    "editor.search.find": "Find",
+    "editor.search.replace": "Replace",
+    "editor.search.replace_all": "Replace all",
+    "editor.search.next": "Next",
+    "editor.search.previous": "Previous",
+    "editor.search.close": "Close",
+    "editor.search.open_replace": "Open replace options",
+    "editor.search.close_replace": "Close replace options",
+    "editor.search.settings": "Search options",
+    "editor.search.match_case": "Match case",
+    "editor.search.regexp": "Regular expression",
+    "editor.search.by_word": "Match whole word",
+    "editor.search.wrap": "Wrap around",
+    "editor.search.select_all": "Select all matches",
+    "editor.search.match_count": "{current}/{total}",
+    "editor.search.no_results": "No results",
   } as const;
 
 export default en;

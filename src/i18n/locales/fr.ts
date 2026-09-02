@@ -388,6 +388,23 @@ const fr: Dictionary = {
     "scene.preview.committed": "{name} appliquée",
     "scene.preview.reverted": "Aperçu annulé",
     "scene.preview.hint": "Survolez pour prévisualiser, cliquez pour appliquer",
+
+    "editor.search.find": "Rechercher",
+    "editor.search.replace": "Remplacer",
+    "editor.search.replace_all": "Tout remplacer",
+    "editor.search.next": "Suivant",
+    "editor.search.previous": "Précédent",
+    "editor.search.close": "Fermer",
+    "editor.search.open_replace": "Ouvrir les options de remplacement",
+    "editor.search.close_replace": "Fermer les options de remplacement",
+    "editor.search.settings": "Options de recherche",
+    "editor.search.match_case": "Respecter la casse",
+    "editor.search.regexp": "Expression régulière",
+    "editor.search.by_word": "Mot entier",
+    "editor.search.wrap": "Boucler",
+    "editor.search.select_all": "Sélectionner toutes les occurrences",
+    "editor.search.match_count": "{current}/{total}",
+    "editor.search.no_results": "Aucun résultat",
   };
 
 export default fr;

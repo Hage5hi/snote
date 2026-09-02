@@ -388,6 +388,23 @@ const ko: Dictionary = {
     "scene.preview.committed": "{name} 적용됨",
     "scene.preview.reverted": "미리보기 취소됨",
     "scene.preview.hint": "마우스를 올려 미리보기, 클릭하여 적용",
+
+    "editor.search.find": "찾기",
+    "editor.search.replace": "바꾸기",
+    "editor.search.replace_all": "모두 바꾸기",
+    "editor.search.next": "다음",
+    "editor.search.previous": "이전",
+    "editor.search.close": "닫기",
+    "editor.search.open_replace": "바꾸기 옵션 열기",
+    "editor.search.close_replace": "바꾸기 옵션 닫기",
+    "editor.search.settings": "검색 옵션",
+    "editor.search.match_case": "대/소문자 구분",
+    "editor.search.regexp": "정규식",
+    "editor.search.by_word": "단어 단위",
+    "editor.search.wrap": "끝까지 가면 처음부터",
+    "editor.search.select_all": "모든 일치 항목 선택",
+    "editor.search.match_count": "{current}/{total}",
+    "editor.search.no_results": "결과 없음",
   };
 
 export default ko;
