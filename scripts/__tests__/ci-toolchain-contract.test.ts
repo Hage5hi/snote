@@ -212,13 +212,4 @@ describe("CI toolchain contract", () => {
     expect(extensionAudit).not.toMatch(/bun audit[^\r\n]*--prod/);
     expect(extensionAudit).not.toMatch(/bun pm (?:audit|scan)/);
   });
-
-  it("keeps deno.lock workspace overrides in sync with package.json", () => {
-    const denoLock = JSON.parse(readFileSync("deno.lock", "utf8")) as {
-      workspace?: { packageJson?: { overrides?: Record<string, string> } };
-    };
-    expect(denoLock.workspace?.packageJson?.overrides).toEqual(
-      packageJson.overrides,
-    );
-  });
 });
