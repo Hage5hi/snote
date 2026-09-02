@@ -109,7 +109,7 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `e39caacd` (see §3e).
+This is not the live SPA origin. Origin is `4c791861` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
@@ -396,16 +396,26 @@ Same-canary origin SHA bump 2026-09-02 ~20:41 ICT (not current live): Pages
 Pages production deployment id `e3033d20-c0db-4a9d-95e4-e96abb459572`
 replaced previous live origin `7335fadc` / Pages `86b91475`.
 
-Same-canary origin SHA bump 2026-09-02 ~22:41 ICT: Pages `snote-g4-origin`
-redeployed Phase 1 knowledge UX — `[[slug]]` and Obsidian-order
+Same-canary origin SHA bump 2026-09-02 ~22:41 ICT (not current live): Pages
+`snote-g4-origin` redeployed Phase 1 knowledge UX — `[[slug]]` and Obsidian-order
 `[[slug|display]]`, client-only backlinks in outline, dotted dead links
-(#73). Live
-`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+(#73). `version.json` at that bump (browser UA; `no-store`) on both
+canonical and Pages hosts:
 `deployedSha` `e39caacd6b37518d61498262ba38506de64f5545`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-02T15:41:04.072Z`,
 `buildId` `1788363650837-yre560cm`.
 Pages production deployment id `005b2f9d`
-replaces previous live origin `8d9ce025` / Pages `e3033d20`.
+replaced previous live origin `8d9ce025` / Pages `e3033d20`.
+
+Same-canary origin SHA bump 2026-09-02 ~23:49 ICT: Pages `snote-g4-origin`
+redeployed Phase 2 knowledge UX — Cmd-K corpus search and `#tag` filter,
+plus `fast-uri` ^3.1.6 override (#75). Live
+`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+`deployedSha` `4c7918619eb6d9b56523444fa1eb8d154e0eba01`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-02T16:49:02.306Z`,
+`buildId` `1788367729384-c7thqlof`.
+Pages production deployment id `878a55d0`
+replaces previous live origin `e39caacd` / Pages `005b2f9d`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
