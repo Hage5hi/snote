@@ -109,7 +109,7 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `8d9ce025` (see §3e).
+This is not the live SPA origin. Origin is `e39caacd` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
@@ -386,15 +386,26 @@ canonical and Pages hosts:
 Pages production deployment id `86b91475-2b60-4c30-81e8-50b6a004a734`
 replaced previous live origin `4baa8966` / Pages `a138549e`.
 
-Same-canary origin SHA bump 2026-09-02 ~20:41 ICT: Pages `snote-g4-origin`
-redeployed find overlay `position:fixed` and horizontally centered (~50vw,
-clamped); Note dropdown removed (#71). Live
-`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+Same-canary origin SHA bump 2026-09-02 ~20:41 ICT (not current live): Pages
+`snote-g4-origin` redeployed find overlay `position:fixed` and horizontally centered
+(~50vw, clamped); Note dropdown removed (#71). `version.json` at that bump
+(browser UA; `no-store`) on both canonical and Pages hosts:
 `deployedSha` `8d9ce025d05c65664afaba78b9b145bf137edb83`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-02T13:40:14.339Z`,
 `buildId` `1788356400749-1b51r8sg`.
 Pages production deployment id `e3033d20-c0db-4a9d-95e4-e96abb459572`
-replaces previous live origin `7335fadc` / Pages `86b91475`.
+replaced previous live origin `7335fadc` / Pages `86b91475`.
+
+Same-canary origin SHA bump 2026-09-02 ~22:41 ICT: Pages `snote-g4-origin`
+redeployed Phase 1 knowledge UX — `[[slug]]` and Obsidian-order
+`[[slug|display]]`, client-only backlinks in outline, dotted dead links
+(#73). Live
+`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+`deployedSha` `e39caacd6b37518d61498262ba38506de64f5545`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-02T15:41:04.072Z`,
+`buildId` `1788363650837-yre560cm`.
+Pages production deployment id `005b2f9d`
+replaces previous live origin `8d9ce025` / Pages `e3033d20`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
