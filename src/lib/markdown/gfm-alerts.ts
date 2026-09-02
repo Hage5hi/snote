@@ -47,9 +47,8 @@ export const gfmAlertExtension: TokenizerAndRendererExtension = {
       const newline = rest.indexOf("\n");
       const line = newline === -1 ? rest : rest.slice(0, newline);
       const consumed = newline === -1 ? rest : rest.slice(0, newline + 1);
-      if (line.trim() === "") break;
-      if (parseGfmAlertMarker(line)) break;
       if (!line.startsWith(">")) break;
+      if (parseGfmAlertMarker(line)) break;
       bodyLines.push(line.replace(/^>[ \t]?/, ""));
       raw += consumed;
       rest = rest.slice(consumed.length);

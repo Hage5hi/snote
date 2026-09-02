@@ -30,6 +30,20 @@ describe("GFM GitHub alerts in preview", () => {
     expect(outsideIndex).toBeGreaterThan(alertClose);
   });
 
+  it("keeps quoted blank lines inside a two-paragraph GitHub alert", () => {
+    for (const source of [
+      "> [!NOTE]\n> first\n>\n> second\n\nOutside",
+      "> [!NOTE]\n> first\n> \n> second\n\nOutside",
+    ]) {
+      const html = renderMarkdown(source);
+      const alert = html.match(/<div class="md-alert md-alert-note"[\s\S]*?<\/div>/);
+      expect(alert?.[0]).toContain("first");
+      expect(alert?.[0]).toContain("second");
+      expect(alert?.[0]).not.toContain("Outside");
+      expect(html).toMatch(/<p>Outside<\/p>/);
+    }
+  });
+
   it("does not treat Obsidian fold markers as GitHub alerts", () => {
     const plus = renderMarkdown("> [!NOTE]+\n> Folded open");
     const minus = renderMarkdown("> [!NOTE]-\n> Folded shut");
