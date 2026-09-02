@@ -124,7 +124,7 @@ export default function Home() {
     setRecents(getRecents());
     setPinned(getPinned());
     const unsub = subscribeNoteIndex(() => setIndexTick((n) => n + 1));
-    void hydrateNoteIndex();
+    void hydrateNoteIndex().finally(() => setIndexTick((n) => n + 1));
     return unsub;
   }, []);
 

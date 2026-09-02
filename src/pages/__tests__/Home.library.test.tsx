@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "../Home";
@@ -9,6 +9,7 @@ import {
   rememberMetadata,
   resetNoteIndexForTests,
   upsertPlaintextNote,
+  whenNoteIndexIdle,
 } from "@/lib/note-index";
 import { consumeTemplateSeed } from "@/lib/note-templates";
 import { togglePin, touchRecent } from "@/lib/recent-notes";
@@ -93,6 +94,9 @@ describe("Home knowledge library", () => {
   });
 
   afterEach(async () => {
+    await act(async () => {
+      await Promise.resolve();
+    });
     await resetNoteIndexForTests();
     localStorage.clear();
     sessionStorage.clear();
@@ -122,6 +126,25 @@ describe("Home knowledge library", () => {
     expect(JSON.stringify(localStorage.getItem("note.recents"))).not.toContain("hello #work");
   });
 
+  it("hydrates index tags from knowledge IDB so Home can filter after a reload", async () => {
+    touchRecent("tagged");
+    touchRecent("plain");
+    upsertPlaintextNote("tagged", "hello #work", { durable: true });
+    upsertPlaintextNote("plain", "no tags here", { durable: true });
+    await whenNoteIndexIdle();
+    await resetNoteIndexForTests({ dropDatabase: false });
+
+    renderHome();
+    fireEvent.change(await screen.findByLabelText("home.filter.aria"), {
+      target: { value: "#work" },
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("/tagged").length).toBeGreaterThan(0);
+    });
+    expect(screen.queryByText("/plain")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "home.filter.chip_aria" })).toBeInTheDocument();
+  });
+
   it("saves, applies, and deletes a local virtual collection", async () => {
     touchRecent("tagged");
     upsertPlaintextNote("tagged", "hello #work");
@@ -142,6 +165,9 @@ describe("Home knowledge library", () => {
 
   it("opens a templated slug at /slug with a markdown seed and no capability mint", async () => {
     renderHome();
+    await act(async () => {
+      await hydrateNoteIndex();
+    });
 
     fireEvent.change(screen.getByLabelText("home.templates.aria"), {
       target: { value: "meeting" },
