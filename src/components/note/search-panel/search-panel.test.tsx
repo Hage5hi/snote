@@ -193,4 +193,38 @@ describe("custom editor search panel", () => {
     const panel = await waitFor(() => screen.getByTestId("note-search-panel"));
     expect(within(panel).getByTestId("note-search-find")).toBeTruthy();
   });
+
+  it("closes on Ctrl+F / Mod-f while the Find field is focused", async () => {
+    env = mountEditor();
+    await openFind(env.view);
+    const find = screen.getByTestId("note-search-find");
+    expect(document.activeElement).toBe(find);
+
+    fireEvent.keyDown(find, { key: "f", ctrlKey: true });
+    await waitFor(() => expect(searchPanelOpen(env!.view.state)).toBe(false));
+    expect(screen.queryByTestId("note-search-panel")).toBeNull();
+  });
+
+  it("closes on Ctrl+F while the Replace field is focused", async () => {
+    env = mountEditor();
+    openReplacePanel(env.view);
+    const replace = await waitFor(() => screen.getByTestId("note-search-replace"));
+    replace.focus();
+    fireEvent.keyDown(replace, { key: "f", ctrlKey: true });
+    await waitFor(() => expect(searchPanelOpen(env!.view.state)).toBe(false));
+  });
+
+  it("does not close on Ctrl+H or Cmd+Option+F while the panel is open", async () => {
+    env = mountEditor();
+    await openFind(env.view);
+    const find = screen.getByTestId("note-search-find");
+
+    fireEvent.keyDown(find, { key: "h", ctrlKey: true });
+    expect(searchPanelOpen(env.view.state)).toBe(true);
+    expect(screen.getByTestId("note-search-panel")).toHaveAttribute("data-replace-open", "true");
+
+    fireEvent.keyDown(find, { key: "f", metaKey: true, altKey: true });
+    expect(searchPanelOpen(env.view.state)).toBe(true);
+    expect(screen.getByTestId("note-search-panel")).toBeTruthy();
+  });
 });

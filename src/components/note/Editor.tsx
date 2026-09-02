@@ -23,7 +23,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { syntaxHighlighting, defaultHighlightStyle, bracketMatching } from "@codemirror/language";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { editorSearch, openFindPanel, openReplacePanel } from "@/components/note/search-panel";
+import { editorSearch, openReplacePanel, toggleFindPanel } from "@/components/note/search-panel";
 import { completionKeymap } from "@codemirror/autocomplete";
 import { yCollab } from "y-codemirror.next";
 import * as Y from "yjs";
@@ -170,22 +170,32 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(function Editor(
     onScrollEl?.(view.scrollDOM);
 
     // Global find/replace even if focus is outside the editor.
+    // Ctrl/Cmd+F toggles this editor's panel. Unrelated inputs keep native find.
     const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      // Allow native find/replace inside form inputs (including our search fields).
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      if (e.defaultPrevented) return;
+      const el = e.target instanceof HTMLElement ? e.target : null;
       const key = e.key.toLowerCase();
-      const openFind =
+      const findChord =
         (e.metaKey || e.ctrlKey) && key === "f" && !e.shiftKey && !e.altKey;
       // Ctrl+H on Win/Linux. Skip Meta+H so macOS "Hide Window" still works.
       const openReplaceCtrlH = e.ctrlKey && !e.metaKey && key === "h" && !e.shiftKey && !e.altKey;
       // Cmd+Option+F — CodeMirror's macOS replace chord.
       const openReplaceMac = e.metaKey && e.altKey && key === "f" && !e.shiftKey;
-      if (!openFind && !openReplaceCtrlH && !openReplaceMac) return;
+      if (!findChord && !openReplaceCtrlH && !openReplaceMac) return;
+
+      const inThisSearchPanel = Boolean(
+        el && view.dom.contains(el) && el.closest(".snote-search-panel"),
+      );
+      const isFormField = Boolean(el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA"));
+      if (isFormField && !inThisSearchPanel) return;
+
       e.preventDefault();
+      if (findChord) {
+        toggleFindPanel(view);
+        return;
+      }
       view.focus();
-      if (openFind) openFindPanel(view);
-      else openReplacePanel(view);
+      openReplacePanel(view);
     };
     window.addEventListener("keydown", onKey);
 

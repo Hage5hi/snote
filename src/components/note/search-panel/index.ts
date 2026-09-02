@@ -1,2 +1,2 @@
 export { editorSearch } from "./extension";
-export { openFindPanel, openReplacePanel } from "./replace-open";
+export { openFindPanel, openReplacePanel, toggleFindPanel } from "./replace-open";

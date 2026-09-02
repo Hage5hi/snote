@@ -35,4 +35,74 @@ describe("Editor find/replace wiring", () => {
     expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
     foreign.remove();
   });
+
+  it("closes the open panel on Ctrl+F even when the Find input is focused", async () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const { container } = render(<Editor doc={doc} awareness={awareness} />);
+    await waitFor(() => expect(container.querySelector(".cm-content")).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    });
+
+    const find = container.querySelector("[data-testid='note-search-find']") as HTMLInputElement;
+    find.focus();
+    fireEvent.keyDown(find, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
+    });
+  });
+
+  it("closes the open panel on a second window Ctrl+F / Cmd+F", async () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const { container } = render(<Editor doc={doc} awareness={awareness} />);
+    await waitFor(() => expect(container.querySelector(".cm-content")).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    });
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
+    });
+
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    });
+    fireEvent.keyDown(window, { key: "f", metaKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
+    });
+  });
+
+  it("does not close on Ctrl+H, and does not steal Ctrl+F from an unrelated INPUT while open", async () => {
+    const doc = new Y.Doc();
+    const awareness = new Awareness(doc);
+    const { container } = render(<Editor doc={doc} awareness={awareness} />);
+    await waitFor(() => expect(container.querySelector(".cm-content")).toBeTruthy());
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    });
+
+    fireEvent.keyDown(window, { key: "h", ctrlKey: true });
+    expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    expect(container.querySelector("[data-testid='note-search-panel']")).toHaveAttribute(
+      "data-replace-open",
+      "true",
+    );
+
+    const foreign = document.createElement("input");
+    document.body.append(foreign);
+    fireEvent.keyDown(foreign, { key: "f", ctrlKey: true });
+    expect(container.querySelector("[data-testid='note-search-panel']")).toBeTruthy();
+    foreign.remove();
+  });
 });
