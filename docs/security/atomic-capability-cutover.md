@@ -43,9 +43,12 @@ production operation, not a migration to apply automatically after merge.
    Named production go the same day:
    `SELECT public.capability_runtime_set(true, false);` —
    `writes_enabled=true`, `private_realtime_enabled=false` (findings §3d).
-   Do not treat snapshot verify as `capability_runtime_set`.
-   This is not `LEGACY_SHARE_CUTOFF`, canary, soak, SQL 240, origin/Worker, or
-   `private_realtime_enabled`. Do not skip remaining order.
+   Origin canary go 2026-09-02 ~12:01 ICT: live `version.json`
+   `deployedSha` `c5914c8e8f953d5e8ed877d8c892b6e0941095e7`,
+   `capabilityRoutesEnabled` true (findings §3e). Soak ≥48h starts from
+   that live canary. Do not treat snapshot verify as `capability_runtime_set`.
+   This is not `LEGACY_SHARE_CUTOFF`, soak-complete,
+   SQL 240, Worker redeploy, or `private_realtime_enabled`. Do not skip remaining order.
 2. Record the actual planned cutover timestamp, add exactly 30 days, and set
    that canonical ISO timestamp as both Edge secret `LEGACY_SHARE_CUTOFF` and
    frontend build variable `VITE_LEGACY_SHARE_CUTOFF`. Missing or malformed

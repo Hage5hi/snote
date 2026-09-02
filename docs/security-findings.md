@@ -11,11 +11,17 @@ applied: `capability_updates_append` returns `append_encryption_conflict` and
 `version_conflict`.
 Atomic SQL `20260724000000_atomic_capability_cutover.sql` has not been
 applied. Anon still has direct table grants; `notes` still has the three
-Legacy policies. Capability SPA canary remains off
-(`VITE_CAPABILITY_ROUTES_ENABLED` is not true; live `version.json`
-`capabilityRoutesEnabled` is false). Local tests prove capability code
-contracts only; 240, canary, soak, and post-cutover probes remain mandatory
-gates. Do not treat 220 or 270 as authorization to flip the canary or apply 240.
+Legacy policies. Capability SPA canary is on
+(`VITE_CAPABILITY_ROUTES_ENABLED` is true; live `version.json`
+`capabilityRoutesEnabled` is true; see §3e). Dual-mode `NotePage`
+(`legacyOnly={!canary}`): plain slug stays legacy; `#owner`/`#edit` may
+open capability polling. Home still does not mint capabilities.
+`VITE_CAPABILITY_AUTH_ENABLED` and `VITE_ADMIN_PANEL_ENABLED` stayed
+false. Local tests prove capability code contracts only; 240, soak, and
+post-cutover probes remain mandatory gates. Soak ≥48h starts from this
+live origin canary. Do not treat 220, 270, `writes_enabled`, or this
+origin canary as authorization to apply 240 or flip
+`private_realtime_enabled`.
 
 In the target post-cutover architecture, slugs are locators rather than
 authorization credentials. New notes use owner/edit/view capabilities, while
@@ -52,8 +58,8 @@ endpoint is production-verified. Credential-free probes on 2026-09-01 covered
 the same path returned `405` with the same JSON `no-store` body. `OPTIONS`
 returned `200`. This is not the old `400` `text/plain` dump handler. The
 tombstone was deployed ~2026-09-01 19:47 ICT via Lovable Cloud Edge function
-`raw` only. GitHub source tombstone was PR #32; the live SPA origin is
-`fe18302f` with canary off.
+`raw` only. GitHub source tombstone was PR #32; at that raw deploy the SPA
+origin was `fe18302f` with canary off. Current origin is §3e.
 
 Do not `GET /functions/v1/raw` with no extra path; the last segment `raw` is a
 legal locator. Do not probe production `raw` with a real locator. Probe only
@@ -83,7 +89,8 @@ of the live 410 tombstone includes PR #56 (`eab48218`); the Edge function commen
 no longer claims gateway 404. Hosted function was re-pinned 2026-09-02 ~06:20 ICT from
 that git; HTTP contract unchanged from the earlier 2026-09-02 ~04:20
 production-verified 410. Default production SPA no longer contains quoted
-`legacy-note-open` (PR #41, live origin `fe18302f`, canary off). `share-revoke`
+`legacy-note-open` (PR #41; at that 410 pin live origin was `fe18302f`,
+canary off; current origin is §3e). `share-revoke`
 remains live (POST `{}` still 400, not 410) and is out of scope for this
 containment.
 
@@ -102,13 +109,13 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin remains `fe18302f` (see §3a / §3b).
+This is not the live SPA origin. Origin is `c5914c8e` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
-may be ahead for later docs-only PRs; that does not change canary status or
-origin SHA.
+may be ahead for later docs-only PRs; that does not change Worker identity.
 
-Canary remains off. SQL 240 is not applied. `writes_enabled=true`,
-`private_realtime_enabled=false` (see §3d).
+Canary is on (`capabilityRoutesEnabled` true; see §3e). SQL 240 is not
+applied. `writes_enabled=true`, `private_realtime_enabled=false` (see §3d).
+Soak ≥48h starts from the §3e origin canary.
 
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
@@ -189,19 +196,18 @@ Tables present: `note_capabilities`, `note_updates`, `note_checkpoints`,
 `capability_checkpoint_append` exists (SQL 230 objects are present). Live
 SPA still does not mount `CutoverNotePage`. This §3a attestation is 220 vs
 240 vs canary; it is not a 230 soak claim. SQL 270 conflict-code verification
-is §3b.
+is §3b. Current origin canary is §3e.
 
-Live SPA `https://note.syrin.online/version.json` (fetched 2026-09-02;
-same fields on `https://snote-g4-origin.pages.dev/version.json`):
+At that 2026-09-01/02 SQL 220 check, live SPA
+`https://note.syrin.online/version.json` (same fields on
+`https://snote-g4-origin.pages.dev/version.json`):
 `deployedSha` `fe18302fb650b98eaee414e34e61db5cf06acc61`,
 `capabilityRoutesEnabled` false, `builtAt` `2026-09-01T19:55:38.557Z`,
 `buildId` `1788292524728-ej6uxgse`.
-Canary off. Origin includes PR #47 PWA recovery (`clientsClaim` off),
+Canary off at that check. Origin then included PR #47 PWA recovery (`clientsClaim` off),
 PR #48 shortened Update toast (no `update.fallback_cleanup` / cookie
 paragraph), and PR #50 enc-meta error + Retry gate. Do not claim origin
-is `9fcc58bc`. Git `main` includes Worker PR #52 and may be ahead for
-later docs-only PRs; that does not change canary status or origin SHA.
-Live Worker identity is §1c.
+is `9fcc58bc`. Live Worker identity is §1c.
 
 ## 3b. Additive capability sync conflict codes SQL 270 — production verified
 
@@ -225,16 +231,15 @@ At that 2026-09-01 check the row was `writes_enabled=false`,
 `capability_note_import_legacy` is absent; anon still has notes grants; the
 three Legacy policies remain.
 
-SPA canary still off: live `https://note.syrin.online/version.json`
+At that 270 check SPA canary was still off: live
+`https://note.syrin.online/version.json`
 `capabilityRoutesEnabled` false, `deployedSha`
 `fe18302fb650b98eaee414e34e61db5cf06acc61`, `builtAt`
 `2026-09-01T19:55:38.557Z`, `buildId` `1788292524728-ej6uxgse`.
-Origin includes PR #47 PWA recovery (`clientsClaim` off), PR #48
+Origin then included PR #47 PWA recovery (`clientsClaim` off), PR #48
 shortened Update toast (no `update.fallback_cleanup` / cookie
 paragraph), and PR #50 enc-meta error + Retry gate. Do not claim origin
-is `9fcc58bc`. Git `main` includes Worker PR #52 and may be ahead for
-later docs-only PRs; that does not change canary status or origin SHA.
-Live Worker identity is §1c.
+is `9fcc58bc`. Current origin canary is §3e. Live Worker identity is §1c.
 
 Production `note-session`, `note-sync`, and `note-manage` were SHA-pin
 redeployed 2026-09-02 ~05:22 ICT from git via Lovable Cloud (0.8 credits),
@@ -248,10 +253,11 @@ names still match git mapper `capabilityCorsHeaders` (includes
 (no `code` field) with both no-store headers. Still 401 not 503
 `unavailable` (HMAC and service-role env present). Still not 410.
 `share-revoke` POST `{}` still 400 `invalid token`. `legacy-note-open`
-POST still 410. Origin still `fe18302f` / `capabilityRoutesEnabled`
-false. Worker still §1c (`9fcc58bc` / `b4d1a94e`). Canary off. SQL 240
-not applied. Current kill switch: §3d (`writes_enabled=true`, Realtime
-still false).
+POST still 410. At that Edge SHA-pin, origin was still `fe18302f` /
+`capabilityRoutesEnabled` false. Worker still §1c (`9fcc58bc` /
+`b4d1a94e`). Canary off at that pin. SQL 240 not applied. Current kill
+switch: §3d (`writes_enabled=true`, Realtime still false). Current origin
+canary is §3e.
 
 Staging `dmfrydhubosecaatjjwf` was not redeployed this time. Earlier
 staging HTTP matched git mapper `capabilityCorsHeaders` (includes
@@ -268,9 +274,9 @@ git `0e1ea254`; hosted source bytes still cannot be listed (management
 list API 403). Do not invent a hosted blob SHA. Live Worker identity is
 §1c and is distinct from this SPA origin SHA.
 
-This is not a soak claim. This 270 attestation is not authorization to flip
-the canary or `private_realtime_enabled`, or to apply 240. The later
-`writes_enabled` go is §3d and is not those remaining steps.
+This is not a soak claim. This 270 attestation is not authorization to
+apply 240 or flip `private_realtime_enabled`. The later `writes_enabled`
+go is §3d. The later origin canary is §3e. Neither is soak-complete.
 
 ## 3c. Production daily backups — verified, no PITR
 
@@ -299,14 +305,14 @@ write path is still legacy `NotePage`.
 This backup-panel check is not a soak claim. This is not authorization to call
 `capability_runtime_set`, flip `writes_enabled` or `private_realtime_enabled`,
 origin-deploy, flip the canary, or apply SQL 240 — that 10:26 ICT verify was
-not the go; the named later go is §3d and is not those remaining steps.
+not the go; the named later `writes_enabled` go is §3d; later origin canary is
+§3e; neither is soak-complete or SQL 240.
 
 ## 3d. Production writes_enabled go — verified, Realtime still false
 
 Verified 2026-09-02 against production Lovable Cloud project
 `8f71f52d-c666-442f-bfb8-5f0a4e0ac1d5` / Supabase `onfzjmfjldsbthchssfr`.
-Canonical origin remains `https://note.syrin.online/` (do not advertise
-`snote.lovable.app`).
+Canonical origin remains `https://note.syrin.online/` (do not advertise `snote.lovable.app`).
 
 Daily snapshot re-check 2026-09-02 ~11:23 ICT (Lovable Cloud → More → Cloud →
 Database → Backups), production not staging: latest snapshot still
@@ -320,16 +326,48 @@ via Lovable Cloud `query_database`. Confirmed row:
 `private_realtime_enabled=false`, `updated_at`
 `2026-09-02 04:24:07.235188+00` (11:24 ICT).
 
-SQL 240 still not applied: `capability_note_import_legacy` is absent. Live SPA
-unchanged: GET `https://note.syrin.online/version.json` still `deployedSha`
-`fe18302fb650b98eaee414e34e61db5cf06acc61`, `capabilityRoutesEnabled` false,
-`builtAt` `2026-09-01T19:55:38.557Z`.
+SQL 240 still not applied: `capability_note_import_legacy` is absent. At that
+go, live SPA was still GET `https://note.syrin.online/version.json`
+`deployedSha` `fe18302fb650b98eaee414e34e61db5cf06acc61`,
+`capabilityRoutesEnabled` false, `builtAt` `2026-09-01T19:55:38.557Z`.
 POST `/functions/v1/note-session` `{}` still 401 `{"error":"unauthorized"}`
 no-store. Live write path is still legacy `NotePage`;
 this flip does not mount `CutoverNotePage` and is not a canary.
 
 This is not canary, not SQL 240, not origin/Worker deploy, not
 `private_realtime_enabled`, and not soak.
+Later origin canary is §3e.
+
+## 3e. Production origin canary go — capabilityRoutesEnabled true
+
+Verified 2026-09-02 ~12:01 ICT. Cloudflare Pages project `snote-g4-origin`
+via `wrangler pages deploy` of a strict `build:release`. Build flags:
+`VITE_CAPABILITY_ROUTES_ENABLED=true` only. `VITE_CAPABILITY_AUTH_ENABLED` and `VITE_ADMIN_PANEL_ENABLED` stayed false.
+
+Canonical origin remains `https://note.syrin.online/` (do not advertise `snote.lovable.app`).
+
+Live `version.json` (browser UA; `no-store`) on both
+`https://note.syrin.online/version.json` and
+`https://snote-g4-origin.pages.dev/version.json`:
+`deployedSha` `c5914c8e8f953d5e8ed877d8c892b6e0941095e7`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-02T05:00:59.705Z`,
+`buildId` `1788325246305-qzfta8za`.
+
+Pages production deployment id `6277a076-c0d3-4464-b5b5-5b0432011029`
+replaces previous production `fe18302f` / `32ccfc35`.
+
+Kill switch unchanged: `writes_enabled=true`,
+`private_realtime_enabled=false`, `updated_at`
+`2026-09-02 04:24:07.235188+00` (see §3d). SQL 240 still not applied
+(`capability_note_import_legacy` is absent).
+POST `/functions/v1/legacy-note-open` `{}` still 410 `{"found":false}`.
+POST `/functions/v1/note-session` `{}` still 401 `{"error":"unauthorized"}`.
+Worker `syrin-prerender` still `9fcc58bc` / `b4d1a94e` — not redeployed.
+
+This is dual-mode `NotePage` (`legacyOnly={!canary}`): plain slug still
+legacy; `#owner`/`#edit` may open capability polling. Home still does not mint capabilities.
+This is not SQL 240, not Realtime, not soak-complete.
+Soak ≥48h starts from this live canary.
 
 ## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 
