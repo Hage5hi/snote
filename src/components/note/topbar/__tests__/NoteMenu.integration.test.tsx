@@ -1,29 +1,31 @@
-// Integration test: confirms the Note menu no longer exposes Rename or
-// Duplicate actions, and the related i18n keys / helper modules have been
-// removed. This is the in-repo counterpart to the E2E spec — it runs in
-// CI on every PR (not just when Playwright is available).
-import { readFileSync } from "node:fs";
+// Integration test: the redundant Note dropdown is gone. Word goal, history,
+// and copy-all stay reachable via WordCountTrigger, TopbarBrand, and ⌘⇧C.
+// Also confirms Rename/Duplicate stay fully removed (in-repo counterpart to E2E).
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { dict } from "@/i18n/catalog";
 
 const RENAME_RE = /rename|đổi tên/i;
 const DUP_RE = /duplicate|nhân bản/i;
+const TOPBAR = resolve(__dirname, "../Topbar.tsx");
+const NOTE_MENU = resolve(__dirname, "../NoteMenu.tsx");
 
-describe("Note menu — Rename/Duplicate fully removed", () => {
-  it("NoteMenu source contains no Rename/Duplicate items or handlers", () => {
-    const src = readFileSync(
-      resolve(__dirname, "../NoteMenu.tsx"),
-      "utf8",
-    );
-    expect(src).not.toMatch(RENAME_RE);
-    expect(src).not.toMatch(DUP_RE);
-    expect(src).not.toMatch(/onRename|onDuplicate/);
-    // Sanity: expected items still exist.
-    expect(src).toMatch(/note\.goal/);
-    expect(src).toMatch(/note\.history/);
+describe("Note menu — removed as duplicate chrome", () => {
+  it("does not ship NoteMenu and Topbar does not render it", () => {
+    expect(existsSync(NOTE_MENU)).toBe(false);
+    const src = readFileSync(TOPBAR, "utf8");
+    expect(src).not.toMatch(/NoteMenu/);
+    expect(src).not.toMatch(/menu\.note/);
+    expect(src).toMatch(/ModeMenu/);
+    expect(src).toMatch(/ExportMenu/);
+    expect(src).toMatch(/HelpMenu/);
   });
 
+  it("keeps WordCountTrigger visible on small viewports after NoteMenu is gone", () => {
+    const src = readFileSync(resolve(__dirname, "../WordCountTrigger.tsx"), "utf8");
+    expect(src).not.toMatch(/hidden sm:flex/);
+  });
 
   it("no rename/duplicate i18n keys remain in any locale", () => {
     for (const [locale, d] of Object.entries(dict)) {
@@ -46,5 +48,11 @@ describe("Note menu — Rename/Duplicate fully removed", () => {
       await expect(loader(spec)).rejects.toBeTruthy();
     }
   });
-});
 
+  it("Topbar source contains no Rename/Duplicate items or handlers", () => {
+    const src = readFileSync(TOPBAR, "utf8");
+    expect(src).not.toMatch(RENAME_RE);
+    expect(src).not.toMatch(DUP_RE);
+    expect(src).not.toMatch(/onRename|onDuplicate/);
+  });
+});

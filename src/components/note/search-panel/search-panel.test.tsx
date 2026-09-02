@@ -230,14 +230,14 @@ describe("custom editor search panel", () => {
     expect(screen.getByTestId("note-search-panel")).toBeTruthy();
   });
 
-  it("docks the overlay to the top-right instead of a centered 40rem bar", async () => {
+  it("fills the viewport-centered host instead of docking top-right at 26rem", async () => {
     env = mountEditor();
     const panel = await openFind(env.view);
-    expect(panel.className).toMatch(/\bml-auto\b/);
+    expect(panel.className).not.toMatch(/\bml-auto\b/);
     expect(panel.className).toMatch(/\bmin-w-0\b/);
-    expect(panel.className).not.toMatch(/\bmx-auto\b/);
+    expect(panel.className).toMatch(/\bw-full\b/);
     expect(panel.className).not.toMatch(/40rem/);
-    expect(panel.className).toMatch(/26rem|max-w-full/);
+    expect(panel.className).not.toMatch(/26rem/);
   });
 
   it("adds a scroll-margin class while the overlay is open and grows it for replace", async () => {

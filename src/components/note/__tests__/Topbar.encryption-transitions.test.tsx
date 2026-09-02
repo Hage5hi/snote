@@ -9,7 +9,6 @@ const harness = vi.hoisted(() => ({
   shareDialogProps: vi.fn(),
   historyDialogProps: vi.fn(),
   topbarBrandProps: vi.fn(),
-  noteMenuProps: vi.fn(),
 }));
 
 vi.mock("@/components/ui/separator", () => ({ Separator: () => null }));
@@ -43,12 +42,6 @@ vi.mock("@/components/note/topbar/TopbarBrand", () => ({
 vi.mock("@/components/note/topbar/WordCountTrigger", () => ({ WordCountTrigger: () => null }));
 vi.mock("@/components/note/topbar/ViewControls", () => ({ ViewControls: () => null }));
 vi.mock("@/components/note/topbar/ExportMenu", () => ({ ExportMenu: () => null }));
-vi.mock("@/components/note/topbar/NoteMenu", () => ({
-  NoteMenu: (props: unknown) => {
-    harness.noteMenuProps(props);
-    return null;
-  },
-}));
 vi.mock("@/components/note/topbar/ModeMenu", () => ({ ModeMenu: () => null }));
 vi.mock("@/components/note/topbar/HelpMenu", () => ({ HelpMenu: () => null }));
 vi.mock("@/hooks/use-scene-theme", () => ({ useSceneTheme: () => ({ scene: "none" }) }));
@@ -98,7 +91,6 @@ describe("Topbar encryption transitions", () => {
     harness.shareDialogProps.mockClear();
     harness.historyDialogProps.mockClear();
     harness.topbarBrandProps.mockClear();
-    harness.noteMenuProps.mockClear();
   });
 
   it("forwards the sanitized current share URL", () => {
@@ -146,9 +138,6 @@ describe("Topbar encryption transitions", () => {
     expect(harness.topbarBrandProps).toHaveBeenLastCalledWith(
       expect.objectContaining({ onOpenHistory: undefined }),
     );
-    expect(harness.noteMenuProps).toHaveBeenLastCalledWith(
-      expect.objectContaining({ onOpenHistory: undefined }),
-    );
   });
 
   it("keeps slug-keyed history available to legacy notes", () => {
@@ -156,9 +145,6 @@ describe("Topbar encryption transitions", () => {
 
     expect(harness.historyDialogProps).toHaveBeenCalledTimes(1);
     expect(harness.topbarBrandProps).toHaveBeenLastCalledWith(
-      expect.objectContaining({ onOpenHistory: expect.any(Function) }),
-    );
-    expect(harness.noteMenuProps).toHaveBeenLastCalledWith(
       expect.objectContaining({ onOpenHistory: expect.any(Function) }),
     );
   });

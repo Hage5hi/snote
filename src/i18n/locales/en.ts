@@ -36,12 +36,6 @@ const en = {
     "brand.copy_content": "Copy content",
     "brand.outline": "Outline",
 
-    // Note menu
-    "menu.note": "Note",
-    "note.goal": "Set word goal…",
-    "note.history": "History & Restore",
-    "note.copy_all": "Copy entire note",
-
     // Export menu
     "menu.export": "Export",
     "export.copy_url": "Copy note URL",

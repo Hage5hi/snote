@@ -25,7 +25,7 @@ export function WordCountTrigger({ slug, words, chars, onOpen }: WordCountTrigge
         <button
           type="button"
           onClick={onOpen}
-          className="hidden sm:flex items-center gap-3 rounded-md px-2 py-1 text-[11px] text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground"
+          className="flex items-center gap-3 rounded-md px-2 py-1 text-[11px] text-muted-foreground tabular-nums hover:bg-accent hover:text-foreground"
         >
           {goal ? (
             <>

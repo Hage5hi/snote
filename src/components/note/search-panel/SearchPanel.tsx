@@ -249,7 +249,7 @@ export function SearchPanel({ view }: { view: EditorView }) {
         data-replace-open={replaceOpen ? "true" : "false"}
         aria-label={t("shortcuts.label.find")}
         onKeyDown={onPanelKeyDown}
-        className="snote-search-panel relative ml-auto flex min-w-0 w-[min(26rem,100%)] max-w-full flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 text-card-foreground shadow-lg backdrop-blur-sm"
+        className="snote-search-panel relative flex min-w-0 w-full max-w-full flex-col gap-1 rounded-xl border border-border bg-card/95 p-1.5 text-card-foreground shadow-lg backdrop-blur-sm"
       >
         <div className="flex items-center gap-1">
           <IconButton

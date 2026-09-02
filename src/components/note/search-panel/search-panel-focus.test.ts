@@ -59,21 +59,42 @@ describe("search panel focus chrome", () => {
       css,
       ".cm-editor .cm-panels.cm-panels-top:has(.snote-search-host)",
     ).join("\n");
-    expect(panel).toMatch(/position:\s*absolute/);
-    expect(panel).toMatch(/top:\s*(0|1px|2px)/);
-    expect(panel).not.toMatch(/top:\s*0\.5rem/);
     expect(panel).toMatch(/height:\s*0/);
+    expect(panel).toMatch(/overflow:\s*visible/);
+    expect(panel).not.toMatch(/top:\s*0\.5rem/);
   });
 
-  it("docks the host to the editor's top-right with an edge gap", () => {
+  it("centers the overlay on the viewport at about half width", () => {
     const css = overlayCss();
     const host = declarationsFor(css, ".snote-search-host").join("\n");
-    expect(host).toMatch(/justify-content:\s*flex-end/);
-    expect(host).toMatch(/padding:/);
+    expect(host).not.toMatch(/justify-content:\s*flex-end/);
+    expect(host).toMatch(/position:\s*fixed/);
+    expect(host).toMatch(/left:\s*50%/);
+    expect(host).toMatch(/translateX\(\s*-50%\s*\)/);
+    expect(host).toMatch(/50vw/);
+    expect(host).toMatch(/100vw\s*-\s*1\.5rem/);
+    expect(host).toMatch(/2\.75rem/);
+    expect(host).toMatch(/z-index:\s*2[0-9]/);
+    expect(host).not.toMatch(/z-index:\s*5\d/);
     const panel = declarationsFor(css, ".snote-search-panel").join("\n");
-    expect(panel).toMatch(/width:\s*min\(26rem,\s*100%\)/);
-    expect(panel).toMatch(/margin-left:\s*auto/);
+    expect(panel).not.toMatch(/26rem/);
+    expect(panel).not.toMatch(/margin-left:\s*auto/);
     expect(panel).toMatch(/min-width:\s*0/);
+  });
+
+  it("sits near the viewport top when zen mode hides the topbar", () => {
+    const css = overlayCss();
+    const zen = declarationsFor(css, "html.zen-mode .snote-search-host").join("\n");
+    expect(zen.length).toBeGreaterThan(0);
+    expect(zen).toMatch(/top:/);
+    expect(zen).not.toMatch(/2\.75rem/);
+    expect(zen).toMatch(/z-index:\s*3[0-9]/);
+  });
+
+  it("clears the two-row topbar below the 900px layout breakpoint", () => {
+    const css = overlayCss();
+    expect(css).toMatch(/@media\s*\(\s*max-width:\s*899px\s*\)/);
+    expect(css).toMatch(/5rem/);
   });
 
   it("exposes a scroll-gutter that grows when replace is open", () => {
