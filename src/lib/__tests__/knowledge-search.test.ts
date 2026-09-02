@@ -280,4 +280,18 @@ describe("knowledge search corpus privacy", () => {
       ),
     ).toEqual([]);
   });
+
+  it("keeps a live session snippet when durable rows hydrate", async () => {
+    upsertPlaintextNote("journal", "# Journal\nkeep-live-snippet\n", { durable: true });
+    await whenNoteIndexIdle();
+    await resetNoteIndexForTests({ dropDatabase: false });
+    upsertPlaintextNote("journal", "# Journal\nkeep-live-snippet\n", { durable: false });
+    await hydrateNoteIndex();
+    expect(
+      rankKnowledgeSearch(
+        parseKnowledgeQuery("keep-live-snippet"),
+        collectKnowledgeSearchDocs(),
+      ).map((hit) => hit.slug),
+    ).toEqual(["journal"]);
+  });
 });

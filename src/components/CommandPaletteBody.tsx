@@ -92,6 +92,11 @@ export default function CommandPaletteBody({
     softNavigate(navigate, `/${slug}`);
   };
 
+  const handleOpenChange = (v: boolean) => {
+    if (!v) setQuery("");
+    onOpenChange(v);
+  };
+
   const handleTogglePin = (slug: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setPinned(togglePin(slug));
@@ -115,8 +120,17 @@ export default function CommandPaletteBody({
       ? t("cmdk.empty_tag", { tag: parsed.tag })
       : t("cmdk.empty");
 
+  const createGroup = isValidNew ? (
+    <CommandGroup heading={t("cmdk.group_open")}>
+      <CommandItem value={`open-${trimmed}`} onSelect={() => go(trimmed)}>
+        <Plus className="h-4 w-4" />
+        {t("cmdk.item_open")} <span className="font-mono">/{trimmed}</span>
+      </CommandItem>
+    </CommandGroup>
+  ) : null;
+
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
+    <CommandDialog open={open} onOpenChange={handleOpenChange}>
       <CommandInput
         placeholder={t("cmdk.placeholder")}
         value={query}
@@ -128,17 +142,7 @@ export default function CommandPaletteBody({
         )}
         {indexReady && <CommandEmpty>{emptyCopy}</CommandEmpty>}
 
-        {isValidNew && (
-          <>
-            <CommandGroup heading={t("cmdk.group_open")}>
-              <CommandItem value={`open-${trimmed}`} onSelect={() => go(trimmed)}>
-                <Plus className="h-4 w-4" />
-                {t("cmdk.item_open")} <span className="font-mono">/{trimmed}</span>
-              </CommandItem>
-            </CommandGroup>
-            <CommandSeparator />
-          </>
-        )}
+        {searching && hits.length === 0 && createGroup}
 
         {searching ? (
           hits.length > 0 && (
@@ -274,6 +278,7 @@ export default function CommandPaletteBody({
             </CommandGroup>
           </>
         )}
+        {searching && hits.length > 0 && createGroup}
       </CommandList>
     </CommandDialog>
   );

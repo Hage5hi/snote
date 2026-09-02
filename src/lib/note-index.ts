@@ -160,7 +160,10 @@ export function upsertPlaintextNote(
   };
   if (graphUnchanged(prev, next) && prev?.snippet === next.snippet) return;
   memory.set(trimmedSlug, next);
-  if (graphUnchanged(prev, next)) return;
+  if (graphUnchanged(prev, next)) {
+    notify();
+    return;
+  }
   trimMemory();
   notify();
   if (opts?.durable) queuePersist(next);
@@ -230,7 +233,11 @@ export async function hydrateNoteIndex(): Promise<void> {
         const prev = memory.get(row.slug);
         if (prev?.source === "plaintext" && row.source !== "plaintext") continue;
         if (prev && prev.updatedAt > row.updatedAt) continue;
-        memory.set(row.slug, { ...row, tags: row.tags ?? [], snippet: undefined });
+        memory.set(row.slug, {
+          ...row,
+          tags: row.tags ?? [],
+          snippet: prev?.snippet,
+        });
         changed = true;
       }
     } catch {

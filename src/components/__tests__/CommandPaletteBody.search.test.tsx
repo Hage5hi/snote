@@ -80,6 +80,12 @@ describe("CommandPaletteBody corpus search", () => {
     });
     expect(screen.getByText("Pasta night")).toBeInTheDocument();
     expect(screen.getByText(/\/recipes/)).toBeInTheDocument();
+    const title = screen.getByText("Pasta night");
+    const create = screen.queryByText("/pasta");
+    expect(create).toBeInTheDocument();
+    expect(
+      title.compareDocumentPosition(create as Node) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it("filters to notes whose plaintext contains #tag and does not offer admin", () => {
