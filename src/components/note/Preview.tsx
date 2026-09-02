@@ -81,8 +81,15 @@ export function Preview({
         setLang(detectLang(text));
         lastTextLenRef.current = text.length;
       }
+      // Transclude only when this preview belongs to a note slug. Share (and
+      // any slug-less host) must not splice this tab's unlocked vault into a
+      // foreign document. Failed tokens still become dead wiki links.
       const expanded = expandWikiLinks(
-        expandTranscludes(text, { getPlaintext: getSessionPlaintext }, { currentSlug: slug }),
+        expandTranscludes(
+          text,
+          { getPlaintext: slug ? getSessionPlaintext : () => null },
+          { currentSlug: slug },
+        ),
       );
       // Cache key is post-`expandWikiLinks` text (pre-hydration HTML).
       // Hydration (mermaid/katex/hljs + theme) re-runs in the next effect

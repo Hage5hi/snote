@@ -2,6 +2,7 @@ import { act, render, screen } from "@testing-library/react";
 import * as Y from "yjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { __resetRenderCacheForTests, setCachedHtml } from "@/lib/markdown/render-cache";
+import { resetNoteIndexForTests, upsertPlaintextNote } from "@/lib/note-index";
 
 const workerMocks = vi.hoisted(() => ({
   renderInWorker: vi.fn(),
@@ -134,5 +135,42 @@ describe("Preview render correctness", () => {
     await act(async () => pending.reject(new Error("worker stopped")));
 
     expect(workerMocks.renderOnMainThread).not.toHaveBeenCalled();
+  });
+});
+
+describe("Preview transclude privacy", () => {
+  beforeEach(async () => {
+    vi.useFakeTimers();
+    workerMocks.renderInWorker.mockReset();
+    workerMocks.renderOnMainThread.mockReset();
+    workerMocks.renderInWorker.mockResolvedValue("<p>ok</p>");
+    __resetRenderCacheForTests();
+    await resetNoteIndexForTests();
+    upsertPlaintextNote("recipes", "SECRET VAULT BODY");
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await resetNoteIndexForTests();
+  });
+
+  it("does not inline this session's vault into a slug-less preview (share)", async () => {
+    const doc = createDoc("see ![[recipes]]");
+    render(<Preview doc={doc} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const sent = workerMocks.renderInWorker.mock.calls.map((call) => String(call[0]));
+    expect(sent.join("\n")).not.toContain("SECRET VAULT BODY");
+    expect(sent).toContain("see [recipes](/recipes)");
+  });
+
+  it("inlines unlocked local notes when the host note slug is present", async () => {
+    const doc = createDoc("see ![[recipes]]");
+    render(<Preview doc={doc} slug="journal" />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(workerMocks.renderInWorker).toHaveBeenCalledWith("see SECRET VAULT BODY");
   });
 });
