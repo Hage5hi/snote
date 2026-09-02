@@ -19,8 +19,9 @@ export function createPreviewHeadingIds(): (text: string) => string {
   const seen = new Map<string, number>();
   return (text: string) => {
     const slug = slugifyPreviewHeading(text);
+    // Prefix is the real collision guard vs capability hashes `#owner`/`#edit`/`#key`.
     let id = `${PREFIX}${slug || "section"}`;
-    if (RESERVED_IDS.has(id)) id = `${PREFIX}${id}`;
+    if (RESERVED_IDS.has(id)) id = `${PREFIX}heading`;
     const n = seen.get(id) ?? 0;
     seen.set(id, n + 1);
     return n === 0 ? id : `${id}-${n}`;

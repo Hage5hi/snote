@@ -234,6 +234,7 @@ describe("custom editor search panel", () => {
     env = mountEditor();
     const panel = await openFind(env.view);
     expect(panel.className).toMatch(/\bml-auto\b/);
+    expect(panel.className).toMatch(/\bmin-w-0\b/);
     expect(panel.className).not.toMatch(/\bmx-auto\b/);
     expect(panel.className).not.toMatch(/40rem/);
     expect(panel.className).toMatch(/26rem|max-w-full/);

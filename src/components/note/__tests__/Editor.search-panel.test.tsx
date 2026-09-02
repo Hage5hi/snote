@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { EditorView } from "@codemirror/view";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 import { afterEach, describe, expect, it } from "vitest";
@@ -155,8 +156,12 @@ describe("Editor find/replace wiring", () => {
       expect(container.querySelector("[data-testid='note-search-panel']")).toBeNull();
     });
 
+    const view = EditorView.findFromDOM(container.querySelector(".cm-editor") as HTMLElement);
+    expect(view).toBeTruthy();
+    view!.dispatch({ selection: { anchor: 0 } });
     fireEvent.keyDown(window, { key: "F3" });
-    const cm = container.querySelector(".cm-content");
-    expect(cm?.textContent).toContain("alpha");
+    expect(view!.state.selection.main.from).toBe(0);
+    fireEvent.keyDown(window, { key: "F3" });
+    expect(view!.state.selection.main.from).toBe(11);
   });
 });

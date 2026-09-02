@@ -666,6 +666,7 @@
   padding: 0 0.5rem;
   pointer-events: none;
   overflow: visible;
+  min-width: 0;
 }
 .snote-search-panel {
   pointer-events: auto;
@@ -673,6 +674,7 @@
   overflow: visible;
   width: min(26rem, 100%);
   max-width: 100%;
+  min-width: 0;
   margin-left: auto;
 }
 html.dark .snote-search-panel {
