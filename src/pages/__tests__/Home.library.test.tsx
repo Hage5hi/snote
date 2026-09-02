@@ -116,7 +116,7 @@ describe("Home knowledge library", () => {
     expect((await screen.findAllByText("/tagged")).length).toBeGreaterThan(0);
     expect(screen.getByText("/plain")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("home.filter.aria"), {
+    fireEvent.change(await screen.findByLabelText("home.filter.aria"), {
       target: { value: "#work" },
     });
 
@@ -154,7 +154,7 @@ describe("Home knowledge library", () => {
     renderHome();
     expect(await screen.findByText("/tagged")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Work" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Work" }));
     expect(screen.getByLabelText("home.filter.aria")).toHaveValue("#work");
     expect(screen.getByText("/tagged")).toBeInTheDocument();
 
@@ -165,22 +165,18 @@ describe("Home knowledge library", () => {
 
   it("opens a templated slug at /slug with a markdown seed and no capability mint", async () => {
     renderHome();
-    await act(async () => {
-      await hydrateNoteIndex();
-    });
 
-    fireEvent.change(screen.getByLabelText("home.templates.aria"), {
+    fireEvent.change(await screen.findByLabelText("home.templates.aria"), {
       target: { value: "meeting" },
     });
     fireEvent.change(screen.getByLabelText("home.placeholder"), {
       target: { value: "daily" },
     });
-    await act(async () => {
-      await Promise.resolve();
-    });
     fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
 
-    expect(harness.softNavigate).toHaveBeenCalledWith(expect.any(Function), "/daily");
+    await waitFor(() => {
+      expect(harness.softNavigate).toHaveBeenCalledWith(expect.any(Function), "/daily");
+    });
     expect(harness.softNavigate.mock.calls[0][1]).not.toMatch(/#(?:owner|edit|view)=/);
     expect(harness.createCapabilityApi).not.toHaveBeenCalled();
     expect(harness.createLegacyNoteApi).not.toHaveBeenCalled();

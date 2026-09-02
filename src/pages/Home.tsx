@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -15,27 +15,11 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { SCENE_NONE } from "@/components/home/scenes/registry";
 import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
-import { HomeTagFilter } from "@/components/home/HomeTagFilter";
-import { HomeCollections } from "@/components/home/HomeCollections";
-import { HomeTemplatePicker } from "@/components/home/HomeTemplatePicker";
 import { softNavigate } from "@/lib/soft-navigate";
 import { isUsableSlug } from "@/lib/slug";
-import {
-  deleteCollection,
-  filterByIndexTags,
-  filterPinnedByIndexTags,
-  getCollections,
-  indexTagsBySlug,
-  parseHomeTagFilter,
-  upsertCollection,
-  type VirtualCollection,
-} from "@/lib/home-library";
-import {
-  getNoteIndexSnapshot,
-  hydrateNoteIndex,
-  subscribeNoteIndex,
-} from "@/lib/note-index";
-import { queueTemplateSeed, resolveTemplateMarkdown } from "@/lib/note-templates";
+
+const HomeTemplatePicker = lazy(() => import("@/components/home/HomeTemplatePicker"));
+const HomeLibraryPanel = lazy(() => import("@/components/home/HomeLibraryPanel"));
 
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
@@ -104,11 +88,11 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [recents, setRecents] = useState<RecentNote[]>([]);
   const [pinned, setPinned] = useState<string[]>([]);
-  const [tagQuery, setTagQuery] = useState("");
-  const [activeCollectionId, setActiveCollectionId] = useState<string | null>(null);
-  const [collections, setCollections] = useState(() => getCollections());
   const [templateId, setTemplateId] = useState("blank");
-  const [, setIndexTick] = useState(0);
+  const [libraryLists, setLibraryLists] = useState<{
+    pinned: string[];
+    recents: RecentNote[];
+  } | null>(null);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
   const isMobile = useIsMobile();
   const { scene, committedScene, setScene } = useSceneTheme();
@@ -123,16 +107,12 @@ export default function Home() {
   useEffect(() => {
     setRecents(getRecents());
     setPinned(getPinned());
-    const unsub = subscribeNoteIndex(() => setIndexTick((n) => n + 1));
-    void hydrateNoteIndex().finally(() => setIndexTick((n) => n + 1));
-    return unsub;
   }, []);
 
   // Stay in sync with pins toggled elsewhere (NotePage's PinButton, Cmd+K).
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
       if (e.key === "note.pinned") setPinned(getPinned());
-      if (e.key === "note.collections") setCollections(getCollections());
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
@@ -192,8 +172,15 @@ export default function Home() {
   }, [isMobile]);
 
   const seedAndOpen = (s: string) => {
-    queueTemplateSeed(s, resolveTemplateMarkdown(templateId, t));
-    softNavigate(navigate, `/${s}`);
+    const go = () => softNavigate(navigate, `/${s}`);
+    if (templateId === "blank") {
+      go();
+      return;
+    }
+    void import("@/lib/note-templates").then((mod) => {
+      mod.queueTemplateSeed(s, mod.resolveTemplateMarkdown(templateId, t));
+      go();
+    });
   };
 
   const open = (s: string) => {
@@ -206,33 +193,9 @@ export default function Home() {
     seedAndOpen(trimmed);
   };
 
-  const filter = parseHomeTagFilter(tagQuery);
-  const tagsBySlug = indexTagsBySlug(getNoteIndexSnapshot());
-  const visiblePinned = filterPinnedByIndexTags(pinned, tagsBySlug, filter);
-  const visibleRecents = filterByIndexTags(recents, tagsBySlug, filter).slice(0, 12);
-  const knownTags = [...new Set(
-    [...pinned, ...recents.map((row) => row.slug)].flatMap((s) => tagsBySlug.get(s) ?? []),
-  )].sort();
   const hasLibrary = recents.length > 0 || pinned.length > 0;
-  const filterMiss = hasLibrary && filter.active && visiblePinned.length === 0 && visibleRecents.length === 0;
-
-  const onFilterChange = (value: string) => {
-    setTagQuery(value);
-    const next = parseHomeTagFilter(value);
-    const current = collections.find((row) => row.id === activeCollectionId);
-    if (current && current.tags.join("\0") !== next.tags.join("\0")) {
-      setActiveCollectionId(null);
-    }
-  };
-
-  const applyCollection = (collection: VirtualCollection | null) => {
-    if (!collection) {
-      setActiveCollectionId(null);
-      return;
-    }
-    setActiveCollectionId(collection.id);
-    setTagQuery(collection.tags.map((tag) => `#${tag}`).join(" "));
-  };
+  const visiblePinned = hasLibrary && libraryLists ? libraryLists.pinned : pinned;
+  const visibleRecents = hasLibrary && libraryLists ? libraryLists.recents : recents.slice(0, 12);
 
   // Warm editor code on explicit hover/touch intent. Note content is not read
   // or cached from Home; the encryption gate owns every content load.
@@ -399,7 +362,9 @@ export default function Home() {
             <Shuffle className="h-3.5 w-3.5" />
             {t("home.btn.random")}
           </Button>
-          <HomeTemplatePicker value={templateId} onChange={setTemplateId} />
+          <Suspense fallback={null}>
+            <HomeTemplatePicker value={templateId} onChange={setTemplateId} />
+          </Suspense>
           <span className="text-[11px] text-muted-foreground">
             {t("home.cmdk_hint_prefix")}<kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-foreground">⌘K</kbd>
             {" / "}
@@ -410,38 +375,13 @@ export default function Home() {
         {!isExtensionContext && <InstallPrompt />}
 
         {hasLibrary && (
-          <div className="mt-10 space-y-4">
-            <HomeTagFilter value={tagQuery} onChange={onFilterChange} knownTags={knownTags} />
-            <HomeCollections
-              collections={collections}
-              activeId={activeCollectionId}
-              canSave={filter.tags.length > 0}
-              draftTags={filter.tags}
-              onSelect={applyCollection}
-              onSave={(name) => {
-                const saved = upsertCollection({ name, tags: filter.tags });
-                if (!saved) return;
-                setCollections(getCollections());
-                setActiveCollectionId(saved.id);
-              }}
-              onRename={(id, name) => {
-                const current = collections.find((row) => row.id === id);
-                if (!current) return;
-                const saved = upsertCollection({ id, name, tags: current.tags });
-                if (!saved) return;
-                setCollections(getCollections());
-              }}
-              onDelete={(id) => {
-                setCollections(deleteCollection(id));
-                if (activeCollectionId === id) {
-                  setActiveCollectionId(null);
-                }
-              }}
+          <Suspense fallback={null}>
+            <HomeLibraryPanel
+              recents={recents}
+              pinned={pinned}
+              onListsChange={setLibraryLists}
             />
-            {filterMiss && (
-              <p className="text-sm text-muted-foreground">{t("home.filter.empty")}</p>
-            )}
-          </div>
+          </Suspense>
         )}
 
         {visiblePinned.length > 0 && (

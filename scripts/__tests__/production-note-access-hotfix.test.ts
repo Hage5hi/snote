@@ -76,6 +76,27 @@ describe("production note access hotfix", () => {
     expect(raw).not.toContain("createLegacyNoteApi");
   });
 
+  it("keeps Home's initial route off the knowledge-index graph", () => {
+    const home = source("src/pages/Home.tsx");
+    const staticFrom = (specifier: string) =>
+      new RegExp(String.raw`from\s+["']${specifier}["']`);
+
+    expect(home).not.toMatch(staticFrom("@/lib/note-index"));
+    expect(home).not.toMatch(staticFrom("@/lib/home-library"));
+    expect(home).not.toMatch(staticFrom("@/lib/note-templates"));
+    expect(home).not.toMatch(staticFrom("@/lib/note-graph"));
+    expect(home).not.toMatch(staticFrom("@/components/home/HomeTagFilter"));
+    expect(home).not.toMatch(staticFrom("@/components/home/HomeCollections"));
+    expect(home).not.toMatch(staticFrom("@/components/home/HomeTemplatePicker"));
+    expect(home).not.toMatch(staticFrom("@/components/home/HomeLibraryPanel"));
+    expect(home).not.toContain("hydrateNoteIndex");
+    expect(home).not.toContain("getNoteIndexSnapshot");
+    expect(home).not.toContain("subscribeNoteIndex");
+    expect(home).toContain('lazy(() => import("@/components/home/HomeLibraryPanel"))');
+    expect(home).toContain('lazy(() => import("@/components/home/HomeTemplatePicker"))');
+    expect(home).toContain('import("@/lib/note-templates")');
+  });
+
   it("keeps ShareDialog, LockButton, and LegacyNotePage off a static capability HTTP client import", () => {
     const staticCreateApi = /import\s*\{[^}]*createCapabilityApi[^}]*\}\s*from\s*["']@\/lib\/capability\/client["']/;
     const shareDialog = source("src/components/note/ShareDialog.tsx");

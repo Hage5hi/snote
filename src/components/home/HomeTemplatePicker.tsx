@@ -123,3 +123,5 @@ export function HomeTemplatePicker({
     </div>
   );
 }
+
+export default HomeTemplatePicker;
