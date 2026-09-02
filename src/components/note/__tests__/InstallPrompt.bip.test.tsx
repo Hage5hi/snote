@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { dict } from "@/i18n/catalog";
@@ -65,5 +66,22 @@ describe("InstallPrompt BIP dialog", () => {
     expect(
       screen.queryByRole("button", { name: new RegExp(`^${dict.en["install.btn"]}$`) }),
     ).not.toBeInTheDocument();
+  });
+
+  it("returns focus to the trigger when Escape closes the dialog", async () => {
+    const user = userEvent.setup();
+    render(
+      <Wrap>
+        <InstallPrompt />
+      </Wrap>,
+    );
+
+    const trigger = appTrigger();
+    await user.click(trigger);
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });
