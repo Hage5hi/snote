@@ -2,10 +2,16 @@ import { search } from "@codemirror/search";
 import { EditorState, Prec } from "@codemirror/state";
 import { keymap, type KeyBinding } from "@codemirror/view";
 import { createSearchPanel } from "./createSearchPanel";
-import { openFindPanel, openReplacePanel, replaceOpenField } from "./replace-open";
+import { openReplacePanel, replaceOpenField, toggleFindPanel } from "./replace-open";
 
 const editorSearchKeymap: readonly KeyBinding[] = [
-  { key: "Mod-f", run: openFindPanel, scope: "editor search-panel" },
+  {
+    key: "Mod-f",
+    run: toggleFindPanel,
+    scope: "editor search-panel",
+    preventDefault: true,
+    stopPropagation: true,
+  },
   { key: "Mod-h", mac: "Mod-Alt-f", run: openReplacePanel, scope: "editor search-panel" },
 ];
 

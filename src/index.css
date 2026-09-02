@@ -666,8 +666,7 @@ html.dark .snote-search-panel {
   background-color: hsl(var(--muted) / 0.85);
   color: hsl(var(--foreground));
   caret-color: hsl(var(--foreground));
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1px solid transparent;
   box-shadow: none;
   outline: none;
   appearance: none;
@@ -677,8 +676,11 @@ html.dark .snote-search-panel {
   color: hsl(var(--muted-foreground));
   opacity: 1;
 }
-.snote-search-panel input:focus {
-  border-bottom-color: hsl(var(--primary));
+.snote-search-panel input:focus,
+.snote-search-panel input:focus-visible {
+  border-color: hsl(var(--border));
+  box-shadow: 0 0 0 1px hsl(var(--ring) / 0.25);
+  outline: none;
 }
 .snote-search-replace {
   display: grid;

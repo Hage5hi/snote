@@ -205,6 +205,7 @@ export function SearchPanel({ view }: { view: EditorView }) {
     }
     if (runScopeHandlers(view, event.nativeEvent, "search-panel")) {
       event.preventDefault();
+      event.stopPropagation();
       return;
     }
     if (event.key !== "Enter") return;

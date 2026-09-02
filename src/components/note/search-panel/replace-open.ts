@@ -1,4 +1,4 @@
-import { openSearchPanel, searchPanelOpen } from "@codemirror/search";
+import { closeSearchPanel, openSearchPanel, searchPanelOpen } from "@codemirror/search";
 import { StateEffect, StateField } from "@codemirror/state";
 import type { Command } from "@codemirror/view";
 
@@ -26,4 +26,10 @@ export const openFindPanel: Command = (view) => {
 export const openReplacePanel: Command = (view) => {
   view.dispatch({ effects: setReplaceOpen.of(true) });
   return openSearchPanel(view);
+};
+
+/** Ctrl/Cmd+F: open when closed, close immediately when already open. */
+export const toggleFindPanel: Command = (view) => {
+  if (searchPanelOpen(view.state)) return closeSearchPanel(view);
+  return openFindPanel(view);
 };
