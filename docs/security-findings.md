@@ -109,7 +109,7 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `386421e8` (see §3e).
+This is not the live SPA origin. Origin is `4baa8966` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
@@ -357,13 +357,23 @@ First canary origin (not current live) `version.json` at that go
 Pages production deployment id `6277a076-c0d3-4464-b5b5-5b0432011029`
 replaced previous production `fe18302f` / `32ccfc35`.
 
-Same-canary origin SHA bump 2026-09-02 ~16:03 ICT: Pages `snote-g4-origin`
-redeployed find/replace UI (#64+#65). Live `version.json` (browser UA;
-`no-store`) on both canonical and Pages hosts:
+Same-canary origin SHA bump 2026-09-02 ~16:03 ICT (not current live): Pages
+`snote-g4-origin` redeployed find/replace UI (#64+#65). `version.json` at
+that bump (browser UA; `no-store`) on both canonical and Pages hosts:
 `deployedSha` `386421e87f7eac2864f1a40655a2b0255b4332d6`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-02T09:02:48.606Z`,
 `buildId` `1788339753769-8ld1rqzh`.
-Replaces previous live origin `c5914c8e` / Pages `6277a076`.
+Pages production deployment id `09472051-c61c-4fcb-ace4-1561da6d4cc2`
+replaced previous live origin `c5914c8e` / Pages `6277a076`.
+
+Same-canary origin SHA bump 2026-09-02 ~17:52 ICT: Pages `snote-g4-origin`
+redeployed find overlay top-right + markdown table preview (#67). Live
+`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+`deployedSha` `4baa89665ee1d75dcafb238d62fbed9b18f8a7c7`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-02T10:52:01.159Z`,
+`buildId` `1788346307439-oyd5q3or`.
+Pages production deployment id `a138549e-0c61-4e0c-83f2-366c341309a9`
+replaces previous live origin `386421e8` / Pages `09472051`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
@@ -377,7 +387,8 @@ This is dual-mode `NotePage` (`legacyOnly={!canary}`): plain slug still
 legacy; `#owner`/`#edit` may open capability polling. Home still does not mint capabilities.
 This is not SQL 240, not Realtime, not soak-complete.
 Soak ≥48h started ~12:01 ICT from the first canary origin `c5914c8e`;
-this is a same-canary origin SHA bump, not soak-complete, not 240.
+this bump does not restart soak. This is a same-canary origin SHA bump,
+not soak-complete, not 240.
 
 ## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 
