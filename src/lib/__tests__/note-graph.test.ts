@@ -11,7 +11,7 @@ describe("buildNoteGraphRecord", () => {
   it("uses the first heading as title and collects unique outgoing wiki slugs", () => {
     const record = buildNoteGraphRecord(
       "home",
-      "# Daily notes\n\nSee [[alpha]] and [[Display|beta]] and [[alpha]] again.\n## Setup\n",
+      "# Daily notes\n\nSee [[alpha]] and [[beta|Display]] and [[alpha]] again.\n## Setup\n",
     );
     expect(record).toEqual({
       slug: "home",

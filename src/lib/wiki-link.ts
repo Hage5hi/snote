@@ -1,4 +1,4 @@
-// Wiki-style `[[slug]]` and `[[display|slug]]` links. Three pieces live here:
+// Wiki-style `[[slug]]` and `[[slug|display]]` links. Three pieces live here:
 //   1. `wikiLink()` — CodeMirror extension that decorates tokens and navigates
 //      on Ctrl/Cmd+click. Navigation dispatches a CustomEvent so the extension
 //      doesn't need react-router; NotePage / SplitView listen and navigate.
@@ -6,7 +6,7 @@
 //   3. `expandWikiLinks(src)` / `extractWikiLinks(src)` — preview rewrite and
 //      client-only graph extraction. Both skip fenced and inline code.
 import { Decoration, DecorationSet, EditorView, ViewPlugin, ViewUpdate } from "@codemirror/view";
-import { RangeSetBuilder } from "@codemirror/state";
+import { RangeSetBuilder, Transaction } from "@codemirror/state";
 
 export type ParsedWikiLink = {
   display: string;
@@ -21,8 +21,7 @@ export type WikiLinkHit = ParsedWikiLink & {
 };
 
 // Matches `[[anything not containing [ ] or newline]]`, including aliases
-// `[[display|slug]]`. Slugs in snotes are free-form URL paths so we don't
-// validate the content here — the navigation target will just 404 if invalid.
+// `[[slug|display]]` (destination first, optional label after `|`).
 export const WIKI_LINK_RE = /\[\[([^[\]\n]+)\]\]/g;
 
 const wikiMark = Decoration.mark({ class: "cm-wiki-link" });
@@ -52,8 +51,8 @@ export function parseWikiLinkInner(inner: string): ParsedWikiLink | null {
     if (!slug) return null;
     return { display: slug, slug, aliased: false };
   }
-  const display = inner.slice(0, pipe).trim();
-  const slug = inner.slice(pipe + 1).trim();
+  const slug = inner.slice(0, pipe).trim();
+  const display = inner.slice(pipe + 1).trim();
   if (!display || !slug) return null;
   return { display, slug, aliased: true };
 }
@@ -116,7 +115,9 @@ export function wikiLink() {
           this.decorations = buildDecorations(view);
           const refresh = () => {
             this.decorations = buildDecorations(view);
-            view.dispatch({});
+            view.dispatch({
+              annotations: Transaction.addToHistory.of(false),
+            });
           };
           window.addEventListener(WIKI_KNOWN_CHANGE_EVENT, refresh);
           this.unsub = () => window.removeEventListener(WIKI_KNOWN_CHANGE_EVENT, refresh);
@@ -201,7 +202,7 @@ export function extractWikiLinks(src: string): ExtractedWikiLink[] {
 }
 
 /**
- * Rewrites `[[slug]]` → `[slug](/slug)` and `[[display|slug]]` →
+ * Rewrites `[[slug]]` → `[slug](/slug)` and `[[slug|display]]` →
  * `[display](/slug)` so the marked pipeline in Preview can render a link.
  * Skips matches inside fenced code blocks and inline code spans.
  * Returns input unchanged if no matches.

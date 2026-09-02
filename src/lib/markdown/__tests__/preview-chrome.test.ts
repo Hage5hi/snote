@@ -63,7 +63,10 @@ describe("preview chrome", () => {
 
   it("maps expanded wiki hrefs to note slugs", () => {
     expect(previewNoteSlugFromHref("/hop-team", "https://note.syrin.online")).toBe("hop-team");
-    expect(previewNoteSlugFromHref("/hello%20world", "https://note.syrin.online")).toBe("hello world");
+    expect(previewNoteSlugFromHref("/hello%20world", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("/privacy", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("/s", "https://note.syrin.online")).toBeNull();
+    expect(previewNoteSlugFromHref("/note", "https://note.syrin.online")).toBeNull();
     expect(previewNoteSlugFromHref("https://example.com/x", "https://note.syrin.online")).toBeNull();
     expect(previewNoteSlugFromHref("/foo.md", "https://note.syrin.online")).toBeNull();
   });

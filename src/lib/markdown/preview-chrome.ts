@@ -4,6 +4,7 @@
  * (capability/encryption fragments).
  */
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
+import { isUsableSlug } from "@/lib/slug";
 export function labelPreviewChrome(
   host: HTMLElement,
   copyLabel: string,
@@ -64,7 +65,7 @@ export async function handlePreviewChromeClick(
   navigatePreviewNoteLink(event, host);
 }
 
-/** Same-origin `/slug` preview links (from `[[slug]]` / `[[display|slug]]`) stay in-app. */
+/** Same-origin `/slug` preview links (from `[[slug]]` / `[[slug|display]]`) stay in-app. */
 export function previewNoteSlugFromHref(href: string, origin = window.location.origin): string | null {
   if (!href || href.startsWith("#") || href.startsWith("mailto:") || href.startsWith("javascript:")) {
     return null;
@@ -80,11 +81,14 @@ export function previewNoteSlugFromHref(href: string, origin = window.location.o
   const parts = url.pathname.split("/").filter(Boolean);
   if (parts.length !== 1) return null;
   if (/\.md$/i.test(parts[0])) return null;
+  let slug: string;
   try {
-    return decodeURIComponent(parts[0]);
+    slug = decodeURIComponent(parts[0]);
   } catch {
-    return parts[0];
+    slug = parts[0];
   }
+  if (!isUsableSlug(slug)) return null;
+  return slug;
 }
 
 function navigatePreviewNoteLink(event: MouseEvent, host: HTMLElement): void {

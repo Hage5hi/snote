@@ -8,9 +8,10 @@ import {
 } from "../wiki-link-completion";
 
 describe("wikiLinkQueryAt", () => {
-  it("captures the query after [[ and after an alias pipe", () => {
+  it("captures the slug query after [[ and ignores typing after |", () => {
     expect(wikiLinkQueryAt("see [[mee")).toBe("mee");
-    expect(wikiLinkQueryAt("see [[Họp team|hop")).toBe("hop");
+    expect(wikiLinkQueryAt("see [[hop-team|")).toBeNull();
+    expect(wikiLinkQueryAt("see [[hop-team|Họp")).toBeNull();
     expect(wikiLinkQueryAt("see [[closed]] more")).toBeNull();
     expect(wikiLinkQueryAt("no link")).toBeNull();
   });

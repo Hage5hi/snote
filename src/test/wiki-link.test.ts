@@ -1,7 +1,9 @@
+import { history, undoDepth } from "@codemirror/commands";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  WIKI_KNOWN_CHANGE_EVENT,
   WIKI_LINK_RE,
   expandWikiLinks,
   extractWikiLinks,
@@ -17,9 +19,9 @@ describe("WIKI_LINK_RE", () => {
     expect(m).toEqual(["[[world]]"]);
   });
 
-  it("matches aliased [[display|slug]] tokens", () => {
-    const m = "see [[Họp team|hop-team]] please".match(WIKI_LINK_RE);
-    expect(m).toEqual(["[[Họp team|hop-team]]"]);
+  it("matches aliased [[slug|display]] tokens", () => {
+    const m = "see [[hop-team|Họp team]] please".match(WIKI_LINK_RE);
+    expect(m).toEqual(["[[hop-team|Họp team]]"]);
   });
 
   it("matches multiple [[slug]] tokens in one line", () => {
@@ -50,13 +52,13 @@ describe("parseWikiLinkInner / wikiLinkAt", () => {
     });
   });
 
-  it("parses [[display|slug]] with the slug as the navigation target", () => {
-    expect(parseWikiLinkInner("Họp team|hop-team")).toEqual({
+  it("parses [[slug|display]] with the first segment as the navigation target", () => {
+    expect(parseWikiLinkInner("hop-team|Họp team")).toEqual({
       display: "Họp team",
       slug: "hop-team",
       aliased: true,
     });
-    const hit = wikiLinkAt("see [[Họp team|hop-team]] now", 6);
+    const hit = wikiLinkAt("see [[hop-team|Họp team]] now", 6);
     expect(hit?.slug).toBe("hop-team");
     expect(hit?.display).toBe("Họp team");
   });
@@ -74,15 +76,13 @@ describe("expandWikiLinks", () => {
   });
 
   it("uses display text for aliased links and encodes the slug href", () => {
-    expect(expandWikiLinks("see [[Họp team|hop-team]]")).toBe("see [Họp team](/hop-team)");
-    expect(expandWikiLinks("[[Label|hello world]]")).toBe(
-      `[Label](/${encodeURIComponent("hello world")})`,
-    );
+    expect(expandWikiLinks("see [[hop-team|Họp team]]")).toBe("see [Họp team](/hop-team)");
+    expect(expandWikiLinks("[[hello-world|Label]]")).toBe("[Label](/hello-world)");
   });
 
   it("does not emit raw HTML from alias display text", () => {
-    expect(expandWikiLinks("[[<img src=x>|safe]]")).toBe("[img src=x](/safe)");
-    expect(expandWikiLinks("[[<script>alert(1)</script>|safe]]")).not.toMatch(/<script>/i);
+    expect(expandWikiLinks("[[safe|<img src=x>]]")).toBe("[img src=x](/safe)");
+    expect(expandWikiLinks("[[safe|<script>alert(1)</script>]]")).not.toMatch(/<script>/i);
   });
 
   it("expands multiple wiki links in one call", () => {
@@ -91,7 +91,7 @@ describe("expandWikiLinks", () => {
 
   it("trims whitespace inside the brackets for the target", () => {
     expect(expandWikiLinks("[[  hello  ]]")).toBe("[hello](/hello)");
-    expect(expandWikiLinks("[[ Display | slug ]]")).toBe("[Display](/slug)");
+    expect(expandWikiLinks("[[ slug | Display ]]")).toBe("[Display](/slug)");
   });
 
   it("url-encodes slugs with spaces or unicode", () => {
@@ -130,7 +130,7 @@ describe("expandWikiLinks", () => {
 
 describe("extractWikiLinks", () => {
   it("extracts plain and aliased targets while skipping code", () => {
-    const links = extractWikiLinks("[[a]] `[[no]]` [[Label|b]]\n```\n[[nope]]\n```");
+    const links = extractWikiLinks("[[a]] `[[no]]` [[b|Label]]\n```\n[[nope]]\n```");
     expect(links.map((link) => link.slug)).toEqual(["a", "b"]);
     expect(links[1]).toMatchObject({ display: "Label", slug: "b", aliased: true });
   });
@@ -146,7 +146,7 @@ describe("wikiLink decorations", () => {
     const parent = document.createElement("div");
     const view = new EditorView({
       state: EditorState.create({
-        doc: "[[live]] [[ghost]] [[Label|ghost]]",
+        doc: "[[live]] [[ghost]] [[ghost|Label]]",
         extensions: wikiLink(),
       }),
       parent,
@@ -154,6 +154,23 @@ describe("wikiLink decorations", () => {
     const html = view.dom.innerHTML;
     expect(html).toContain("cm-wiki-link");
     expect(html).toContain("cm-wiki-link-dead");
+    view.destroy();
+  });
+
+  it("does not add wiki-known refreshes to undo history", () => {
+    const parent = document.createElement("div");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "[[ghost]]",
+        extensions: [history(), wikiLink()],
+      }),
+      parent,
+    });
+    view.dispatch({ changes: { from: 0, insert: "x" } });
+    const depth = undoDepth(view.state);
+    expect(depth).toBeGreaterThan(0);
+    window.dispatchEvent(new Event(WIKI_KNOWN_CHANGE_EVENT));
+    expect(undoDepth(view.state)).toBe(depth);
     view.destroy();
   });
 });

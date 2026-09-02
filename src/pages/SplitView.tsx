@@ -22,6 +22,7 @@ import {
 } from "@/hooks/use-split-scroll-sync";
 import { useI18n } from "@/i18n";
 import { loadNotePage } from "@/lib/note-page-import";
+import { isUsableSlug } from "@/lib/slug";
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 
 const NotePage = lazy(() => loadNotePage());
@@ -110,12 +111,23 @@ function SplitViewBody({
 
   useEffect(() => {
     const onNav = (event: Event) => {
-      const target = (event as CustomEvent<{ slug: string }>).detail?.slug;
-      if (target) navigate("/" + target);
+      const target = (event as CustomEvent<{ slug: string }>).detail?.slug?.trim();
+      if (!target || !isUsableSlug(target)) return;
+      const existing = slugs.indexOf(target);
+      if (existing >= 0) {
+        setActivePane(existing);
+        tabRefs.current[existing]?.focus();
+        return;
+      }
+      const next = slugs.slice();
+      const index = Math.min(Math.max(activePane, 0), next.length - 1);
+      next[index] = target;
+      if (new Set(next).size !== next.length) return;
+      navigate("/" + next.join("+"));
     };
     window.addEventListener(WIKI_NAV_EVENT, onNav);
     return () => window.removeEventListener(WIKI_NAV_EVENT, onNav);
-  }, [navigate]);
+  }, [navigate, slugs, activePane]);
 
   useEffect(() => {
     setActivePane((index) => Math.min(index, slugs.length - 1));
@@ -275,6 +287,7 @@ function SplitViewBody({
               active={activePane === i}
               className={`${spanClass} ${borderClass}`}
               registerScroller={registerScroller}
+              onActivate={() => setActivePane(i)}
             />
           );
         })}
@@ -290,6 +303,7 @@ function SplitPane({
   active,
   className,
   registerScroller,
+  onActivate,
 }: {
   index: number;
   slug: string;
@@ -297,6 +311,7 @@ function SplitPane({
   active: boolean;
   className: string;
   registerScroller: SplitScrollerRegistration;
+  onActivate: () => void;
 }) {
   const [paneRef, paneNarrow] = useElementNarrow<HTMLDivElement>(900);
   const onPrimaryScroller = useCallback(
@@ -310,10 +325,13 @@ function SplitPane({
       id={`split-panel-${index}`}
       data-split-view-pane={index}
       data-split-view-slug={slug}
+      data-split-active={active ? "true" : undefined}
       role={compact ? "tabpanel" : "region"}
       aria-labelledby={compact ? `split-tab-${index}` : undefined}
       aria-label={compact ? undefined : `/${slug}`}
       hidden={compact && !active}
+      tabIndex={-1}
+      onPointerDown={onActivate}
       className={`min-h-0 min-w-0 flex-1 overflow-hidden ${className}`}
     >
       <Suspense

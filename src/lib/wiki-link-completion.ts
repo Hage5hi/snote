@@ -1,8 +1,10 @@
-// Autocomplete source for `[[slug` and `[[display|slug`.
-// Candidates: in-memory knowledge index (titles/headings from plaintext the
-// user unlocked this session) plus Home recents/pins. Recents/pins enter the
-// index as slug-only rows; recents `preview` in the completion UI is the
-// existing `snote-recents` localStorage field, never copied into knowledge IDB.
+// Autocomplete source for `[[slug` and `[[slug|display`.
+// After `[[`, complete slugs from the in-memory knowledge index (titles/headings
+// from plaintext the user unlocked this session) plus Home recents/pins.
+// After `|` the user is typing a label — do not slug-complete.
+// Recents/pins enter the index as slug-only rows; recents `preview` in the
+// completion UI is the existing `snote-recents` localStorage field, never
+// copied into knowledge IDB.
 // Registered via `slashCommands()` alongside slash-command and tag sources
 // (a single `autocompletion()` extension is required).
 import type { CompletionContext, CompletionSource, Completion } from "@codemirror/autocomplete";
@@ -14,8 +16,8 @@ import {
 import { getNoteIndexSnapshot, hydrateNoteIndex } from "@/lib/note-index";
 
 export function wikiLinkQueryAt(beforeCursor: string): string | null {
-  const alias = beforeCursor.match(/\[\[[^[\]\n|]+\|([^[\]\n|]*)$/);
-  if (alias) return alias[1];
+  // `[[slug|display` — the caret is in the label; never slug-complete.
+  if (/\[\[[^[\]\n|]+\|[^[\]\n|]*$/.test(beforeCursor)) return null;
   const simple = beforeCursor.match(/\[\[([^[\]\n|]*)$/);
   if (simple) return simple[1];
   return null;
