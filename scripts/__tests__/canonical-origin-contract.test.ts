@@ -32,10 +32,11 @@ describe("canonical production origin", () => {
       /Production currently runs dual-mode `NotePage`\s+\(`legacyOnly=\{!canary\}`\)/,
     );
     expect(readme).toContain("`capabilityRoutesEnabled` true");
-    expect(readme).toContain("4baa8966");
+    expect(readme).toContain("7335fadc");
     expect(readme).toContain("findings §3e");
     expect(readme).not.toMatch(/live origin `c5914c8e`/);
     expect(readme).not.toMatch(/live origin `386421e8`/);
+    expect(readme).not.toMatch(/live origin `4baa8966`/);
     expect(readme).not.toMatch(/capability\s+routes disabled/);
     expect(readme).not.toMatch(/SPA canary remain off/);
     expect(readme).toMatch(/SQL 240 is not applied/);
@@ -75,7 +76,8 @@ describe("canonical production origin", () => {
     expect(findings).not.toContain("Canary remains off");
     expect(findings).not.toContain("Origin is `c5914c8e`");
     expect(findings).not.toContain("Origin is `386421e8`");
-    expect(findings).toContain("Origin is `4baa8966`");
+    expect(findings).not.toContain("Origin is `4baa8966`");
+    expect(findings).toContain("Origin is `7335fadc`");
     expect(findings).toContain("capabilityRoutesEnabled` is true");
     expect(findings).toContain("VITE_CAPABILITY_ROUTES_ENABLED` is true");
     expect(findings).toMatch(
@@ -212,6 +214,19 @@ describe("canonical production origin", () => {
     expect(findings).toContain("#67");
     expect(findings).toContain("find overlay");
     expect(findings).toContain("table preview");
+    expect(findings).toContain("2026-09-02 ~19:22 ICT");
+    expect(findings).toContain(
+      "7335fadce1dc96ee5548deb2e7e75b2bbff57c40",
+    );
+    expect(findings).toContain("2026-09-02T12:22:26.889Z");
+    expect(findings).toContain("1788351733291-8f4qsmpx");
+    expect(findings).toContain(
+      "86b91475-2b60-4c30-81e8-50b6a004a734",
+    );
+    expect(findings).toContain("#69");
+    expect(findings).toContain("paste");
+    expect(findings).toContain("copy-box");
+    expect(findings).toContain("\\_");
     expect(findings).toContain("Kill switch unchanged");
     expect(findings).toMatch(
       /POST `\/functions\/v1\/legacy-note-open` `\{\}` still 410 `\{"found":false\}`/,
@@ -237,15 +252,16 @@ describe("canonical production origin", () => {
     expect(findings).not.toContain("PITR checkpoint is available");
   });
 
-  it("pins leftover client/Worker present-tense surfaces to live origin canary 4baa8966", () => {
+  it("pins leftover client/Worker present-tense surfaces to live origin canary 7335fadc", () => {
     const client = readFileSync("docs/capability-client.md", "utf8");
     const backend = readFileSync("docs/capability-backend.md", "utf8");
     const worker = readFileSync("cloudflare-worker/README.md", "utf8");
 
     expect(client).toContain("`capabilityRoutesEnabled: true`");
     expect(client).toContain("findings §3e");
-    expect(client).toContain("4baa8966");
+    expect(client).toContain("7335fadc");
     expect(client).not.toContain("live origin `386421e8`");
+    expect(client).not.toContain("live origin `4baa8966`");
     expect(client).not.toContain(
       "Production builds attest `capabilityRoutesEnabled: false`.",
     );
@@ -266,11 +282,12 @@ describe("canonical production origin", () => {
     expect(backend).not.toContain("(canary off)");
     expect(backend).toContain("dual-mode canary on");
 
-    expect(worker).toContain("`4baa8966`");
+    expect(worker).toContain("`7335fadc`");
     expect(worker).toContain("`9fcc58bc`");
     expect(worker).toContain("b4d1a94e");
     expect(worker).not.toContain("Origin SPA hiện là `c5914c8e`");
     expect(worker).not.toContain("Origin SPA hiện là `386421e8`");
+    expect(worker).not.toContain("Origin SPA hiện là `4baa8966`");
     expect(worker).not.toContain("Origin SPA vẫn là `fe18302f`");
     expect(worker).toContain("không cho phép một deployment mới");
   });
@@ -309,11 +326,18 @@ describe("canonical production origin", () => {
     expect(cutover).toContain(
       "4baa89665ee1d75dcafb238d62fbed9b18f8a7c7",
     );
+    expect(cutover).toContain("2026-09-02 ~19:22 ICT");
+    expect(cutover).toContain(
+      "7335fadce1dc96ee5548deb2e7e75b2bbff57c40",
+    );
     expect(cutover).not.toMatch(
       /live `deployedSha` `386421e87f7eac2864f1a40655a2b0255b4332d6`/,
     );
-    expect(cutover).toMatch(
+    expect(cutover).not.toMatch(
       /live `deployedSha` `4baa89665ee1d75dcafb238d62fbed9b18f8a7c7`/,
+    );
+    expect(cutover).toMatch(
+      /live `deployedSha` `7335fadce1dc96ee5548deb2e7e75b2bbff57c40`/,
     );
     expect(cutover).toContain("`capabilityRoutesEnabled` true");
     expect(cutover).toMatch(/Soak ≥48h started from\s+that first canary/);
