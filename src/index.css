@@ -639,22 +639,17 @@
   --snote-search-gutter: 92px;
 }
 .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) {
-  position: fixed;
-  top: calc(2.75rem + var(--sa-top) + 1px);
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  width: clamp(18rem, 50vw, calc(100vw - 1.5rem));
+  position: absolute;
+  /* CodeMirror sets inline `top: 0` on this node. Keep it a zero-height
+     overlay slot so the editor is not pushed down; the visible bar is
+     `position: fixed` on `.snote-search-host` instead. */
   height: 0;
   overflow: visible;
   border: none;
   background: transparent !important;
   color: inherit;
   pointer-events: none;
-  z-index: 25;
-}
-html.zen-mode .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) {
-  top: calc(0.25rem + var(--sa-top));
+  z-index: auto;
 }
 .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) .cm-panel {
   background: transparent !important;
@@ -664,12 +659,20 @@ html.zen-mode .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) {
   pointer-events: none;
 }
 .snote-search-host {
+  position: fixed;
+  top: calc(2.75rem + var(--sa-top) + 1px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
   display: flex;
   box-sizing: border-box;
-  width: 100%;
+  width: clamp(18rem, 50vw, calc(100vw - 1.5rem));
   pointer-events: none;
   overflow: visible;
   min-width: 0;
+}
+html.zen-mode .snote-search-host {
+  top: calc(0.25rem + var(--sa-top));
 }
 .snote-search-panel {
   pointer-events: auto;

@@ -59,8 +59,8 @@ describe("search panel focus chrome", () => {
       css,
       ".cm-editor .cm-panels.cm-panels-top:has(.snote-search-host)",
     ).join("\n");
-    expect(panel).toMatch(/position:\s*fixed/);
     expect(panel).toMatch(/height:\s*0/);
+    expect(panel).toMatch(/overflow:\s*visible/);
     expect(panel).not.toMatch(/top:\s*0\.5rem/);
   });
 
@@ -68,30 +68,23 @@ describe("search panel focus chrome", () => {
     const css = overlayCss();
     const host = declarationsFor(css, ".snote-search-host").join("\n");
     expect(host).not.toMatch(/justify-content:\s*flex-end/);
+    expect(host).toMatch(/position:\s*fixed/);
+    expect(host).toMatch(/left:\s*50%/);
+    expect(host).toMatch(/translateX\(\s*-50%\s*\)/);
+    expect(host).toMatch(/50vw/);
+    expect(host).toMatch(/100vw\s*-\s*1\.5rem/);
+    expect(host).toMatch(/2\.75rem/);
+    expect(host).toMatch(/z-index:\s*2[0-9]/);
+    expect(host).not.toMatch(/z-index:\s*5\d/);
     const panel = declarationsFor(css, ".snote-search-panel").join("\n");
     expect(panel).not.toMatch(/26rem/);
     expect(panel).not.toMatch(/margin-left:\s*auto/);
     expect(panel).toMatch(/min-width:\s*0/);
-
-    const overlay = declarationsFor(
-      css,
-      ".cm-editor .cm-panels.cm-panels-top:has(.snote-search-host)",
-    ).join("\n");
-    expect(overlay).toMatch(/left:\s*50%/);
-    expect(overlay).toMatch(/translateX\(\s*-50%\s*\)/);
-    expect(overlay).toMatch(/50vw/);
-    expect(overlay).toMatch(/100vw\s*-\s*1\.5rem/);
-    expect(overlay).toMatch(/2\.75rem/);
-    expect(overlay).toMatch(/z-index:\s*2[0-9]/);
-    expect(overlay).not.toMatch(/z-index:\s*5\d/);
   });
 
   it("sits near the viewport top when zen mode hides the topbar", () => {
     const css = overlayCss();
-    const zen = declarationsFor(
-      css,
-      "html.zen-mode .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host)",
-    ).join("\n");
+    const zen = declarationsFor(css, "html.zen-mode .snote-search-host").join("\n");
     expect(zen.length).toBeGreaterThan(0);
     expect(zen).toMatch(/top:/);
     expect(zen).not.toMatch(/2\.75rem/);
