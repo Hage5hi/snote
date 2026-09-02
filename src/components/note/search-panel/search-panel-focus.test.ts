@@ -88,6 +88,13 @@ describe("search panel focus chrome", () => {
     expect(zen.length).toBeGreaterThan(0);
     expect(zen).toMatch(/top:/);
     expect(zen).not.toMatch(/2\.75rem/);
+    expect(zen).toMatch(/z-index:\s*3[0-9]/);
+  });
+
+  it("clears the two-row topbar below the 900px layout breakpoint", () => {
+    const css = overlayCss();
+    expect(css).toMatch(/@media\s*\(\s*max-width:\s*899px\s*\)/);
+    expect(css).toMatch(/5rem/);
   });
 
   it("exposes a scroll-gutter that grows when replace is open", () => {

@@ -22,6 +22,11 @@ describe("Note menu — removed as duplicate chrome", () => {
     expect(src).toMatch(/HelpMenu/);
   });
 
+  it("keeps WordCountTrigger visible on small viewports after NoteMenu is gone", () => {
+    const src = readFileSync(resolve(__dirname, "../WordCountTrigger.tsx"), "utf8");
+    expect(src).not.toMatch(/hidden sm:flex/);
+  });
+
   it("no rename/duplicate i18n keys remain in any locale", () => {
     for (const [locale, d] of Object.entries(dict)) {
       for (const key of Object.keys(d)) {

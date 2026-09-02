@@ -673,6 +673,12 @@
 }
 html.zen-mode .snote-search-host {
   top: calc(0.25rem + var(--sa-top));
+  z-index: 32;
+}
+@media (max-width: 899px) {
+  html:not(.zen-mode) .snote-search-host {
+    top: calc(5rem + var(--sa-top) + 1px);
+  }
 }
 .snote-search-panel {
   pointer-events: auto;
