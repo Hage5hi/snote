@@ -1,4 +1,4 @@
-// Topbar: brand + counters + per-note icons + Note/Mode/Export/Help dropdowns + theme.
+// Topbar: brand + counters + per-note icons + Mode/Export/Help dropdowns + theme.
 // Inspired by Replit's topbar — text-label menus replace the dense icon row.
 //
 // Responsive layout:
@@ -6,7 +6,7 @@
 //   - Narrow (< 900 px): wraps to two rows so the 14+ controls fit without
 //     horizontal overflow. Row 1 (44 px) keeps brand + theme + the preview
 //     toggle pinned to the right so it is ALWAYS visible. Row 2 (36 px)
-//     holds the per-note icons and the four dropdown menus.
+//     holds the per-note icons and the Mode/Export/Help dropdowns.
 import { useEffect, useState, type RefObject } from "react";
 import * as Y from "yjs";
 import { Button } from "@/components/ui/button";
@@ -27,7 +27,6 @@ import { TopbarBrand } from "./TopbarBrand";
 import { WordCountTrigger } from "./WordCountTrigger";
 import { ViewControls } from "./ViewControls";
 import { ExportMenu } from "./ExportMenu";
-import { NoteMenu } from "./NoteMenu";
 import { ModeMenu } from "./ModeMenu";
 import { HelpMenu } from "./HelpMenu";
 import { useNarrowViewport } from "@/hooks/use-narrow-viewport";
@@ -63,7 +62,7 @@ interface TopbarProps {
   onTogglePagination: () => void;
   /** Compact mode for SplitView panels: hides app-wide menus (Mode, Help, theme)
    *  that would be redundant when two topbars are on screen. Keeps per-note
-   *  icons + Note + Export. */
+   *  icons + Export. */
   compact?: boolean;
   /** Override viewport detection with the measured width of an embed pane. */
   narrowOverride?: boolean;
@@ -219,11 +218,6 @@ export function Topbar({
               currentShareUrl={currentShareUrl}
             />
             <div className="ml-auto flex shrink-0 items-center gap-0.5">
-              <NoteMenu
-                onOpenGoal={() => setGoalOpen(true)}
-                onOpenHistory={openHistory}
-                onCopyAll={copyAll}
-              />
               {!compact && (
                 <ModeMenu
                   zen={zen}
@@ -299,12 +293,6 @@ export function Topbar({
             />
 
             <Separator orientation="vertical" className="mx-1 h-5" />
-
-            <NoteMenu
-              onOpenGoal={() => setGoalOpen(true)}
-              onOpenHistory={openHistory}
-              onCopyAll={copyAll}
-            />
 
             {!compact && (
               <ModeMenu

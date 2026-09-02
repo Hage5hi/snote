@@ -37,11 +37,6 @@ const vi: Dictionary = {
     "brand.copy_content": "Sao chép nội dung",
     "brand.outline": "Mục lục",
 
-    "menu.note": "Note",
-    "note.goal": "Đặt mục tiêu từ…",
-    "note.history": "Lịch sử & Khôi phục",
-    "note.copy_all": "Copy toàn bộ note",
-
     "menu.export": "Export",
     "export.copy_url": "Copy URL note",
     "export.md": "Tải .md",

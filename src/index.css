@@ -639,17 +639,22 @@
   --snote-search-gutter: 92px;
 }
 .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) {
-  position: absolute;
-  top: 1px;
-  left: 0;
-  right: 0;
+  position: fixed;
+  top: calc(2.75rem + var(--sa-top) + 1px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: clamp(18rem, 50vw, calc(100vw - 1.5rem));
   height: 0;
   overflow: visible;
   border: none;
   background: transparent !important;
   color: inherit;
   pointer-events: none;
-  z-index: 20;
+  z-index: 25;
+}
+html.zen-mode .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) {
+  top: calc(0.25rem + var(--sa-top));
 }
 .cm-editor .cm-panels.cm-panels-top:has(.snote-search-host) .cm-panel {
   background: transparent !important;
@@ -660,10 +665,8 @@
 }
 .snote-search-host {
   display: flex;
-  justify-content: flex-end;
   box-sizing: border-box;
   width: 100%;
-  padding: 0 0.5rem;
   pointer-events: none;
   overflow: visible;
   min-width: 0;
@@ -672,10 +675,9 @@
   pointer-events: auto;
   color-scheme: inherit;
   overflow: visible;
-  width: min(26rem, 100%);
+  width: 100%;
   max-width: 100%;
   min-width: 0;
-  margin-left: auto;
 }
 html.dark .snote-search-panel {
   color-scheme: dark;
