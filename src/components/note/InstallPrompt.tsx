@@ -16,7 +16,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/i18n/index";
 
@@ -249,19 +248,25 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
     >
       {/* Install as an app */}
       <Dialog open={appOpen} onOpenChange={setAppOpen}>
-        <DialogTrigger asChild>
-          <button
-            type="button"
-            className="flex min-w-0 items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent"
-          >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
-              {appInstalled ? <Check className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
-            </div>
-            <span className="min-w-0 truncate text-sm font-medium">
-              {appInstalled ? t("install.status_installed_label") : t("install.title")}
-            </span>
-          </button>
-        </DialogTrigger>
+        {/* Open on mouse down, not click: Home's lazy template picker can
+            commit mid-click and swallow the mouseup (firefox BIP e2e). */}
+        <button
+          type="button"
+          className="flex min-w-0 items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent"
+          aria-haspopup="dialog"
+          aria-expanded={appOpen}
+          onMouseDown={(e) => {
+            if (e.button === 0) setAppOpen(true);
+          }}
+          onClick={() => setAppOpen(true)}
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
+            {appInstalled ? <Check className="h-4 w-4" /> : <Smartphone className="h-4 w-4" />}
+          </div>
+          <span className="min-w-0 truncate text-sm font-medium">
+            {appInstalled ? t("install.status_installed_label") : t("install.title")}
+          </span>
+        </button>
         <DialogContent
           hideClose
           onPointerDownOutside={(e) => e.preventDefault()}
@@ -305,19 +310,23 @@ export const InstallPrompt = forwardRef<HTMLDivElement>((_props, _ref) => {
 
       {/* Browser extension */}
       <Dialog open={extOpen} onOpenChange={setExtOpen}>
-        <DialogTrigger asChild>
-          <button
-            type="button"
-            className="flex min-w-0 items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent"
-          >
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
-              <Puzzle className="h-4 w-4" />
-            </div>
-            <span className="min-w-0 truncate text-sm font-medium">
-              {t("install.ext_title")}
-            </span>
-          </button>
-        </DialogTrigger>
+        <button
+          type="button"
+          className="flex min-w-0 items-center gap-2 rounded-md p-2 text-left transition-colors hover:bg-accent"
+          aria-haspopup="dialog"
+          aria-expanded={extOpen}
+          onMouseDown={(e) => {
+            if (e.button === 0) setExtOpen(true);
+          }}
+          onClick={() => setExtOpen(true)}
+        >
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
+            <Puzzle className="h-4 w-4" />
+          </div>
+          <span className="min-w-0 truncate text-sm font-medium">
+            {t("install.ext_title")}
+          </span>
+        </button>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t("install.ext_title")}</DialogTitle>

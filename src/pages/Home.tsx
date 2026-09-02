@@ -362,7 +362,16 @@ export default function Home() {
             <Shuffle className="h-3.5 w-3.5" />
             {t("home.btn.random")}
           </Button>
-          <Suspense fallback={null}>
+          {/* Sized fallback: a null slot lets the picker pop in above
+              InstallPrompt and swallow the first click (firefox BIP). */}
+          <Suspense
+            fallback={
+              <span
+                className="inline-block h-8 min-w-[22rem]"
+                aria-hidden="true"
+              />
+            }
+          >
             <HomeTemplatePicker value={templateId} onChange={setTemplateId} />
           </Suspense>
           <span className="text-[11px] text-muted-foreground">
