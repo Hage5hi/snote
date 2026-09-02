@@ -7,7 +7,7 @@ không được nhận nội dung, slug, token hay canonical URL của một not
 Source Worker và cấu hình non-secret trong thư mục này khớp với Worker
 production `syrin-prerender` đang chạy: git SHA `9fcc58bc`, Cloudflare
 Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6` (PR #52, 2026-09-02).
-Origin SPA hiện là `e39caacd` (xem §3e); không được coi origin là `9fcc58bc`.
+Origin SPA hiện là `4c791861` (xem §3e); không được coi origin là `9fcc58bc`.
 Observability, logs, traces, và `workers_dev` vẫn tắt. Việc ghi nhận
 identity này không cho phép một deployment mới. Xem
 `docs/security-findings.md` §1c.
