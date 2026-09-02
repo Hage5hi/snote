@@ -12,8 +12,8 @@ NotePage owner/edit routes and SharePage `/s#view`. Missing, empty, or any
 other value keeps both pages `legacyOnly`. The same flag fail-closes
 `createCapabilityApi()`: `note-session`, `note-sync`, and `note-manage`
 throw `capability API unavailable` without fetching, and default Auth
-minting stays off. Ordinary Vite builds follow `.env.example`
-(`VITE_CAPABILITY_ROUTES_ENABLED=false`) and attest
+minting stays off. Tracked `.env.example` keeps
+`VITE_CAPABILITY_ROUTES_ENABLED=false`; ordinary Vite builds attest
 `capabilityRoutesEnabled: false`. Live production `build:release` attests
 `capabilityRoutesEnabled: true` (findings §3e).
 
