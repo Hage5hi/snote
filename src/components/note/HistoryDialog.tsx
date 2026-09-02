@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as Y from "yjs";
 import { Clock, RotateCcw, Eye, GitCompare } from "lucide-react";
 import {
@@ -21,6 +21,7 @@ import {
   type SnapshotKind,
   type SnapshotProtection,
 } from "@/lib/snapshots";
+import { applySelectedHunksToYText, clusterSnapshots, diffHunks, LIVE_TEXT_MISMATCH } from "@/lib/snapshot-history";
 import { Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { SnapshotDiff } from "./SnapshotDiff";
@@ -73,6 +74,7 @@ export function HistoryDialog({
   const [diffB, setDiffB] = useState<string>("");
   const [range, setRange] = useState<"all" | "day" | "week" | "month">("all");
   const [kind, setKind] = useState<"all" | SnapshotKind>("all");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const rangeMs: Record<typeof range, number | null> = {
     all: null,
@@ -81,6 +83,15 @@ export function HistoryDialog({
     month: 30 * 24 * 3600_000,
   };
   const filteredItems = filterSnapshots(items, { rangeMs: rangeMs[range], kind });
+  const liveText = doc.getText("content").toString();
+  const bursts = useMemo(
+    () =>
+      clusterSnapshots(filteredItems, {
+        current: { ts: Date.now(), content: liveText },
+        includeDistantCurrent: false,
+      }),
+    [filteredItems, liveText],
+  );
 
   const handleClear = async () => {
     const ok = window.confirm(t("history.confirm_clear", { n: items.length }));
@@ -128,6 +139,43 @@ export function HistoryDialog({
   const a = getContentFor(diffA);
   const b = getContentFor(diffB);
   const chars = t("history.chars_short");
+  const canRestoreHunks = diffB === "__current__";
+  const hunks = useMemo(() => diffHunks(a.text, b.text), [a.text, b.text]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [diffA, diffB, a.text, b.text]);
+
+  const restoreHunks = () => {
+    if (!canRestoreHunks || selectedIds.length === 0) return;
+    const ok = window.confirm(t("history.confirm_restore_hunks", { n: selectedIds.length }));
+    if (!ok) return;
+    try {
+      applySelectedHunksToYText(doc, {
+        oldText: a.text,
+        newText: b.text,
+        hunks,
+        selectedIds,
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === LIVE_TEXT_MISMATCH) {
+        toast({ title: t("history.hunk.stale") });
+        return;
+      }
+      throw err;
+    }
+    toast({
+      title: t("history.toast_hunks_restored"),
+      description: t("history.toast_hunks_restored_desc", { n: selectedIds.length }),
+    });
+    setOpen(false);
+  };
+
+  const openBurstDiff = (oldestId: number | undefined) => {
+    setDiffA(String(oldestId ?? ""));
+    setDiffB("__current__");
+    setTab("diff");
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -227,33 +275,61 @@ export function HistoryDialog({
                 </Button>
               </div>
               <ScrollArea className="max-h-[55vh]">
-                <ul className="divide-y divide-border">
-                  {filteredItems.map((snap) => (
-                    <li key={snap.id} className="flex items-start gap-3 py-3">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                          <span className="text-sm font-medium">{timeAgo(snap.ts)}</span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {formatTs(snap.ts)} • {snap.charCount} {chars}
-                          </span>
+                <div className="divide-y divide-border">
+                  {bursts.map((burst) => (
+                    <section key={burst.id} className="py-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="min-w-0 text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">{t("history.burst.heading")}</span>
+                          {" · "}
+                          <span>{t("history.burst.n_snapshots", { n: burst.snapshots.length })}</span>
+                          {burst.vsCurrent ? (
+                            <>
+                              {" · "}
+                              <span>{t("history.burst.vs_current")}</span>
+                            </>
+                          ) : null}
                         </div>
-                        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                          {snap.preview || <em>{t("history.preview_empty")}</em>}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => setViewing(snap)}>
-                          <Eye className="h-3.5 w-3.5" />
-                          {t("history.view")}
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => restore(snap)}>
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          {t("history.restore")}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          data-history-compare-burst
+                          onClick={() => openBurstDiff(burst.snapshots[0]?.id)}
+                        >
+                          <GitCompare className="h-3.5 w-3.5" />
+                          {t("history.burst.compare")}
                         </Button>
                       </div>
-                    </li>
+                      <ul>
+                        {burst.snapshots.slice().reverse().map((snap) => (
+                          <li key={snap.id} className="flex items-start gap-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-baseline gap-2">
+                                <span className="text-sm font-medium">{timeAgo(snap.ts)}</span>
+                                <span className="text-[11px] text-muted-foreground">
+                                  {formatTs(snap.ts)} • {snap.charCount} {chars}
+                                </span>
+                              </div>
+                              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                                {snap.preview || <em>{t("history.preview_empty")}</em>}
+                              </p>
+                            </div>
+                            <div className="flex shrink-0 gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => setViewing(snap)}>
+                                <Eye className="h-3.5 w-3.5" />
+                                {t("history.view")}
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => restore(snap)}>
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                {t("history.restore")}
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
                   ))}
-                </ul>
+                </div>
               </ScrollArea>
             </TabsContent>
 
@@ -279,6 +355,8 @@ export function HistoryDialog({
                     value={diffB}
                     onChange={(e) => setDiffB(e.target.value)}
                     className="w-full rounded-md border border-border bg-background px-2 py-1.5 text-xs"
+                    data-history-diff-new
+                    data-testid="history-diff-new"
                   >
                     <option value="__current__">{t("history.option_current")}</option>
                     {items.map((s) => (
@@ -289,7 +367,38 @@ export function HistoryDialog({
                   </select>
                 </label>
               </div>
-              <SnapshotDiff oldText={a.text} newText={b.text} oldLabel={a.label} newLabel={b.label} />
+              <SnapshotDiff
+                oldText={a.text}
+                newText={b.text}
+                oldLabel={a.label}
+                newLabel={b.label}
+                selectable={canRestoreHunks}
+                selectedIds={selectedIds}
+                onToggleHunk={(id, selected) => {
+                  setSelectedIds((prev) => {
+                    if (selected) return prev.includes(id) ? prev : [...prev, id];
+                    return prev.filter((x) => x !== id);
+                  });
+                }}
+                onToggleAll={(selected) => {
+                  setSelectedIds(selected ? hunks.map((h) => h.id) : []);
+                }}
+              />
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  {canRestoreHunks ? null : t("history.hunk.need_current")}
+                </p>
+                <Button
+                  onClick={restoreHunks}
+                  disabled={!canRestoreHunks || selectedIds.length === 0}
+                  data-history-restore-hunks
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  {selectedIds.length > 0
+                    ? t("history.hunk.restore_n", { n: selectedIds.length })
+                    : t("history.hunk.restore")}
+                </Button>
+              </div>
             </TabsContent>
           </Tabs>
         )}

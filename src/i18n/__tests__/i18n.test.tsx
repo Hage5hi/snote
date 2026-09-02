@@ -61,6 +61,30 @@ describe("i18n dict", () => {
     expect(dict.vi["knowledge.backlinks_empty"]).toMatch(/trỏ tới đây/i);
   });
 
+  it("history burst and hunk restore copy exists in every locale", () => {
+    const keys = [
+      "history.burst.heading",
+      "history.burst.n_snapshots",
+      "history.burst.compare",
+      "history.hunk.restore",
+      "history.hunk.restore_n",
+      "history.confirm_restore_hunks",
+      "history.toast_hunks_restored",
+    ] as const;
+    for (const lang of SUPPORTED_LANGS) {
+      for (const key of keys) {
+        expect(dict[lang][key], `${lang}:${key}`).toBeTruthy();
+      }
+      expect(dict[lang]["history.burst.n_snapshots"]).toContain("{n}");
+      expect(dict[lang]["history.hunk.restore_n"]).toContain("{n}");
+      expect(dict[lang]["history.confirm_restore_hunks"]).toContain("{n}");
+    }
+    expect(dict.en["history.confirm_restore_hunks"]).toMatch(/every open device/i);
+    expect(dict.en["history.confirm_restore_hunks"]).toMatch(/slug/i);
+    expect(dict.vi["history.confirm_restore_hunks"]).not.toBe(dict.en["history.confirm_restore_hunks"]);
+    expect(dict.vi["history.burst.compare"]).not.toBe(dict.en["history.burst.compare"]);
+  });
+
   it("preview alert and slash-command details are translated", () => {
     const keys = [
       "preview.alert.note",
