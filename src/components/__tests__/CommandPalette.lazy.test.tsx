@@ -63,4 +63,12 @@ describe("CommandPalette — lazy body loading", () => {
     fireEvent.keyDown(window, { key: "K", metaKey: true });
     await waitFor(() => expect(screen.getByTestId("cmdk-body")).toBeInTheDocument());
   });
+
+  it("opens on Ctrl/⌘+P and ignores Shift+P (page mode)", async () => {
+    await renderShell();
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true, shiftKey: true });
+    expect(screen.queryByTestId("cmdk-body")).toBeNull();
+    fireEvent.keyDown(window, { key: "p", ctrlKey: true });
+    await waitFor(() => expect(screen.getByTestId("cmdk-body")).toBeInTheDocument());
+  });
 });
