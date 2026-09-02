@@ -109,7 +109,7 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `1f21777e` (see §3e).
+This is not the live SPA origin. Origin is `d15aee5d` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
@@ -427,15 +427,26 @@ canonical and Pages hosts:
 Pages production deployment id `6b434d48`
 replaced previous live origin `4c791861` / Pages `878a55d0`.
 
-Same-canary origin SHA bump 2026-09-03 ~04:24 ICT: Pages `snote-g4-origin`
-redeployed Phase 4 knowledge UX — Home tag filter, virtual collections, templates.
-Lazy `HomeLibraryPanel` / `HomeTemplatePicker` (#79). Live
-`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+Same-canary origin SHA bump 2026-09-03 ~04:24 ICT (not current live): Pages
+`snote-g4-origin` redeployed Phase 4 knowledge UX — Home tag filter, virtual collections, templates.
+Lazy `HomeLibraryPanel` / `HomeTemplatePicker` (#79). `version.json` at that bump
+(browser UA; `no-store`) on both canonical and Pages hosts:
 `deployedSha` `1f21777e7d562b4ae5f71bc7d72d7df44dd50557`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-02T21:23:43.585Z`,
 `buildId` `1788384208561-3dfszwdt`.
 Pages production deployment id `a88095b0`
-replaces previous live origin `92aa4e0d` / Pages `6b434d48`.
+replaced previous live origin `92aa4e0d` / Pages `6b434d48`.
+
+Same-canary origin SHA bump 2026-09-03 ~05:07 ICT: Pages `snote-g4-origin`
+redeployed firefox Home install dialog swallowed by lazy `HomeTemplatePicker`
+(#81). Open on mousedown, sized desktop picker slot, keep DialogTrigger for
+Escape focus. Live
+`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+`deployedSha` `d15aee5d243630abc7f143225b2ca9cdb44dd7b2`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-02T22:06:29.822Z`,
+`buildId` `1788386776564-qtmwh3o1`.
+Pages production deployment id `2870a660`
+replaces previous live origin `1f21777e` / Pages `a88095b0`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
