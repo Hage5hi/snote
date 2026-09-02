@@ -174,6 +174,7 @@ describe("canonical production origin", () => {
     );
     expect(findings).toContain("https://note.syrin.online/");
     expect(findings).toContain("do not advertise `snote.lovable.app`");
+    expect(findings).toContain("First canary origin (not current live)");
     expect(findings).toContain(
       "c5914c8e8f953d5e8ed877d8c892b6e0941095e7",
     );
@@ -285,7 +286,7 @@ describe("canonical production origin", () => {
       "386421e87f7eac2864f1a40655a2b0255b4332d6",
     );
     expect(cutover).toContain("`capabilityRoutesEnabled` true");
-    expect(cutover).toMatch(/Soak ≥48h starts from\s+that first canary/);
+    expect(cutover).toMatch(/Soak ≥48h started from\s+that first canary/);
     expect(cutover).toMatch(/same-canary origin SHA bump/i);
     expect(cutover).toContain("not soak-complete");
     expect(cutover).toMatch(

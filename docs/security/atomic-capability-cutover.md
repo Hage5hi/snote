@@ -45,7 +45,7 @@ production operation, not a migration to apply automatically after merge.
    `writes_enabled=true`, `private_realtime_enabled=false` (findings §3d).
    Origin canary go 2026-09-02 ~12:01 ICT: first canary `version.json`
    `deployedSha` `c5914c8e8f953d5e8ed877d8c892b6e0941095e7`,
-   `capabilityRoutesEnabled` true (findings §3e). Soak ≥48h starts from
+   `capabilityRoutesEnabled` true (findings §3e). Soak ≥48h started from
    that first canary. Same-canary origin SHA bump 2026-09-02 ~16:03 ICT:
    live `deployedSha` `386421e87f7eac2864f1a40655a2b0255b4332d6`, still
    `capabilityRoutesEnabled` true. This is not soak-complete.
