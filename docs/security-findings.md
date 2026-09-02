@@ -305,7 +305,8 @@ write path is still legacy `NotePage`.
 This backup-panel check is not a soak claim. This is not authorization to call
 `capability_runtime_set`, flip `writes_enabled` or `private_realtime_enabled`,
 origin-deploy, flip the canary, or apply SQL 240 — that 10:26 ICT verify was
-not the go; the named later go is §3d and is not those remaining steps.
+not the go; the named later `writes_enabled` go is §3d; later origin canary is
+§3e; neither is soak-complete or SQL 240.
 
 ## 3d. Production writes_enabled go — verified, Realtime still false
 
@@ -325,10 +326,10 @@ via Lovable Cloud `query_database`. Confirmed row:
 `private_realtime_enabled=false`, `updated_at`
 `2026-09-02 04:24:07.235188+00` (11:24 ICT).
 
-SQL 240 still not applied: `capability_note_import_legacy` is absent. Live SPA
-unchanged: GET `https://note.syrin.online/version.json` still `deployedSha`
-`fe18302fb650b98eaee414e34e61db5cf06acc61`, `capabilityRoutesEnabled` false,
-`builtAt` `2026-09-01T19:55:38.557Z`.
+SQL 240 still not applied: `capability_note_import_legacy` is absent. At that
+go, live SPA was still GET `https://note.syrin.online/version.json`
+`deployedSha` `fe18302fb650b98eaee414e34e61db5cf06acc61`,
+`capabilityRoutesEnabled` false, `builtAt` `2026-09-01T19:55:38.557Z`.
 POST `/functions/v1/note-session` `{}` still 401 `{"error":"unauthorized"}`
 no-store. Live write path is still legacy `NotePage`;
 this flip does not mount `CutoverNotePage` and is not a canary.
@@ -341,8 +342,7 @@ Later origin canary is §3e.
 
 Verified 2026-09-02 ~12:01 ICT. Cloudflare Pages project `snote-g4-origin`
 via `wrangler pages deploy` of a strict `build:release`. Build flags:
-`VITE_CAPABILITY_ROUTES_ENABLED=true` only. `VITE_CAPABILITY_AUTH_ENABLED`
-and `VITE_ADMIN_PANEL_ENABLED` stayed false.
+`VITE_CAPABILITY_ROUTES_ENABLED=true` only. `VITE_CAPABILITY_AUTH_ENABLED` and `VITE_ADMIN_PANEL_ENABLED` stayed false.
 
 Canonical origin remains `https://note.syrin.online/` (do not advertise `snote.lovable.app`).
 

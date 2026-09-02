@@ -68,6 +68,9 @@ describe("canonical production origin", () => {
     );
     expect(findings).toContain("Capability SPA canary is on");
     expect(findings).not.toContain("Capability SPA canary remains off");
+    expect(findings).not.toContain("Origin remains `fe18302f`");
+    expect(findings).not.toContain("Canary remains off");
+    expect(findings).toContain("Origin is `c5914c8e`");
     expect(findings).toContain("capabilityRoutesEnabled` is true");
     expect(findings).toContain("VITE_CAPABILITY_ROUTES_ENABLED` is true");
     expect(findings).toMatch(
@@ -163,8 +166,9 @@ describe("canonical production origin", () => {
     expect(findings).toContain("wrangler pages deploy");
     expect(findings).toContain("`build:release`");
     expect(findings).toContain("`VITE_CAPABILITY_ROUTES_ENABLED=true` only");
-    expect(findings).toContain("`VITE_CAPABILITY_AUTH_ENABLED`");
-    expect(findings).toContain("`VITE_ADMIN_PANEL_ENABLED` stayed false");
+    expect(findings).toContain(
+      "`VITE_CAPABILITY_AUTH_ENABLED` and `VITE_ADMIN_PANEL_ENABLED` stayed false",
+    );
     expect(findings).toContain("https://note.syrin.online/");
     expect(findings).toContain("do not advertise `snote.lovable.app`");
     expect(findings).toContain(
