@@ -113,9 +113,11 @@ describe("canonical production origin", () => {
       "## 3d. Production writes_enabled go — verified, Realtime still false",
     );
     expect(findings).toContain("2026-09-02 ~11:23 ICT");
+    expect(findings).toContain("production not staging");
     expect(findings).toContain(
       "SELECT public.capability_runtime_set(true, false);",
     );
+    expect(findings).toContain("via Lovable Cloud `query_database`");
     expect(findings).toContain("`singleton=true`, `writes_enabled=true`");
     expect(findings).toContain("`private_realtime_enabled=false`");
     expect(findings).toContain("2026-09-02 04:24:07.235188+00");

@@ -181,7 +181,7 @@ these and drop every notes policy; that has not happened.
 
 Tables present: `note_capabilities`, `note_updates`, `note_checkpoints`,
 `note_realtime_memberships`, `capability_admission_windows`,
-`capability_runtime_settings`. At this 2026-09-01 check, kill switch row:
+`capability_runtime_settings`. At that 2026-09-01 check, kill switch row:
 `capability_runtime_settings` `singleton=true`, `writes_enabled=false`,
 `private_realtime_enabled=false`. Current production row is §3d
 (`writes_enabled=true`, Realtime still false). Function
@@ -219,7 +219,7 @@ returns `checkpoint_encryption_conflict` and `checkpoint_version_conflict`.
 `capability_note_manage` still uses generic `version_conflict`; that is
 expected — 270 does not rewrite manage.
 
-At this 2026-09-01 check the row was `writes_enabled=false`,
+At that 2026-09-01 check the row was `writes_enabled=false`,
 `private_realtime_enabled=false`. Current production row is §3d
 (`writes_enabled=true`, Realtime still false). SQL 240 still not applied:
 `capability_note_import_legacy` is absent; anon still has notes grants; the
@@ -296,9 +296,10 @@ no manual create-backup button. Nothing on that panel was clicked.
 Worst-case loss on restore-to-snapshot is up to ~24h of writes. The live
 write path is still legacy `NotePage`.
 
-This is not a soak claim. This is not authorization to call
+This backup-panel check is not a soak claim. This is not authorization to call
 `capability_runtime_set`, flip `writes_enabled` or `private_realtime_enabled`,
-origin-deploy, flip the canary, or apply SQL 240.
+origin-deploy, flip the canary, or apply SQL 240 — that 10:26 ICT verify was
+not the go; the named later go is §3d and is not those remaining steps.
 
 ## 3d. Production writes_enabled go — verified, Realtime still false
 
@@ -313,10 +314,11 @@ Database → Backups), production not staging: latest snapshot still
 snapshots (oldest visible `2026-08-19 19:34:43 UTC`). No PITR / point-in-time
 UI. Restore not clicked.
 
-Named go: `SELECT public.capability_runtime_set(true, false);` via Lovable
-Cloud `query_database`. Confirmed row: `capability_runtime_settings`
-`singleton=true`, `writes_enabled=true`, `private_realtime_enabled=false`,
-`updated_at` `2026-09-02 04:24:07.235188+00` (11:24 ICT).
+Named go: `SELECT public.capability_runtime_set(true, false);`
+via Lovable Cloud `query_database`. Confirmed row:
+`capability_runtime_settings` `singleton=true`, `writes_enabled=true`,
+`private_realtime_enabled=false`, `updated_at`
+`2026-09-02 04:24:07.235188+00` (11:24 ICT).
 
 SQL 240 still not applied: `capability_note_import_legacy` is absent. Live SPA
 unchanged: GET `https://note.syrin.online/version.json` still `deployedSha`
