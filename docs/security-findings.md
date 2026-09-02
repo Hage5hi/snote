@@ -2,8 +2,8 @@
 
 Production legacy write path is still live (`NotePage` `legacyOnly`,
 `public.notes`). Additive SQL `20260722000000_capability_backend.sql` is
-applied on production: columns, legacy-only RLS, capability tables, and a
-closed kill switch (`writes_enabled=false`, `private_realtime_enabled=false`).
+applied on production: columns, legacy-only RLS, capability tables, and
+`writes_enabled=true`, `private_realtime_enabled=false` (see §3d).
 Additive SQL `20260727000000_capability_sync_conflict_codes.sql` is also
 applied: `capability_updates_append` returns `append_encryption_conflict` and
 `capability_checkpoint_append` returns `checkpoint_encryption_conflict` /
@@ -107,8 +107,8 @@ Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change canary status or
 origin SHA.
 
-Canary remains off. SQL 240 is not applied. Kill switch remains closed
-(`writes_enabled=false`, `private_realtime_enabled=false`).
+Canary remains off. SQL 240 is not applied. `writes_enabled=true`,
+`private_realtime_enabled=false` (see §3d).
 
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
@@ -181,13 +181,15 @@ these and drop every notes policy; that has not happened.
 
 Tables present: `note_capabilities`, `note_updates`, `note_checkpoints`,
 `note_realtime_memberships`, `capability_admission_windows`,
-`capability_runtime_settings`. Kill switch row:
+`capability_runtime_settings`. At that 2026-09-01 check, kill switch row:
 `capability_runtime_settings` `singleton=true`, `writes_enabled=false`,
-`private_realtime_enabled=false`. Function `capability_note_import_legacy`
-is absent (SQL 240 not applied). Function `capability_checkpoint_append`
-exists (SQL 230 objects are present) but capability writes remain fail-closed
-via the kill switch. This §3a attestation is 220 vs 240 vs canary; it is not
-a 230 soak claim. SQL 270 conflict-code verification is §3b.
+`private_realtime_enabled=false`. Current production row is §3d
+(`writes_enabled=true`, Realtime still false). Function
+`capability_note_import_legacy` is absent (SQL 240 not applied). Function
+`capability_checkpoint_append` exists (SQL 230 objects are present). Live
+SPA still does not mount `CutoverNotePage`. This §3a attestation is 220 vs
+240 vs canary; it is not a 230 soak claim. SQL 270 conflict-code verification
+is §3b.
 
 Live SPA `https://note.syrin.online/version.json` (fetched 2026-09-02;
 same fields on `https://snote-g4-origin.pages.dev/version.json`):
@@ -217,8 +219,9 @@ returns `checkpoint_encryption_conflict` and `checkpoint_version_conflict`.
 `capability_note_manage` still uses generic `version_conflict`; that is
 expected — 270 does not rewrite manage.
 
-Kill switch still closed: `writes_enabled=false`,
-`private_realtime_enabled=false`. SQL 240 still not applied:
+At that 2026-09-01 check the row was `writes_enabled=false`,
+`private_realtime_enabled=false`. Current production row is §3d
+(`writes_enabled=true`, Realtime still false). SQL 240 still not applied:
 `capability_note_import_legacy` is absent; anon still has notes grants; the
 three Legacy policies remain.
 
@@ -246,8 +249,9 @@ names still match git mapper `capabilityCorsHeaders` (includes
 `unavailable` (HMAC and service-role env present). Still not 410.
 `share-revoke` POST `{}` still 400 `invalid token`. `legacy-note-open`
 POST still 410. Origin still `fe18302f` / `capabilityRoutesEnabled`
-false. Worker still §1c (`9fcc58bc` / `b4d1a94e`). Canary off. Kill
-switch closed. SQL 240 not applied.
+false. Worker still §1c (`9fcc58bc` / `b4d1a94e`). Canary off. SQL 240
+not applied. Current kill switch: §3d (`writes_enabled=true`, Realtime
+still false).
 
 Staging `dmfrydhubosecaatjjwf` was not redeployed this time. Earlier
 staging HTTP matched git mapper `capabilityCorsHeaders` (includes
@@ -264,16 +268,18 @@ git `0e1ea254`; hosted source bytes still cannot be listed (management
 list API 403). Do not invent a hosted blob SHA. Live Worker identity is
 §1c and is distinct from this SPA origin SHA.
 
-This is not a soak claim. This is not authorization to flip the canary or
-`writes_enabled`, or to apply 240.
+This is not a soak claim. This 270 attestation is not authorization to flip
+the canary or `private_realtime_enabled`, or to apply 240. The later
+`writes_enabled` go is §3d and is not those remaining steps.
 
 ## 3c. Production daily backups — verified, no PITR
 
 Verified 2026-09-02 ~10:26 ICT from the Lovable Cloud UI for project
 `8f71f52d-c666-442f-bfb8-5f0a4e0ac1d5` / Supabase `onfzjmfjldsbthchssfr`.
-Nothing was restored. Kill switch was read-only confirmed still closed:
+Nothing was restored. At that 10:26 ICT read the row was
 `writes_enabled=false`, `private_realtime_enabled=false`
 (`capability_runtime_settings.updated_at` `2026-08-26 04:32:27 UTC`).
+Same-day later go is §3d.
 
 The authoritative backup panel is Lovable Cloud → More → Cloud → Database →
 Backups. The supabase.com dashboard for this ref 404s from our session; do
@@ -290,9 +296,40 @@ no manual create-backup button. Nothing on that panel was clicked.
 Worst-case loss on restore-to-snapshot is up to ~24h of writes. The live
 write path is still legacy `NotePage`.
 
-This is not a soak claim. This is not authorization to call
+This backup-panel check is not a soak claim. This is not authorization to call
 `capability_runtime_set`, flip `writes_enabled` or `private_realtime_enabled`,
-origin-deploy, flip the canary, or apply SQL 240.
+origin-deploy, flip the canary, or apply SQL 240 — that 10:26 ICT verify was
+not the go; the named later go is §3d and is not those remaining steps.
+
+## 3d. Production writes_enabled go — verified, Realtime still false
+
+Verified 2026-09-02 against production Lovable Cloud project
+`8f71f52d-c666-442f-bfb8-5f0a4e0ac1d5` / Supabase `onfzjmfjldsbthchssfr`.
+Canonical origin remains `https://note.syrin.online/` (do not advertise
+`snote.lovable.app`).
+
+Daily snapshot re-check 2026-09-02 ~11:23 ICT (Lovable Cloud → More → Cloud →
+Database → Backups), production not staging: latest snapshot still
+`2026-09-01 19:33:22 UTC` (`2026-09-02 02:33:22 ICT`). 14 daily automated
+snapshots (oldest visible `2026-08-19 19:34:43 UTC`). No PITR / point-in-time
+UI. Restore not clicked.
+
+Named go: `SELECT public.capability_runtime_set(true, false);`
+via Lovable Cloud `query_database`. Confirmed row:
+`capability_runtime_settings` `singleton=true`, `writes_enabled=true`,
+`private_realtime_enabled=false`, `updated_at`
+`2026-09-02 04:24:07.235188+00` (11:24 ICT).
+
+SQL 240 still not applied: `capability_note_import_legacy` is absent. Live SPA
+unchanged: GET `https://note.syrin.online/version.json` still `deployedSha`
+`fe18302fb650b98eaee414e34e61db5cf06acc61`, `capabilityRoutesEnabled` false,
+`builtAt` `2026-09-01T19:55:38.557Z`.
+POST `/functions/v1/note-session` `{}` still 401 `{"error":"unauthorized"}`
+no-store. Live write path is still legacy `NotePage`;
+this flip does not mount `CutoverNotePage` and is not a canary.
+
+This is not canary, not SQL 240, not origin/Worker deploy, not
+`private_realtime_enabled`, and not soak.
 
 ## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 

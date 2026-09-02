@@ -38,10 +38,14 @@ production operation, not a migration to apply automatically after merge.
 
 1. Verify the Lovable Cloud daily snapshot panel (see
    `docs/security-findings.md` §3c). PITR is not available on this Tiny project.
-   Daily snapshot verify is done as of 2026-09-02; re-check the
-   latest snapshot timestamp immediately before any later `writes_enabled`
-   go. Do not treat snapshot verify as `capability_runtime_set`,
-   `writes_enabled`, canary, or 240 authorization.
+   Daily snapshot verify is done as of 2026-09-02. Immediate pre-go re-check
+   2026-09-02 ~11:23 ICT: latest snapshot still `2026-09-01 19:33:22 UTC`.
+   Named production go the same day:
+   `SELECT public.capability_runtime_set(true, false);` —
+   `writes_enabled=true`, `private_realtime_enabled=false` (findings §3d).
+   Do not treat snapshot verify as `capability_runtime_set`.
+   This is not `LEGACY_SHARE_CUTOFF`, canary, soak, SQL 240, origin/Worker, or
+   `private_realtime_enabled`. Do not skip remaining order.
 2. Record the actual planned cutover timestamp, add exactly 30 days, and set
    that canonical ISO timestamp as both Edge secret `LEGACY_SHARE_CUTOFF` and
    frontend build variable `VITE_LEGACY_SHARE_CUTOFF`. Missing or malformed

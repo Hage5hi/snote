@@ -5,8 +5,9 @@ Offline-first realtime Markdown notes with a separately gated capability model.
 Production: [note.syrin.online](https://note.syrin.online/)
 
 **Current status:** Production currently runs in legacy mode with capability
-routes disabled. Additive SQL 220 and 270 are applied on production with the
-kill switch closed; SQL 240 and the SPA canary remain off — see
+routes disabled. Additive SQL 220 and 270 are applied on production;
+`writes_enabled=true` and `private_realtime_enabled=false` (findings §3d).
+SQL 240 and the SPA canary remain off — see
 [security findings](docs/security-findings.md).
 
 ## Product
