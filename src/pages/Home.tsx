@@ -367,7 +367,7 @@ export default function Home() {
           <Suspense
             fallback={
               <span
-                className="inline-block h-8 min-w-[22rem]"
+                className="inline-block h-8 min-w-0 sm:min-w-[22rem]"
                 aria-hidden="true"
               />
             }
