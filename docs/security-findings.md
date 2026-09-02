@@ -267,6 +267,33 @@ list API 403). Do not invent a hosted blob SHA. Live Worker identity is
 This is not a soak claim. This is not authorization to flip the canary or
 `writes_enabled`, or to apply 240.
 
+## 3c. Production daily backups — verified, no PITR
+
+Verified 2026-09-02 ~10:26 ICT from the Lovable Cloud UI for project
+`8f71f52d-c666-442f-bfb8-5f0a4e0ac1d5` / Supabase `onfzjmfjldsbthchssfr`.
+Nothing was restored. Kill switch was read-only confirmed still closed:
+`writes_enabled=false`, `private_realtime_enabled=false`
+(`capability_runtime_settings.updated_at` `2026-08-26 04:32:27 UTC`).
+
+The authoritative backup panel is Lovable Cloud → More → Cloud → Database →
+Backups. The supabase.com dashboard for this ref 404s from our session; do
+not treat that 404 as "no backups."
+
+There is no PITR / point-in-time UI on this project (Tiny instance, disk
+0.47/2 GB). The cutover runbook's "PITR checkpoint" is not available here.
+Recoverable backups are 14 daily automated snapshots, taken ~19:33–19:35 UTC
+each day (~02:33 ICT the next calendar day). Latest listed:
+`2026-09-01 19:33:22 UTC` (`2026-09-02 02:33 ICT`). Oldest listed:
+`2026-08-19 19:34:43 UTC`. Each row is restore-only; there is no download and
+no manual create-backup button. Nothing on that panel was clicked.
+
+Worst-case loss on restore-to-snapshot is up to ~24h of writes. The live
+write path is still legacy `NotePage`.
+
+This is not a soak claim. This is not authorization to call
+`capability_runtime_set`, flip `writes_enabled` or `private_realtime_enabled`,
+origin-deploy, flip the canary, or apply SQL 240.
+
 ## 4. Public `notes` access — fixed by the cutover migration, not yet operationally proven
 
 Production SQL 220 (see §3a) and SQL 270 (see §3b) do not change this: 240 is

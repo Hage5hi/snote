@@ -78,4 +78,27 @@ describe("canonical production origin", () => {
       "production deployment has not been independently verified",
     );
   });
+
+  it("records production daily backups without PITR or cutover authorization", () => {
+    const findings = readFileSync("docs/security-findings.md", "utf8");
+
+    expect(findings).toContain(
+      "## 3c. Production daily backups — verified, no PITR",
+    );
+    expect(findings).toMatch(
+      /Lovable Cloud → More → Cloud → Database →\s+Backups/,
+    );
+    expect(findings).toContain("There is no PITR / point-in-time UI");
+    expect(findings).toContain("14 daily automated snapshots");
+    expect(findings).toContain("2026-09-01 19:33:22 UTC");
+    expect(findings).toContain("2026-08-19 19:34:43 UTC");
+    expect(findings).toContain("Nothing was restored");
+    expect(findings).toContain(
+      "Worst-case loss on restore-to-snapshot is up to ~24h of writes",
+    );
+    expect(findings).toMatch(
+      /This is not authorization to call\s+`capability_runtime_set`/,
+    );
+    expect(findings).not.toContain("PITR checkpoint is available");
+  });
 });
