@@ -109,7 +109,7 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `4c791861` (see §3e).
+This is not the live SPA origin. Origin is `92aa4e0d` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
@@ -407,15 +407,25 @@ canonical and Pages hosts:
 Pages production deployment id `005b2f9d`
 replaced previous live origin `8d9ce025` / Pages `e3033d20`.
 
-Same-canary origin SHA bump 2026-09-02 ~23:49 ICT: Pages `snote-g4-origin`
-redeployed Phase 2 knowledge UX — Cmd-K corpus search and `#tag` filter,
-plus `fast-uri` ^3.1.6 override (#75). Live
-`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+Same-canary origin SHA bump 2026-09-02 ~23:49 ICT (not current live): Pages
+`snote-g4-origin` redeployed Phase 2 knowledge UX — Cmd-K corpus search and `#tag` filter,
+plus `fast-uri` ^3.1.6 override (#75). `version.json` at that bump (browser UA; `no-store`) on both
+canonical and Pages hosts:
 `deployedSha` `4c7918619eb6d9b56523444fa1eb8d154e0eba01`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-02T16:49:02.306Z`,
 `buildId` `1788367729384-c7thqlof`.
 Pages production deployment id `878a55d0`
-replaces previous live origin `e39caacd` / Pages `005b2f9d`.
+replaced previous live origin `e39caacd` / Pages `005b2f9d`.
+
+Same-canary origin SHA bump 2026-09-03 ~02:31 ICT: Pages `snote-g4-origin`
+redeployed Phase 3 knowledge UX — GFM callouts, slash mermaid/math, transclude
+(#77). Live
+`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+`deployedSha` `92aa4e0db313f2abec12cc233175e5f86dd4b24a`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-02T19:31:08.064Z`,
+`buildId` `1788377454668-bm60zdsr`.
+Pages production deployment id `6b434d48`
+replaces previous live origin `4c791861` / Pages `878a55d0`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
