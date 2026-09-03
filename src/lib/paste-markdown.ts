@@ -39,24 +39,54 @@ export function isPureHttpUrl(s: string): boolean {
   return PURE_URL_RE.test(s.trim());
 }
 
-const FENCE_OPEN_RE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
+// Turndown prefixes nested fences: `> ``` ` in quotes, `-   ``` ` in lists
+// with 4-space continuation. Match opener after those containers; skip the
+// whole block (closer = same char, at least as long) so inner `url` stays code.
+const FENCE_OPEN_RE =
+  /^((?:> ?)*)(?:([*+-] |\d+\. ))?( {0,3})(`{3,}|~{3,})(.*)$/;
 const FENCE_CLOSE_RE = /^( {0,3})(`{3,}|~{3,})[ \t]*$/;
 
-function fenceOpen(line: string): { char: string; len: number } | null {
+type OpenFence = {
+  char: string;
+  len: number;
+  prefixLen: number;
+  bqPrefix: string;
+};
+
+function fenceOpen(line: string): OpenFence | null {
   const m = FENCE_OPEN_RE.exec(line);
   if (!m) return null;
-  const marker = m[2];
+  const bqPrefix = m[1];
+  const list = m[2] ?? "";
+  const pad = m[3];
+  const marker = m[4];
+  const info = m[5];
   const char = marker[0];
   // CommonMark: a backtick fence's info string cannot contain backticks.
-  if (char === "`" && m[3].includes("`")) return null;
-  return { char, len: marker.length };
+  if (char === "`" && info.includes("`")) return null;
+  return {
+    char,
+    len: marker.length,
+    prefixLen: bqPrefix.length + list.length + pad.length,
+    bqPrefix,
+  };
 }
 
-function isFenceClose(
-  line: string,
-  open: { char: string; len: number },
-): boolean {
-  const m = FENCE_CLOSE_RE.exec(line);
+function stripOpenPrefix(line: string, open: OpenFence): string | null {
+  if (open.bqPrefix) {
+    if (!line.startsWith(open.bqPrefix)) return null;
+    return line.slice(open.bqPrefix.length);
+  }
+  if (open.prefixLen === 0) return line;
+  if (line.length < open.prefixLen) return null;
+  for (let i = 0; i < open.prefixLen; i++) {
+    if (line[i] !== " ") return null;
+  }
+  return line.slice(open.prefixLen);
+}
+
+function isFenceClose(body: string, open: OpenFence): boolean {
+  const m = FENCE_CLOSE_RE.exec(body);
   if (!m) return false;
   const marker = m[2];
   return marker[0] === open.char && marker.length >= open.len;
@@ -86,7 +116,8 @@ export function unwrapInlineCodeHttpUrls(md: string): string {
         const line = lines[i];
         out.push(line);
         i += 1;
-        if (isFenceClose(line, open)) break;
+        const body = stripOpenPrefix(line, open);
+        if (body !== null && isFenceClose(body, open)) break;
       }
       continue;
     }
