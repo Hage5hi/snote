@@ -127,8 +127,9 @@ describe("clipUrlToMarkdown", () => {
 
   it("fetches HTML and returns article markdown", async () => {
     const url = "https://example.com/posts/hello";
-    const fetchMock = vi.fn(async () =>
-      htmlResponse(articleHtml({ title: "Fetched Title", body: BODY_PARAGRAPH })),
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(
+      async () =>
+        htmlResponse(articleHtml({ title: "Fetched Title", body: BODY_PARAGRAPH })),
     );
     const result = await clipUrlToMarkdown(url, { fetch: fetchMock });
     expect(result.ok).toBe(true);
@@ -137,40 +138,43 @@ describe("clipUrlToMarkdown", () => {
       expect(result.markdown).toContain(`[${url}](${url})`);
     }
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(init.credentials).toBe("omit");
+    const call = fetchMock.mock.calls[0];
+    expect(call).toBeDefined();
+    expect(call[1]?.credentials).toBe("omit");
   });
 
   it("inserts the raw URL when the target is private", async () => {
     const url = "http://127.0.0.1/admin";
-    const fetchMock = vi.fn();
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>();
     const result = await clipUrlToMarkdown(url, { fetch: fetchMock });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.insert).toBe(url);
-      expect(result.reason).toBe("blocked");
-      expect(result.toast).toBe(true);
-    }
+    expect(result).toEqual({
+      ok: false,
+      insert: url,
+      reason: "blocked",
+      toast: true,
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("inserts the raw URL when fetch fails (CORS)", async () => {
     const url = "https://example.com/cors";
-    const fetchMock = vi.fn(async () => {
-      throw new TypeError("Failed to fetch");
-    });
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(
+      async () => {
+        throw new TypeError("Failed to fetch");
+      },
+    );
     const result = await clipUrlToMarkdown(url, { fetch: fetchMock });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.insert).toBe(url);
-      expect(result.reason).toBe("fetch");
-      expect(result.toast).toBe(true);
-    }
+    expect(result).toEqual({
+      ok: false,
+      insert: url,
+      reason: "fetch",
+      toast: true,
+    });
   });
 
   it("inserts the raw URL for non-HTML responses", async () => {
     const url = "https://example.com/data.json";
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(
       async () =>
         new Response('{"ok":true}', {
           status: 200,
@@ -178,17 +182,17 @@ describe("clipUrlToMarkdown", () => {
         }),
     );
     const result = await clipUrlToMarkdown(url, { fetch: fetchMock });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.insert).toBe(url);
-      expect(result.reason).toBe("non_html");
-      expect(result.toast).toBe(true);
-    }
+    expect(result).toEqual({
+      ok: false,
+      insert: url,
+      reason: "non_html",
+      toast: true,
+    });
   });
 
   it("fails with too_large when the HTML body exceeds the cap", async () => {
     const url = "https://example.com/huge";
-    const fetchMock = vi.fn(
+    const fetchMock = vi.fn<(input: string, init?: RequestInit) => Promise<Response>>(
       async () =>
         new Response("x".repeat(200), {
           status: 200,
@@ -199,11 +203,12 @@ describe("clipUrlToMarkdown", () => {
       fetch: fetchMock,
       maxHtmlChars: 32,
     });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.insert).toBe(url);
-      expect(result.reason).toBe("too_large");
-    }
+    expect(result).toEqual({
+      ok: false,
+      insert: url,
+      reason: "too_large",
+      toast: true,
+    });
   });
 });
 
