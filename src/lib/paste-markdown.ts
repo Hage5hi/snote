@@ -9,8 +9,10 @@
 // turns `_` into `\_`, which breaks those URLs. After convert we prefer
 // text/plain when the markdown is just that plain text plus backslash
 // escapes, copy-button chrome, a self-href URL, or a wrapping code span
-// whose clipboard is a single http(s) URL. We do not disable Turndown's
-// escape globally, and we do not unwrap real fenced code pastes.
+// whose clipboard is a single http(s) URL. Mixed HTML pastes (Slack/Discord)
+// often wrap only some URLs in `<code>`; we unwrap those inline `http(s)`
+// spans so GFM autolinks them. We do not disable Turndown's escape globally,
+// and we do not unwrap real fenced code pastes.
 //
 // Turndown (+ GFM plugin for tables/strikethrough/task lists) is loaded
 // lazily on first structured-HTML paste so the editor bundle doesn't grow
@@ -37,6 +39,94 @@ export function isPureHttpUrl(s: string): boolean {
   return PURE_URL_RE.test(s.trim());
 }
 
+// Turndown prefixes nested fences: `> ``` ` in quotes, `-   ``` ` in lists
+// with 4-space continuation. Match opener after those containers; skip the
+// whole block (closer = same char, at least as long) so inner `url` stays code.
+const FENCE_OPEN_RE =
+  /^((?:> ?)*)(?:([*+-] |\d+\. ))?( {0,3})(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE_RE = /^( {0,3})(`{3,}|~{3,})[ \t]*$/;
+
+type OpenFence = {
+  char: string;
+  len: number;
+  prefixLen: number;
+  bqPrefix: string;
+};
+
+function fenceOpen(line: string): OpenFence | null {
+  const m = FENCE_OPEN_RE.exec(line);
+  if (!m) return null;
+  const bqPrefix = m[1];
+  const list = m[2] ?? "";
+  const pad = m[3];
+  const marker = m[4];
+  const info = m[5];
+  const char = marker[0];
+  // CommonMark: a backtick fence's info string cannot contain backticks.
+  if (char === "`" && info.includes("`")) return null;
+  return {
+    char,
+    len: marker.length,
+    prefixLen: bqPrefix.length + list.length + pad.length,
+    bqPrefix,
+  };
+}
+
+function stripOpenPrefix(line: string, open: OpenFence): string | null {
+  if (open.bqPrefix) {
+    if (!line.startsWith(open.bqPrefix)) return null;
+    return line.slice(open.bqPrefix.length);
+  }
+  if (open.prefixLen === 0) return line;
+  if (line.length < open.prefixLen) return null;
+  for (let i = 0; i < open.prefixLen; i++) {
+    if (line[i] !== " ") return null;
+  }
+  return line.slice(open.prefixLen);
+}
+
+function isFenceClose(body: string, open: OpenFence): boolean {
+  const m = FENCE_CLOSE_RE.exec(body);
+  if (!m) return false;
+  const marker = m[2];
+  return marker[0] === open.char && marker.length >= open.len;
+}
+
+function unwrapInlineOnLine(line: string): string {
+  return line.replace(/`([^`\n]+)`/g, (match, inner: string) =>
+    isPureHttpUrl(inner) ? inner.trim() : match,
+  );
+}
+
+/**
+ * Replace inline `` `https://…` `` / `` `http://…` `` with the bare URL so
+ * GFM autolinks in preview. Leaves fenced/tilde blocks and non-URL code.
+ * Exported for unit tests.
+ */
+export function unwrapInlineCodeHttpUrls(md: string): string {
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const open = fenceOpen(lines[i]);
+    if (open) {
+      out.push(lines[i]);
+      i += 1;
+      while (i < lines.length) {
+        const line = lines[i];
+        out.push(line);
+        i += 1;
+        const body = stripOpenPrefix(line, open);
+        if (body !== null && isFenceClose(body, open)) break;
+      }
+      continue;
+    }
+    out.push(unwrapInlineOnLine(lines[i]));
+    i += 1;
+  }
+  return out.join("\n");
+}
+
 /**
  * Convert clipboard HTML the same way the editor paste handler does.
  * Exported so unit tests can exercise the decision path without CodeMirror.
@@ -48,8 +138,9 @@ export async function markdownFromHtmlPaste(
   try {
     const md = await htmlToMarkdown(html);
     if (!md) return plainFallback;
-    if (prefersPlainClipboard(md, plainFallback)) return plainFallback;
-    return md;
+    const unwrapped = unwrapInlineCodeHttpUrls(md);
+    if (prefersPlainClipboard(unwrapped, plainFallback)) return plainFallback;
+    return unwrapped;
   } catch {
     return plainFallback;
   }

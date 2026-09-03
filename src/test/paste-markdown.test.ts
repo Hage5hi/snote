@@ -6,6 +6,7 @@ import {
   isPureHttpUrl,
   markdownFromHtmlPaste,
   pasteMarkdown,
+  unwrapInlineCodeHttpUrls,
   wrapSelectionAsMarkdownLink,
 } from "@/lib/paste-markdown";
 
@@ -49,6 +50,58 @@ describe("fixTurndownLinks", () => {
   it("handles empty title string", () => {
     const input = '[x](https://example.com"")';
     expect(fixTurndownLinks(input)).toBe('[x](https://example.com "")');
+  });
+});
+
+describe("unwrapInlineCodeHttpUrls", () => {
+  it("unwraps a pure https inline code span", () => {
+    expect(unwrapInlineCodeHttpUrls("see `https://example.com` now")).toBe(
+      "see https://example.com now",
+    );
+  });
+
+  it("unwraps a pure http inline code span", () => {
+    expect(unwrapInlineCodeHttpUrls("`http://example.com`")).toBe(
+      "http://example.com",
+    );
+  });
+
+  it("leaves non-URL inline code", () => {
+    expect(unwrapInlineCodeHttpUrls("`not-a-url`")).toBe("`not-a-url`");
+  });
+
+  it("does not unwrap inline-code URLs inside fenced blocks", () => {
+    const md = "```\n`https://example.com`\n```";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
+  });
+
+  it("does not unwrap inside a 4-backtick fence that contains a ``` line", () => {
+    const md = "````\n```\n`https://example.com/kept`\nfoo\n````";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
+  });
+
+  it("does not unwrap inside a tilde fence", () => {
+    const md = "~~~\n`https://example.com`\n~~~";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
+  });
+
+  it("does not unwrap inside a blockquote fence", () => {
+    const md = "> ```\n> `https://example.com/kept`\n> foo\n> ```";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
+  });
+
+  it("does not unwrap inside a list-item fence", () => {
+    const md =
+      "-   ```\n    `https://example.com/kept`\n    foo\n    ```";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
+  });
+
+  it("unwraps inline URLs outside a fence and leaves fenced spans", () => {
+    const md =
+      "`https://example.com/a`\n\n```\n`https://example.com/b`\n```";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(
+      "https://example.com/a\n\n```\n`https://example.com/b`\n```",
+    );
   });
 });
 
@@ -200,6 +253,100 @@ describe("markdownFromHtmlPaste", () => {
     const md = await markdownFromHtmlPaste(html, source);
     expect(md).not.toBe(source);
     expect(md.startsWith("# ")).toBe(false);
+  });
+
+  it("unwraps an inline <code> URL in mixed HTML and keeps surrounding text", async () => {
+    const codeUrl =
+      "https://app.getpostman.com/join-team?invite_code=abc";
+    const bareUrl = "https://example.com/join-team?invite_code=def";
+    const html =
+      `<p>team-aki7</p>` +
+      `<p><code>${codeUrl}</code></p>` +
+      `<p>team-aki6</p>` +
+      `<p>${bareUrl}</p>` +
+      `<p>theo danh sách này thì full khoảng 148 slot</p>`;
+    const plain =
+      `team-aki7\n${codeUrl}\nteam-aki6\n${bareUrl}\n` +
+      `theo danh sách này thì full khoảng 148 slot`;
+    const md = await markdownFromHtmlPaste(html, plain);
+    expect(md).toContain("team-aki7");
+    expect(md).toContain("team-aki6");
+    expect(md).toContain(codeUrl);
+    expect(md).toContain(bareUrl);
+    expect(md).toContain("theo danh sách này thì full khoảng 148 slot");
+    expect(md).not.toContain("`" + codeUrl + "`");
+  });
+
+  it("unwraps a Slack-ish <code> URL with underscores unescaped", async () => {
+    const url = "https://example.com/join-team?invite_code=abc_def_ghi";
+    const html = `<p>see <code>${url}</code> please</p>`;
+    const md = await markdownFromHtmlPaste(html, `see ${url} please`);
+    expect(md).toContain(url);
+    expect(md).not.toContain("`" + url + "`");
+    expect(md).not.toMatch(/\\_/);
+    expect(md).toContain("see ");
+    expect(md).toContain(" please");
+  });
+
+  it("keeps inline <code> that is not a URL as backticks", async () => {
+    const html = `<p>use <code>not-a-url</code> here</p>`;
+    const md = await markdownFromHtmlPaste(html, "use not-a-url here");
+    expect(md).toMatch(/`not-a-url`/);
+  });
+
+  it("does not unwrap an inline-code URL inside a fenced <pre><code> paste", async () => {
+    const html =
+      `<p><code>https://example.com/open</code></p>` +
+      `<pre><code>\`https://example.com/kept\`\nfoo</code></pre>`;
+    const md = await markdownFromHtmlPaste(
+      html,
+      "https://example.com/open\n`https://example.com/kept`\nfoo",
+    );
+    expect(md).toContain("https://example.com/open");
+    expect(md).not.toContain("`https://example.com/open`");
+    expect(md).toMatch(/```/);
+    expect(md).toContain("`https://example.com/kept`");
+  });
+
+  it("does not unwrap a URL inside a <pre><code> paste that starts with a fence line", async () => {
+    const source = "```\n`https://example.com/kept`\nfoo";
+    const html = `<pre><code>${source}</code></pre>`;
+    const md = await markdownFromHtmlPaste(html, source);
+    expect(md).toMatch(/^````/m);
+    expect(md).toContain("`https://example.com/kept`");
+  });
+
+  it("does not unwrap a URL inside a blockquoted <pre><code> paste", async () => {
+    const html =
+      `<blockquote><pre><code>\`https://example.com/kept\`\nfoo</code></pre></blockquote>`;
+    const md = await markdownFromHtmlPaste(
+      html,
+      "`https://example.com/kept`\nfoo",
+    );
+    expect(md).toContain("`https://example.com/kept`");
+  });
+
+  it("does not unwrap a URL inside a list <pre><code> paste", async () => {
+    const html =
+      `<ul><li><pre><code>\`https://example.com/kept\`\nfoo</code></pre></li></ul>`;
+    const md = await markdownFromHtmlPaste(
+      html,
+      "`https://example.com/kept`\nfoo",
+    );
+    expect(md).toContain("`https://example.com/kept`");
+  });
+
+  it("unwraps a sibling <code> URL next to a blockquoted fence", async () => {
+    const html =
+      `<p><code>https://example.com/open</code></p>` +
+      `<blockquote><pre><code>\`https://example.com/kept\`\nfoo</code></pre></blockquote>`;
+    const md = await markdownFromHtmlPaste(
+      html,
+      "https://example.com/open\n`https://example.com/kept`\nfoo",
+    );
+    expect(md).toContain("https://example.com/open");
+    expect(md).not.toContain("`https://example.com/open`");
+    expect(md).toContain("`https://example.com/kept`");
   });
 });
 
