@@ -39,19 +39,61 @@ export function isPureHttpUrl(s: string): boolean {
   return PURE_URL_RE.test(s.trim());
 }
 
+const FENCE_OPEN_RE = /^( {0,3})(`{3,}|~{3,})(.*)$/;
+const FENCE_CLOSE_RE = /^( {0,3})(`{3,}|~{3,})[ \t]*$/;
+
+function fenceOpen(line: string): { char: string; len: number } | null {
+  const m = FENCE_OPEN_RE.exec(line);
+  if (!m) return null;
+  const marker = m[2];
+  const char = marker[0];
+  // CommonMark: a backtick fence's info string cannot contain backticks.
+  if (char === "`" && m[3].includes("`")) return null;
+  return { char, len: marker.length };
+}
+
+function isFenceClose(
+  line: string,
+  open: { char: string; len: number },
+): boolean {
+  const m = FENCE_CLOSE_RE.exec(line);
+  if (!m) return false;
+  const marker = m[2];
+  return marker[0] === open.char && marker.length >= open.len;
+}
+
+function unwrapInlineOnLine(line: string): string {
+  return line.replace(/`([^`\n]+)`/g, (match, inner: string) =>
+    isPureHttpUrl(inner) ? inner.trim() : match,
+  );
+}
+
 /**
  * Replace inline `` `https://…` `` / `` `http://…` `` with the bare URL so
  * GFM autolinks in preview. Leaves fenced/tilde blocks and non-URL code.
  * Exported for unit tests.
  */
 export function unwrapInlineCodeHttpUrls(md: string): string {
-  return md.replace(
-    /(```[\s\S]*?```|~~~[\s\S]*?~~~|`([^`\n]+)`)/g,
-    (match, _block: string, inner?: string) => {
-      if (inner === undefined) return match;
-      return isPureHttpUrl(inner) ? inner.trim() : match;
-    },
-  );
+  const lines = md.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const open = fenceOpen(lines[i]);
+    if (open) {
+      out.push(lines[i]);
+      i += 1;
+      while (i < lines.length) {
+        const line = lines[i];
+        out.push(line);
+        i += 1;
+        if (isFenceClose(line, open)) break;
+      }
+      continue;
+    }
+    out.push(unwrapInlineOnLine(lines[i]));
+    i += 1;
+  }
+  return out.join("\n");
 }
 
 /**

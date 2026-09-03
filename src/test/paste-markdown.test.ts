@@ -75,6 +75,16 @@ describe("unwrapInlineCodeHttpUrls", () => {
     expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
   });
 
+  it("does not unwrap inside a 4-backtick fence that contains a ``` line", () => {
+    const md = "````\n```\n`https://example.com/kept`\nfoo\n````";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
+  });
+
+  it("does not unwrap inside a tilde fence", () => {
+    const md = "~~~\n`https://example.com`\n~~~";
+    expect(unwrapInlineCodeHttpUrls(md)).toBe(md);
+  });
+
   it("unwraps inline URLs outside a fence and leaves fenced spans", () => {
     const md =
       "`https://example.com/a`\n\n```\n`https://example.com/b`\n```";
@@ -284,6 +294,14 @@ describe("markdownFromHtmlPaste", () => {
     expect(md).toContain("https://example.com/open");
     expect(md).not.toContain("`https://example.com/open`");
     expect(md).toMatch(/```/);
+    expect(md).toContain("`https://example.com/kept`");
+  });
+
+  it("does not unwrap a URL inside a <pre><code> paste that starts with a fence line", async () => {
+    const source = "```\n`https://example.com/kept`\nfoo";
+    const html = `<pre><code>${source}</code></pre>`;
+    const md = await markdownFromHtmlPaste(html, source);
+    expect(md).toMatch(/^````/m);
     expect(md).toContain("`https://example.com/kept`");
   });
 });
