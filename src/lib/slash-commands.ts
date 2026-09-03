@@ -1,7 +1,6 @@
 import { autocompletion, type CompletionContext, type Completion, type CompletionSource } from "@codemirror/autocomplete";
 import { EditorView } from "@codemirror/view";
 import { detectLang, translateLoaded, type TKey } from "@/i18n";
-import { applyClipSlash } from "@/lib/paste-markdown";
 import { tagCompletionSource } from "@/lib/tag-completion";
 import { wikiLinkCompletionSource } from "@/lib/wiki-link-completion";
 
@@ -59,7 +58,9 @@ export function slashItems(t: (key: TKey) => string): SlashItem[] {
       label: "/clip",
       detail: t("slash.detail.clip"),
       apply: (view, from, to) => {
-        void applyClipSlash(view, from, to);
+        void import("@/lib/paste-markdown").then((m) =>
+          m.applyClipSlash(view, from, to),
+        );
       },
     },
     {

@@ -58,12 +58,11 @@ function isBlockedIpv4(n: number): boolean {
 
 function isBlockedIpv6(host: string): boolean {
   const h = host.toLowerCase();
-  if (h === "::1" || h === "0:0:0:0:0:0:0:1") return true;
-  const mapped = h.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) {
-    const n = ipv4ToInt(mapped[1]);
-    return n !== null && isBlockedIpv4(n);
+  if (h === "::" || h === "::1" || h === "0:0:0:0:0:0:0:0" || h === "0:0:0:0:0:0:0:1") {
+    return true;
   }
+  const mappedV4 = mappedIpv6ToIpv4(h);
+  if (mappedV4 !== null) return isBlockedIpv4(mappedV4);
   const hextets = h.split(":");
   const first = parseInt(hextets[0] || "0", 16);
   if (!Number.isFinite(first)) return false;
@@ -74,8 +73,20 @@ function isBlockedIpv6(host: string): boolean {
   return false;
 }
 
+function mappedIpv6ToIpv4(host: string): number | null {
+  const dotted = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) return ipv4ToInt(dotted[1]);
+  // WHATWG canonicalizes ::ffff:127.0.0.1 to ::ffff:7f00:1
+  const hex = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (!hex) return null;
+  const hi = parseInt(hex[1], 16);
+  const lo = parseInt(hex[2], 16);
+  if (!Number.isFinite(hi) || !Number.isFinite(lo)) return null;
+  return ((hi << 16) | lo) >>> 0;
+}
+
 function isBlockedHost(hostname: string): boolean {
-  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
   if (
     host === "localhost" ||
     host === "0.0.0.0" ||
@@ -124,13 +135,18 @@ export function resolveClipUrl(args: {
   return isClipHttpUrl(clip) ? clip : null;
 }
 
-function abortTimeout(ms: number): AbortSignal {
+function abortTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {
   if (typeof AbortSignal.timeout === "function") {
-    return AbortSignal.timeout(ms);
+    return { signal: AbortSignal.timeout(ms), cancel() {} };
   }
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), ms);
-  return controller.signal;
+  const timer = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    cancel() {
+      clearTimeout(timer);
+    },
+  };
 }
 
 function isHtmlContentType(ct: string): boolean {
@@ -147,9 +163,24 @@ async function readTextCapped(
 ): Promise<string | null> {
   const declared = Number(response.headers.get("content-length"));
   if (Number.isFinite(declared) && declared > maxChars) return null;
-  const text = await response.text();
-  if (text.length > maxChars) return null;
-  return text;
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const text = await response.text();
+    return text.length > maxChars ? null : text;
+  }
+  const decoder = new TextDecoder();
+  let result = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    result += decoder.decode(value, { stream: true });
+    if (result.length > maxChars) {
+      await reader.cancel();
+      return null;
+    }
+  }
+  result += decoder.decode();
+  return result.length > maxChars ? null : result;
 }
 
 let readabilityPromise: Promise<typeof import("@mozilla/readability")> | null =
@@ -187,7 +218,7 @@ export async function htmlToArticleMarkdown(
   const maxHtmlChars = opts?.maxHtmlChars ?? CLIP_MAX_HTML_CHARS;
   try {
     if (!html.trim() || html.length > maxHtmlChars) return link;
-    const { htmlToMarkdown } = await import("@/lib/paste-markdown");
+    const { htmlToMarkdown } = await import("@/lib/html-to-markdown");
     const doc = parseHtmlDocument(html, sourceUrl);
     let contentHtml = "";
     let title = (doc.title || "").replace(/\s+/g, " ").trim();
@@ -232,6 +263,7 @@ export async function clipUrlToMarkdown(
   const fetchImpl = opts?.fetch ?? globalThis.fetch.bind(globalThis);
   const timeoutMs = opts?.timeoutMs ?? CLIP_FETCH_TIMEOUT_MS;
   const maxHtmlChars = opts?.maxHtmlChars ?? CLIP_MAX_HTML_CHARS;
+  const timeout = abortTimeout(timeoutMs);
 
   let response: Response;
   try {
@@ -241,7 +273,7 @@ export async function clipUrlToMarkdown(
       mode: "cors",
       redirect: "follow",
       referrerPolicy: "no-referrer",
-      signal: abortTimeout(timeoutMs),
+      signal: timeout.signal,
       headers: { Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
     });
   } catch (error) {
@@ -250,6 +282,8 @@ export async function clipUrlToMarkdown(
       return fail(url, "timeout");
     }
     return fail(url, "fetch");
+  } finally {
+    timeout.cancel();
   }
 
   if (!response.ok) return fail(url, "fetch");

@@ -276,14 +276,13 @@ describe("pasteMarkdown URL wrap vs clip", () => {
         8,
       ) +
       "</p>";
+    let release: (value: Response) => void = () => {};
+    const pending = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => {
-        return new Response(
-          `<!doctype html><html><head><title>Fetched Title</title></head><body><article><h1>Fetched Title</h1>${body}</article></body></html>`,
-          { status: 200, headers: { "content-type": "text/html" } },
-        );
-      }),
+      vi.fn(() => pending),
     );
     const parent = document.createElement("div");
     const view = new EditorView({
@@ -295,6 +294,15 @@ describe("pasteMarkdown URL wrap vs clip", () => {
     });
     const event = dispatchPaste(view, { plain: url });
     expect(event.defaultPrevented).toBe(true);
+    await vi.waitFor(() => {
+      expect(view.state.doc.toString()).toBe(url);
+    });
+    release(
+      new Response(
+        `<!doctype html><html><head><title>Fetched Title</title></head><body><article><h1>Fetched Title</h1>${body}</article></body></html>`,
+        { status: 200, headers: { "content-type": "text/html" } },
+      ),
+    );
     await vi.waitFor(() => {
       expect(view.state.doc.toString()).toMatch(/^# Fetched Title/m);
     });

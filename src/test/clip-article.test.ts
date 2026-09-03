@@ -103,6 +103,14 @@ describe("isUnsafeClipUrl", () => {
     expect(isUnsafeClipUrl("https://172.32.0.1/")).toBe(false);
     expect(isUnsafeClipUrl("https://172.15.0.1/")).toBe(false);
   });
+
+  it("blocks WHATWG-canonicalized IPv4-mapped loopback and localhost.", () => {
+    expect(isUnsafeClipUrl("http://[::ffff:127.0.0.1]/")).toBe(true);
+    expect(isUnsafeClipUrl("http://[::ffff:7f00:1]/")).toBe(true);
+    expect(isUnsafeClipUrl("http://localhost./x")).toBe(true);
+    expect(isUnsafeClipUrl("http://[::ffff:169.254.169.254]/")).toBe(true);
+    expect(isUnsafeClipUrl("http://[::]/")).toBe(true);
+  });
 });
 
 function htmlResponse(html: string, init?: { url?: string; type?: string }): Response {
@@ -175,6 +183,26 @@ describe("clipUrlToMarkdown", () => {
       expect(result.insert).toBe(url);
       expect(result.reason).toBe("non_html");
       expect(result.toast).toBe(true);
+    }
+  });
+
+  it("fails with too_large when the HTML body exceeds the cap", async () => {
+    const url = "https://example.com/huge";
+    const fetchMock = vi.fn(
+      async () =>
+        new Response("x".repeat(200), {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        }),
+    );
+    const result = await clipUrlToMarkdown(url, {
+      fetch: fetchMock,
+      maxHtmlChars: 32,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.insert).toBe(url);
+      expect(result.reason).toBe("too_large");
     }
   });
 });
