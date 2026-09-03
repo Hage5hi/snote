@@ -93,6 +93,7 @@ const vi: Dictionary = {
     "slash.detail.important": "Callout quan trọng",
     "slash.detail.warning": "Callout cảnh báo",
     "slash.detail.caution": "Callout thận trọng",
+    "slash.detail.clip": "Gắn URL thành bài Markdown",
     "note.goal_reached": "🎯 Đạt mục tiêu!",
     "toast.synced_remote": "Đã đồng bộ từ thiết bị khác",
     "toast.synced_remote_desc": "Hợp nhất {bytes} byte mới từ cloud.",
@@ -144,6 +145,9 @@ const vi: Dictionary = {
     "toast.copied_ai_desc": "~{n} tokens",
     "toast.copied_raw": "Đã copy URL markdown thô",
     "toast.copied_raw_desc": "Xem plaintext công khai",
+    "toast.clip_failed": "Không tải được trang",
+    "toast.clip_failed_desc": "Đã chèn URL. Nhiều trang chặn fetch trong trình duyệt (CORS).",
+    "toast.clip_no_url": "Không có URL để gắn",
 
     "sync.label.synced": "Đã đồng bộ",
     "sync.label.syncing": "Đang đồng bộ…",

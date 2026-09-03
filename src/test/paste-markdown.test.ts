@@ -1,8 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   fixTurndownLinks,
   isPureHttpUrl,
   markdownFromHtmlPaste,
+  pasteMarkdown,
+  wrapSelectionAsMarkdownLink,
 } from "@/lib/paste-markdown";
 
 /** Synthetic clipboard payload — do not use real tokens from bug reports. */
@@ -80,6 +84,24 @@ describe("isPureHttpUrl", () => {
 
   it("rejects www without scheme", () => {
     expect(isPureHttpUrl("www.example.com")).toBe(false);
+  });
+});
+
+describe("wrapSelectionAsMarkdownLink", () => {
+  it("wraps a selected range as [sel](url)", () => {
+    expect(wrapSelectionAsMarkdownLink("sel", "https://example.com/a_b")).toBe(
+      "[sel](https://example.com/a_b)",
+    );
+  });
+
+  it("does not wrap an existing markdown link", () => {
+    expect(
+      wrapSelectionAsMarkdownLink("[old](https://old.example)", "https://new.example"),
+    ).toBeNull();
+  });
+
+  it("does not wrap an empty selection", () => {
+    expect(wrapSelectionAsMarkdownLink("", "https://example.com")).toBeNull();
   });
 });
 
@@ -178,5 +200,148 @@ describe("markdownFromHtmlPaste", () => {
     const md = await markdownFromHtmlPaste(html, source);
     expect(md).not.toBe(source);
     expect(md.startsWith("# ")).toBe(false);
+  });
+});
+
+function dispatchPaste(
+  view: EditorView,
+  { plain, html, shiftKey = false }: { plain: string; html?: string; shiftKey?: boolean },
+) {
+  const event = new Event("paste", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "shiftKey", { value: shiftKey });
+  Object.defineProperty(event, "clipboardData", {
+    value: {
+      getData: (type: string) => {
+        if (type === "text/plain") return plain;
+        if (type === "text/html") return html ?? "";
+        return "";
+      },
+    },
+  });
+  view.contentDOM.dispatchEvent(event);
+  return event;
+}
+
+describe("pasteMarkdown URL wrap vs clip", () => {
+  beforeEach(() => {
+    Range.prototype.getClientRects = function () {
+      return [] as unknown as DOMRectList;
+    };
+    Range.prototype.getBoundingClientRect = function () {
+      return {
+        x: 0,
+        y: 0,
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        width: 0,
+        height: 0,
+        toJSON() {
+          return this;
+        },
+      };
+    };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("wraps a selection as a markdown link and does not fetch", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const parent = document.createElement("div");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "hello",
+        extensions: [pasteMarkdown()],
+      }),
+      parent,
+    });
+    view.dispatch({ selection: { anchor: 0, head: 5 } });
+    const event = dispatchPaste(view, { plain: "https://example.com/a_b" });
+    expect(event.defaultPrevented).toBe(true);
+    expect(view.state.doc.toString()).toBe("[hello](https://example.com/a_b)");
+    expect(fetchMock).not.toHaveBeenCalled();
+    view.destroy();
+  });
+
+  it("clips an empty-selection URL paste via fetch and inserts article markdown", async () => {
+    const url = "https://example.com/posts/hello";
+    const body =
+      "<p>" +
+      "The river wound through the valley for many miles, carrying silt and stories from the high country. ".repeat(
+        8,
+      ) +
+      "</p>";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          `<!doctype html><html><head><title>Fetched Title</title></head><body><article><h1>Fetched Title</h1>${body}</article></body></html>`,
+          { status: 200, headers: { "content-type": "text/html" } },
+        );
+      }),
+    );
+    const parent = document.createElement("div");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "",
+        extensions: [pasteMarkdown()],
+      }),
+      parent,
+    });
+    const event = dispatchPaste(view, { plain: url });
+    expect(event.defaultPrevented).toBe(true);
+    await vi.waitFor(() => {
+      expect(view.state.doc.toString()).toMatch(/^# Fetched Title/m);
+    });
+    expect(view.state.doc.toString()).toContain(`[${url}](${url})`);
+    view.destroy();
+  });
+
+  it("inserts the raw URL and does not hang when clip fetch fails", async () => {
+    const url = "https://example.com/cors";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    const parent = document.createElement("div");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "",
+        extensions: [pasteMarkdown()],
+      }),
+      parent,
+    });
+    dispatchPaste(view, { plain: url });
+    await vi.waitFor(() => {
+      expect(view.state.doc.toString()).toBe(url);
+    });
+    view.destroy();
+  });
+
+  it("leaves Shift-paste as a raw URL without fetching", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const parent = document.createElement("div");
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: "",
+        extensions: [pasteMarkdown()],
+      }),
+      parent,
+    });
+    dispatchPaste(view, {
+      plain: "https://example.com/a_b",
+      shiftKey: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(view.state.doc.toString()).toBe("https://example.com/a_b");
+    view.destroy();
   });
 });

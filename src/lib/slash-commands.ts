@@ -30,7 +30,8 @@ function calloutSnippet(type: "NOTE" | "TIP" | "IMPORTANT" | "WARNING" | "CAUTIO
 export interface SlashItem {
   label: string;
   detail: string;
-  build: () => { text: string; cursor?: number };
+  build?: () => { text: string; cursor?: number };
+  apply?: (view: EditorView, from: number, to: number) => void;
 }
 
 export function slashItems(t: (key: TKey) => string): SlashItem[] {
@@ -52,6 +53,15 @@ export function slashItems(t: (key: TKey) => string): SlashItem[] {
       label: "/math",
       detail: t("slash.detail.math"),
       build: () => ({ text: "```math\n\n```\n", cursor: "```math\n".length }),
+    },
+    {
+      label: "/clip",
+      detail: t("slash.detail.clip"),
+      apply: (view, from, to) => {
+        void import("@/lib/clip-article").then((m) =>
+          m.applyClipSlash(view, from, to),
+        );
+      },
     },
     {
       label: "/table",
@@ -85,20 +95,29 @@ export function slashItems(t: (key: TKey) => string): SlashItem[] {
 export const slashCompletionSource: CompletionSource = (context: CompletionContext) => {
   const line = context.state.doc.lineAt(context.pos);
   const beforeCursor = line.text.slice(0, context.pos - line.from);
-  const match = beforeCursor.match(/^\/(\w*)$/);
-  if (!match) return null;
+  const clipWithArgs = /^\/clip(?:\s.*)$/i.test(beforeCursor);
+  const generic = /^\/(\w*)$/.test(beforeCursor);
+  if (!clipWithArgs && !generic) return null;
 
   const from = line.from;
   const to = context.pos;
-  const items = slashItems((key) => translateLoaded(detectLang(), key));
+  const allItems = slashItems((key) => translateLoaded(detectLang(), key));
+  const items = clipWithArgs
+    ? allItems.filter((item) => item.label === "/clip")
+    : allItems;
 
   const options: Completion[] = items.map((item) => ({
     label: item.label,
     detail: item.detail,
     type: "keyword",
     apply: (view, _completion, _fromPos, toPos) => {
-      const { text, cursor } = item.build();
-      insertSnippet(view, from, toPos, text, cursor);
+      if (item.apply) {
+        item.apply(view, from, toPos);
+        return;
+      }
+      const snippet = item.build?.();
+      if (!snippet) return;
+      insertSnippet(view, from, toPos, snippet.text, snippet.cursor);
     },
   }));
 
@@ -106,7 +125,7 @@ export const slashCompletionSource: CompletionSource = (context: CompletionConte
     from,
     to,
     options,
-    filter: true,
+    filter: !clipWithArgs,
   };
 };
 

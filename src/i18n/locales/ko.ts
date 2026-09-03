@@ -90,6 +90,7 @@ const ko: Dictionary = {
     "slash.detail.important": "중요 콜아웃",
     "slash.detail.warning": "경고 콜아웃",
     "slash.detail.caution": "주의 콜아웃",
+    "slash.detail.clip": "URL을 기사 마크다운으로 가져오기",
     "note.goal_reached": "🎯 목표 달성!",
     "toast.synced_remote": "다른 기기에서 동기화됨",
     "toast.synced_remote_desc": "클라우드에서 {bytes}바이트를 병합했습니다.",
@@ -139,6 +140,9 @@ const ko: Dictionary = {
     "toast.copied_ai_desc": "약 {n} 토큰",
     "toast.copied_raw": "raw 마크다운 URL 복사됨",
     "toast.copied_raw_desc": "공개 평문 보기",
+    "toast.clip_failed": "페이지를 불러올 수 없습니다",
+    "toast.clip_failed_desc": "대신 URL을 삽입했습니다. 많은 사이트가 브라우저 가져오기를 차단합니다(CORS).",
+    "toast.clip_no_url": "가져올 URL이 없습니다",
 
     "sync.label.synced": "동기화됨",
     "sync.label.syncing": "동기화 중…",

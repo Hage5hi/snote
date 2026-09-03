@@ -70,6 +70,27 @@ export function isPureHttpUrl(s: string): boolean {
 }
 
 /**
+ * Convert HTML to Markdown using the lazy Turndown+GFM path, then fix
+ * Turndown's title-less-space bug and unescape `_` inside http(s) URLs.
+ * Empty / converter failure → `""` (callers decide the fallback).
+ */
+export async function htmlToMarkdown(html: string): Promise<string> {
+  let convert: Converter["convert"];
+  try {
+    ({ convert } = await loadConverter());
+  } catch {
+    return "";
+  }
+  try {
+    const md = fixTurndownLinks(convert(html)).trim();
+    if (!md) return "";
+    return unescapeUnderscoresInHttpUrls(md);
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Convert clipboard HTML the same way the editor paste handler does.
  * Exported so unit tests can exercise the decision path without CodeMirror.
  */
@@ -212,6 +233,25 @@ function unescapeUnderscoresInHttpUrls(md: string): string {
 // `[[old](oldurl)](newurl)` nonsense.
 const ALREADY_MD_LINK_RE = /^\[[^\]]*\]\([^)]+\)$/;
 
+/** Wrap a non-empty selection as `[sel](url)`. Returns null when wrapping would nest. */
+export function wrapSelectionAsMarkdownLink(
+  selText: string,
+  url: string,
+): string | null {
+  if (!selText || ALREADY_MD_LINK_RE.test(selText)) return null;
+  return `[${selText}](${url.trim()})`;
+}
+
+function insertAtCurrentSelection(view: EditorView, md: string) {
+  if (!md) return;
+  const { from: insFrom, to: insTo } = view.state.selection.main;
+  view.dispatch({
+    changes: { from: insFrom, to: insTo, insert: md },
+    selection: { anchor: insFrom + md.length },
+    scrollIntoView: true,
+  });
+}
+
 export function pasteMarkdown() {
   return EditorView.domEventHandlers({
     paste(event, view) {
@@ -224,21 +264,31 @@ export function pasteMarkdown() {
       // http(s) URL and the editor has a non-empty selection, wrap the
       // selection as `[selection](url)`. Cursor lands after the closing `)`.
       const { from, to } = view.state.selection.main;
-      if (from !== to) {
-        const plain = clipboard.getData("text/plain");
-        if (plain && isPureHttpUrl(plain)) {
-          const selText = view.state.doc.sliceString(from, to);
-          if (selText && !ALREADY_MD_LINK_RE.test(selText)) {
-            const wrapped = `[${selText}](${plain.trim()})`;
-            event.preventDefault();
-            view.dispatch({
-              changes: { from, to, insert: wrapped },
-              selection: { anchor: from + wrapped.length },
-              scrollIntoView: true,
-            });
-            return true;
-          }
+      const plain = clipboard.getData("text/plain");
+      if (from !== to && plain && isPureHttpUrl(plain)) {
+        const selText = view.state.doc.sliceString(from, to);
+        const wrapped = wrapSelectionAsMarkdownLink(selText, plain);
+        if (wrapped) {
+          event.preventDefault();
+          view.dispatch({
+            changes: { from, to, insert: wrapped },
+            selection: { anchor: from + wrapped.length },
+            scrollIntoView: true,
+          });
+          return true;
         }
+      }
+
+      // Empty selection + a bare http(s) URL: fetch from this browser and
+      // convert to article markdown (Readability + Turndown). Shift-paste
+      // already returned false above. CORS / private-IP / non-HTML failures
+      // insert the raw URL (current behavior) plus a small toast.
+      if (from === to && plain && isPureHttpUrl(plain)) {
+        event.preventDefault();
+        void import("@/lib/clip-article").then((m) =>
+          m.insertClippedUrl(view, plain.trim()),
+        );
+        return true;
       }
 
       const html = clipboard.getData("text/html");
@@ -247,7 +297,7 @@ export function pasteMarkdown() {
       // ClipboardData is only readable inside the synchronous paste handler —
       // it's cleared once the handler returns. Capture the plain-text fallback
       // now so the async catch branch still has it.
-      const plainFallback = clipboard.getData("text/plain");
+      const plainFallback = plain;
 
       event.preventDefault();
 
@@ -256,19 +306,11 @@ export function pasteMarkdown() {
       // lazily, and yjs remote edits arriving in that window would shift the
       // original from/to out from under us. CodeMirror maps selections
       // through incoming ChangeSets automatically.
-      const insertAtCurrentSelection = (md: string) => {
-        if (!md) return;
-        const { from: insFrom, to: insTo } = view.state.selection.main;
-        view.dispatch({
-          changes: { from: insFrom, to: insTo, insert: md },
-          selection: { anchor: insFrom + md.length },
-          scrollIntoView: true,
-        });
-      };
-
       // Dynamic-import / turndown failures fall back to text/plain inside
       // markdownFromHtmlPaste so we never silently drop the paste.
-      markdownFromHtmlPaste(html, plainFallback).then(insertAtCurrentSelection);
+      markdownFromHtmlPaste(html, plainFallback).then((md) =>
+        insertAtCurrentSelection(view, md),
+      );
       return true;
     },
   });

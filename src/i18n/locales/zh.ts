@@ -91,6 +91,7 @@ const zh: Dictionary = {
     "slash.detail.important": "重要标注",
     "slash.detail.warning": "警告标注",
     "slash.detail.caution": "小心标注",
+    "slash.detail.clip": "将链接转为文章 Markdown",
     "note.goal_reached": "🎯 达成目标！",
     "toast.synced_remote": "已从其他设备同步",
     "toast.synced_remote_desc": "已合并来自云端的 {bytes} 字节新数据。",
@@ -140,6 +141,9 @@ const zh: Dictionary = {
     "toast.copied_ai_desc": "约 {n} tokens",
     "toast.copied_raw": "已复制原始 Markdown URL",
     "toast.copied_raw_desc": "公开纯文本视图",
+    "toast.clip_failed": "无法加载该页面",
+    "toast.clip_failed_desc": "已改为插入链接。许多网站会拦截浏览器内抓取（CORS）。",
+    "toast.clip_no_url": "没有可抓取的链接",
 
     "sync.label.synced": "已同步",
     "sync.label.syncing": "同步中…",

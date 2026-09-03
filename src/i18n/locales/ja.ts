@@ -91,6 +91,7 @@ const ja: Dictionary = {
     "slash.detail.important": "重要コールアウト",
     "slash.detail.warning": "警告コールアウト",
     "slash.detail.caution": "注意コールアウト",
+    "slash.detail.clip": "URLを記事Markdownとして取り込む",
     "note.goal_reached": "🎯 目標達成！",
     "toast.synced_remote": "他のデバイスから同期しました",
     "toast.synced_remote_desc": "クラウドから {bytes} バイトを統合しました。",
@@ -140,6 +141,9 @@ const ja: Dictionary = {
     "toast.copied_ai_desc": "約 {n} トークン",
     "toast.copied_raw": "raw Markdown URL をコピー",
     "toast.copied_raw_desc": "公開プレーンテキスト表示",
+    "toast.clip_failed": "ページを読み込めませんでした",
+    "toast.clip_failed_desc": "代わりにURLを挿入しました。多くのサイトはブラウザからの取得を拒否します（CORS）。",
+    "toast.clip_no_url": "取り込むURLがありません",
 
     "sync.label.synced": "同期済み",
     "sync.label.syncing": "同期中…",
