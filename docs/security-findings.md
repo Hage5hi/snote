@@ -109,7 +109,7 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `4c846592` (see §3e).
+This is not the live SPA origin. Origin is `4ef734ee` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
@@ -448,15 +448,26 @@ DialogTrigger for Escape focus. `version.json` at that bump (browser UA;
 Pages production deployment id `2870a660`
 replaced previous live origin `1f21777e` / Pages `a88095b0`.
 
-Same-canary origin SHA bump 2026-09-03 ~06:34 ICT: Pages `snote-g4-origin`
-redeployed Phase 5 knowledge UX — history burst diffs and selective hunk restore
-(#83). Local IndexedDB snapshots only. Live
-`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+Same-canary origin SHA bump 2026-09-03 ~06:34 ICT (not current live): Pages
+`snote-g4-origin` redeployed Phase 5 knowledge UX — history burst diffs and
+selective hunk restore (#83). Local IndexedDB snapshots only. `version.json`
+at that bump (browser UA; `no-store`) on both canonical and Pages hosts:
 `deployedSha` `4c84659244f01153bab6c6f4655fe8725df419b4`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-02T23:34:16.494Z`,
 `buildId` `1788392043070-ed273a61`.
 Pages production deployment id `7e140ebf`
-replaces previous live origin `d15aee5d` / Pages `2870a660`.
+replaced previous live origin `d15aee5d` / Pages `2870a660`.
+
+Same-canary origin SHA bump 2026-09-03 ~10:30 ICT: Pages `snote-g4-origin`
+redeployed clip pasted URL / slash `/clip` to local Readability+Turndown
+markdown in the user's browser (#85). Fetch uses `credentials:omit`; fail-closed
+to the raw URL on CORS, private IP, or timeout. No TinyFish/Worker proxy. Live
+`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+`deployedSha` `4ef734ee97a93d1922eefde01a6453c828f9aed3`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-03T03:30:28.721Z`,
+`buildId` `1788406215104-lywhln09`.
+Pages production deployment id `a59b0964-8ca6-4a89-a155-e0346eebd347`
+replaces previous live origin `4c846592` / Pages `7e140ebf`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
