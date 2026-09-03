@@ -4,13 +4,16 @@ Worker này đang chạy ở chế độ containment tạm thời cho tới khi 
 backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy crawler
 không được nhận nội dung, slug, token hay canonical URL của một note.
 
-Source Worker và cấu hình non-secret trong thư mục này khớp với Worker
-production `syrin-prerender` đang chạy: git SHA `9fcc58bc`, Cloudflare
-Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6` (PR #52, 2026-09-02).
+Source Worker trong thư mục này khớp với Worker production `syrin-prerender`
+đang chạy: git SHA `9fcc58bc`, Cloudflare Version ID
+`b4d1a94e-b391-4682-841a-10dca111b1d6` (PR #52, 2026-09-02).
+Committed `wrangler.toml` không còn khớp production ở observability/logs.
 Origin SPA hiện là `27da93eb` (xem §3e); không được coi origin là `9fcc58bc`.
-Observability, logs, traces, và `workers_dev` vẫn tắt. Việc ghi nhận
-identity này không cho phép một deployment mới. Xem
-`docs/security-findings.md` §1c.
+Committed `wrangler.toml` bật Workers Observability và invocation logs cho
+lần Worker deploy có tên kế tiếp; traces và `workers_dev` vẫn tắt. Worker
+production hiện tại (`9fcc58bc` / `b4d1a94e`) vẫn chưa nhận các cờ log này
+cho tới khi có go deploy riêng. Việc ghi nhận identity này không cho phép một deployment mới.
+Xem `docs/security-findings.md` §1c.
 
 ## Routing production bắt buộc
 
@@ -37,10 +40,13 @@ nào đi vòng qua Worker.
 - Crawler ở trang chủ: metadata tĩnh của sản phẩm; có thể cache ngắn hạn.
 - Logs tùy chỉnh chỉ chứa loại route/bot/status/timing. Không log path, locator,
   token, nội dung hoặc IP thô.
-- `invocation_logs = false` phải giữ nguyên vì Cloudflare có thể ghi raw URL
-  trước khi mã Worker thực thi.
-- Toàn bộ Worker observability, invocation logs, traces, `workers.dev` và
-  preview URLs phải tiếp tục bị tắt.
+- `invocation_logs = true` để Cloudflare ghi invocation logs ở lần Worker
+  deploy có tên kế tiếp. Invocation logs có thể chứa raw URL trước khi mã
+  Worker chạy; đó là rủi ro đã chấp nhận cho go deploy này, không phải trạng
+  thái live hiện tại.
+- Traces, `workers.dev` và preview URLs phải tiếp tục bị tắt. Observability
+  và invocation logs trong file committed chỉ có hiệu lực sau Worker deploy
+  có tên.
 - Các secret binding hiện do provider quản lý không được lưu trong repository.
 
 ## Triển khai
@@ -65,11 +71,11 @@ ORIGIN_HOST = "snote-g4-origin.pages.dev"
 SITE_URL = "https://note.syrin.online"
 
 [observability]
-enabled = false
+enabled = true
 
 [observability.logs]
-enabled = false
-invocation_logs = false
+enabled = true
+invocation_logs = true
 
 [observability.traces]
 enabled = false
@@ -77,8 +83,9 @@ enabled = false
 
 Một deployment mới phải có checkpoint phê duyệt riêng. Trước bất kỳ deployment
 nào đã được phê duyệt, phải kiểm kê Workers Logs, Tail Workers, Workers Logpush,
-traces và zone-level HTTP request datasets. Giữ toàn bộ observability disabled;
-không tiếp tục nếu pipeline nào còn giữ raw note/share path.
+traces và zone-level HTTP request datasets. Giữ traces disabled; không tiếp
+tục nếu pipeline nào còn giữ raw note/share path ngoài invocation logs đã
+được phê duyệt trong wrangler.toml.
 
 ## Thứ tự rollout
 

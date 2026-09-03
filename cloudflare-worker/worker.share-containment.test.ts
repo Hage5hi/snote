@@ -521,7 +521,7 @@ describe("share crawler containment", () => {
     }
   }
 
-  it("disables raw Cloudflare invocation URL logs in committed deployment config", () => {
+  it("enables invocation logs in committed config while leaving traces disabled", () => {
     const config = readFileSync(
       resolve(process.cwd(), "cloudflare-worker/wrangler.toml"),
       "utf8",
@@ -536,9 +536,9 @@ describe("share crawler containment", () => {
     );
 
     expect(config).toMatch(
-      /\[observability\.logs\][\s\S]*invocation_logs\s*=\s*false/,
+      /\[observability\.logs\][\s\S]*invocation_logs\s*=\s*true/,
     );
-    expect(readme).toContain("invocation_logs = false");
+    expect(readme).toContain("invocation_logs = true");
     expect(rollout).toMatch(/Workers\s+Logs/);
     expect(rollout).toMatch(/Tail\s+Workers/);
     expect(rollout).toContain("Logpush");

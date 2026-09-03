@@ -1,7 +1,32 @@
 name: PWA update smoke
 
+# Cloudflare Pages does not create GitHub Deployments for this repo (API
+# returns 0 records), so deployment_status never fires. SPA-affecting
+# main pushes wait up to 8 minutes for live /version.json SHA; origin
+# auto-builds in ~3 minutes after those merges. Docs-only path filters
+# keep attestation commits from checking a stale origin. Manual
+# workflow_dispatch remains the button when origin is shipped later.
 on:
   deployment_status:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "index.html"
+      - "package.json"
+      - "bun.lock"
+      - "vite.config.ts"
+      - "tsconfig.json"
+      - "tsconfig.app.json"
+      - "tsconfig.node.json"
+      - "postcss.config.js"
+      - "tailwind.config.ts"
+      - "components.json"
+      - "scripts/build-release.ts"
+      - "scripts/release-identity.ts"
+      - ".env"
+      - ".env.example"
   workflow_dispatch:
     inputs:
       target_url:
@@ -16,13 +41,13 @@ on:
         description: Expected capability route state in /version.json
         required: true
         type: choice
-        default: "false"
+        default: "true"
         options:
           - "false"
           - "true"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.deployment.id || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.deployment.id || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -33,9 +58,10 @@ jobs:
     name: pwa-update-smoke
     if: >-
       github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'push' ||
       github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     env:
       SMOKE_BASE_URL: >-
         ${{
@@ -45,15 +71,23 @@ jobs:
         }}
       EXPECTED_DEPLOYED_SHA: >-
         ${{
+          github.event_name == 'workflow_dispatch' &&
+          inputs.expected_sha ||
           github.event_name == 'deployment_status' &&
           github.event.deployment.sha ||
-          inputs.expected_sha
+          github.sha
         }}
       EXPECTED_CAPABILITY_ROUTES_ENABLED: >-
         ${{
-          github.event_name == 'deployment_status' &&
-          'false' ||
-          inputs.expected_capability_routes_enabled
+          github.event_name == 'workflow_dispatch' &&
+          inputs.expected_capability_routes_enabled ||
+          'true'
+        }}
+      LIVE_RELEASE_WAIT_MS: >-
+        ${{
+          github.event_name == 'push' &&
+          '480000' ||
+          '0'
         }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
