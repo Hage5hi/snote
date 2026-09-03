@@ -109,6 +109,8 @@ export default defineConfig(({ mode }) => {
           "**/mermaid-vendor-*",
           "**/wardley-*",
           "**/preview-worker-*",
+          "**/readability-vendor-*",
+          "**/clip-article-*",
         ],
         navigateFallback: "/index.html",
         navigateFallbackDenylist: [
@@ -152,7 +154,7 @@ export default defineConfig(({ mode }) => {
       resolveDependencies: (_filename, deps) =>
         deps.filter(
           (dep) =>
-            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley|scene|ogl-vendor)-/.test(
+            !/(?:^|\/)(?:mermaid-vendor|katex-vendor|hljs-vendor|qrcode-vendor|chunk-a8f3|UnlockForm|wardley|scene|ogl-vendor|readability-vendor|clip-article)-/.test(
               dep,
             ),
         ),
@@ -286,6 +288,9 @@ export default defineConfig(({ mode }) => {
           }
           if (id.includes("/highlight.js/")) {
             return "hljs-vendor";
+          }
+          if (id.includes("/@mozilla/readability")) {
+            return "readability-vendor";
           }
           // NOTE: do NOT lump @replit/codemirror-vim into cm-vendor — it's
           // dynamically imported by Editor.tsx only when the user enables

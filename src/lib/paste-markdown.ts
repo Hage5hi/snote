@@ -16,6 +16,8 @@
 // lazily on first structured-HTML paste so the editor bundle doesn't grow
 // for users who only type.
 import { EditorView } from "@codemirror/view";
+import { toast } from "@/hooks/use-toast";
+import { detectLang, translateLoaded } from "@/i18n";
 
 type Converter = { convert: (html: string) => string };
 let converterPromise: Promise<Converter> | null = null;
@@ -252,6 +254,51 @@ function insertAtCurrentSelection(view: EditorView, md: string) {
   });
 }
 
+function toastClipFailed() {
+  toast({
+    title: translateLoaded(detectLang(), "toast.clip_failed"),
+    description: translateLoaded(detectLang(), "toast.clip_failed_desc"),
+  });
+}
+
+export async function insertClippedUrl(
+  view: EditorView,
+  url: string,
+): Promise<void> {
+  const { clipUrlToMarkdown } = await import("@/lib/clip-article");
+  const result = await clipUrlToMarkdown(url);
+  insertAtCurrentSelection(view, result.ok ? result.markdown : result.insert);
+  if (!result.ok) toastClipFailed();
+}
+
+export async function applyClipSlash(
+  view: EditorView,
+  from: number,
+  to: number,
+): Promise<void> {
+  const { resolveClipUrl } = await import("@/lib/clip-article");
+  const commandLine = view.state.doc.sliceString(from, to);
+  let clipboardText = "";
+  try {
+    clipboardText = await navigator.clipboard.readText();
+  } catch {
+    /* clipboard permission denied or empty */
+  }
+  const url = resolveClipUrl({ commandLine, clipboardText });
+  view.dispatch({
+    changes: { from, to, insert: "" },
+    selection: { anchor: from },
+    scrollIntoView: true,
+  });
+  if (!url) {
+    toast({
+      title: translateLoaded(detectLang(), "toast.clip_no_url"),
+    });
+    return;
+  }
+  await insertClippedUrl(view, url);
+}
+
 export function pasteMarkdown() {
   return EditorView.domEventHandlers({
     paste(event, view) {
@@ -285,9 +332,7 @@ export function pasteMarkdown() {
       // insert the raw URL (current behavior) plus a small toast.
       if (from === to && plain && isPureHttpUrl(plain)) {
         event.preventDefault();
-        void import("@/lib/clip-article").then((m) =>
-          m.insertClippedUrl(view, plain.trim()),
-        );
+        void insertClippedUrl(view, plain.trim());
         return true;
       }
 

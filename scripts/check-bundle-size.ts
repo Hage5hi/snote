@@ -84,6 +84,8 @@ const FORBIDDEN_IN_PRELOAD = [
   // Background scene chunks + OGL — only load when user picks a scene.
   "scene-",
   "ogl-vendor",
+  "readability-vendor",
+  "clip-article",
   ...LAZY_LOCALES.map((lang) => `${lang}-`),
 ];
 

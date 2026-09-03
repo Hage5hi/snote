@@ -4,11 +4,6 @@
 // third-party HTML is blocked by CORS, and that failure is expected: we
 // insert the raw URL and toast instead of hanging the editor.
 
-import { EditorView } from "@codemirror/view";
-import { toast } from "@/hooks/use-toast";
-import { detectLang, translateLoaded } from "@/i18n";
-import { isPureHttpUrl } from "@/lib/paste-markdown";
-
 export const CLIP_MAX_HTML_CHARS = 1_000_000;
 export const CLIP_FETCH_TIMEOUT_MS = 8_000;
 
@@ -24,6 +19,11 @@ type ClipFetch = (
 ) => Promise<Response>;
 
 const HTTP_URL_IN_TEXT = /https?:\/\/[^\s<>[\]{}]+/i;
+const PURE_URL_RE = /^https?:\/\/\S+$/;
+
+function isClipHttpUrl(s: string): boolean {
+  return PURE_URL_RE.test(s.trim());
+}
 
 function failClosedLink(sourceUrl: string): string {
   return `[${sourceUrl}](${sourceUrl})`;
@@ -108,7 +108,7 @@ export function extractNearestHttpUrl(text: string): string | null {
   const match = text.match(HTTP_URL_IN_TEXT);
   if (!match) return null;
   const url = match[0].replace(/[.,);]+$/g, "");
-  return isPureHttpUrl(url) ? url.trim() : null;
+  return isClipHttpUrl(url) ? url.trim() : null;
 }
 
 export function resolveClipUrl(args: {
@@ -121,7 +121,7 @@ export function resolveClipUrl(args: {
   const fromLine = extractNearestHttpUrl(args.commandLine);
   if (fromLine) return fromLine;
   const clip = (args.clipboardText ?? "").trim();
-  return isPureHttpUrl(clip) ? clip : null;
+  return isClipHttpUrl(clip) ? clip : null;
 }
 
 function abortTimeout(ms: number): AbortSignal {
@@ -273,57 +273,4 @@ export async function clipUrlToMarkdown(
     maxHtmlChars,
   });
   return { ok: true, markdown };
-}
-
-function insertAtSelection(view: EditorView, text: string) {
-  if (!text) return;
-  const { from, to } = view.state.selection.main;
-  view.dispatch({
-    changes: { from, to, insert: text },
-    selection: { anchor: from + text.length },
-    scrollIntoView: true,
-  });
-}
-
-function toastClipFailed() {
-  toast({
-    title: translateLoaded(detectLang(), "toast.clip_failed"),
-    description: translateLoaded(detectLang(), "toast.clip_failed_desc"),
-  });
-}
-
-export async function insertClippedUrl(
-  view: EditorView,
-  url: string,
-): Promise<void> {
-  const result = await clipUrlToMarkdown(url);
-  insertAtSelection(view, result.ok ? result.markdown : result.insert);
-  if (!result.ok) toastClipFailed();
-}
-
-export async function applyClipSlash(
-  view: EditorView,
-  from: number,
-  to: number,
-): Promise<void> {
-  const commandLine = view.state.doc.sliceString(from, to);
-  let clipboardText = "";
-  try {
-    clipboardText = await navigator.clipboard.readText();
-  } catch {
-    /* clipboard permission denied or empty */
-  }
-  const url = resolveClipUrl({ commandLine, clipboardText });
-  view.dispatch({
-    changes: { from, to, insert: "" },
-    selection: { anchor: from },
-    scrollIntoView: true,
-  });
-  if (!url) {
-    toast({
-      title: translateLoaded(detectLang(), "toast.clip_no_url"),
-    });
-    return;
-  }
-  await insertClippedUrl(view, url);
 }
