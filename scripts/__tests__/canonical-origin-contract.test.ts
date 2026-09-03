@@ -330,13 +330,19 @@ describe("canonical production origin", () => {
     );
     expect(findings).toContain("2026-09-03T03:30:28.721Z");
     expect(findings).toContain("1788406215104-lywhln09");
-    expect(findings).toContain("a59b0964");
+    expect(findings).toContain(
+      "a59b0964-8ca6-4a89-a155-e0346eebd347",
+    );
     expect(findings).toContain("#85");
     expect(findings).toContain("clip pasted URL");
     expect(findings).toContain("Readability");
     expect(findings).toContain("Turndown");
     expect(findings).toContain("`/clip`");
-    expect(findings).toContain("no TinyFish");
+    expect(findings).toContain("`credentials:omit`");
+    expect(findings).toContain("fail-closed");
+    expect(findings).toContain("CORS");
+    expect(findings).toContain("private IP");
+    expect(findings).toContain("No TinyFish/Worker proxy");
     expect(findings).toContain("Kill switch unchanged");
     expect(findings).toMatch(
       /POST `\/functions\/v1\/legacy-note-open` `\{\}` still 410 `\{"found":false\}`/,

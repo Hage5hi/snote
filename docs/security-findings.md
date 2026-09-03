@@ -459,13 +459,14 @@ Pages production deployment id `7e140ebf`
 replaced previous live origin `d15aee5d` / Pages `2870a660`.
 
 Same-canary origin SHA bump 2026-09-03 ~10:30 ICT: Pages `snote-g4-origin`
-redeployed clip pasted URL to local article markdown (#85). Mozilla Readability
-+ Turndown in-browser; slash `/clip`; no TinyFish. Live
+redeployed clip pasted URL / slash `/clip` to local Readability+Turndown
+markdown in the user's browser (#85). Fetch uses `credentials:omit`; fail-closed
+to the raw URL on CORS, private IP, or timeout. No TinyFish/Worker proxy. Live
 `version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
 `deployedSha` `4ef734ee97a93d1922eefde01a6453c828f9aed3`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-03T03:30:28.721Z`,
 `buildId` `1788406215104-lywhln09`.
-Pages production deployment id `a59b0964`
+Pages production deployment id `a59b0964-8ca6-4a89-a155-e0346eebd347`
 replaces previous live origin `4c846592` / Pages `7e140ebf`.
 
 Kill switch unchanged: `writes_enabled=true`,
