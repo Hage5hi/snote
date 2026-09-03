@@ -3,6 +3,8 @@
 This release removes browser access to the `notes` table. It is a staged
 production operation, not a migration to apply automatically after merge.
 
+SQL 240 wait on Home mint is [ADR-001](../adr/001-home-capability-mint-before-sql-240.md).
+
 ## Immutable decisions
 
 - Legacy slugs are locators, not proof of ownership.
