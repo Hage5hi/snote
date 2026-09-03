@@ -323,6 +323,65 @@ describe("wait for live release after origin deploy", () => {
     expect(sequence.calls).toBe(3);
     expect(slept).toEqual([15_000, 15_000]);
   });
+
+  it("retries transient fetch failures until origin is reachable", async () => {
+    let calls = 0;
+    const fetchImpl: FetchLike = async () => {
+      calls += 1;
+      if (calls === 1) throw new Error("provider URL with private details");
+      return manifestResponse({
+        deployedSha: SHA,
+        capabilityRoutesEnabled: false,
+      });
+    };
+    let now = 0;
+    const slept: number[] = [];
+
+    await expect(waitForLiveRelease(validInput, {
+      timeoutMs: 60_000,
+      pollMs: 15_000,
+      now: () => now,
+      sleep: async (ms) => {
+        slept.push(ms);
+        now += ms;
+      },
+    }, fetchImpl)).resolves.toEqual({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    });
+    expect(calls).toBe(2);
+    expect(slept).toEqual([15_000]);
+  });
+
+  it("retries HTTP 5xx until the live manifest returns 200", async () => {
+    const sequence = sequentialFetch([
+      new Response("unavailable", {
+        status: 503,
+        headers: { "Cache-Control": "no-store" },
+      }),
+      manifestResponse({
+        deployedSha: SHA,
+        capabilityRoutesEnabled: false,
+      }),
+    ]);
+    let now = 0;
+    const slept: number[] = [];
+
+    await expect(waitForLiveRelease(validInput, {
+      timeoutMs: 60_000,
+      pollMs: 15_000,
+      now: () => now,
+      sleep: async (ms) => {
+        slept.push(ms);
+        now += ms;
+      },
+    }, sequence.fetchImpl)).resolves.toEqual({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    });
+    expect(sequence.calls).toBe(2);
+    expect(slept).toEqual([15_000]);
+  });
 });
 
 describe("post-deploy workflow wiring", () => {

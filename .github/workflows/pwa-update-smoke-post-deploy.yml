@@ -2,8 +2,10 @@ name: PWA update smoke
 
 # Cloudflare Pages does not create GitHub Deployments for this repo (API
 # returns 0 records), so deployment_status never fires. SPA-affecting
-# main pushes wait for live /version.json SHA before smoke. Docs-only
-# path filters keep attestation commits from checking a stale origin.
+# main pushes wait up to 8 minutes for live /version.json SHA; origin
+# auto-builds in ~3 minutes after those merges. Docs-only path filters
+# keep attestation commits from checking a stale origin. Manual
+# workflow_dispatch remains the button when origin is shipped later.
 on:
   deployment_status:
   push:
@@ -23,6 +25,8 @@ on:
       - "components.json"
       - "scripts/build-release.ts"
       - "scripts/release-identity.ts"
+      - ".env"
+      - ".env.example"
   workflow_dispatch:
     inputs:
       target_url:
@@ -43,7 +47,7 @@ on:
           - "true"
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.deployment.id || github.run_id }}
+  group: ${{ github.workflow }}-${{ github.event.deployment.id || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -57,7 +61,7 @@ jobs:
       github.event_name == 'push' ||
       github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       SMOKE_BASE_URL: >-
         ${{

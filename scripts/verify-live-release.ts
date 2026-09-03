@@ -133,7 +133,8 @@ export async function verifyLiveRelease(
   };
 }
 
-const RETRYABLE_LIVE_RELEASE = /Live release SHA does not match/;
+const RETRYABLE_LIVE_RELEASE =
+  /Live release SHA does not match|Unable to fetch live release manifest|Live release manifest returned HTTP 5\d\d/;
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => {

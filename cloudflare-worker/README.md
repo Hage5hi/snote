@@ -4,9 +4,10 @@ Worker này đang chạy ở chế độ containment tạm thời cho tới khi 
 backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy crawler
 không được nhận nội dung, slug, token hay canonical URL của một note.
 
-Source Worker và cấu hình non-secret trong thư mục này khớp với Worker
-production `syrin-prerender` đang chạy: git SHA `9fcc58bc`, Cloudflare
-Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6` (PR #52, 2026-09-02).
+Source Worker trong thư mục này khớp với Worker production `syrin-prerender`
+đang chạy: git SHA `9fcc58bc`, Cloudflare Version ID
+`b4d1a94e-b391-4682-841a-10dca111b1d6` (PR #52, 2026-09-02).
+Committed `wrangler.toml` không còn khớp production ở observability/logs.
 Origin SPA hiện là `27da93eb` (xem §3e); không được coi origin là `9fcc58bc`.
 Committed `wrangler.toml` bật Workers Observability và invocation logs cho
 lần Worker deploy có tên kế tiếp; traces và `workers_dev` vẫn tắt. Worker

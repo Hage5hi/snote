@@ -102,7 +102,10 @@ PR #52.
 - Git SHA: `9fcc58bc3690c1a2ffd74f465e219172d25376a3` (short `9fcc58bc`)
 - Cloudflare Version ID: `b4d1a94e-b391-4682-841a-10dca111b1d6`
 - Replaces previous Cloudflare Version ID `ba859faf…`
-- `wrangler.toml` still: observability, logs, and traces disabled;
+- Live Worker still: observability, logs, and traces disabled
+  (`9fcc58bc` / `b4d1a94e`). Committed `wrangler.toml` now enables
+  observability and invocation logs for the next named Worker deploy;
+  traces remain disabled. This git change is not a live Worker deploy.
   `workers_dev` false; `ORIGIN_HOST` `snote-g4-origin.pages.dev`
 - Live origin-fetch behavior: runtime and immutable assets forward only a
   conservative `__WB_REVISION__` query; locator, token, home, public, note,
