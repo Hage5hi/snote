@@ -9,8 +9,10 @@
 // turns `_` into `\_`, which breaks those URLs. After convert we prefer
 // text/plain when the markdown is just that plain text plus backslash
 // escapes, copy-button chrome, a self-href URL, or a wrapping code span
-// whose clipboard is a single http(s) URL. We do not disable Turndown's
-// escape globally, and we do not unwrap real fenced code pastes.
+// whose clipboard is a single http(s) URL. Mixed HTML pastes (Slack/Discord)
+// often wrap only some URLs in `<code>`; we unwrap those inline `http(s)`
+// spans so GFM autolinks them. We do not disable Turndown's escape globally,
+// and we do not unwrap real fenced code pastes.
 //
 // Turndown (+ GFM plugin for tables/strikethrough/task lists) is loaded
 // lazily on first structured-HTML paste so the editor bundle doesn't grow
@@ -38,6 +40,21 @@ export function isPureHttpUrl(s: string): boolean {
 }
 
 /**
+ * Replace inline `` `https://…` `` / `` `http://…` `` with the bare URL so
+ * GFM autolinks in preview. Leaves fenced/tilde blocks and non-URL code.
+ * Exported for unit tests.
+ */
+export function unwrapInlineCodeHttpUrls(md: string): string {
+  return md.replace(
+    /(```[\s\S]*?```|~~~[\s\S]*?~~~|`([^`\n]+)`)/g,
+    (match, _block: string, inner?: string) => {
+      if (inner === undefined) return match;
+      return isPureHttpUrl(inner) ? inner.trim() : match;
+    },
+  );
+}
+
+/**
  * Convert clipboard HTML the same way the editor paste handler does.
  * Exported so unit tests can exercise the decision path without CodeMirror.
  */
@@ -48,8 +65,9 @@ export async function markdownFromHtmlPaste(
   try {
     const md = await htmlToMarkdown(html);
     if (!md) return plainFallback;
-    if (prefersPlainClipboard(md, plainFallback)) return plainFallback;
-    return md;
+    const unwrapped = unwrapInlineCodeHttpUrls(md);
+    if (prefersPlainClipboard(unwrapped, plainFallback)) return plainFallback;
+    return unwrapped;
   } catch {
     return plainFallback;
   }
