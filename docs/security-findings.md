@@ -109,7 +109,7 @@ PR #52.
   and share queries remain stripped
 - Staging `syrin-prerender-staging` was not deployed
 
-This is not the live SPA origin. Origin is `4ef734ee` (see §3e).
+This is not the live SPA origin. Origin is `27da93eb` (see §3e).
 Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
 may be ahead for later docs-only PRs; that does not change Worker identity.
 
@@ -458,16 +458,27 @@ at that bump (browser UA; `no-store`) on both canonical and Pages hosts:
 Pages production deployment id `7e140ebf`
 replaced previous live origin `d15aee5d` / Pages `2870a660`.
 
-Same-canary origin SHA bump 2026-09-03 ~10:30 ICT: Pages `snote-g4-origin`
-redeployed clip pasted URL / slash `/clip` to local Readability+Turndown
-markdown in the user's browser (#85). Fetch uses `credentials:omit`; fail-closed
-to the raw URL on CORS, private IP, or timeout. No TinyFish/Worker proxy. Live
-`version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+Same-canary origin SHA bump 2026-09-03 ~10:30 ICT (not current live): Pages
+`snote-g4-origin` redeployed clip pasted URL / slash `/clip` to local
+Readability+Turndown markdown in the user's browser (#85). Fetch uses
+`credentials:omit`; fail-closed to the raw URL on CORS, private IP, or timeout.
+No TinyFish/Worker proxy. `version.json` at that bump (browser UA; `no-store`)
+on both canonical and Pages hosts:
 `deployedSha` `4ef734ee97a93d1922eefde01a6453c828f9aed3`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-03T03:30:28.721Z`,
 `buildId` `1788406215104-lywhln09`.
 Pages production deployment id `a59b0964-8ca6-4a89-a155-e0346eebd347`
-replaces previous live origin `4c846592` / Pages `7e140ebf`.
+replaced previous live origin `4c846592` / Pages `7e140ebf`.
+
+Same-canary origin SHA bump 2026-09-03 ~15:43 ICT: Pages `snote-g4-origin`
+redeployed unwrap inline-code http(s) URLs on HTML paste (#87). Slack/Discord/Telegram
+`<code>` URLs become autolinks after Turndown. Shift-paste still raw. No TinyFish/Worker
+proxy. Live `version.json` (browser UA; `no-store`) on both canonical and Pages hosts:
+`deployedSha` `27da93eb2db7fa670f721ce2ecbb79971f489bb2`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-03T08:42:12.078Z`,
+`buildId` `1788424919271-lf485uzb`.
+Pages production deployment id `4f5e5afc-c80b-46b8-b053-71e8339040d2`
+replaces previous live origin `4ef734ee` / Pages `a59b0964-8ca6-4a89-a155-e0346eebd347`.
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
