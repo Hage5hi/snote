@@ -1,0 +1,310 @@
+// Clip a page the user already has a URL for into local article markdown.
+// Fetch runs in *this* browser with credentials omitted. There is no Worker
+// proxy and no TinyFish / Firecrawl / Jina (or other) extract API — most
+// third-party HTML is blocked by CORS, and that failure is expected: we
+// insert the raw URL and toast instead of hanging the editor.
+
+export const CLIP_MAX_HTML_CHARS = 1_000_000;
+export const CLIP_FETCH_TIMEOUT_MS = 8_000;
+
+export type ClipFailReason = "blocked" | "fetch" | "non_html" | "timeout" | "too_large";
+
+export type ClipResult =
+  | { ok: true; markdown: string }
+  | { ok: false; insert: string; reason: ClipFailReason; toast: true };
+
+type ClipFetch = (
+  input: string,
+  init?: RequestInit,
+) => Promise<Response>;
+
+const HTTP_URL_IN_TEXT = /https?:\/\/[^\s<>[\]{}]+/i;
+const PURE_URL_RE = /^https?:\/\/\S+$/;
+
+function isClipHttpUrl(s: string): boolean {
+  return PURE_URL_RE.test(s.trim());
+}
+
+function failClosedLink(sourceUrl: string): string {
+  return `[${sourceUrl}](${sourceUrl})`;
+}
+
+function ipv4ToInt(host: string): number | null {
+  const parts = host.split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const part of parts) {
+    if (!/^\d{1,3}$/.test(part)) return null;
+    const octet = Number(part);
+    if (octet > 255) return null;
+    n = ((n << 8) | octet) >>> 0;
+  }
+  return n;
+}
+
+function isBlockedIpv4(n: number): boolean {
+  const a = (n >>> 24) & 0xff;
+  const b = (n >>> 16) & 0xff;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  // Alibaba cloud metadata
+  if (a === 100 && b === 100 && ((n >>> 8) & 0xff) === 100 && (n & 0xff) === 200) {
+    return true;
+  }
+  return false;
+}
+
+function isBlockedIpv6(host: string): boolean {
+  const h = host.toLowerCase();
+  if (h === "::" || h === "::1" || h === "0:0:0:0:0:0:0:0" || h === "0:0:0:0:0:0:0:1") {
+    return true;
+  }
+  const mappedV4 = mappedIpv6ToIpv4(h);
+  if (mappedV4 !== null) return isBlockedIpv4(mappedV4);
+  const hextets = h.split(":");
+  const first = parseInt(hextets[0] || "0", 16);
+  if (!Number.isFinite(first)) return false;
+  // fe80::/10 link-local
+  if ((first & 0xffc0) === 0xfe80) return true;
+  // fc00::/7 unique local
+  if ((first & 0xfe00) === 0xfc00) return true;
+  return false;
+}
+
+function mappedIpv6ToIpv4(host: string): number | null {
+  const dotted = host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (dotted) return ipv4ToInt(dotted[1]);
+  // WHATWG canonicalizes ::ffff:127.0.0.1 to ::ffff:7f00:1
+  const hex = host.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (!hex) return null;
+  const hi = parseInt(hex[1], 16);
+  const lo = parseInt(hex[2], 16);
+  if (!Number.isFinite(hi) || !Number.isFinite(lo)) return null;
+  return ((hi << 16) | lo) >>> 0;
+}
+
+function isBlockedHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  if (
+    host === "localhost" ||
+    host === "0.0.0.0" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host === "metadata.google.internal"
+  ) {
+    return true;
+  }
+  const v4 = ipv4ToInt(host);
+  if (v4 !== null) return isBlockedIpv4(v4);
+  if (host.includes(":")) return isBlockedIpv6(host);
+  return false;
+}
+
+/** True when we must not fetch this URL (SSRF / loopback / metadata). */
+export function isUnsafeClipUrl(raw: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return true;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return true;
+  if (url.username || url.password) return true;
+  return isBlockedHost(url.hostname);
+}
+
+export function extractNearestHttpUrl(text: string): string | null {
+  const match = text.match(HTTP_URL_IN_TEXT);
+  if (!match) return null;
+  const url = match[0].replace(/[.,);]+$/g, "");
+  return isClipHttpUrl(url) ? url.trim() : null;
+}
+
+export function resolveClipUrl(args: {
+  commandLine: string;
+  clipboardText?: string;
+}): string | null {
+  const after = args.commandLine.replace(/^\/clip\b/i, "");
+  const fromArg = extractNearestHttpUrl(after);
+  if (fromArg) return fromArg;
+  const fromLine = extractNearestHttpUrl(args.commandLine);
+  if (fromLine) return fromLine;
+  const clip = (args.clipboardText ?? "").trim();
+  return isClipHttpUrl(clip) ? clip : null;
+}
+
+function abortTimeout(ms: number): { signal: AbortSignal; cancel: () => void } {
+  if (typeof AbortSignal.timeout === "function") {
+    return { signal: AbortSignal.timeout(ms), cancel() {} };
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    cancel() {
+      clearTimeout(timer);
+    },
+  };
+}
+
+function isHtmlContentType(ct: string): boolean {
+  return /text\/html|application\/xhtml\+xml/i.test(ct);
+}
+
+function looksLikeHtml(html: string): boolean {
+  return /<!doctype\s+html|<html[\s>]|<body[\s>]/i.test(html);
+}
+
+async function readTextCapped(
+  response: Response,
+  maxChars: number,
+): Promise<string | null> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxChars) return null;
+  const reader = response.body?.getReader();
+  if (!reader) {
+    const text = await response.text();
+    return text.length > maxChars ? null : text;
+  }
+  const decoder = new TextDecoder();
+  let result = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    result += decoder.decode(value, { stream: true });
+    if (result.length > maxChars) {
+      await reader.cancel();
+      return null;
+    }
+  }
+  result += decoder.decode();
+  return result.length > maxChars ? null : result;
+}
+
+let readabilityPromise: Promise<typeof import("@mozilla/readability")> | null =
+  null;
+
+function loadReadability(): Promise<typeof import("@mozilla/readability")> {
+  if (!readabilityPromise) {
+    const pending = import("@mozilla/readability");
+    pending.catch(() => {
+      if (readabilityPromise === pending) readabilityPromise = null;
+    });
+    readabilityPromise = pending;
+  }
+  return readabilityPromise;
+}
+
+function parseHtmlDocument(html: string, sourceUrl: string): Document {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const base = doc.createElement("base");
+  base.setAttribute("href", sourceUrl);
+  doc.head.insertBefore(base, doc.head.firstChild);
+  return doc;
+}
+
+/**
+ * HTML (or an already-fetched document) → article markdown.
+ * Always returns a string; conversion failure is `[url](url)`.
+ */
+export async function htmlToArticleMarkdown(
+  html: string,
+  sourceUrl: string,
+  opts?: { maxHtmlChars?: number },
+): Promise<string> {
+  const link = failClosedLink(sourceUrl);
+  const maxHtmlChars = opts?.maxHtmlChars ?? CLIP_MAX_HTML_CHARS;
+  try {
+    if (!html.trim() || html.length > maxHtmlChars) return link;
+    const { htmlToMarkdown } = await import("@/lib/html-to-markdown");
+    const doc = parseHtmlDocument(html, sourceUrl);
+    let contentHtml = "";
+    let title = (doc.title || "").replace(/\s+/g, " ").trim();
+    try {
+      const { Readability } = await loadReadability();
+      const article = new Readability(doc.cloneNode(true) as Document, {
+        charThreshold: 140,
+      }).parse();
+      if (article?.title) title = article.title.replace(/\s+/g, " ").trim();
+      contentHtml = article?.content?.trim() ?? "";
+    } catch {
+      contentHtml = "";
+    }
+    if (!contentHtml) contentHtml = doc.body?.innerHTML ?? html;
+    const body = (await htmlToMarkdown(contentHtml)).trim();
+    if (!body) return link;
+    const parts: string[] = [];
+    if (title) parts.push(`# ${title}`);
+    parts.push(link);
+    parts.push(body);
+    return parts.join("\n\n");
+  } catch {
+    return link;
+  }
+}
+
+function fail(url: string, reason: ClipFailReason): ClipResult {
+  return { ok: false, insert: url, reason, toast: true };
+}
+
+export async function clipUrlToMarkdown(
+  rawUrl: string,
+  opts?: {
+    fetch?: ClipFetch;
+    timeoutMs?: number;
+    maxHtmlChars?: number;
+  },
+): Promise<ClipResult> {
+  const url = rawUrl.trim();
+  if (isUnsafeClipUrl(url)) return fail(url, "blocked");
+
+  const fetchImpl = opts?.fetch ?? globalThis.fetch.bind(globalThis);
+  const timeoutMs = opts?.timeoutMs ?? CLIP_FETCH_TIMEOUT_MS;
+  const maxHtmlChars = opts?.maxHtmlChars ?? CLIP_MAX_HTML_CHARS;
+  const timeout = abortTimeout(timeoutMs);
+
+  let response: Response;
+  try {
+    response = await fetchImpl(url, {
+      method: "GET",
+      credentials: "omit",
+      mode: "cors",
+      redirect: "follow",
+      referrerPolicy: "no-referrer",
+      signal: timeout.signal,
+      headers: { Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8" },
+    });
+  } catch (error) {
+    const name = error instanceof DOMException ? error.name : "";
+    if (name === "TimeoutError" || name === "AbortError") {
+      return fail(url, "timeout");
+    }
+    return fail(url, "fetch");
+  } finally {
+    timeout.cancel();
+  }
+
+  if (!response.ok) return fail(url, "fetch");
+  if (response.url && isUnsafeClipUrl(response.url)) return fail(url, "blocked");
+
+  const contentType = response.headers.get("content-type") ?? "";
+  if (contentType && !isHtmlContentType(contentType)) {
+    return fail(url, "non_html");
+  }
+
+  let html: string | null;
+  try {
+    html = await readTextCapped(response, maxHtmlChars);
+  } catch {
+    return fail(url, "fetch");
+  }
+  if (html === null) return fail(url, "too_large");
+  if (!contentType && !looksLikeHtml(html)) return fail(url, "non_html");
+
+  const markdown = await htmlToArticleMarkdown(html, response.url || url, {
+    maxHtmlChars,
+  });
+  return { ok: true, markdown };
+}

@@ -94,6 +94,7 @@ const en = {
     "slash.detail.important": "Important callout",
     "slash.detail.warning": "Warning callout",
     "slash.detail.caution": "Caution callout",
+    "slash.detail.clip": "Clip URL to article markdown",
     "note.goal_reached": "🎯 Goal reached!",
     "toast.synced_remote": "Synced from another device",
     "toast.synced_remote_desc": "Merged {bytes} new bytes from cloud.",
@@ -147,6 +148,9 @@ const en = {
     "toast.copied_ai_desc": "~{n} tokens",
     "toast.copied_raw": "Raw markdown URL copied",
     "toast.copied_raw_desc": "Public plaintext view",
+    "toast.clip_failed": "Couldn't load that page",
+    "toast.clip_failed_desc": "Inserted the URL instead. Sites often block in-browser fetch (CORS).",
+    "toast.clip_no_url": "No URL to clip",
 
     // Sync indicator
     "sync.label.synced": "Synced",

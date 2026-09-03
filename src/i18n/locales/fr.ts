@@ -90,6 +90,7 @@ const fr: Dictionary = {
     "slash.detail.important": "Encadré important",
     "slash.detail.warning": "Encadré avertissement",
     "slash.detail.caution": "Encadré attention",
+    "slash.detail.clip": "Capturer l'URL en article Markdown",
     "note.goal_reached": "🎯 Objectif atteint !",
     "toast.synced_remote": "Synchronisé depuis un autre appareil",
     "toast.synced_remote_desc": "{bytes} nouveaux octets fusionnés depuis le cloud.",
@@ -139,6 +140,9 @@ const fr: Dictionary = {
     "toast.copied_ai_desc": "~{n} tokens",
     "toast.copied_raw": "URL Markdown brute copiée",
     "toast.copied_raw_desc": "Vue texte brut publique",
+    "toast.clip_failed": "Impossible de charger la page",
+    "toast.clip_failed_desc": "URL insérée à la place. De nombreux sites bloquent le fetch dans le navigateur (CORS).",
+    "toast.clip_no_url": "Aucune URL à capturer",
 
     "sync.label.synced": "Synchronisé",
     "sync.label.syncing": "Synchronisation…",

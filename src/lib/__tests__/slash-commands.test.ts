@@ -30,6 +30,7 @@ describe("slash command snippets", () => {
     expect(labels).toEqual(expect.arrayContaining([
       "/mermaid",
       "/math",
+      "/clip",
       "/note",
       "/tip",
       "/important",
@@ -43,11 +44,15 @@ describe("slash command snippets", () => {
     const mermaid = items.find((item) => item.label === "/mermaid");
     const math = items.find((item) => item.label === "/math");
     const note = items.find((item) => item.label === "/note");
+    const clip = items.find((item) => item.label === "/clip");
     expect(mermaid?.detail).toBe("i18n:slash.detail.mermaid");
     expect(math?.detail).toBe("i18n:slash.detail.math");
     expect(note?.detail).toBe("i18n:slash.detail.note");
-    expect(mermaid?.build().text).not.toMatch(/Cột/);
-    expect(note?.build().text).not.toMatch(/Cột/);
+    expect(clip?.detail).toBe("i18n:slash.detail.clip");
+    expect(mermaid?.build?.().text).not.toMatch(/Cột/);
+    expect(note?.build?.().text).not.toMatch(/Cột/);
+    expect(clip?.apply).toEqual(expect.any(Function));
+    expect(clip?.build).toBeUndefined();
   });
 
   it("inserts a mermaid fence the existing preview renderer understands, cursor inside", async () => {
@@ -79,7 +84,7 @@ describe("slash command snippets", () => {
   });
 
   it("inserts a math fence the existing KaTeX renderer understands, cursor inside", () => {
-    const { text, cursor } = slashItems(t).find((item) => item.label === "/math")!.build();
+    const { text, cursor } = slashItems(t).find((item) => item.label === "/math")!.build!();
     expect(renderMarkdown(text)).toContain("data-katex");
     expect(text.slice(0, cursor ?? text.length)).toMatch(/```math\n$/);
   });
@@ -87,7 +92,7 @@ describe("slash command snippets", () => {
   it.each(["note", "tip", "important", "warning", "caution"] as const)(
     "inserts a valid GFM %s callout with the cursor in the body",
     (kind) => {
-      const { text, cursor } = slashItems(t).find((item) => item.label === `/${kind}`)!.build();
+      const { text, cursor } = slashItems(t).find((item) => item.label === `/${kind}`)!.build!();
       const html = renderMarkdown(text);
       expect(html).toContain(`data-md-alert="${kind}"`);
       const at = cursor ?? text.length;
@@ -97,5 +102,12 @@ describe("slash command snippets", () => {
 
   it("does not fire in the middle of a line", async () => {
     expect(await completeAt("see /table", 10)).toBeNull();
+  });
+
+  it("offers /clip when a URL argument follows the command", async () => {
+    const result = await completeAt("/clip https://example.com/a_b");
+    expect(result).not.toBeNull();
+    expect(result!.filter).toBe(false);
+    expect(result!.options.map((option) => option.label)).toEqual(["/clip"]);
   });
 });
