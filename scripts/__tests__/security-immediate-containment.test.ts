@@ -382,7 +382,7 @@ describe("immediate containment contracts", () => {
     const rollout = source("docs/security/immediate-containment-rollout.md");
 
     expect(wrangler).toMatch(
-      /\[observability\.logs\][\s\S]*?invocation_logs\s*=\s*false/,
+      /\[observability\.logs\][\s\S]*?invocation_logs\s*=\s*true/,
     );
     expect(wrangler).toMatch(
       /\[observability\.traces\][\s\S]*?enabled\s*=\s*false/,

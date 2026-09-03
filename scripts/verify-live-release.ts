@@ -14,6 +14,13 @@ export type FetchLike = (
   init: RequestInit,
 ) => Promise<Response>;
 
+export type LiveReleaseWaitOptions = {
+  timeoutMs: number;
+  pollMs: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+};
+
 const COMMIT_SHA = /^[0-9a-f]{40}$/;
 
 function expectedCapability(value: string | undefined): boolean {
@@ -126,14 +133,67 @@ export async function verifyLiveRelease(
   };
 }
 
+const RETRYABLE_LIVE_RELEASE = /Live release SHA does not match/;
+
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+export async function waitForLiveRelease(
+  input: LiveReleaseInput,
+  options: LiveReleaseWaitOptions,
+  fetchImpl: FetchLike = (url, init) => fetch(url, init),
+): Promise<LiveReleaseIdentity> {
+  const now = options.now ?? Date.now;
+  const sleep = options.sleep ?? defaultSleep;
+  const deadline = now() + options.timeoutMs;
+
+  for (;;) {
+    try {
+      return await verifyLiveRelease(input, fetchImpl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      if (!RETRYABLE_LIVE_RELEASE.test(message) || now() >= deadline) {
+        throw error;
+      }
+      await sleep(options.pollMs);
+    }
+  }
+}
+
+function parseWaitMs(value: string | undefined): number {
+  if (value === undefined || value === "") return 0;
+  if (!/^[0-9]+$/.test(value)) {
+    throw new Error("LIVE_RELEASE_WAIT_MS must be a non-negative integer.");
+  }
+  return Number(value);
+}
+
+function parsePollMs(value: string | undefined): number {
+  if (value === undefined || value === "") return 15_000;
+  if (!/^[1-9][0-9]*$/.test(value)) {
+    throw new Error("LIVE_RELEASE_POLL_MS must be a positive integer.");
+  }
+  return Number(value);
+}
+
 if (import.meta.main) {
   try {
-    const identity = await verifyLiveRelease({
+    const input = {
       baseUrl: process.env.SMOKE_BASE_URL,
       expectedSha: process.env.EXPECTED_DEPLOYED_SHA,
       expectedCapabilityRoutesEnabled:
         process.env.EXPECTED_CAPABILITY_ROUTES_ENABLED,
-    });
+    };
+    const waitMs = parseWaitMs(process.env.LIVE_RELEASE_WAIT_MS);
+    const identity = waitMs > 0
+      ? await waitForLiveRelease(input, {
+        timeoutMs: waitMs,
+        pollMs: parsePollMs(process.env.LIVE_RELEASE_POLL_MS),
+      })
+      : await verifyLiveRelease(input);
     console.log(
       `Verified live release ${identity.deployedSha} `
       + `capabilityRoutesEnabled=${identity.capabilityRoutesEnabled}`,

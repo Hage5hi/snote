@@ -15,11 +15,11 @@ ORIGIN_HOST = "snote-g4-origin.pages.dev"
 SITE_URL = "https://note.syrin.online"
 
 [observability]
-enabled = false
+enabled = true
 
 [observability.logs]
-enabled = false
-invocation_logs = false
+enabled = true
+invocation_logs = true
 
 [observability.traces]
 enabled = false

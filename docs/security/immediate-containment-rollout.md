@@ -29,7 +29,7 @@ without the explicit checkpoint below.
    response, or make the alias non-public/disabled.
    Do not advance while any public alias can bypass the generic share response.
 5. Deploy only from the committed `cloudflare-worker/wrangler.toml` and confirm
-   `[observability.logs] invocation_logs = false` and
+   `[observability.logs] invocation_logs = true` and
    `[observability.traces] enabled = false`. Inventory Workers Logs, Tail
    Workers, Workers Logpush, and zone-level HTTP request datasets. Disable or
    redact every pipeline that can retain a raw `/s/*` request path; application

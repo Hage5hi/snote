@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   verifyLiveRelease,
+  waitForLiveRelease,
   type FetchLike,
   type LiveReleaseInput,
 } from "../verify-live-release";
@@ -206,6 +207,124 @@ describe("live release attestation", () => {
   });
 });
 
+describe("wait for live release after origin deploy", () => {
+  function sequentialFetch(responses: Response[]): {
+    fetchImpl: FetchLike;
+    calls: number;
+  } {
+    let calls = 0;
+    return {
+      get calls() {
+        return calls;
+      },
+      fetchImpl: async () => {
+        const response = responses[Math.min(calls, responses.length - 1)];
+        calls += 1;
+        if (!response) throw new Error("must not fetch");
+        return response.clone();
+      },
+    };
+  }
+
+  it("returns immediately when the live SHA already matches", async () => {
+    const { fetchImpl, calls } = recordingFetch(manifestResponse({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    }));
+    let slept = 0;
+
+    await expect(waitForLiveRelease(validInput, {
+      timeoutMs: 60_000,
+      pollMs: 15_000,
+      sleep: async (ms) => {
+        slept += ms;
+      },
+    }, fetchImpl)).resolves.toEqual({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    });
+    expect(calls).toHaveLength(1);
+    expect(slept).toBe(0);
+  });
+
+  it("retries SHA mismatch until origin ships the expected commit", async () => {
+    const sequence = sequentialFetch([
+      manifestResponse({
+        deployedSha: OTHER_SHA,
+        capabilityRoutesEnabled: false,
+      }),
+      manifestResponse({
+        deployedSha: SHA,
+        capabilityRoutesEnabled: false,
+      }),
+    ]);
+    let now = 0;
+    const slept: number[] = [];
+
+    await expect(waitForLiveRelease(validInput, {
+      timeoutMs: 60_000,
+      pollMs: 15_000,
+      now: () => now,
+      sleep: async (ms) => {
+        slept.push(ms);
+        now += ms;
+      },
+    }, sequence.fetchImpl)).resolves.toEqual({
+      deployedSha: SHA,
+      capabilityRoutesEnabled: false,
+    });
+    expect(sequence.calls).toBe(2);
+    expect(slept).toEqual([15_000]);
+  });
+
+  it("does not retry a capability mismatch from an already-shipped SHA", async () => {
+    const sequence = sequentialFetch([
+      manifestResponse({
+        deployedSha: SHA,
+        capabilityRoutesEnabled: true,
+      }),
+      manifestResponse({
+        deployedSha: SHA,
+        capabilityRoutesEnabled: false,
+      }),
+    ]);
+    let slept = 0;
+
+    await expect(waitForLiveRelease(validInput, {
+      timeoutMs: 60_000,
+      pollMs: 15_000,
+      sleep: async (ms) => {
+        slept += ms;
+      },
+    }, sequence.fetchImpl)).rejects.toThrow(/capability route state does not match/);
+    expect(sequence.calls).toBe(1);
+    expect(slept).toBe(0);
+  });
+
+  it("stops retrying SHA mismatch after the wait deadline", async () => {
+    const sequence = sequentialFetch([
+      manifestResponse({
+        deployedSha: OTHER_SHA,
+        capabilityRoutesEnabled: false,
+      }),
+    ]);
+    let now = 0;
+    const slept: number[] = [];
+
+    await expect(waitForLiveRelease(validInput, {
+      timeoutMs: 30_000,
+      pollMs: 15_000,
+      now: () => now,
+      sleep: async (ms) => {
+        slept.push(ms);
+        now += ms;
+      },
+    }, sequence.fetchImpl)).rejects.toThrow(/SHA does not match/);
+    expect(sequence.calls).toBe(3);
+    expect(slept).toEqual([15_000, 15_000]);
+  });
+});
+
 describe("post-deploy workflow wiring", () => {
   const workflow = readFileSync(
     resolve(".github/workflows/pwa-update-smoke-post-deploy.yml"),
@@ -220,16 +339,45 @@ describe("post-deploy workflow wiring", () => {
 
   it("requires the expected capability route state for manual runs", () => {
     expect(workflow).toMatch(
-      / {6}expected_capability_routes_enabled:\n {8}description: Expected capability route state in \/version\.json\n {8}required: true\n {8}type: choice\n {8}default: "false"\n {8}options:\n {10}- "false"\n {10}- "true"/,
+      / {6}expected_capability_routes_enabled:\n {8}description: Expected capability route state in \/version\.json\n {8}required: true\n {8}type: choice\n {8}default: "true"\n {8}options:\n {10}- "false"\n {10}- "true"/,
+    );
+  });
+
+  it("starts automatically on SPA-affecting main pushes without a GitHub deployment", () => {
+    expect(workflow).toMatch(/^on:\n  deployment_status:\n  push:\n    branches: \[main\]\n    paths:\n/m);
+    expect(workflow).toContain('- "src/**"');
+    expect(workflow).toContain('- "public/**"');
+    expect(workflow).toContain('- "index.html"');
+    expect(workflow).toContain('- "package.json"');
+    expect(workflow).toContain('- "bun.lock"');
+    expect(workflow).toContain('- "vite.config.ts"');
+    expect(workflow).toContain("workflow_dispatch:");
+    expect(workflow).not.toContain("workflow_run:");
+
+    const pushBlock = workflow.match(/\n  push:\n    branches: \[main\]\n    paths:\n([\s\S]*?)\n  workflow_dispatch:/)?.[1] ?? "";
+    expect(pushBlock).toContain('- "src/**"');
+    expect(pushBlock).not.toContain("docs/");
+    expect(pushBlock).not.toContain("README");
+    expect(pushBlock).not.toContain("canonical-origin-contract");
+    expect(pushBlock).not.toContain(".github/workflows");
+    expect(pushBlock).not.toContain("cloudflare-worker");
+  });
+
+  it("runs the smoke job for push, manual dispatch, or a successful deployment status", () => {
+    expect(workflow).toMatch(
+      /if: >-\n      github\.event_name == 'workflow_dispatch' \|\|\n      github\.event_name == 'push' \|\|\n      github\.event\.deployment_status\.state == 'success'/,
     );
   });
 
   it("passes the deployment identity expectations through job env", () => {
     expect(workflow).toMatch(
-      / {6}EXPECTED_DEPLOYED_SHA: >-\n {8}\$\{\{\n {10}github\.event_name == 'deployment_status' &&\n {10}github\.event\.deployment\.sha \|\|\n {10}inputs\.expected_sha\n {8}\}\}/,
+      / {6}EXPECTED_DEPLOYED_SHA: >-\n {8}\$\{\{\n {10}github\.event_name == 'workflow_dispatch' &&\n {10}inputs\.expected_sha \|\|\n {10}github\.event_name == 'deployment_status' &&\n {10}github\.event\.deployment\.sha \|\|\n {10}github\.sha\n {8}\}\}/,
     );
     expect(workflow).toMatch(
-      / {6}EXPECTED_CAPABILITY_ROUTES_ENABLED: >-\n {8}\$\{\{\n {10}github\.event_name == 'deployment_status' &&\n {10}'false' \|\|\n {10}inputs\.expected_capability_routes_enabled\n {8}\}\}/,
+      / {6}EXPECTED_CAPABILITY_ROUTES_ENABLED: >-\n {8}\$\{\{\n {10}github\.event_name == 'workflow_dispatch' &&\n {10}inputs\.expected_capability_routes_enabled \|\|\n {10}'true'\n {8}\}\}/,
+    );
+    expect(workflow).toMatch(
+      / {6}LIVE_RELEASE_WAIT_MS: >-\n {8}\$\{\{\n {10}github\.event_name == 'push' &&\n {10}'480000' \|\|\n {10}'0'\n {8}\}\}/,
     );
   });
 
