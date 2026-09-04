@@ -3,15 +3,20 @@ name: PWA update smoke
 # Cloudflare Pages does not create GitHub Deployments for this repo (API
 # returns 0 records), so deployment_status never fires. SPA-affecting
 # main pushes wait up to 8 minutes for live /version.json SHA; origin
-# auto-builds in ~3 minutes after those merges. Docs-only path filters
-# keep attestation commits from checking a stale origin. Manual
-# workflow_dispatch remains the button when origin is shipped later.
+# auto-builds in ~3 minutes after those merges. Docs-only and src
+# test-only merges are filtered out so attestation does not wait on a
+# SHA origin never ships. GitHub rejects `paths` + `paths-ignore` on
+# the same event; use `!` patterns after `src/**` instead (no braces).
+# Manual workflow_dispatch remains the button when origin is shipped later.
 on:
   deployment_status:
   push:
     branches: [main]
     paths:
       - "src/**"
+      - "!src/**/__tests__/**"
+      - "!src/**/*.test.*"
+      - "!src/**/*.spec.*"
       - "public/**"
       - "index.html"
       - "package.json"
