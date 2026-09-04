@@ -170,7 +170,8 @@ describe("CI toolchain contract", () => {
     expect(ci).toMatch(/^\s{4}name:\s*quality\s*$/m);
     expect(ci).toContain(ACTIONLINT_IMAGE);
     expect(ci).toContain("persist-credentials: false");
-    expect(ci).toContain("bun audit --audit-level=high");
+    expect(ci).toContain("bash scripts/retry-bun-audit.sh");
+    expect(ci).not.toMatch(/^[ \t]*-[ \t]+run:[ \t]*bun audit --audit-level=high[ \t]*$/m);
     expect(ci).toContain("bun run lint");
     expect(ci).toContain("bun run test:coverage");
     expect(ci).not.toMatch(/^[ \t]*(?:-[ \t]+)?run:[ \t]*bun run test[ \t]*$/m);
@@ -198,6 +199,7 @@ describe("CI toolchain contract", () => {
       "package.json",
       "bun.lock",
       "scripts/audit-extension.sh",
+      "scripts/retry-bun-audit.sh",
       "scripts/build-extension-zip.ts",
       "scripts/extension-archive.ts",
       "scripts/verify-extension-zip.ts",
@@ -208,8 +210,12 @@ describe("CI toolchain contract", () => {
   });
 
   it("uses the audit command supported by pinned Bun", () => {
-    expect(extensionAudit).toContain("bun audit --audit-level=high");
-    expect(extensionAudit).not.toMatch(/bun audit[^\r\n]*--prod/);
-    expect(extensionAudit).not.toMatch(/bun pm (?:audit|scan)/);
+    const retryAudit = readFileSync("scripts/retry-bun-audit.sh", "utf8")
+      .replaceAll("\r\n", "\n");
+    expect(retryAudit).toContain("bun audit --audit-level=high");
+    expect(retryAudit).not.toMatch(/bun audit[^\r\n]*--prod/);
+    expect(retryAudit).not.toMatch(/bun pm (?:audit|scan)/);
+    expect(extensionAudit).toContain("scripts/retry-bun-audit.sh");
+    expect(allWorkflows).not.toContain("nick-fields/retry");
   });
 });

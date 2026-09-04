@@ -7,6 +7,7 @@ on:
       - "chrome-extension/**"
       - "e2e-extension/**"
       - "scripts/audit-extension.sh"
+      - "scripts/retry-bun-audit.sh"
       - "scripts/build-extension-zip.ts"
       - "scripts/extension-archive.ts"
       - "scripts/verify-extension-zip.ts"
