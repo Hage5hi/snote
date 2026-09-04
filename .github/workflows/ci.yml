@@ -45,7 +45,7 @@ jobs:
         with:
           deno-version: 2.9.3
       - run: bun install --frozen-lockfile
-      - run: bun audit --audit-level=high
+      - run: bash scripts/retry-bun-audit.sh
       - run: bun run lint
       - run: bun run knip
       - run: bun run i18n:check

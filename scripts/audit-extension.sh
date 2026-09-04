@@ -10,10 +10,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "▶ bun audit (full lockfile, high+)"
-bun audit --audit-level=high || {
-  echo "✗ high-severity advisory in the dependency lockfile" >&2
-  exit 1
-}
+bash "$ROOT/scripts/retry-bun-audit.sh"
 
 echo "▶ ESLint on chrome-extension/"
 bunx eslint chrome-extension --ext .js,.ts --max-warnings=0

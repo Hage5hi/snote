@@ -81,6 +81,13 @@ describe("extension-e2e failure evidence artifact paths", () => {
     expect(step).toMatch(/if-no-files-found:\s*error/);
   });
 
+  it("does not treat a pre-Playwright audit failure as missing evidence", () => {
+    expect(runStep).toMatch(/id:\s*extension-playwright\b/);
+    expect(step).toMatch(
+      /if:\s*failure\(\)\s*&&\s*steps\.extension-playwright\.outcome\s*==\s*'failure'/,
+    );
+  });
+
   it("runs the suite with the e2e-extension Playwright config in the run step itself", () => {
     expect(runStep, "Run unpacked extension suite step must exist").not.toBe("");
     expect(runStep).toContain("--config=e2e-extension/playwright.config.ts");
