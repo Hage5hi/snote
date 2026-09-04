@@ -26,6 +26,11 @@ import { isUsableSlug } from "@/lib/slug";
 import { WIKI_NAV_EVENT } from "@/lib/wiki-link";
 
 const NotePage = lazy(() => loadNotePage());
+const CutoverNotePage = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? lazy(() => import("./CutoverNotePage"))
+  : null;
+const capabilityRoutesEnabled =
+  import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
 
 const SLUG_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const MIN_PANES = 2;
@@ -344,12 +349,20 @@ function SplitPane({
           </div>
         }
       >
-        <NotePage
-          legacyOnly
-          embedSlug={slug}
-          embedNarrow={paneNarrow}
-          onPrimaryScroller={onPrimaryScroller}
-        />
+        {capabilityRoutesEnabled && CutoverNotePage ? (
+          <CutoverNotePage
+            embedSlug={slug}
+            embedNarrow={paneNarrow}
+            onPrimaryScroller={onPrimaryScroller}
+          />
+        ) : (
+          <NotePage
+            legacyOnly
+            embedSlug={slug}
+            embedNarrow={paneNarrow}
+            onPrimaryScroller={onPrimaryScroller}
+          />
+        )}
       </Suspense>
     </div>
   );

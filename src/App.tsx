@@ -17,6 +17,9 @@ import { loadNotePage } from "./lib/note-page-import";
 
 // Lazy-load heavy routes so the editor / admin bundles only load when needed.
 const NotePage = lazy(() => loadNotePage());
+const CutoverNotePage = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? lazy(() => import("./pages/CutoverNotePage"))
+  : null;
 const RawView = lazy(() => import("./pages/RawView"));
 const SplitView = lazy(() => import("./pages/SplitView"));
 const AdminPanel = import.meta.env.VITE_ADMIN_PANEL_ENABLED === "true"
@@ -70,7 +73,11 @@ function SlugDispatcher() {
   }
   return (
     <Suspense fallback={EditorFallback}>
-      <NotePage legacyOnly={!capabilityRoutesEnabled} />
+      {capabilityRoutesEnabled && CutoverNotePage ? (
+        <CutoverNotePage />
+      ) : (
+        <NotePage legacyOnly={!capabilityRoutesEnabled} />
+      )}
     </Suspense>
   );
 }
