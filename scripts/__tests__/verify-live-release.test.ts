@@ -384,11 +384,62 @@ describe("wait for live release after origin deploy", () => {
   });
 });
 
+/** Sequential GitHub Actions `paths` matching (`*` ≠ `/`; `**` spans `/`; `!` negates). */
+function githubGlobToRegExp(glob: string): RegExp {
+  let out = "^";
+  for (let i = 0; i < glob.length; ) {
+    if (glob.startsWith("**/", i)) {
+      out += "(?:.*/)?";
+      i += 3;
+      continue;
+    }
+    if (glob.startsWith("**", i)) {
+      out += ".*";
+      i += 2;
+      continue;
+    }
+    if (glob[i] === "*") {
+      out += "[^/]*";
+      i += 1;
+      continue;
+    }
+    out += glob[i]!.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
+    i += 1;
+  }
+  return new RegExp(`${out}$`);
+}
+
+function parseQuotedPushPathPatterns(workflow: string): string[] {
+  const pushBlock =
+    workflow.match(
+      /\n  push:\n    branches: \[main\]\n    paths:\n([\s\S]*?)\n  workflow_dispatch:/,
+    )?.[1] ?? "";
+  return [...pushBlock.matchAll(/^[ \t]*- "(.+)"$/gm)].map((match) => match[1]!);
+}
+
+function githubPathsFilterMatches(
+  patterns: readonly string[],
+  changedFiles: readonly string[],
+): boolean {
+  return changedFiles.some((file) => {
+    let included = false;
+    for (const pattern of patterns) {
+      const negated = pattern.startsWith("!");
+      const glob = negated ? pattern.slice(1) : pattern;
+      if (githubGlobToRegExp(glob).test(file)) {
+        included = !negated;
+      }
+    }
+    return included;
+  });
+}
+
 describe("post-deploy workflow wiring", () => {
   const workflow = readFileSync(
     resolve(".github/workflows/pwa-update-smoke-post-deploy.yml"),
     "utf8",
   ).replace(/\r\n/g, "\n");
+  const pushPathPatterns = parseQuotedPushPathPatterns(workflow);
 
   it("requires the expected deployed SHA for manual runs", () => {
     expect(workflow).toMatch(
@@ -405,6 +456,9 @@ describe("post-deploy workflow wiring", () => {
   it("starts automatically on SPA-affecting main pushes without a GitHub deployment", () => {
     expect(workflow).toMatch(/^on:\n  deployment_status:\n  push:\n    branches: \[main\]\n    paths:\n/m);
     expect(workflow).toContain('- "src/**"');
+    expect(workflow).toContain('- "!src/**/__tests__/**"');
+    expect(workflow).toContain('- "!src/**/*.test.*"');
+    expect(workflow).toContain('- "!src/**/*.spec.*"');
     expect(workflow).toContain('- "public/**"');
     expect(workflow).toContain('- "index.html"');
     expect(workflow).toContain('- "package.json"');
@@ -412,14 +466,61 @@ describe("post-deploy workflow wiring", () => {
     expect(workflow).toContain('- "vite.config.ts"');
     expect(workflow).toContain("workflow_dispatch:");
     expect(workflow).not.toContain("workflow_run:");
+    expect(workflow).not.toMatch(/\n {4}paths-ignore:/);
 
     const pushBlock = workflow.match(/\n  push:\n    branches: \[main\]\n    paths:\n([\s\S]*?)\n  workflow_dispatch:/)?.[1] ?? "";
     expect(pushBlock).toContain('- "src/**"');
+    expect(pushBlock).toMatch(
+      /^ {6}- "src\/\*\*"\n {6}- "!src\/\*\*\/__tests__\/\*\*"\n {6}- "!src\/\*\*\/\*\.test\.\*"\n {6}- "!src\/\*\*\/\*\.spec\.\*"$/m,
+    );
     expect(pushBlock).not.toContain("docs/");
     expect(pushBlock).not.toContain("README");
     expect(pushBlock).not.toContain("canonical-origin-contract");
     expect(pushBlock).not.toContain(".github/workflows");
     expect(pushBlock).not.toContain("cloudflare-worker");
+    expect(pushPathPatterns[0]).toBe("src/**");
+    expect(pushPathPatterns.slice(1, 4)).toEqual([
+      "!src/**/__tests__/**",
+      "!src/**/*.test.*",
+      "!src/**/*.spec.*",
+    ]);
+  });
+
+  it("does not start PWA smoke for test-only src merges", () => {
+    expect(pushPathPatterns).toContain("src/**");
+    expect(
+      githubPathsFilterMatches(pushPathPatterns, [
+        "src/lib/legacy/__tests__/migration-contract.test.ts",
+      ]),
+    ).toBe(false);
+    expect(
+      githubPathsFilterMatches(pushPathPatterns, [
+        "docs/cutover.md",
+        "src/lib/legacy/__tests__/migration-contract.test.ts",
+      ]),
+    ).toBe(false);
+    expect(
+      githubPathsFilterMatches(pushPathPatterns, [
+        "src/pages/SharePage.privacy.test.ts",
+      ]),
+    ).toBe(false);
+  });
+
+  it("still starts PWA smoke when real SPA source ships", () => {
+    expect(
+      githubPathsFilterMatches(pushPathPatterns, [
+        "src/pages/NotePage.tsx",
+      ]),
+    ).toBe(true);
+    expect(
+      githubPathsFilterMatches(pushPathPatterns, [
+        "src/pages/NotePage.tsx",
+        "src/lib/legacy/__tests__/migration-contract.test.ts",
+      ]),
+    ).toBe(true);
+    expect(
+      githubPathsFilterMatches(pushPathPatterns, ["public/sw.js"]),
+    ).toBe(true);
   });
 
   it("runs the smoke job for push, manual dispatch, or a successful deployment status", () => {
