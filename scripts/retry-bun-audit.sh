@@ -3,8 +3,8 @@
 # Real high/critical findings still fail the job without extra attempts.
 set -euo pipefail
 
-MAX_ATTEMPTS=3
-SLEEP_SECONDS=10
+MAX_ATTEMPTS=5
+SLEEP_SECONDS=15
 # bun's HTTP idle timeout defaults to 300s. A Timeout flake would then spend
 # ~15 minutes inside quality (20m) / extension-e2e (15m). Fail fast and retry.
 export BUN_CONFIG_HTTP_IDLE_TIMEOUT=30

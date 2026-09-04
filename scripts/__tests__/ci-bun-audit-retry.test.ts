@@ -118,7 +118,7 @@ echo "No high or critical vulnerabilities found"
     );
   });
 
-  it("retries ConnectionClosed up to three attempts then fails", () => {
+  it("retries ConnectionClosed up to five attempts then fails", () => {
     const { dir, attemptsFile, sleepArgsFile } = makeHarness(`#!/usr/bin/env bash
 set -euo pipefail
 ${REQUIRE_AUDIT_ARGS}
@@ -130,8 +130,8 @@ exit 1
     const result = runRetry(dir);
 
     expect(result.status).not.toBe(0);
-    expect(attemptCount(attemptsFile)).toBe(3);
-    expect(sleepArgs(sleepArgsFile)).toHaveLength(2);
+    expect(attemptCount(attemptsFile)).toBe(5);
+    expect(sleepArgs(sleepArgsFile)).toHaveLength(4);
   });
 
   it("does not retry a real high-severity advisory", () => {

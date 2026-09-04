@@ -42,6 +42,7 @@ jobs:
       - run: bash scripts/audit-extension.sh
       - run: bunx playwright install --with-deps chromium
       - name: Run unpacked extension suite
+        id: extension-playwright
         run: >-
           xvfb-run -a --server-args="-screen 0 1280x800x24"
           bunx playwright test
@@ -52,7 +53,7 @@ jobs:
       # e2e-extension/ — NOT the repo root. Source and the shipped zip are
       # recoverable from the commit SHA and are not failure evidence.
       - name: Upload failure evidence
-        if: failure()
+        if: failure() && steps.extension-playwright.outcome == 'failure'
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: extension-e2e-failure-${{ github.run_id }}-${{ github.run_attempt }}
