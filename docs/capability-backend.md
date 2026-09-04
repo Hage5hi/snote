@@ -50,7 +50,7 @@ The legacy credential-free `raw` Edge dump is a permanent `410` tombstone
 Production `legacy-note-open` is the same generic uncacheable `410` tombstone:
 leftover callers of that name get `410`, not note bytes. Do not restore a dump.
 See [security findings §1b](security-findings.md).
-Live writes remain the legacy `NotePage` path (plain slug; dual-mode canary on, findings §3e). Home create mints when canary is on. SQL 240 is not applied.
+Live writes remain the legacy `NotePage` path (plain slug; dual-mode canary on, findings §3e). Home create mints when canary is on (fail-closed idle). SQL 240 is not applied.
 After the atomic cutover, browser roles still have no table grants; this
 document does not add a replacement content Edge path. See
 [the cutover runbook](security/atomic-capability-cutover.md)

@@ -275,6 +275,168 @@ describe("Home capability mint navigation", () => {
     expect(harness.createCapabilityApi).not.toHaveBeenCalled();
   });
 
+  it("does not legacy-navigate when Open is clicked before availability settles", async () => {
+    let resolveLookup!: (value: { data: null; error: null }) => void;
+    harness.maybeSingle.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    const createNote = mockCreateNote();
+    renderHome();
+
+    fireEvent.change(screen.getByLabelText("home.placeholder"), {
+      target: { value: "daily" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    vi.useRealTimers();
+    await act(async () => {
+      resolveLookup({ data: null, error: null });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(createNote).toHaveBeenCalledTimes(1);
+    });
+    const owner = createNote.mock.calls[0][1];
+    await waitFor(() => {
+      expect(harness.softNavigate).toHaveBeenCalledWith(
+        expect.any(Function),
+        `/daily#owner=${owner}`,
+      );
+    });
+  });
+
+  it("does not seedAndOpen when a pending Open settles to idle after a select error", async () => {
+    let resolveLookup!: (value: {
+      data: null;
+      error: { message: string };
+    }) => void;
+    harness.maybeSingle.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    const createNote = mockCreateNote();
+    renderHome();
+
+    fireEvent.change(screen.getByLabelText("home.placeholder"), {
+      target: { value: "daily" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    await act(async () => {
+      resolveLookup({ data: null, error: { message: "network unavailable" } });
+      await Promise.resolve();
+    });
+
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("home.error.create_unavailable");
+  });
+
+  it("does not seedAndOpen when Open is clicked after a select error leaves idle", async () => {
+    harness.maybeSingle.mockResolvedValue({
+      data: null,
+      error: { message: "network unavailable" },
+    });
+    const createNote = mockCreateNote();
+    renderHome();
+    await enterValidSlug();
+
+    expect(screen.queryByText("home.status.available")).not.toBeInTheDocument();
+    expect(screen.queryByText("home.status.taken")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent("home.error.create_unavailable");
+    expect(harness.maybeSingle.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("retries an idle lookup on Open and mints when the slug is available", async () => {
+    harness.maybeSingle
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "network unavailable" },
+      })
+      .mockResolvedValueOnce({ data: null, error: null });
+    const createNote = mockCreateNote();
+    renderHome();
+    await enterValidSlug();
+
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    vi.useRealTimers();
+
+    await waitFor(() => {
+      expect(createNote).toHaveBeenCalledTimes(1);
+    });
+    const owner = createNote.mock.calls[0][1];
+    await waitFor(() => {
+      expect(harness.softNavigate).toHaveBeenCalledWith(
+        expect.any(Function),
+        `/daily#owner=${owner}`,
+      );
+    });
+  });
+
+  it("retries an idle lookup on Open and opens a taken slug without an owner fragment", async () => {
+    harness.maybeSingle
+      .mockResolvedValueOnce({
+        data: null,
+        error: { message: "network unavailable" },
+      })
+      .mockResolvedValueOnce({
+        data: { slug: "daily", char_count: 12 },
+        error: null,
+      });
+    const createNote = mockCreateNote();
+    renderHome();
+    await enterValidSlug();
+
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.createCapabilityApi).not.toHaveBeenCalled();
+    expect(harness.softNavigate).toHaveBeenCalledWith(expect.any(Function), "/daily");
+    expect(harness.softNavigate.mock.calls[0][1]).not.toMatch(/#(?:owner|edit|view)=/);
+  });
+
   it("does not mint when Open is clicked while a taken slug is still checking", async () => {
     let resolveLookup!: (value: {
       data: { slug: string; char_count: number };
