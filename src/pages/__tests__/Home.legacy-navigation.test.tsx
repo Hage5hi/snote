@@ -275,6 +275,68 @@ describe("Home capability mint navigation", () => {
     expect(harness.createCapabilityApi).not.toHaveBeenCalled();
   });
 
+  it("does not mint when Open is clicked while a taken slug is still checking", async () => {
+    let resolveLookup!: (value: {
+      data: { slug: string; char_count: number };
+      error: null;
+    }) => void;
+    harness.maybeSingle.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveLookup = resolve;
+        }),
+    );
+    const createNote = mockCreateNote();
+    renderHome();
+
+    fireEvent.change(screen.getByLabelText("home.placeholder"), {
+      target: { value: "daily" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.createCapabilityApi).not.toHaveBeenCalled();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(350);
+    });
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
+
+    await act(async () => {
+      resolveLookup({ data: { slug: "daily", char_count: 12 }, error: null });
+      await Promise.resolve();
+    });
+
+    expect(createNote).not.toHaveBeenCalled();
+    expect(harness.createCapabilityApi).not.toHaveBeenCalled();
+    expect(harness.softNavigate).toHaveBeenCalledWith(expect.any(Function), "/daily");
+    expect(harness.softNavigate.mock.calls[0][1]).not.toMatch(/#(?:owner|edit|view)=/);
+  });
+
+  it("mints a random slug without waiting for availability", async () => {
+    harness.maybeSingle.mockImplementation(() => new Promise(() => {}));
+    const createNote = mockCreateNote();
+    renderHome();
+    vi.useRealTimers();
+
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.random" }));
+
+    await waitFor(() => {
+      expect(createNote).toHaveBeenCalledTimes(1);
+    });
+    const slug = createNote.mock.calls[0][0];
+    const owner = createNote.mock.calls[0][1];
+    expect(slug).toMatch(/^[a-z0-9]{8}$/);
+    await waitFor(() => {
+      expect(harness.softNavigate).toHaveBeenCalledWith(
+        expect.any(Function),
+        `/${slug}#owner=${owner}`,
+      );
+    });
+  });
+
   it("surfaces slug_unavailable without falling back to a legacy create", async () => {
     harness.maybeSingle.mockResolvedValue({ data: null, error: null });
     const createNote = mockCreateNote();
@@ -388,6 +450,37 @@ describe("Home capability mint navigation", () => {
       );
     });
     expect(consumeTemplateSeed("daily")).toBe("home.templates.meeting.body");
+  });
+
+  it("does not leave a template seed when mint fails with 503", async () => {
+    harness.maybeSingle.mockResolvedValue({ data: null, error: null });
+    const createNote = mockCreateNote();
+    createNote.mockRejectedValue({
+      status: 503,
+      code: "writes_disabled",
+      retryAfterMs: null,
+      message: "temporarily unavailable",
+    });
+    renderHome();
+    vi.useRealTimers();
+
+    fireEvent.change(await screen.findByLabelText("home.templates.aria"), {
+      target: { value: "meeting" },
+    });
+    fireEvent.change(screen.getByLabelText("home.placeholder"), {
+      target: { value: "daily" },
+    });
+    await waitFor(() => {
+      expect(screen.getByText("home.status.available")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent("home.error.create_unavailable");
+    });
+    expect(createNote).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("note.template-seed:daily")).toBeNull();
+    expect(harness.softNavigate).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid slug before minting", async () => {

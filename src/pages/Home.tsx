@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -111,6 +111,7 @@ export default function Home() {
   } | null>(null);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
   const [creating, setCreating] = useState(false);
+  const pendingCreateRef = useRef<string | null>(null);
   const isMobile = useIsMobile();
   const { scene, committedScene, setScene } = useSceneTheme();
 
@@ -211,9 +212,9 @@ export default function Home() {
     setError(null);
     setCreating(true);
     try {
-      await queueTemplateIfNeeded(s);
       const api = await loadCapabilityApi();
       const minted = await mintCapabilityNote(s, (slug, owner) => api.createNote(slug, owner));
+      await queueTemplateIfNeeded(s);
       await softNavigate(navigate, minted.path);
       clearPendingOwnerCandidate(s);
     } catch (error) {
@@ -225,6 +226,32 @@ export default function Home() {
     }
   };
 
+  const openAfterStatusRef = useRef<(trimmed: string, status: SlugStatus) => void>(() => {});
+  openAfterStatusRef.current = (trimmed, status) => {
+    const canaryOn = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
+    if (status === "invalid") {
+      setError(t("home.error.invalid_slug"));
+      return;
+    }
+    if (canaryOn && loadCapabilityApi && status === "available") {
+      void mintAndOpen(trimmed);
+      return;
+    }
+    seedAndOpen(trimmed);
+  };
+
+  useEffect(() => {
+    const pending = pendingCreateRef.current;
+    if (!pending) return;
+    if (slug.trim() !== pending) {
+      pendingCreateRef.current = null;
+      return;
+    }
+    if (slugStatus === "checking") return;
+    pendingCreateRef.current = null;
+    openAfterStatusRef.current(pending, slugStatus);
+  }, [slug, slugStatus]);
+
   const open = (s: string) => {
     const trimmed = s.trim();
     if (!isUsableSlug(trimmed)) {
@@ -233,11 +260,15 @@ export default function Home() {
     }
     setError(null);
     const canaryOn = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
-    if (canaryOn && loadCapabilityApi && slugStatus !== "taken") {
-      void mintAndOpen(trimmed);
+    if (!canaryOn || !loadCapabilityApi) {
+      seedAndOpen(trimmed);
       return;
     }
-    seedAndOpen(trimmed);
+    if (slugStatus === "checking") {
+      pendingCreateRef.current = trimmed;
+      return;
+    }
+    openAfterStatusRef.current(trimmed, slugStatus);
   };
 
   const hasLibrary = recents.length > 0 || pinned.length > 0;

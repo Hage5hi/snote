@@ -17,10 +17,14 @@ minting stays off. Ordinary Vite builds follow `.env.example`
 `capabilityRoutesEnabled: false`. Live production `build:release` attests
 `capabilityRoutesEnabled: true` (findings §3e; live origin `27da93eb`).
 
-When that canary is on, Home create persists an owner candidate in
-`sessionStorage`, then calls `createCapabilityApi().createNote` (`POST
-note-session` `{action:"create"}`), then navigates to
-`/<slug>#owner=<token>`. See [ADR-001](adr/001-home-capability-mint-before-sql-240.md).
+When that canary is on, Home create waits until the `notes.select` availability
+hint is `available` (it does not mint while `idle` or `checking`, and
+legacy-`taken` still opens `/<slug>` with no `#owner`). Then it persists an
+owner candidate in `sessionStorage`, calls `createCapabilityApi().createNote`
+(`POST note-session` `{action:"create"}`), queues any template seed only after
+that create succeeds, and navigates to `/<slug>#owner=<token>`. Random-note
+still mints a fresh slug without that wait. See
+[ADR-001](adr/001-home-capability-mint-before-sql-240.md).
 This is GitHub-first wiring, not a production attestation. Recents and
 pins store only the slug, never the owner token. Losing the fragment
 without another copy of the owner capability locks the note out. A
