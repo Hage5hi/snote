@@ -498,8 +498,8 @@ POST `/functions/v1/legacy-note-open` `{}` still 410 `{"found":false}`.
 POST `/functions/v1/note-session` `{}` still 401 `{"error":"unauthorized"}`.
 At that origin bump, Worker `syrin-prerender` was still `9fcc58bc` /
 `b4d1a94e`. Later Worker redeploy 2026-09-03 ~20:42 UTC / 2026-09-04
-~03:42 ICT set live Worker to `931430c0` / `5f94ab6c` (see §1c). Origin
-SPA was not redeployed; canary remains on.
+~03:42 ICT set live Worker to `931430c0` / `5f94ab6c` (see §1c).
+Origin SPA was not redeployed; canary remains on.
 
 This is dual-mode `NotePage` (`legacyOnly={!canary}`): plain slug still
 legacy; `#owner`/`#edit` may open capability polling. Home still does not mint capabilities.
