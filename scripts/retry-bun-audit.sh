@@ -6,8 +6,9 @@ set -euo pipefail
 MAX_ATTEMPTS=5
 SLEEP_SECONDS=15
 # bun's HTTP idle timeout defaults to 300s. A Timeout flake would then spend
-# ~15 minutes inside quality (20m) / extension-e2e (15m). Fail fast and retry.
-export BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
+# ~25 minutes inside quality (20m) / extension-e2e (15m). GitHub runners often
+# need ~30s TTFB; 30s idle was racing successful audits. 60s still fail-fast.
+export BUN_CONFIG_HTTP_IDLE_TIMEOUT=60
 
 # Bun prints "Timeout: audit request failed" / "ConnectionClosed: audit request
 # failed" / "error: audit request failed (status N)". Do not match bare
