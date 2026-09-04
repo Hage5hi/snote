@@ -16,6 +16,9 @@ Legacy policies. Capability SPA canary is on
 `capabilityRoutesEnabled` is true; see §3e). Dual-mode `NotePage`
 (`legacyOnly={!canary}`): plain slug stays legacy; `#owner`/`#edit` may
 open capability polling. Home still does not mint capabilities.
+Home mint before SQL 240 is accepted as
+[ADR-001](adr/001-home-capability-mint-before-sql-240.md); that acceptance
+is not a production go for mint or 240.
 `VITE_CAPABILITY_AUTH_ENABLED` and `VITE_ADMIN_PANEL_ENABLED` stayed
 false. Local tests prove capability code contracts only; 240, soak, and
 post-cutover probes remain mandatory gates. Soak ≥48h started from the
