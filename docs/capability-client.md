@@ -15,7 +15,7 @@ throw `capability API unavailable` without fetching, and default Auth
 minting stays off. Ordinary Vite builds follow `.env.example`
 (`VITE_CAPABILITY_ROUTES_ENABLED=false`) and attest
 `capabilityRoutesEnabled: false`. Live production `build:release` attests
-`capabilityRoutesEnabled: true` (findings §3e; live origin `27da93eb`).
+`capabilityRoutesEnabled: true` (findings §3e; live origin `e05c73ea`).
 
 When that canary is on, Home create waits until the `notes.select` availability
 hint is `available` (it does not mint while `idle` or `checking`, and
@@ -25,7 +25,8 @@ owner candidate in `sessionStorage`, calls `createCapabilityApi().createNote`
 that create succeeds, and navigates to `/<slug>#owner=<token>`. Random-note
 still mints a fresh slug without that wait. See
 [ADR-001](adr/001-home-capability-mint-before-sql-240.md).
-This is GitHub-first wiring, not a production attestation. Recents and
+This Home mint path is live on origin `e05c73ea` (canary on; findings §3e).
+It is not SQL 240. Recents and
 pins store only the slug, never the owner token. Losing the fragment
 without another copy of the owner capability locks the note out. A
 `notes.select` miss is only a legacy hint: capability-managed slugs are
