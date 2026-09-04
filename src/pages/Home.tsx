@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
 import { ArrowRight, Check, Loader2, Shuffle, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { getPinned, getRecents, removeRecent, togglePin, type RecentNote } from "@/lib/recent-notes";
 import { InstallPrompt } from "@/components/note/InstallPrompt";
 import { isExtensionContext } from "@/lib/ext-context";
-import { useI18n } from "@/i18n";
+import { useI18n, type TKey } from "@/i18n";
 import { useSceneTheme } from "@/hooks/use-scene-theme";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { SCENE_NONE } from "@/components/home/scenes/registry";
@@ -17,6 +17,11 @@ import { cn } from "@/lib/utils";
 import SceneHost from "@/components/home/SceneHost";
 import { softNavigate } from "@/lib/soft-navigate";
 import { isUsableSlug } from "@/lib/slug";
+import {
+  clearPendingOwnerCandidate,
+  mapMintFailure,
+  mintCapabilityNote,
+} from "@/lib/capability/owner-candidate";
 
 const HomeTemplatePicker = lazy(() => import("@/components/home/HomeTemplatePicker"));
 const HomeLibraryPanel = lazy(() => import("@/components/home/HomeLibraryPanel"));
@@ -24,6 +29,17 @@ const HomeLibraryPanel = lazy(() => import("@/components/home/HomeLibraryPanel")
 type SlugStatus = "idle" | "checking" | "available" | "taken" | "invalid";
 
 const loadSupabase = async () => (await import("@/integrations/supabase/client")).supabase;
+
+const loadCapabilityApi = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? async () => (await import("@/lib/capability/client")).createCapabilityApi()
+  : null;
+
+function mintErrorKey(kind: ReturnType<typeof mapMintFailure>["kind"]): TKey {
+  if (kind === "slug_unavailable") return "home.error.slug_unavailable";
+  if (kind === "rate_limited") return "home.error.create_rate_limited";
+  if (kind === "unavailable") return "home.error.create_unavailable";
+  return "home.error.create_failed";
+}
 
 function randomSlug() {
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
@@ -94,6 +110,8 @@ export default function Home() {
     recents: RecentNote[];
   } | null>(null);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
+  const [creating, setCreating] = useState(false);
+  const pendingCreateRef = useRef<string | null>(null);
   const isMobile = useIsMobile();
   const { scene, committedScene, setScene } = useSceneTheme();
 
@@ -183,6 +201,57 @@ export default function Home() {
     });
   };
 
+  const queueTemplateIfNeeded = async (s: string) => {
+    if (templateId === "blank") return;
+    const mod = await import("@/lib/note-templates");
+    mod.queueTemplateSeed(s, mod.resolveTemplateMarkdown(templateId, t));
+  };
+
+  const mintAndOpen = async (s: string) => {
+    if (!loadCapabilityApi) return;
+    setError(null);
+    setCreating(true);
+    try {
+      const api = await loadCapabilityApi();
+      const minted = await mintCapabilityNote(s, (slug, owner) => api.createNote(slug, owner));
+      await queueTemplateIfNeeded(s);
+      await softNavigate(navigate, minted.path);
+      clearPendingOwnerCandidate(s);
+    } catch (error) {
+      const failure = mapMintFailure(error);
+      if (failure.kind === "slug_unavailable") clearPendingOwnerCandidate(s);
+      setError(t(mintErrorKey(failure.kind)));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const openAfterStatusRef = useRef<(trimmed: string, status: SlugStatus) => void>(() => {});
+  openAfterStatusRef.current = (trimmed, status) => {
+    const canaryOn = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
+    if (status === "invalid") {
+      setError(t("home.error.invalid_slug"));
+      return;
+    }
+    if (canaryOn && loadCapabilityApi && status === "available") {
+      void mintAndOpen(trimmed);
+      return;
+    }
+    seedAndOpen(trimmed);
+  };
+
+  useEffect(() => {
+    const pending = pendingCreateRef.current;
+    if (!pending) return;
+    if (slug.trim() !== pending) {
+      pendingCreateRef.current = null;
+      return;
+    }
+    if (slugStatus === "checking") return;
+    pendingCreateRef.current = null;
+    openAfterStatusRef.current(pending, slugStatus);
+  }, [slug, slugStatus]);
+
   const open = (s: string) => {
     const trimmed = s.trim();
     if (!isUsableSlug(trimmed)) {
@@ -190,7 +259,16 @@ export default function Home() {
       return;
     }
     setError(null);
-    seedAndOpen(trimmed);
+    const canaryOn = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true";
+    if (!canaryOn || !loadCapabilityApi) {
+      seedAndOpen(trimmed);
+      return;
+    }
+    if (slugStatus === "checking") {
+      pendingCreateRef.current = trimmed;
+      return;
+    }
+    openAfterStatusRef.current(trimmed, slugStatus);
   };
 
   const hasLibrary = recents.length > 0 || pinned.length > 0;
@@ -341,7 +419,7 @@ export default function Home() {
           </div>
           <Button
             type="submit"
-            disabled={!slug.trim()}
+            disabled={!slug.trim() || creating}
           >
             {slugStatus === "taken" ? t("home.btn.open_existing") : t("home.btn.open")}
             <ArrowRight className="h-4 w-4" />
@@ -357,7 +435,15 @@ export default function Home() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => seedAndOpen(randomSlug())}
+            disabled={creating}
+            onClick={() => {
+              const generated = randomSlug();
+              if (import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true" && loadCapabilityApi) {
+                void mintAndOpen(generated);
+                return;
+              }
+              seedAndOpen(generated);
+            }}
           >
             <Shuffle className="h-3.5 w-3.5" />
             {t("home.btn.random")}
