@@ -6,9 +6,12 @@ import SplitView from "../SplitView";
 
 const harness = vi.hoisted(() => ({
   noteProps: new Map<string, {
+    embedSlug: string;
     embedNarrow?: boolean;
+    legacyOnly?: boolean;
     onPrimaryScroller?: (element: HTMLElement | null) => void;
   }>(),
+  mountedAs: new Map<string, "NotePage" | "CutoverNotePage">(),
   observers: [] as Array<{
     callback: ResizeObserverCallback;
     elements: Set<Element>;
@@ -19,14 +22,32 @@ vi.mock("../NotePage", () => {
   const MockNotePage = (props: {
     embedSlug: string;
     embedNarrow?: boolean;
+    legacyOnly?: boolean;
     onPrimaryScroller?: (element: HTMLElement | null) => void;
   }) => {
+    harness.mountedAs.set(props.embedSlug, "NotePage");
     harness.noteProps.set(props.embedSlug, props);
     return <div>note:{props.embedSlug}</div>;
   };
   return {
     default: MockNotePage,
     CutoverNotePage: MockNotePage,
+  };
+});
+vi.mock("../CutoverNotePage", () => {
+  const MockCutover = (props: {
+    embedSlug: string;
+    embedNarrow?: boolean;
+    legacyOnly?: boolean;
+    onPrimaryScroller?: (element: HTMLElement | null) => void;
+  }) => {
+    harness.mountedAs.set(props.embedSlug, "CutoverNotePage");
+    harness.noteProps.set(props.embedSlug, props);
+    return <div>note:{props.embedSlug}</div>;
+  };
+  return {
+    default: MockCutover,
+    CutoverNotePage: MockCutover,
   };
 });
 vi.mock("@/components/app/AppShell", () => ({
@@ -73,6 +94,7 @@ function renderSplit(path = "/alpha+beta") {
 describe("SplitView responsive behavior", () => {
   beforeEach(() => {
     harness.noteProps.clear();
+    harness.mountedAs.clear();
     harness.observers.length = 0;
     class ResizeObserverMock {
       private readonly record: (typeof harness.observers)[number];
@@ -85,6 +107,16 @@ describe("SplitView responsive behavior", () => {
       disconnect = () => this.record.elements.clear();
     }
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+  });
+
+  it("embeds CutoverNotePage in each pane when capability routes are enabled", async () => {
+    renderSplit();
+    await screen.findByText("note:alpha");
+    expect(harness.mountedAs.get("alpha")).toBe("CutoverNotePage");
+    expect(harness.mountedAs.get("beta")).toBe("CutoverNotePage");
+    expect(harness.noteProps.get("alpha")?.legacyOnly).toBeUndefined();
+    expect(harness.noteProps.get("alpha")?.embedSlug).toBe("alpha");
+    expect(harness.noteProps.get("beta")?.embedSlug).toBe("beta");
   });
 
   it("uses accessible keyboard tabs in a narrow split container", async () => {

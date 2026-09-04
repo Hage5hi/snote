@@ -35,6 +35,10 @@ describe("production note access hotfix", () => {
     );
     expect(app).toContain("<NotePage legacyOnly={!capabilityRoutesEnabled} />");
     expect(app).not.toContain("<NotePage legacyOnly />");
+    expectValueImportBehindRoutesGuard(app, "./pages/CutoverNotePage");
+    expect(app).toMatch(
+      /capabilityRoutesEnabled\s*&&\s*CutoverNotePage\s*\?\s*\(\s*<CutoverNotePage\s*\/>/,
+    );
     expect(app.match(/<SharePage legacyOnly=\{!capabilityRoutesEnabled\} \/>/g)).toHaveLength(2);
     expect(app).not.toMatch(/<SharePage\s*\/>/);
     expect(envTypes).toContain("readonly VITE_CAPABILITY_ROUTES_ENABLED?: string;");
@@ -67,6 +71,12 @@ describe("production note access hotfix", () => {
 
     expect(split).toContain("const NotePage = lazy(() => loadNotePage());");
     expect(split).toContain("legacyOnly");
+    expectValueImportBehindRoutesGuard(split, "./CutoverNotePage");
+    expect(split).toMatch(
+      /capabilityRoutesEnabled\s*&&\s*CutoverNotePage\s*\?/,
+    );
+    expect(split).toContain("<CutoverNotePage");
+    expect(split).toContain("embedSlug={slug}");
     expect(home).toContain('import("@/integrations/supabase/client")');
     expect(home).not.toContain('import { supabase } from "@/integrations/supabase/client";');
     expect(home).not.toMatch(
@@ -163,8 +173,14 @@ describe("production note access hotfix", () => {
       /import\s+LegacyNotePage\s+from\s+["']@\/pages\/LegacyNotePage["']/,
     );
     expect(source("src/pages/CutoverNotePage.tsx")).toContain("export function CutoverNotePage");
-    expect(app).not.toContain("CutoverNotePage");
-    expect(split).not.toContain("CutoverNotePage");
+    expectValueImportBehindRoutesGuard(app, "./pages/CutoverNotePage");
+    expectValueImportBehindRoutesGuard(split, "./CutoverNotePage");
+    expect(app).not.toMatch(
+      /import\s+[^;]*CutoverNotePage[^;]*from\s+["'][^"']+["']/,
+    );
+    expect(split).not.toMatch(
+      /import\s+[^;]*CutoverNotePage[^;]*from\s+["'][^"']+["']/,
+    );
     expect(home).not.toContain("CutoverNotePage");
     expect(raw).not.toContain("CutoverNotePage");
   });
