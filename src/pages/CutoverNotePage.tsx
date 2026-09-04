@@ -1,8 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo } from "react";
 import { useLocation, useParams } from "react-router";
+import { EditorSkeleton } from "@/components/note/EditorSkeleton";
 import { parseCapabilityLocation } from "@/lib/capability/url";
 import { clearLegacyImportRecovery } from "@/lib/legacy/cutover";
-import NotePage from "@/pages/NotePage";
 
 interface CutoverNotePageProps {
   /** Ignore capability-shaped fragments while the capability backend is offline. */
@@ -18,6 +18,10 @@ interface CutoverNotePageProps {
 const LegacyNotePage = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
   ? lazy(() => import("./LegacyNotePage"))
   : null;
+const NotePage = import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"
+  ? lazy(() => import("./NotePage"))
+  : null;
+const editorFallback = <EditorSkeleton />;
 
 export function CutoverNotePage(props: CutoverNotePageProps) {
   const params = useParams();
@@ -42,7 +46,7 @@ export function CutoverNotePage(props: CutoverNotePageProps) {
   if (!capabilityAccess) {
     if (!LegacyNotePage) return null;
     return (
-      <Suspense fallback={null}>
+      <Suspense fallback={editorFallback}>
         <LegacyNotePage
           slug={slug}
           embed={!!props.embedSlug}
@@ -51,7 +55,12 @@ export function CutoverNotePage(props: CutoverNotePageProps) {
       </Suspense>
     );
   }
-  return <NotePage {...props} />;
+  if (!NotePage) return null;
+  return (
+    <Suspense fallback={editorFallback}>
+      <NotePage {...props} />
+    </Suspense>
+  );
 }
 
 export default CutoverNotePage;

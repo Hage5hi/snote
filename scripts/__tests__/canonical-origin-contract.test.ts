@@ -458,6 +458,8 @@ describe("canonical production origin", () => {
     expect(client).toMatch(
       /Missing, empty, or any\s+other value keeps both pages `legacyOnly`/,
     );
+    expect(client).toContain("until a named Pages deploy");
+    expect(client).toContain("still serves dual-mode `NotePage`");
 
     expect(backend).toContain(
       "Live writes remain the legacy `NotePage` path",

@@ -210,6 +210,10 @@ describe("production note access hotfix", () => {
     expect(notePage).not.toContain("@/lib/legacy/cutover");
     expectValueImportBehindRoutesGuard(notePage, "./CutoverNotePage");
     expectValueImportBehindRoutesGuard(cutoverNotePage, "./LegacyNotePage");
+    expectValueImportBehindRoutesGuard(cutoverNotePage, "./NotePage");
+    expect(cutoverNotePage).not.toMatch(
+      /import\s+NotePage\s+from\s+["']@\/pages\/NotePage["']/,
+    );
     expectValueImportBehindRoutesGuard(legacyNotePage, "@/lib/legacy/cutover");
   });
 

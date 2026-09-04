@@ -9,19 +9,24 @@ This client is the dual-mode bridge between legacy slug notes and capability-man
 The SPA parses those fragments and opens `note-session` only when
 `VITE_CAPABILITY_ROUTES_ENABLED` is exactly `"true"`. That canary covers
 NotePage owner/edit routes and SharePage `/s#view`. Missing, empty, or any
-other value keeps both pages `legacyOnly`. Under the same canary,
-`SlugDispatcher` and SplitView pane embeds mount `CutoverNotePage` (lazy;
-`SlugDispatcher` keeps the `EditorSkeleton` fallback). A plain `/<slug>`
-with no matching `#owner`/`#edit` fragment lazy-loads `LegacyNotePage` and
-does not run dual-mode `NotePage` `notes` upsert; matching owner/edit
-fragments still render `NotePage`. Flag-off builds keep `NotePage` with
-`legacyOnly` and do not import `CutoverNotePage`. The same flag fail-closes
+other value keeps both pages `legacyOnly`. The same flag fail-closes
 `createCapabilityApi()`: `note-session`, `note-sync`, and `note-manage`
 throw `capability API unavailable` without fetching, and default Auth
 minting stays off. Ordinary Vite builds follow `.env.example`
 (`VITE_CAPABILITY_ROUTES_ENABLED=false`) and attest
 `capabilityRoutesEnabled: false`. Live production `build:release` attests
 `capabilityRoutesEnabled: true` (findings §3e; live origin `addeeb29`).
+Origin `addeeb29` still serves dual-mode `NotePage` (`legacyOnly={!canary}`)
+until a named Pages deploy of this wire.
+
+This branch compiles `SlugDispatcher` and SplitView pane embeds to mount
+`CutoverNotePage` when that canary is on (lazy; `SlugDispatcher` keeps the
+`EditorSkeleton` fallback). A plain `/<slug>` with no matching `#owner`/`#edit`
+fragment then lazy-loads `LegacyNotePage` instead of dual-mode `NotePage`
+`notes` upsert; matching owner/edit fragments still render `NotePage`.
+Flag-off builds keep `NotePage` with `legacyOnly` and do not import
+`CutoverNotePage`. Production `legacy-note-open` remains the 410 tombstone,
+so this wire is not an origin go.
 
 When that canary is on, Home create waits until the `notes.select` availability
 hint is `available` (it does not mint while `idle` or `checking`, and

@@ -7,21 +7,8 @@ const OWNER = "o".repeat(43);
 const EDIT = "e".repeat(43);
 
 const harness = vi.hoisted(() => ({
-  notesFrom: vi.fn(),
   notePage: [] as Array<Record<string, unknown>>,
   legacyPage: [] as Array<Record<string, unknown>>,
-}));
-
-vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
-    from: (table: string) => {
-      harness.notesFrom(table);
-      return {
-        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }),
-        upsert: vi.fn(),
-      };
-    },
-  },
 }));
 
 vi.mock("@/pages/NotePage", () => ({
@@ -42,6 +29,10 @@ vi.mock("@/lib/legacy/cutover", () => ({
   clearLegacyImportRecovery: vi.fn(),
 }));
 
+vi.mock("@/components/note/EditorSkeleton", () => ({
+  EditorSkeleton: () => <div>editor-skeleton</div>,
+}));
+
 function renderRoute(path: string) {
   return render(
     <MemoryRouter initialEntries={[path]}>
@@ -54,7 +45,6 @@ function renderRoute(path: string) {
 
 describe("CutoverNotePage canary dispatch", () => {
   beforeEach(() => {
-    harness.notesFrom.mockClear();
     harness.notePage.length = 0;
     harness.legacyPage.length = 0;
   });
@@ -65,8 +55,6 @@ describe("CutoverNotePage canary dispatch", () => {
     expect(await screen.findByText("legacy-page:daily")).toBeInTheDocument();
     expect(screen.queryByText("note-page:route")).not.toBeInTheDocument();
     expect(harness.notePage).toHaveLength(0);
-    expect(harness.notesFrom).not.toHaveBeenCalled();
-    expect(harness.notesFrom).not.toHaveBeenCalledWith("notes");
   });
 
   it("renders NotePage for a matching #owner fragment", async () => {
@@ -93,6 +81,5 @@ describe("CutoverNotePage canary dispatch", () => {
 
     expect(await screen.findByText("legacy-page:alpha:embed")).toBeInTheDocument();
     expect(harness.notePage).toHaveLength(0);
-    expect(harness.notesFrom).not.toHaveBeenCalled();
   });
 });
