@@ -369,8 +369,11 @@ describe("canonical production origin", () => {
       /POST `\/functions\/v1\/note-session` `\{\}` still 401 `\{"error":"unauthorized"\}`/,
     );
     expect(findings).toContain("syrin-prerender");
-    expect(findings).toContain("`9fcc58bc` / `b4d1a94e`");
-    expect(findings).toContain("not redeployed");
+    expect(findings).toContain("`931430c0` / `5f94ab6c`");
+    expect(findings).toContain("Origin SPA was not redeployed");
+    expect(findings).not.toContain(
+      "still `9fcc58bc` / `b4d1a94e` — not redeployed",
+    );
     expect(findings).toContain("`legacyOnly={!canary}`");
     expect(findings).toContain("Home still does not mint capabilities");
     expect(findings).toContain(
@@ -426,8 +429,12 @@ describe("canonical production origin", () => {
     expect(backend).toContain("dual-mode canary on");
 
     expect(worker).toContain("`27da93eb`");
-    expect(worker).toContain("`9fcc58bc`");
-    expect(worker).toContain("b4d1a94e");
+    expect(worker).toContain("`931430c0`");
+    expect(worker).toContain("5f94ab6c");
+    expect(worker).not.toContain("`9fcc58bc`");
+    expect(worker).not.toContain("b4d1a94e");
+    expect(worker).not.toContain("không còn khớp");
+    expect(worker).not.toContain("chưa nhận các cờ log");
     expect(worker).not.toContain("Origin SPA hiện là `c5914c8e`");
     expect(worker).not.toContain("Origin SPA hiện là `386421e8`");
     expect(worker).not.toContain("Origin SPA hiện là `4baa8966`");
@@ -442,6 +449,94 @@ describe("canonical production origin", () => {
     expect(worker).not.toContain("Origin SPA hiện là `4ef734ee`");
     expect(worker).not.toContain("Origin SPA vẫn là `fe18302f`");
     expect(worker).toContain("không cho phép một deployment mới");
+  });
+
+  it("records live Worker 931430c0 / 5f94ab6c with logs live, origin still 27da93eb", () => {
+    const findings = readFileSync("docs/security-findings.md", "utf8");
+    const worker = readFileSync("cloudflare-worker/README.md", "utf8");
+    const rollout = readFileSync(
+      "docs/security/immediate-containment-rollout.md",
+      "utf8",
+    );
+    const plan = readFileSync(
+      "docs/superpowers/plans/2026-08-28-worker-production-source-parity.md",
+      "utf8",
+    );
+    const spec = readFileSync(
+      "docs/superpowers/specs/2026-08-28-worker-production-source-parity-design.md",
+      "utf8",
+    );
+    const adr = readFileSync(
+      "docs/adr/001-home-capability-mint-before-sql-240.md",
+      "utf8",
+    );
+
+    expect(findings).toContain(
+      "## 1c. Production Worker identity — live 2026-09-03",
+    );
+    expect(findings).toContain(
+      "931430c016772d333f79aa31841e31aca2b327a4",
+    );
+    expect(findings).toContain("`931430c0`");
+    expect(findings).toContain(
+      "5f94ab6c-fde5-4416-a3aa-74daaa2e6094",
+    );
+    expect(findings).toContain("#89");
+    expect(findings).toContain(
+      "Replaces previous Cloudflare Version ID `b4d1a94e…`",
+    );
+    expect(findings).toMatch(
+      /observability enabled, logs enabled, `invocation_logs` true/,
+    );
+    expect(findings).toContain("traces still false");
+    expect(findings).toContain(
+      "Committed `wrangler.toml` matches this live log state",
+    );
+    expect(findings).not.toContain(
+      "Live Worker still: observability, logs, and traces disabled",
+    );
+    expect(findings).not.toContain(
+      "This git change is not a live Worker deploy.",
+    );
+    expect(findings).toContain("syrin-prerender-staging");
+    expect(findings).toContain("G3C staging");
+    expect(findings).toContain("2026-08-24");
+    expect(findings).toContain("Origin is `27da93eb`");
+    expect(findings).toContain("origin was not redeployed");
+    expect(findings).toContain("Do not claim origin is `931430c0`");
+    expect(findings).toContain("synthetic-probe-token");
+    expect(findings).toContain("did not echo locator or token");
+
+    expect(worker).toContain(
+      "5f94ab6c-fde5-4416-a3aa-74daaa2e6094",
+    );
+    expect(worker).toContain("PR #89");
+    expect(worker).toContain("đã live trên production");
+
+    expect(rollout).toContain(
+      "5f94ab6c-fde5-4416-a3aa-74daaa2e6094",
+    );
+    expect(rollout).toContain("`931430c0`");
+    expect(rollout).toContain("Observability and invocation logs are live");
+    expect(rollout).toContain("traces remain disabled");
+    expect(rollout).toContain("Origin remains `27da93eb`");
+
+    expect(plan).toContain("**Live status (2026-09-03):**");
+    expect(plan).toContain("`931430c0`");
+    expect(plan).toContain(
+      "5f94ab6c-fde5-4416-a3aa-74daaa2e6094",
+    );
+    expect(spec).toContain("**Live status (2026-09-03):**");
+    expect(spec).toContain("`931430c0`");
+    expect(spec).toContain(
+      "5f94ab6c-fde5-4416-a3aa-74daaa2e6094",
+    );
+
+    expect(adr).toContain("Worker `931430c0` / `5f94ab6c`");
+    expect(adr).toContain("5f94ab6c-fde5-4416-a3aa-74daaa2e6094");
+    expect(adr).toContain("`invocation_logs` are **live**");
+    expect(adr).not.toContain("Worker `9fcc58bc` / `b4d1a94e`");
+    expect(adr).not.toContain("**committed** in #89 but **not live**");
   });
 
   it("pins the cutover backup gate to daily snapshots, not a PITR checkpoint", () => {

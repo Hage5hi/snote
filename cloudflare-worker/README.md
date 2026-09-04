@@ -5,14 +5,13 @@ backend/client được cutover. Slug cũ vẫn là edit credential, vì vậy c
 không được nhận nội dung, slug, token hay canonical URL của một note.
 
 Source Worker trong thư mục này khớp với Worker production `syrin-prerender`
-đang chạy: git SHA `9fcc58bc`, Cloudflare Version ID
-`b4d1a94e-b391-4682-841a-10dca111b1d6` (PR #52, 2026-09-02).
-Committed `wrangler.toml` không còn khớp production ở observability/logs.
-Origin SPA hiện là `27da93eb` (xem §3e); không được coi origin là `9fcc58bc`.
-Committed `wrangler.toml` bật Workers Observability và invocation logs cho
-lần Worker deploy có tên kế tiếp; traces và `workers_dev` vẫn tắt. Worker
-production hiện tại (`9fcc58bc` / `b4d1a94e`) vẫn chưa nhận các cờ log này
-cho tới khi có go deploy riêng. Việc ghi nhận identity này không cho phép một deployment mới.
+đang chạy: git SHA `931430c0`, Cloudflare Version ID
+`5f94ab6c-fde5-4416-a3aa-74daaa2e6094` (PR #89, 2026-09-03).
+Committed `wrangler.toml` khớp production ở observability/logs
+(`enabled = true`, `invocation_logs = true`); traces và `workers_dev` vẫn tắt.
+Origin SPA hiện là `27da93eb` (xem §3e); không được coi origin là `931430c0`.
+Observability và invocation logs đã live trên production, không chỉ committed.
+Việc ghi nhận identity này không cho phép một deployment mới.
 Xem `docs/security-findings.md` §1c.
 
 ## Routing production bắt buộc
@@ -40,13 +39,10 @@ nào đi vòng qua Worker.
 - Crawler ở trang chủ: metadata tĩnh của sản phẩm; có thể cache ngắn hạn.
 - Logs tùy chỉnh chỉ chứa loại route/bot/status/timing. Không log path, locator,
   token, nội dung hoặc IP thô.
-- `invocation_logs = true` để Cloudflare ghi invocation logs ở lần Worker
-  deploy có tên kế tiếp. Invocation logs có thể chứa raw URL trước khi mã
-  Worker chạy; đó là rủi ro đã chấp nhận cho go deploy này, không phải trạng
-  thái live hiện tại.
-- Traces, `workers.dev` và preview URLs phải tiếp tục bị tắt. Observability
-  và invocation logs trong file committed chỉ có hiệu lực sau Worker deploy
-  có tên.
+- `invocation_logs = true` đang live trên production Worker. Invocation logs
+  có thể chứa raw URL trước khi mã Worker chạy; đó là rủi ro đã chấp nhận.
+- Traces, `workers.dev` và preview URLs vẫn tắt. Observability và invocation
+  logs đã khớp giữa file committed và Worker live.
 - Các secret binding hiện do provider quản lý không được lưu trong repository.
 
 ## Triển khai

@@ -2,9 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Live status (2026-09-02):** Production Worker `syrin-prerender` is PR #52
-`9fcc58bc` / Cloudflare Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6`.
-This plan records the earlier G4 repository reconcile (`8382c5bb`). See
+**Live status (2026-09-03):** Production Worker `syrin-prerender` is PR #89
+`931430c0` / Cloudflare Version ID `5f94ab6c-fde5-4416-a3aa-74daaa2e6094`.
+Observability and invocation logs are live; traces remain disabled. This
+plan records the earlier G4 repository reconcile (`8382c5bb`). See
 `docs/security-findings.md` §1c.
 
 **Goal:** Make `main` reproduce the Cloudflare Worker source and non-secret configuration already verified and deployed during G4, without changing cloud state.

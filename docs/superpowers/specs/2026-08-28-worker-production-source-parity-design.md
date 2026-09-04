@@ -1,9 +1,10 @@
 # Worker production source parity design
 
-**Live status (2026-09-02):** Production Worker `syrin-prerender` is PR #52
-`9fcc58bc` / Cloudflare Version ID `b4d1a94e-b391-4682-841a-10dca111b1d6`,
-not `8382c5bb`. This document records the G4 repository-reconciliation
-design. See `docs/security-findings.md` §1c.
+**Live status (2026-09-03):** Production Worker `syrin-prerender` is PR #89
+`931430c0` / Cloudflare Version ID `5f94ab6c-fde5-4416-a3aa-74daaa2e6094`,
+not `8382c5bb`. Observability and invocation logs are live; traces remain
+disabled. This document records the G4 repository-reconciliation design.
+See `docs/security-findings.md` §1c.
 
 ## Goal
 
