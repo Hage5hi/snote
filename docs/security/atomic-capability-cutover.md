@@ -104,7 +104,8 @@ SQL 240 wait on Home mint is [ADR-001](../adr/001-home-capability-mint-before-sq
    responses and the Worker path are `no-store`, `no-referrer`, and noindex.
 6. Verify `writes_enabled=true` (keep `private_realtime_enabled=false` unless
    staging proved a different pair) via
-   `SELECT public.capability_runtime_state();`. Then prove capability create, sync,
+   `SELECT public.capability_runtime_state();` (JSON `writesEnabled` /
+   `privateRealtimeEnabled`). Then prove capability create, sync,
    owner management, view, revoke, and encrypted duplicate all pass on staging.
 7. Apply `20260724000000_atomic_capability_cutover.sql`. It dynamically drops
    every `public.notes` policy and revokes all direct table privileges from

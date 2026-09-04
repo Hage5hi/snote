@@ -104,6 +104,8 @@ describe("atomic cutover migration", () => {
     expect(cutover).toContain("SELECT public.capability_runtime_set(true, false);");
     expect(cutover).toContain("Verify `writes_enabled=true`");
     expect(cutover).toContain("capability_runtime_state()");
+    expect(cutover).toContain("`writesEnabled`");
+    expect(cutover).toContain("`privateRealtimeEnabled`");
     expect(cutover).toMatch(
       /Verify `writes_enabled=true`[\s\S]{0,500}capability create, sync/,
     );
