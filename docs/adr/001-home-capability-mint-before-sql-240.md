@@ -1,17 +1,17 @@
 # ADR-001: Home mints capabilities before SQL 240
 
-- Status: Accepted (not a production go)
+- Status: Accepted. Home mint live on origin `e05c73ea` (not a SQL 240 go)
 - Date: 2026-09-04
 - Deciders: Aegis (architecture); Atlas (go); Syringa (named production steps)
-- Evidence cut: `Hage5hi/snote` `main` `931430c0` (PR #89). Live origin `27da93eb`, Worker `931430c0` / `5f94ab6c` (Cloudflare Version ID `5f94ab6c-fde5-4416-a3aa-74daaa2e6094`; see findings §1c). SQL 220+270 applied; 240 not applied. `writes_enabled=true`, `private_realtime_enabled=false`. Soak started 2026-09-02 ~12:01 ICT from `c5914c8e`; not complete as of 2026-09-04 03:15 ICT.
+- Evidence cut: `Hage5hi/snote` `main` `e05c73ea` (PR #95). Live origin `e05c73ea`, Worker `931430c0` / `5f94ab6c` (Cloudflare Version ID `5f94ab6c-fde5-4416-a3aa-74daaa2e6094`; see findings §1c). SQL 220+270 applied; 240 not applied. `writes_enabled=true`, `private_realtime_enabled=false`. Soak started 2026-09-02 ~12:01 ICT from `c5914c8e`; not complete as of 2026-09-04 ~14:39 ICT.
 
 ## Context
 
-Production dual-mode canary has `capabilityRoutesEnabled=true`, but Home does not call `POST note-session` `{action:"create"}`. Plain `/<slug>` remains the legacy write path: `anon` RLS on `public.notes` (`NOT capability_managed`), public Realtime `note:${slug}`, `ydoc_state` upsert. `CutoverNotePage` is unmounted. `capability_note_import_legacy` (SQL 240) is absent.
+Production dual-mode canary has `capabilityRoutesEnabled=true`. Home mint is live on origin `e05c73ea`: Home create calls `POST note-session` `{action:"create"}` then navigates `/<slug>#owner=<token>`. Plain `/<slug>` remains the legacy write path: `anon` RLS on `public.notes` (`NOT capability_managed`), public Realtime `note:${slug}`, `ydoc_state` upsert. `CutoverNotePage` is unmounted. `capability_note_import_legacy` (SQL 240) is absent.
 
 SQL 240 is irreversible: rollback never restores `notes` GRANT/policies. Kill switch is `capability_runtime_set(false, false)` → Edge 503. Tiny plan has no PITR (daily snapshot, ~24h worst-case loss). Staging `snote-g3c-staging` is inactive.
 
-A 2026-09-01 snapshot had 61 notes / 0 `capability_managed`. Soak currently measures dual-mode SPA, not capability create/sync/outbox traffic.
+A 2026-09-01 snapshot had 61 notes / 0 `capability_managed`. Dual-mode soak started without Home mint; mint is now live on canary so later soak can include capability create/sync/outbox. Not soak-complete. Not SQL 240.
 
 ## Decision
 
@@ -22,6 +22,7 @@ When the mint path is built (GitHub first; production only on a named go):
 3. Trust/identity (“quen/lạ”) stays a local label and must not become a write gate.
 
 This ADR does **not** authorize origin, Worker, Edge, SQL 240, `private_realtime_enabled`, or Home mint in production.
+A later named Pages deploy of #95 made Home mint live on canary origin `e05c73ea`; this ADR still does not authorize SQL 240.
 
 ## Alternatives
 
