@@ -3,6 +3,13 @@
 This change set is code-only. It must not be applied to staging or production
 without the explicit checkpoint below.
 
+**Live status (2026-09-03):** Production Worker `syrin-prerender` is PR #89
+`931430c0` / Cloudflare Version ID `5f94ab6c-fde5-4416-a3aa-74daaa2e6094`.
+Observability and invocation logs are live; traces remain disabled. Staging
+`syrin-prerender-staging` was not deployed. Origin remains `27da93eb`
+(canary on). See `docs/security-findings.md` §1c. This runbook is still
+required for any future Worker, cache-purge, or tombstone change.
+
 ## Required checkpoint
 
 1. Create and verify a database backup/PITR restore point.

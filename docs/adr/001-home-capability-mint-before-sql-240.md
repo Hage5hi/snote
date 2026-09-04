@@ -3,7 +3,7 @@
 - Status: Accepted (not a production go)
 - Date: 2026-09-04
 - Deciders: Aegis (architecture); Atlas (go); Syringa (named production steps)
-- Evidence cut: `Hage5hi/snote` `main` `931430c0` (PR #89). Live origin `27da93eb`, Worker `9fcc58bc` / `b4d1a94e`. SQL 220+270 applied; 240 not applied. `writes_enabled=true`, `private_realtime_enabled=false`. Soak started 2026-09-02 ~12:01 ICT from `c5914c8e`; not complete as of 2026-09-04 03:15 ICT.
+- Evidence cut: `Hage5hi/snote` `main` `931430c0` (PR #89). Live origin `27da93eb`, Worker `931430c0` / `5f94ab6c` (Cloudflare Version ID `5f94ab6c-fde5-4416-a3aa-74daaa2e6094`; see findings §1c). SQL 220+270 applied; 240 not applied. `writes_enabled=true`, `private_realtime_enabled=false`. Soak started 2026-09-02 ~12:01 ICT from `c5914c8e`; not complete as of 2026-09-04 03:15 ICT.
 
 ## Context
 
@@ -39,14 +39,14 @@ This ADR does **not** authorize origin, Worker, Edge, SQL 240, `private_realtime
 - Security: mint does not close legacy slug writes. Until 240, both paths coexist. Encryption pin on the table stays attacker-writable on the legacy path.
 - Ops: Tiny still has no PITR. Mint is reversible (don’t have to apply 240). 240 is not.
 - Soak: without mint, 48h dual-mode does not prove `note-session`/`note-sync`/outbox. With mint, soak can use synthetic or real capability notes; still need CF-Connecting-IP anti-spoof before opening public create (currently unattested; staging inactive).
-- Privacy: Worker `invocation_logs` are **committed** in #89 but **not live**. Next named `syrin-prerender` deploy can log raw URLs including `#`-less locators. Do not couple mint ship to that Worker deploy.
+- Privacy: Worker `invocation_logs` are **live** on `syrin-prerender` (`931430c0` / `5f94ab6c`). They can log raw URLs including `#`-less locators. Do not couple mint ship to a further Worker deploy; this privacy risk is already live.
 
 ## Consequences
 
 - Forge implements Home create against existing `note-session` contract (`createCapabilityApi().createNote`). No new Edge function.
 - Failures stay existing codes: `slug_unavailable` 409, admission 429/503, missing HMAC 503.
 - `legacyOnly` dual-mode remains until 240. Home existence check today is `select slug, char_count from notes` — after mint, capability-managed rows are invisible to that query; Home must not treat “not in notes” as “slug free” once create can 409 from the RPC.
-- SQL 240, private Realtime, quen/lạ overlay, and Worker log deploy stay separately named.
+- SQL 240, private Realtime, and quen/lạ overlay stay separately named. Worker log deploy is already live (§1c).
 
 ## Open questions (do not guess)
 

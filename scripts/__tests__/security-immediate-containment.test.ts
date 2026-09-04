@@ -388,6 +388,10 @@ describe("immediate containment contracts", () => {
       /\[observability\.traces\][\s\S]*?enabled\s*=\s*false/,
     );
     expect(readme).toContain("[observability.traces]");
+    expect(readme).toContain("5f94ab6c-fde5-4416-a3aa-74daaa2e6094");
+    expect(readme).not.toContain("chưa nhận các cờ log");
     expect(rollout).toContain("[observability.traces] enabled = false");
+    expect(rollout).toContain("Observability and invocation logs are live");
+    expect(rollout).toContain("traces remain disabled");
   });
 });

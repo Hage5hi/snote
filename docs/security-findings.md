@@ -97,31 +97,37 @@ canary off; current origin is §3e). `share-revoke`
 remains live (POST `{}` still 400, not 410) and is out of scope for this
 containment.
 
-## 1c. Production Worker identity — live 2026-09-02
+## 1c. Production Worker identity — live 2026-09-03
 
-Production Worker `syrin-prerender` was redeployed 2026-09-02 ~03:35 ICT from
-PR #52.
+Production Worker `syrin-prerender` was redeployed 2026-09-03 ~20:42 UTC /
+2026-09-04 ~03:42 ICT from git `main`
+`931430c016772d333f79aa31841e31aca2b327a4` (merge of PR #89).
 
-- Git SHA: `9fcc58bc3690c1a2ffd74f465e219172d25376a3` (short `9fcc58bc`)
-- Cloudflare Version ID: `b4d1a94e-b391-4682-841a-10dca111b1d6`
-- Replaces previous Cloudflare Version ID `ba859faf…`
-- Live Worker still: observability, logs, and traces disabled
-  (`9fcc58bc` / `b4d1a94e`). Committed `wrangler.toml` now enables
-  observability and invocation logs for the next named Worker deploy;
-  traces remain disabled. This git change is not a live Worker deploy.
-  `workers_dev` false; `ORIGIN_HOST` `snote-g4-origin.pages.dev`
+- Git SHA: `931430c016772d333f79aa31841e31aca2b327a4` (short `931430c0`)
+- Cloudflare Version ID: `5f94ab6c-fde5-4416-a3aa-74daaa2e6094`
+- Replaces previous Cloudflare Version ID `b4d1a94e…`
+- Live Worker: observability enabled, logs enabled, `invocation_logs` true;
+  traces still false. Committed `wrangler.toml` matches this live log state.
+  `workers_dev` false; preview URLs false; `ORIGIN_HOST` `snote-g4-origin.pages.dev`
 - Live origin-fetch behavior: runtime and immutable assets forward only a
   conservative `__WB_REVISION__` query; locator, token, home, public, note,
   and share queries remain stripped
-- Staging `syrin-prerender-staging` was not deployed
+- Staging `syrin-prerender-staging` was not deployed (still G3C staging
+  versions from 2026-08-24)
 
-This is not the live SPA origin. Origin is `27da93eb` (see §3e).
-Do not claim origin is `9fcc58bc`. Git `main` includes this Worker SHA and
-may be ahead for later docs-only PRs; that does not change Worker identity.
+This is not the live SPA origin. Origin is `27da93eb` (see §3e);
+origin was not redeployed. Do not claim origin is `931430c0`. Git `main`
+includes this Worker SHA and may be ahead for later docs-only PRs; that
+does not change Worker identity.
 
 Canary is on (`capabilityRoutesEnabled` true; see §3e). SQL 240 is not
 applied. `writes_enabled=true`, `private_realtime_enabled=false` (see §3d).
 Soak ≥48h started from the first §3e origin canary.
+
+Containment probes on `note.syrin.online` (2026-09-03): crawler UA on a
+synthetic note path and `/s/synthetic-probe-token` returned generic private
+HTML with `Cache-Control` / `cdn-cache-control` `no-store` and
+`X-Robots-Tag` noindex…; bodies did not echo locator or token.
 
 ## 2. Admin authentication and cleanup — implemented, deploy unverified
 
@@ -158,9 +164,10 @@ moves the token into the fragment, removes it from the visible path, and uses
 `no-store`/`no-referrer`; after the configured deadline it fails closed. The
 Worker never forwards the raw path token. Origin fetch for runtime and
 immutable assets may forward only a conservative `__WB_REVISION__` query
-(PR #52, live); locator, token, home, public, note, and share queries are
-still stripped. Platform logs, traces, and cache keys still require
-deployment-time review and redaction. See §1c.
+(PR #52 behavior, still live); locator, token, home, public, note, and share
+queries are still stripped. Invocation logs are live on the current Worker
+(§1c); traces and cache keys still require deployment-time review and
+redaction.
 
 ## 3a. Additive capability backend SQL 220 — production verified
 
@@ -492,7 +499,10 @@ Kill switch unchanged: `writes_enabled=true`,
 (`capability_note_import_legacy` is absent).
 POST `/functions/v1/legacy-note-open` `{}` still 410 `{"found":false}`.
 POST `/functions/v1/note-session` `{}` still 401 `{"error":"unauthorized"}`.
-Worker `syrin-prerender` still `9fcc58bc` / `b4d1a94e` — not redeployed.
+At that origin bump, Worker `syrin-prerender` was still `9fcc58bc` /
+`b4d1a94e`. Later Worker redeploy 2026-09-03 ~20:42 UTC / 2026-09-04
+~03:42 ICT set live Worker to `931430c0` / `5f94ab6c` (see §1c).
+Origin SPA was not redeployed; canary remains on.
 
 This is dual-mode `NotePage` (`legacyOnly={!canary}`): plain slug still
 legacy; `#owner`/`#edit` may open capability polling. Home still does not mint capabilities.
