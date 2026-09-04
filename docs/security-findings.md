@@ -16,7 +16,7 @@ Legacy policies. Capability SPA canary is on
 `capabilityRoutesEnabled` is true; see §3e). Dual-mode `NotePage`
 (`legacyOnly={!canary}`): plain slug stays legacy; `#owner`/`#edit` may
 open capability polling. Home mints capabilities when canary is on
-(create → `/<slug>#owner=`; live origin `e05c73ea`).
+(create → `/<slug>#owner=`; fail-closed idle; live origin `addeeb29`).
 Home mint before SQL 240 is accepted as
 [ADR-001](adr/001-home-capability-mint-before-sql-240.md); live mint is
 not authorization to apply 240.
@@ -116,9 +116,9 @@ Production Worker `syrin-prerender` was redeployed 2026-09-03 ~20:42 UTC /
 - Staging `syrin-prerender-staging` was not deployed (still G3C staging
   versions from 2026-08-24)
 
-This is not the live SPA origin. Origin is `e05c73ea` (see §3e).
+This is not the live SPA origin. Origin is `addeeb29` (see §3e).
 At this Worker deploy, origin was not redeployed (then `27da93eb`);
-origin later bumped to `e05c73ea`. Do not claim origin is `931430c0`. Git `main`
+origin later bumped to `e05c73ea`, then `addeeb29`. Do not claim origin is `931430c0`. Git `main`
 includes this Worker SHA and may be ahead for later docs-only PRs; that
 does not change Worker identity.
 
@@ -496,19 +496,36 @@ still raw. No TinyFish/Worker proxy. `version.json` at that bump (browser UA;
 Pages production deployment id `4f5e5afc-c80b-46b8-b053-71e8339040d2`
 replaced previous live origin `4ef734ee` / Pages `a59b0964-8ca6-4a89-a155-e0346eebd347`.
 
-Same-canary origin SHA bump 2026-09-04 ~14:39 ICT: Pages `snote-g4-origin`
-manually redeployed Home capability mint (#95). Cloudflare Pages Git Provider is
-No, so origin stayed at `27da93eb` after that merge until this production
-deploy. Home create (canary on) persists an owner candidate, `POST
-note-session` `{action:"create"}`, then navigates `/<slug>#owner=<token>`.
-Plain slug remains the legacy write path. Live `version.json` (browser UA;
-`no-store`) on both canonical and Pages hosts:
+Same-canary origin SHA bump 2026-09-04 ~14:39 ICT (not current live): Pages
+`snote-g4-origin` manually redeployed Home capability mint (#95). Cloudflare
+Pages Git Provider is No, so origin stayed at `27da93eb` after that merge
+until that production deploy. Home create (canary on) persists an owner
+candidate, `POST note-session` `{action:"create"}`, then navigates
+`/<slug>#owner=<token>`. Plain slug remains the legacy write path.
+`version.json` at that bump (browser UA; `no-store`) on both canonical and
+Pages hosts:
 `deployedSha` `e05c73ead67a3751d07a4042ba68fe86fcb271a8`,
 `capabilityRoutesEnabled` true, `builtAt` `2026-09-04T07:39:26.164Z`,
 `buildId` `1788507551045-leqeymq1`.
 Pages production deployment id `028e8199-02c8-4583-8890-bbd2f09dc8f0`
-replaces previous live origin `27da93eb` / Pages `4f5e5afc-c80b-46b8-b053-71e8339040d2`.
-PWA smoke after this ship: SUCCESS (GitHub Actions run `33849773178`).
+replaced previous live origin `27da93eb` / Pages `4f5e5afc-c80b-46b8-b053-71e8339040d2`.
+PWA smoke after that ship: SUCCESS (GitHub Actions run `33849773178`).
+
+Same-canary origin SHA bump 2026-09-04 ~17:34 ICT: Pages `snote-g4-origin`
+redeployed fail-closed Home mint (#98). Home create (canary on) never
+fail-opens idle slug status to legacy `seedAndOpen`; idle submit re-checks
+`notes.select`, then on `available` persists an owner candidate, `POST
+note-session` `{action:"create"}`, and navigates `/<slug>#owner=<token>`.
+Live smoke confirmed that path lands on `/<slug>#owner=` (token in the
+fragment; not logged here). Plain slug remains the legacy write path.
+Live `version.json` (browser UA; `no-store`) on both canonical and Pages
+hosts:
+`deployedSha` `addeeb29cd9a6dac73c406f251ff5305db12f8f7`,
+`capabilityRoutesEnabled` true, `builtAt` `2026-09-04T10:34:53.874Z`,
+`buildId` `1788518080553-dg3glr2m`.
+Pages production deployment id `25c47833-fd81-42b1-ba6b-39e7e8f5a5e3`
+replaces previous live origin `e05c73ea` / Pages `028e8199-02c8-4583-8890-bbd2f09dc8f0`.
+PWA smoke after this ship: SUCCESS (GitHub Actions run `33863872787`).
 
 Kill switch unchanged: `writes_enabled=true`,
 `private_realtime_enabled=false`, `updated_at`
@@ -521,11 +538,11 @@ At the 27da93eb origin bump, Worker `syrin-prerender` was still `9fcc58bc` /
 ~03:42 ICT set live Worker to `931430c0` / `5f94ab6c` (see §1c).
 At that Worker deploy, Origin SPA was not redeployed (then `27da93eb`).
 This origin bump does not redeploy the Worker; live Worker remains
-`931430c0` / `5f94ab6c`. Canary remains on.
+`931430c0` / `5f94ab6c`. SQL 240 / Worker / Realtime not changed. Canary remains on.
 
 This is dual-mode `NotePage` (`legacyOnly={!canary}`): plain slug still
 legacy; `#owner`/`#edit` may open capability polling. Home mints capabilities
-when canary is on (create → `/<slug>#owner=`).
+when canary is on (create → `/<slug>#owner=`; fail-closed on idle).
 This is not SQL 240, not Realtime, not soak-complete.
 Soak ≥48h started ~12:01 ICT from the first canary origin `c5914c8e`;
 this bump does not restart soak. This is a same-canary origin SHA bump,
