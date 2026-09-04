@@ -110,6 +110,7 @@ export default function Home() {
     recents: RecentNote[];
   } | null>(null);
   const [slugStatus, setSlugStatus] = useState<SlugStatus>("idle");
+  const [checkNonce, setCheckNonce] = useState(0);
   const [creating, setCreating] = useState(false);
   const pendingCreateRef = useRef<string | null>(null);
   const isMobile = useIsMobile();
@@ -149,6 +150,7 @@ export default function Home() {
     }
     setSlugStatus("checking");
     const ctrl = new AbortController();
+    const delay = pendingCreateRef.current === trimmed ? 0 : 350;
     const t = window.setTimeout(async () => {
       try {
         const supabase = await loadSupabase();
@@ -172,12 +174,12 @@ export default function Home() {
         if (ctrl.signal.aborted) return;
         setSlugStatus("idle");
       }
-    }, 350);
+    }, delay);
     return () => {
       ctrl.abort();
       window.clearTimeout(t);
     };
-  }, [slug]);
+  }, [slug, checkNonce]);
 
   // Warm up heavy editor modules ONLY when the device looks capable. On
   // mobile / save-data / low-memory devices, skip — keeps the Home heap
@@ -233,8 +235,16 @@ export default function Home() {
       setError(t("home.error.invalid_slug"));
       return;
     }
-    if (canaryOn && loadCapabilityApi && status === "available") {
-      void mintAndOpen(trimmed);
+    if (canaryOn && loadCapabilityApi) {
+      if (status === "available") {
+        void mintAndOpen(trimmed);
+        return;
+      }
+      if (status === "taken") {
+        seedAndOpen(trimmed);
+        return;
+      }
+      setError(t("home.error.create_unavailable"));
       return;
     }
     seedAndOpen(trimmed);
@@ -266,6 +276,12 @@ export default function Home() {
     }
     if (slugStatus === "checking") {
       pendingCreateRef.current = trimmed;
+      return;
+    }
+    if (slugStatus === "idle") {
+      pendingCreateRef.current = trimmed;
+      setSlugStatus("checking");
+      setCheckNonce((n) => n + 1);
       return;
     }
     openAfterStatusRef.current(trimmed, slugStatus);
