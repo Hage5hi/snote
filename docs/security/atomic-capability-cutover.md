@@ -85,8 +85,11 @@ SQL 240 wait on Home mint is [ADR-001](../adr/001-home-capability-mint-before-sq
    `deployedSha` `27da93eb2db7fa670f721ce2ecbb79971f489bb2`, still
    `capabilityRoutesEnabled` true. Same-canary origin SHA bump
    2026-09-04 ~14:39 ICT:
-   live `deployedSha` `e05c73ead67a3751d07a4042ba68fe86fcb271a8`, still
-   `capabilityRoutesEnabled` true. Home mint is live on this canary.
+   `deployedSha` `e05c73ead67a3751d07a4042ba68fe86fcb271a8`, still
+   `capabilityRoutesEnabled` true. Same-canary origin SHA bump
+   2026-09-04 ~17:34 ICT:
+   live `deployedSha` `addeeb29cd9a6dac73c406f251ff5305db12f8f7`, still
+   `capabilityRoutesEnabled` true. Home mint fail-closed idle is live on this canary.
    This is not soak-complete.
    Do not treat snapshot verify as `capability_runtime_set`.
    This is not `LEGACY_SHARE_CUTOFF`, soak-complete,

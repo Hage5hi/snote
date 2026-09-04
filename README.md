@@ -5,9 +5,9 @@ Offline-first realtime Markdown notes with a separately gated capability model.
 Production: [note.syrin.online](https://note.syrin.online/)
 
 **Current status:** Production currently runs dual-mode `NotePage`
-(`legacyOnly={!canary}`): live origin `e05c73ea` has
+(`legacyOnly={!canary}`): live origin `addeeb29` has
 `capabilityRoutesEnabled` true (findings §3e). Plain slug URLs remain the
-legacy write path; Home mints capabilities when canary is on. Additive SQL 220 and 270
+legacy write path; Home mints capabilities when canary is on (fail-closed on idle). Additive SQL 220 and 270
 are applied on production; `writes_enabled=true` and
 `private_realtime_enabled=false` (findings §3d). SQL 240 is not applied;
 soak ≥48h started from the first canary (not soak-complete) — see
