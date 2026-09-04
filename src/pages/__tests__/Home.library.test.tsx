@@ -65,6 +65,8 @@ vi.mock("@/i18n", () => ({
 }));
 vi.mock("@/lib/ext-context", () => ({ isExtensionContext: true }));
 
+const env = import.meta.env as Record<string, unknown>;
+
 const query = {
   select: harness.select,
   eq: harness.eq,
@@ -164,22 +166,28 @@ describe("Home knowledge library", () => {
   });
 
   it("opens a templated slug at /slug with a markdown seed and no capability mint", async () => {
-    renderHome();
+    const previous = env.VITE_CAPABILITY_ROUTES_ENABLED;
+    env.VITE_CAPABILITY_ROUTES_ENABLED = "false";
+    try {
+      renderHome();
 
-    fireEvent.change(await screen.findByLabelText("home.templates.aria"), {
-      target: { value: "meeting" },
-    });
-    fireEvent.change(screen.getByLabelText("home.placeholder"), {
-      target: { value: "daily" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
+      fireEvent.change(await screen.findByLabelText("home.templates.aria"), {
+        target: { value: "meeting" },
+      });
+      fireEvent.change(screen.getByLabelText("home.placeholder"), {
+        target: { value: "daily" },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "home.btn.open" }));
 
-    await waitFor(() => {
-      expect(harness.softNavigate).toHaveBeenCalledWith(expect.any(Function), "/daily");
-    });
-    expect(harness.softNavigate.mock.calls[0][1]).not.toMatch(/#(?:owner|edit|view)=/);
-    expect(harness.createCapabilityApi).not.toHaveBeenCalled();
-    expect(harness.createLegacyNoteApi).not.toHaveBeenCalled();
-    expect(consumeTemplateSeed("daily")).toBe("home.templates.meeting.body");
+      await waitFor(() => {
+        expect(harness.softNavigate).toHaveBeenCalledWith(expect.any(Function), "/daily");
+      });
+      expect(harness.softNavigate.mock.calls[0][1]).not.toMatch(/#(?:owner|edit|view)=/);
+      expect(harness.createCapabilityApi).not.toHaveBeenCalled();
+      expect(harness.createLegacyNoteApi).not.toHaveBeenCalled();
+      expect(consumeTemplateSeed("daily")).toBe("home.templates.meeting.body");
+    } finally {
+      env.VITE_CAPABILITY_ROUTES_ENABLED = previous;
+    }
   });
 });

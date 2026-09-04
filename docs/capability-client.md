@@ -17,6 +17,17 @@ minting stays off. Ordinary Vite builds follow `.env.example`
 `capabilityRoutesEnabled: false`. Live production `build:release` attests
 `capabilityRoutesEnabled: true` (findings §3e; live origin `27da93eb`).
 
+When that canary is on, Home create persists an owner candidate in
+`sessionStorage`, then calls `createCapabilityApi().createNote` (`POST
+note-session` `{action:"create"}`), then navigates to
+`/<slug>#owner=<token>`. See [ADR-001](adr/001-home-capability-mint-before-sql-240.md).
+This is GitHub-first wiring, not a production attestation. Recents and
+pins store only the slug, never the owner token. Losing the fragment
+without another copy of the owner capability locks the note out. A
+`notes.select` miss is only a legacy hint: capability-managed slugs are
+invisible to that query, and create may still return `slug_unavailable`.
+Do not fall back to a legacy upsert from the create button.
+
 An optional encryption secret is a separate `key` fragment field. Capability tokens are exchanged for a short-lived `NoteSession` and are sent to Edge APIs only as an exact `Authorization: Bearer` header. They are never placed in a request path, query, JSON body, recent-note entry, telemetry event, or log.
 
 ## Durable update path

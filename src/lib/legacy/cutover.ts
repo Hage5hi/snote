@@ -1,6 +1,6 @@
 import * as Y from "yjs";
 import { CAPABILITY_TOKEN_RE, buildCapabilityUrl } from "@/lib/capability/url";
-import { capabilityPayloadId, encodeCapabilityPayload } from "@/lib/capability/encoding";
+import { capabilityPayloadId, encodeCapabilityPayload, newOwnerCandidate } from "@/lib/capability/encoding";
 import { isUsableSlug } from "@/lib/slug";
 import type { Encryption } from "@/lib/yjs/provider";
 
@@ -156,10 +156,6 @@ function browserRecoveryStore(): LegacyImportRecoveryStore {
       storage.removeItem(`${RECOVERY_PREFIX}${slug}`);
     },
   };
-}
-
-function newOwnerCandidate(): string {
-  return encodeCapabilityPayload(crypto.getRandomValues(new Uint8Array(32)));
 }
 
 async function legacySourceFingerprint(source: LegacyNote): Promise<string> {

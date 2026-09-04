@@ -4,6 +4,11 @@ export function encodeCapabilityPayload(bytes: Uint8Array): string {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
+/** 32-byte random owner candidate, encoded as a 43-character capability token. */
+export function newOwnerCandidate(): string {
+  return encodeCapabilityPayload(crypto.getRandomValues(new Uint8Array(32)));
+}
+
 export function decodeCapabilityPayload(value: string): Uint8Array {
   if (!value || value.length % 4 === 1 || !/^[A-Za-z0-9_+/=-]+$/.test(value)) {
     throw new Error("invalid capability payload");

@@ -60,7 +60,7 @@ describe("production note access hotfix", () => {
     expect(defaultSource).toContain('import.meta.env.VITE_CAPABILITY_ROUTES_ENABLED === "true"');
   });
 
-  it("keeps SplitView, Home, and RawView on the legacy backend", () => {
+  it("keeps SplitView and RawView on the legacy backend and canary-gates Home mint", () => {
     const split = source("src/pages/SplitView.tsx");
     const home = source("src/pages/Home.tsx");
     const raw = source("src/pages/RawView.tsx");
@@ -69,7 +69,11 @@ describe("production note access hotfix", () => {
     expect(split).toContain("legacyOnly");
     expect(home).toContain('import("@/integrations/supabase/client")');
     expect(home).not.toContain('import { supabase } from "@/integrations/supabase/client";');
-    expect(home).not.toContain("createCapabilityApi");
+    expect(home).not.toMatch(
+      /import\s*\{[^}]*createCapabilityApi[^}]*\}\s*from\s*["']@\/lib\/capability\/client["']/,
+    );
+    expect(withoutTypeImports(home)).toContain('import("@/lib/capability/client")');
+    expectValueImportBehindRoutesGuard(home, "@/lib/capability/client");
     expect(home).not.toContain("createLegacyNoteApi");
     expect(home).not.toContain("note-snapshot:");
     expect(raw).toContain('import { supabase } from "@/integrations/supabase/client";');
@@ -141,14 +145,17 @@ describe("production note access hotfix", () => {
 
     expect(notePage).not.toMatch(staticCreateApi);
     expect(sharePage).not.toMatch(staticCreateApi);
+    expect(home).not.toMatch(staticCreateApi);
     expect(notePage).not.toMatch(staticCapabilityProvider);
     expect(sharePage).not.toMatch(staticCapabilityProvider);
     expect(withoutTypeImports(notePage)).toContain('import("@/lib/capability/client")');
     expect(withoutTypeImports(sharePage)).toContain('import("@/lib/capability/client")');
+    expect(withoutTypeImports(home)).toContain('import("@/lib/capability/client")');
     expect(withoutTypeImports(notePage)).toContain('import("@/lib/yjs/capability-provider")');
     expect(withoutTypeImports(sharePage)).toContain('import("@/lib/yjs/capability-provider")');
     expectValueImportBehindRoutesGuard(notePage, "@/lib/capability/client");
     expectValueImportBehindRoutesGuard(sharePage, "@/lib/capability/client");
+    expectValueImportBehindRoutesGuard(home, "@/lib/capability/client");
     expectValueImportBehindRoutesGuard(notePage, "@/lib/yjs/capability-provider");
     expectValueImportBehindRoutesGuard(sharePage, "@/lib/yjs/capability-provider");
     expect(notePage).toContain("export function CutoverNotePage");

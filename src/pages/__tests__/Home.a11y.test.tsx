@@ -27,10 +27,6 @@ vi.mock("@/lib/recent-notes", () => ({
 vi.mock("@/lib/capability/client", () => ({
   createCapabilityApi: () => ({ createNote: vi.fn() }),
 }));
-vi.mock("@/lib/capability/url", () => ({ buildCapabilityUrl: vi.fn() }));
-vi.mock("@/lib/legacy/cutover", () => ({
-  createLegacyNoteApi: () => ({ exists: vi.fn(async () => false) }),
-}));
 vi.mock("lucide-react", () => ({
   ArrowRight: () => null,
   Check: () => null,
