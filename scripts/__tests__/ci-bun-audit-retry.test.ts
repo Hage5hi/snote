@@ -193,7 +193,7 @@ exit 0
     const result = runRetry(dir);
 
     expect(result.status).toBe(0);
-    expect(`${result.stdout}\n${result.stderr}`).toMatch(/idle=30\b/);
+    expect(`${result.stdout}\n${result.stderr}`).toMatch(/idle=60\b/);
   });
 
   it("retries ECONNRESET, DNS, and bun-formatted 5xx registry errors", () => {
