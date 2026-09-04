@@ -50,8 +50,9 @@ keeps APIs read-only; it never restores public table policies.
 Do not log note content, slugs, capabilities, share tokens or raw IP addresses.
 See [security findings](docs/security-findings.md), the
 [capability API](docs/capability-backend.md), and the
-[atomic cutover runbook](docs/security/atomic-capability-cutover.md). Release
-evidence is collected in the
+[atomic cutover runbook](docs/security/atomic-capability-cutover.md).
+Home mint before SQL 240 is [ADR-001](docs/adr/001-home-capability-mint-before-sql-240.md).
+Release evidence is collected in the
 [stacked rollout tracker](docs/security/stacked-rollout-tracker.md).
 
 ## Stack
