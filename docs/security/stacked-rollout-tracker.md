@@ -47,6 +47,8 @@ item is not evidence of staging or production deployment.
 
 ## Production soak and cutover
 
+SQL 240 wait on Home mint is [ADR-001](../adr/001-home-capability-mint-before-sql-240.md).
+
 - [ ] Record a continuous 48-hour dual-mode soak with aggregate-only API
       errors, authorization denials, outbox backlog, acknowledgement latency,
       Realtime refresh failures, compaction conflicts, and quarantines.
