@@ -150,11 +150,57 @@ exit 1
     expect(sleepArgs(sleepArgsFile)).toHaveLength(0);
   });
 
-  it("retries ECONNRESET, DNS, and 5xx registry errors", () => {
+  it("does not retry a high finding whose title contains Timeout", () => {
+    const { dir, attemptsFile, sleepArgsFile } = makeHarness(`#!/usr/bin/env bash
+set -euo pipefail
+${REQUIRE_AUDIT_ARGS}
+${RECORD_ATTEMPT}
+echo "high: Regular Expression Denial of Service in p-timeout" >&2
+exit 1
+`);
+
+    const result = runRetry(dir);
+
+    expect(result.status).not.toBe(0);
+    expect(attemptCount(attemptsFile)).toBe(1);
+    expect(sleepArgs(sleepArgsFile)).toHaveLength(0);
+  });
+
+  it("does not retry a non-advisory command error", () => {
+    const { dir, attemptsFile, sleepArgsFile } = makeHarness(`#!/usr/bin/env bash
+set -euo pipefail
+${REQUIRE_AUDIT_ARGS}
+${RECORD_ATTEMPT}
+echo "error: lockfile not found" >&2
+exit 1
+`);
+
+    const result = runRetry(dir);
+
+    expect(result.status).not.toBe(0);
+    expect(attemptCount(attemptsFile)).toBe(1);
+    expect(sleepArgs(sleepArgsFile)).toHaveLength(0);
+  });
+
+  it("caps bun HTTP idle timeout so Timeout flakes stay inside the job budget", () => {
+    const { dir } = makeHarness(`#!/usr/bin/env bash
+set -euo pipefail
+${REQUIRE_AUDIT_ARGS}
+echo "idle=\${BUN_CONFIG_HTTP_IDLE_TIMEOUT:-}"
+exit 0
+`);
+
+    const result = runRetry(dir);
+
+    expect(result.status).toBe(0);
+    expect(`${result.stdout}\n${result.stderr}`).toMatch(/idle=30\b/);
+  });
+
+  it("retries ECONNRESET, DNS, and bun-formatted 5xx registry errors", () => {
     const cases = [
       "error: ECONNRESET",
       "getaddrinfo ENOTFOUND registry.npmjs.org",
-      "HTTP 502 Bad Gateway",
+      "error: audit request failed (status 502)",
     ];
 
     for (const message of cases) {

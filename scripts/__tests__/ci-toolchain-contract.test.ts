@@ -213,6 +213,8 @@ describe("CI toolchain contract", () => {
     const retryAudit = readFileSync("scripts/retry-bun-audit.sh", "utf8")
       .replaceAll("\r\n", "\n");
     expect(retryAudit).toContain("bun audit --audit-level=high");
+    expect(retryAudit).toContain("BUN_CONFIG_HTTP_IDLE_TIMEOUT=30");
+    expect(retryAudit).toContain("audit request failed");
     expect(retryAudit).not.toMatch(/bun audit[^\r\n]*--prod/);
     expect(retryAudit).not.toMatch(/bun pm (?:audit|scan)/);
     expect(extensionAudit).toContain("scripts/retry-bun-audit.sh");

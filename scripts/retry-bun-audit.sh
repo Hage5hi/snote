@@ -5,8 +5,15 @@ set -euo pipefail
 
 MAX_ATTEMPTS=3
 SLEEP_SECONDS=10
-TRANSIENT_PATTERN='Timeout|ConnectionClosed|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|getaddrinfo|audit request failed|HTTP 5[0-9]{2}'
-ADVISORY_PATTERN='GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}'
+# bun's HTTP idle timeout defaults to 300s. A Timeout flake would then spend
+# ~15 minutes inside quality (20m) / extension-e2e (15m). Fail fast and retry.
+export BUN_CONFIG_HTTP_IDLE_TIMEOUT=30
+
+# Bun prints "Timeout: audit request failed" / "ConnectionClosed: audit request
+# failed" / "error: audit request failed (status N)". Do not match bare
+# "Timeout" — advisory titles can contain it (e.g. p-timeout).
+TRANSIENT_PATTERN='audit request failed|ConnectionClosed|ECONNRESET|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|getaddrinfo'
+ADVISORY_PATTERN='GHSA-[0-9a-z]{4}-[0-9a-z]{4}-[0-9a-z]{4}|^[[:space:]]*(high|critical):'
 
 log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
@@ -39,5 +46,3 @@ while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
 
   exit "$status"
 done
-
-exit 1
