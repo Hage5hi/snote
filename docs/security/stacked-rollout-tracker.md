@@ -61,7 +61,7 @@ SQL 240 wait on Home mint is [ADR-001](../adr/001-home-capability-mint-before-sq
 
 ## Rollback
 
-- [ ] Set `CAPABILITY_WRITE_DISABLED=true`.
+- [ ] Call `SELECT public.capability_runtime_set(false, false);`.
 - [ ] Keep direct table privileges and permissive policies revoked.
 - [ ] Keep legacy access exact-match, read-only, and `no-store`.
 - [ ] Preserve outboxes, append-only updates, checkpoints, and quarantined data.

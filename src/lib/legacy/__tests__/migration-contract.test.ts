@@ -80,6 +80,39 @@ describe("atomic cutover migration", () => {
     expect(capabilityEdge).not.toContain("CAPABILITY_WRITE_DISABLED");
   });
 
+  it("pins operator rollback to capability_runtime_set, not an Edge env", () => {
+    const cutover = readFileSync(resolve(
+      process.cwd(),
+      "docs/security/atomic-capability-cutover.md",
+    ), "utf8");
+    const tracker = readFileSync(resolve(
+      process.cwd(),
+      "docs/security/stacked-rollout-tracker.md",
+    ), "utf8");
+
+    expect(cutover).not.toContain("CAPABILITY_WRITE_DISABLED");
+    expect(tracker).not.toContain("CAPABILITY_WRITE_DISABLED");
+    expect(cutover).not.toMatch(/Realtime JWTs carry the rollback claim/);
+    expect(cutover).not.toContain("unset the write kill switch");
+
+    expect(cutover).toContain("SELECT public.capability_runtime_set(false, false);");
+    expect(cutover).toContain("`writes_disabled`");
+    expect(cutover).toContain("503");
+    expect(cutover).toMatch(/capability_session_open/);
+    expect(cutover).toContain("private_realtime_enabled=false");
+    expect(cutover).toMatch(/polling/);
+    expect(cutover).toContain("SELECT public.capability_runtime_set(true, false);");
+    expect(cutover).toContain("Verify `writes_enabled=true`");
+    expect(cutover).toContain("capability_runtime_state()");
+    expect(cutover).toContain("`writesEnabled`");
+    expect(cutover).toContain("`privateRealtimeEnabled`");
+    expect(cutover).toMatch(
+      /Verify `writes_enabled=true`[\s\S]{0,500}capability create, sync/,
+    );
+
+    expect(tracker).toContain("SELECT public.capability_runtime_set(false, false);");
+  });
+
   it("sets no-referrer before every precached-shell subresource", () => {
     const policy = appShell.indexOf('<meta name="referrer" content="no-referrer"');
     const firstSubresource = Math.min(
