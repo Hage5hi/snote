@@ -102,7 +102,9 @@ SQL 240 wait on Home mint is [ADR-001](../adr/001-home-capability-mint-before-sq
    mismatch. Attach its output to the checkpoint review.
 5. Verify `/s/:token` becomes `/s#legacy=...` before React starts and that both
    responses and the Worker path are `no-store`, `no-referrer`, and noindex.
-6. Verify `CAPABILITY_WRITE_DISABLED` is unset and capability create, sync,
+6. Verify `writes_enabled=true` (keep `private_realtime_enabled=false` unless
+   staging proved a different pair) via
+   `SELECT public.capability_runtime_state();`. Then prove capability create, sync,
    owner management, view, revoke, and encrypted duplicate all pass on staging.
 7. Apply `20260724000000_atomic_capability_cutover.sql`. It dynamically drops
    every `public.notes` policy and revokes all direct table privileges from
@@ -135,18 +137,27 @@ it never forwards them to origin even after compatibility expires. Capability
 
 ## Rollback
 
-1. Set `CAPABILITY_WRITE_DISABLED=true` on Edge Functions. `note-session`
-   continues opening existing capabilities, while create, sync, and manage
-   return read-only errors. Newly minted Realtime JWTs carry the rollback claim
-   and cannot broadcast; allow at most five minutes for older JWTs to expire.
+1. Call `SELECT public.capability_runtime_set(false, false);` as `service_role`
+   (or at least `writes_enabled=false`; keep `private_realtime_enabled=false`
+   unless a different live pair was proven). Create, sync, and manage RPCs then
+   return `writes_disabled`; Edge `capabilityFailure("writes_disabled")`
+   maps that to HTTP 503
+   `{ "error": "temporarily unavailable", "code": "writes_disabled" }`.
+   Opening an existing session via `capability_session_open` (`note-session`
+   without create, and bearer `share-view`) still succeeds. `note-sync` writes
+   take the same 503 path. With `private_realtime_enabled=false`,
+   `capability_realtime_membership_bind` returns polling and
+   `realtime_capability_allows` denies private Realtime send and receive.
 2. Keep the cutover migration applied. Never recreate a permissive policy or
    grant `notes` privileges to `PUBLIC`, `anon`, or `authenticated`.
 3. Keep `legacy-note-open` as the generic `410 no-store` tombstone.
    Do not restore a dump. Keep all private routes `no-store`.
 4. Roll back the SPA/Worker/API bundle only to a revision that understands
    read-only legacy access. Do not roll back to a direct-table client.
-5. Diagnose and repair the capability API, then unset the write kill switch
-   only after staging verification and a second production review.
+5. Diagnose and repair the capability API, then re-enable writes only after
+   staging verification and a second production review:
+   `SELECT public.capability_runtime_set(true, false);` (or the pair staging
+   proved).
 
 ## Evidence to attach to the stacked draft PR
 
