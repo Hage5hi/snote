@@ -384,7 +384,7 @@ describe("wait for live release after origin deploy", () => {
   });
 });
 
-/** Sequential GitHub Actions `paths` matching (`*` ≠ `/`; `**` spans `/`; `!` negates). */
+/** Sequential GitHub Actions `paths` matching for this workflow's `*` / `**` / `!` subset (`?`, `+`, `[]` not modeled). */
 function githubGlobToRegExp(glob: string): RegExp {
   let out = "^";
   for (let i = 0; i < glob.length; ) {
@@ -502,6 +502,11 @@ describe("post-deploy workflow wiring", () => {
     expect(
       githubPathsFilterMatches(pushPathPatterns, [
         "src/pages/SharePage.privacy.test.ts",
+      ]),
+    ).toBe(false);
+    expect(
+      githubPathsFilterMatches(pushPathPatterns, [
+        "src/pages/NotePage.spec.ts",
       ]),
     ).toBe(false);
   });
